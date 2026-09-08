@@ -2956,6 +2956,7 @@ fn lowerModuleFromGraph(
             return err;
         };
     }
+    try residency(graph, &signature, diagnostic);
     var skipped: ?[]const u8 = null;
     defer if (skipped) |name| alloc.free(name);
     for (mod.body.stmts) |*stmt| {
@@ -3210,10 +3211,14 @@ pub fn lowerTestSourceWithGraph(
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
     table_apply.normalizeModule(alloc, &module, &checked.type_map);
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, file);
     var diagnostic: Diagnostic = .{};
-    return lowerModuleWithGraphObserved(alloc, &module, graph, &diagnostic);
+    return lowerModuleWithGraphObserved(alloc, &module, graph, &diagnostic) catch |err| {
+        std.debug.print("{s}: {s}\n", .{ file, diagnostic.note() orelse @errorName(err) });
+        return err;
+    };
 }
 
 fn recordCarrierFits(actual: dnir.RecordDesc, required: dnir.RecordDesc) bool {
@@ -4472,6 +4477,44 @@ pub const LowerCtx = struct {
     /// Relation level edges declared as `family(level) = (…) …` → `family__level`.
     relation_edges: *const std.StringHashMapUnmanaged([]const u8) = &empty_relation_edges,
 
+    fn resident(ctx: *LowerCtx, name: []const u8, aggregate: semantic_graph.id, record: dnir.RecordDesc) Error!u32 {
+        const base = ctx.freshTemp();
+        try ctx.emit(.{ .op = .alloc_slots, .result = base, .lhs = .{ .i64 = @intCast(record.fields.len) } });
+        for (record.fields, record.kinds, 0..) |field, kind, index| {
+            const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, field });
+            defer ctx.alloc.free(key);
+            const slot = ctx.locals.get(key) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
+            const ty: RT = switch (kind) {
+                .str => .str,
+                .f64 => .f64,
+                .i64 => if (index < record.widths.len) record.widths[index] orelse .i64 else .i64,
+            };
+            const cell = ctx.freshTemp();
+            try ctx.emit(.{ .op = .alloc_slots, .result = cell, .lhs = .{ .i64 = 1 } });
+            try ctx.emit(.{
+                .op = .store_index,
+                .record = record.name,
+                .field = field,
+                .ty = ty,
+                .lhs = .{ .temp = cell },
+                .rhs = .{ .i64 = 1 },
+                .third = .{ .local = slot },
+            });
+            try ctx.emit(.{
+                .op = .store_index,
+                .ty = .i64,
+                .lhs = .{ .temp = base },
+                .rhs = .{ .i64 = @intCast(index + 1) },
+                .third = .{ .temp = cell },
+            });
+        }
+        try ctx.aggregate_bases.put(ctx.alloc, aggregate, base);
+        try ctx.directory.put(ctx.alloc, base, {});
+        try bindPhysicalRecordName(ctx, name, record, base);
+        return base;
+    }
+
     pub fn deinit(self: *LowerCtx) void {
         var it = self.locals.iterator();
         while (it.next()) |e| self.alloc.free(e.key_ptr.*);
@@ -4644,6 +4687,66 @@ fn scanReturnPackArities(block: *const ast.Block, arity: *?usize) bool {
 const PhysicalParams = std.AutoHashMapUnmanaged(semantic_graph.id, struct {
     params: []const dnir.Param,
 });
+
+fn residency(graph: *const semantic_graph.SemanticGraph, signature: *PhysicalParams, diagnostic: *Diagnostic) Error!void {
+    var changed = true;
+    while (changed) {
+        changed = false;
+        for (graph.application_facts.items) |application| {
+            const target = graph.applicationTarget(application.application) orelse continue;
+            const callee = signature.get(target) orelse continue;
+            const caller = graph.applicationCaller(application.application) orelse continue;
+            const layout = signature.get(caller) orelse continue;
+            const subject = graph.applicationSubject(application.application);
+            const arguments = graph.applicationArguments(application.application) orelse continue;
+            const offset: usize = @intFromBool(subject != null);
+            if (callee.params.len != offset + arguments.len) continue;
+            for (callee.params, 0..) |parameter, index| {
+                if (parameter.record == null or !parameter.ty.eql(physical_pointer)) continue;
+                const operand = if (index < offset) subject.? else arguments[index - offset];
+                var binding = switch (graph.valueOrigin(operand)) {
+                    .one => |value| value,
+                    .none, .unknown => continue,
+                };
+                var remaining = graph.nodes.items.len;
+                while (remaining > 0) : (remaining -= 1) {
+                    const current = graph.get(binding) orelse break;
+                    if (current.kind != .local or current.scope != caller) break;
+                    const initialization = switch (graph.bindingInitialization(binding)) {
+                        .known => |fact| fact,
+                        .invalid, .unvisited => break,
+                    };
+                    binding = switch (graph.valueOrigin(initialization.value)) {
+                        .one => |value| value,
+                        .none, .unknown => break,
+                    };
+                }
+                if (remaining == 0) return invalidGraphFacts(diagnostic, @src(), "record-alias-origin");
+                const node = graph.get(binding) orelse continue;
+                if (node.kind != .param or node.scope != caller) continue;
+                var count: usize = 0;
+                var position: ?usize = null;
+                for (graph.nested.of(caller)) |child| {
+                    const member = graph.get(child) orelse continue;
+                    if (member.kind != .param) continue;
+                    if (member.scope != caller)
+                        return invalidGraphFacts(diagnostic, @src(), "function-parameter-pack");
+                    if (child == binding) position = count;
+                    count += 1;
+                }
+                const ordinal = position orelse continue;
+                if (count != layout.params.len or ordinal >= layout.params.len)
+                    return invalidGraphFacts(diagnostic, @src(), "function-parameter-pack");
+                if (layout.params[ordinal].record == null) continue;
+                for (@constCast(layout.params)) |*candidate| {
+                    if (candidate.record == null or candidate.ty.eql(physical_pointer)) continue;
+                    candidate.ty = physical_pointer;
+                    changed = true;
+                }
+            }
+        }
+    }
+}
 
 fn lowerParams(alloc: std.mem.Allocator, fd: *const ast.FuncDecl, records: []const dnir.RecordDesc) Error![]const dnir.Param {
     var params: std.ArrayList(dnir.Param) = .empty;
@@ -5705,6 +5808,8 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
         }
         try ctx.emit(.{
             .op = .store_index,
+            .record = if (ctx.directory.contains(base)) rec.name else "",
+            .field = field_name,
             .ty = projected.ty,
             .lhs = carrier,
             .rhs = .{ .i64 = index },
@@ -8567,7 +8672,7 @@ fn lowerRecordAlias(ctx: *LowerCtx, name: []const u8, expression: *const ast.Exp
     const value = ctx.graph.valueByAst(expression) orelse return false;
     const node = ctx.graph.get(value) orelse return false;
     const descriptor = node.descriptor orelse return false;
-    if (descriptor != .table_type) return false;
+    if (descriptor != .table_type and descriptor != .@"struct") return false;
     const binding = node.scope orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding");
     const target = ctx.graph.get(binding) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding");
     if (target.kind != .local or target.scope != ctx.function or !std.mem.eql(u8, target.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding"), name))
@@ -8584,6 +8689,23 @@ fn lowerRecordAlias(ctx: *LowerCtx, name: []const u8, expression: *const ast.Exp
         }
         return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
     };
+    if (initialization.place == null) {
+        const source = switch (ctx.graph.valueOrigin(value)) {
+            .one => |origin| origin,
+            .none, .unknown => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin"),
+        };
+        const parameter = ctx.graph.get(source) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+        if (parameter.kind != .param or parameter.scope != ctx.function)
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+        const label = parameter.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        const base = physicalRecordBase(ctx, label) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        if (!ctx.directory.contains(base) or ctx.locals.contains(name))
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        const actual = recordLocalDesc(ctx, label) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
+        if (!recordCarrierFits(actual, record)) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
+        try bindPhysicalRecordName(ctx, name, record, try materializeRecordView(ctx, base, actual, record));
+        return true;
+    }
     var current = binding;
     var fact = initialization;
     var remaining = ctx.graph.nodes.items.len;
@@ -10325,11 +10447,28 @@ fn lowerRecordLiteralAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.
     // fields are still emitted below; only the whole-value face is withheld,
     // and `lowerExpr`'s `.name` arm refuses it by name.
     if (!moduleFieldStorageBase(ctx, name)) {
+        const prior = ctx.locals.get(name);
         const rec_slot = ctx.freshTemp();
         try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
         try lowerRecordLiteralFields(ctx, name, table);
         const rec_name = inferRecordNameFromTable(ctx.records, table) orelse "";
         try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name });
+        if (ctx.require_graph_facts and !ctx.graph.gateTransportModule()) if (prior) |slot| {
+            if (ctx.directory.contains(slot)) {
+                const value = ctx.graph.valueByAst(table) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-value");
+                const node = ctx.graph.get(value) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-value");
+                const binding = ctx.graph.get(node.scope orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-binding")) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-binding");
+                if (binding.scope != ctx.function or !std.mem.eql(u8, binding.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-binding"), name))
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-binding");
+                const shape = ctx.graph.descriptorShape(value, 0) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-shape");
+                const actual = for (ctx.records) |record| {
+                    if (record.semantic_shape == shape) break record;
+                } else return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-shape");
+                const required = recordLocalDesc(ctx, name) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-shape");
+                if (!recordCarrierFits(actual, required)) return invalidGraphFacts(ctx.diagnostic, @src(), "record-initializer-carrier");
+                _ = try ctx.resident(name, value, actual);
+            }
+        };
         return;
     }
     try lowerRecordLiteralFields(ctx, name, table);
@@ -10575,8 +10714,9 @@ fn bindPhysicalRecordName(ctx: *LowerCtx, name: []const u8, rec: dnir.RecordDesc
     } else {
         try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), base);
     }
-    if (!ctx.param_record_types.contains(name))
-        try ctx.param_record_types.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec.name);
+    if (ctx.param_record_types.getPtr(name)) |record| {
+        record.* = rec.name;
+    } else try ctx.param_record_types.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec.name);
     try ctx.ptr_slots.put(ctx.alloc, base, {});
 }
 
@@ -10644,6 +10784,8 @@ fn loadPhysicalRecordField(ctx: *LowerCtx, name: []const u8, field: []const u8) 
     const result = ctx.freshTemp();
     try ctx.emit(.{
         .op = .load_index,
+        .record = if (ctx.directory.contains(base)) rec.name else "",
+        .field = field,
         .ty = projected.ty,
         .result = result,
         .lhs = carrier,
@@ -10703,9 +10845,9 @@ fn materializeProvenRecordBase(
 ) Error!u32 {
     const name = try checkedOperandName(ctx, operand);
     if (physicalRecordBase(ctx, name)) |base| {
-        const resident = recordLocalDesc(ctx, name) orelse
+        const layout = recordLocalDesc(ctx, name) orelse
             return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
-        return materializeRecordView(ctx, base, resident, required);
+        return materializeRecordView(ctx, base, layout, required);
     }
     const aggregate = recordValueForName(ctx, name) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved-origin");
@@ -10716,48 +10858,17 @@ fn materializeProvenRecordBase(
     const shape = ctx.graph.descriptorShape(binding, 0) orelse
         ctx.graph.descriptorShape(aggregate, 0) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved-shape");
-    const resident = for (ctx.records) |candidate| {
+    const layout = for (ctx.records) |candidate| {
         if (candidate.semantic_shape == shape) break candidate;
     } else return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved-layout");
-    if (!recordCarrierFits(resident, actual) or !recordCarrierFits(resident, required))
+    if (!recordCarrierFits(layout, actual) or !recordCarrierFits(layout, required))
         return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier-mismatch");
     if (ctx.aggregate_bases.get(aggregate)) |base| {
-        try bindPhysicalRecordName(ctx, name, resident, base);
-        return materializeRecordView(ctx, base, resident, required);
+        try bindPhysicalRecordName(ctx, name, layout, base);
+        return materializeRecordView(ctx, base, layout, required);
     }
-    const base = ctx.freshTemp();
-    try ctx.emit(.{ .op = .alloc_slots, .result = base, .lhs = .{ .i64 = @intCast(resident.fields.len) } });
-    for (resident.fields, resident.kinds, 0..) |field, kind, index| {
-        const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, field });
-        defer ctx.alloc.free(key);
-        const slot = ctx.locals.get(key) orelse
-            return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
-        const ty: RT = switch (kind) {
-            .str => .str,
-            .f64 => .f64,
-            .i64 => if (index < resident.widths.len) resident.widths[index] orelse .i64 else .i64,
-        };
-        const cell = ctx.freshTemp();
-        try ctx.emit(.{ .op = .alloc_slots, .result = cell, .lhs = .{ .i64 = 1 } });
-        try ctx.emit(.{
-            .op = .store_index,
-            .ty = ty,
-            .lhs = .{ .temp = cell },
-            .rhs = .{ .i64 = 1 },
-            .third = .{ .local = slot },
-        });
-        try ctx.emit(.{
-            .op = .store_index,
-            .ty = .i64,
-            .lhs = .{ .temp = base },
-            .rhs = .{ .i64 = @intCast(index + 1) },
-            .third = .{ .temp = cell },
-        });
-    }
-    try ctx.aggregate_bases.put(ctx.alloc, aggregate, base);
-    try ctx.directory.put(ctx.alloc, base, {});
-    try bindPhysicalRecordName(ctx, name, resident, base);
-    return materializeRecordView(ctx, base, resident, required);
+    const base = try ctx.resident(name, aggregate, layout);
+    return materializeRecordView(ctx, base, layout, required);
 }
 
 fn materializeRecordBase(ctx: *LowerCtx, name: []const u8) Error!u32 {
@@ -10865,6 +10976,7 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
         const nvals = try ctx.alloc.alloc(dnir.Value, count);
         errdefer ctx.alloc.free(nvals);
         if (physicalRecordBase(ctx, base)) |record_base| {
+            if (ctx.directory.contains(record_base)) return invalidGraphFacts(ctx.diagnostic, @src(), "record-result-residency-unproved");
             for (rec.fields, 0..) |fname, i| {
                 const projected = physicalRecordField(rec, fname) orelse
                     return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-projection");
@@ -21092,4 +21204,140 @@ test "dnir_lower: fresh record aliases share exact physical field slots" {
     }
     try std.testing.expectEqual(@as(usize, 1), calls);
     try std.testing.expectEqual(@as(usize, 1), markers);
+}
+
+
+test "dnir_lower: relay aliases require exact parameter initializer facts" {
+    const source = "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    copy = value\n    alter(copy)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lexer = @import("lexer.zig").Lexer.init(source, "relay.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "relay.id");
+    const relation = graph.findFunc("relay").?;
+    const parameter = graph.bindingNamedIn(relation, "value").?;
+    const binding = graph.bindingNamedIn(relation, "copy").?;
+    const initialization = switch (graph.bindingInitialization(binding)) {
+        .known => |fact| fact,
+        else => return error.TestExpectedEqual,
+    };
+    try std.testing.expect(initialization.place == null);
+    try std.testing.expectEqual(parameter, graph.valueOrigin(initialization.value).one);
+    try std.testing.expectEqual(binding, graph.get(initialization.value).?.scope.?);
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    const position = for (graph.edges.items, 0..) |edge, index| {
+        if (edge.from == initialization.value and edge.kind == .binding) break index;
+    } else return error.TestExpectedEqual;
+    const original = graph.edges.items[position];
+    for (0..3) |damage| {
+        switch (damage) {
+            0 => graph.edges.items[position].from = binding,
+            1 => graph.edges.items[position].to = binding,
+            2 => graph.edges.items[position].to = graph.bindingNamedIn(graph.findFunc("alter").?, "value").?,
+            else => unreachable,
+        }
+        try std.testing.expect(graph.bindingInitialization(binding) == .invalid);
+        diagnostic.reset();
+        try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+        graph.edges.items[position] = original;
+    }
+    const declared = graph.nodes.items[parameter].descriptor;
+    graph.nodes.items[parameter].descriptor = .i64;
+    try std.testing.expect(graph.bindingInitialization(binding) == .invalid);
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    graph.nodes.items[parameter].descriptor = declared;
+
+}
+
+test "dnir_lower: relay rebinding requires the checked constructor value" {
+    const source = "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    value = {code = 19}\n    alter(value)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lexer = @import("lexer.zig").Lexer.init(source, "relay.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "relay.id");
+    const parameter = graph.bindingNamedIn(graph.findFunc("relay").?, "value").?;
+    const value = for (graph.nested.of(parameter)) |child| {
+        const expression = graph.valueExpression(child) orelse continue;
+        if (expression.* == .table) break child;
+    } else return error.TestExpectedEqual;
+    const expression = graph.valueExpression(value).?;
+    try std.testing.expect(graph.valueOrigin(value) == .none);
+    try std.testing.expect(graph.bindingInitialization(parameter) == .unvisited);
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(expression)));
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-initializer-value", diagnostic.note().?);
+    try graph.value_by_ast.put(alloc, @intFromPtr(expression), value);
+    const position = for (graph.edges.items, 0..) |edge, index| {
+        if (edge.from == value and edge.kind == .descriptor) break index;
+    } else return error.TestExpectedEqual;
+    graph.edges.items[position].from = parameter;
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-initializer-shape", diagnostic.note().?);
+}
+
+
+test "dnir_lower: relay aliases refuse target effects and conditional rebinding" {
+    const bodies = [_][]const u8{
+        "    copy, value.code = value, 13\n    alter(copy)\n",
+        "    copy = value\n    if value.code > 0\n        copy = {code = 19}\n    alter(copy)\n",
+    };
+    for (bodies, 0..) |body, index| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        const source = try std.fmt.allocPrint(alloc, "record: {{code: i64}}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n{s}probe = (code: i64): i64\n    item: record = {{code = code}}\n    relay(item) + item.code\nos.exit(probe(7))\n", .{body});
+        var lexer = @import("lexer.zig").Lexer.init(source, "relay.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "relay.id");
+        if (index == 0) {
+            const target = graph.findFunc("alter").?;
+            const application = for (graph.application_facts.items) |fact| {
+                if (graph.applicationTarget(fact.application) == target) break fact.application;
+            } else return error.TestExpectedEqual;
+            const value = graph.applicationSubject(application) orelse graph.applicationArguments(application).?[0];
+            try std.testing.expect(graph.get(value).?.descriptor.? == .any);
+        }
+        var diagnostic: Diagnostic = .{};
+        try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    }
 }

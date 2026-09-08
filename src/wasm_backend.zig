@@ -626,6 +626,27 @@ const Emitter = struct {
         self.field_local.deinit(self.alloc);
     }
 
+    fn cell(self: *Emitter, instruction: dnir.Instr) Error!bool {
+        if (instruction.record.len == 0) return false;
+        const record = dnir.findRecord(self.module, instruction.record) orelse return self.refuse("record-cell-descriptor");
+        if (record.fields.len != record.kinds.len or instruction.rhs != .i64 or instruction.rhs.i64 != 1)
+            return self.refuse("record-cell-layout");
+        var found = false;
+        for (record.fields, record.kinds, 0..) |field, kind, index| {
+            if (!std.mem.eql(u8, field, instruction.field)) continue;
+            if (found) return self.refuse("record-cell-field");
+            const descriptor: RT = switch (kind) {
+                .str => .str,
+                .f64 => .f64,
+                .i64 => if (index < record.widths.len) record.widths[index] orelse .i64 else .i64,
+            };
+            if (!descriptor.eql(instruction.ty)) return self.refuse("record-cell-carrier");
+            found = true;
+        }
+        if (!found) return self.refuse("record-cell-field");
+        return true;
+    }
+
     fn refuse(self: *Emitter, why: []const u8) Error {
         if (self.cur_op) |o| {
             var buf: [96]u8 = undefined;
@@ -714,6 +735,10 @@ fn computeSlotTypes(e: *Emitter, instrs: []const dnir.Instr, params: []const Slo
                     if (ins.ty == .f32 or valueIsF32(e, ins.lhs) or valueIsF32(e, ins.rhs)) {
                         try markF32(e, ins.result, &changed);
                     }
+                },
+                .load_index => if (ins.record.len != 0) {
+                    if (ins.ty == .f64) try markF64(e, ins.result, &changed);
+                    if (ins.ty == .f32) try markF32(e, ins.result, &changed);
                 },
                 .load_global => {
                     if (ins.ty == .f64) try markF64(e, ins.result, &changed);
@@ -1602,7 +1627,20 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
 
         .load_index => {
             const t = ins.result orelse return e.refuse("load-index-no-result");
+            const cell = try e.cell(ins);
             try emitIndexAddress(e, b, ins);
+            if (cell) {
+                switch (ins.ty) {
+                    .f64 => try b.mem(op_f64_load, 3, 0),
+                    .f32 => try b.mem(op_f32_load, 2, 0),
+                    else => {
+                        try b.mem(op_i64_load, 3, 0);
+                        try emitNarrowFit(b, ins.ty);
+                    },
+                }
+                try b.set(t);
+                return;
+            }
             switch (ins.ty) {
                 .i64 => try b.mem(op_i64_load, 3, 0),
                 .f64 => try b.mem(op_f64_load, 3, 0),
@@ -1613,7 +1651,26 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
         },
 
         .store_index => {
+            const cell = try e.cell(ins);
             try emitIndexAddress(e, b, ins);
+            if (cell) {
+                switch (ins.ty) {
+                    .f64 => {
+                        try pushValue(e, b, ins.third, .f64);
+                        try b.mem(op_f64_store, 3, 0);
+                    },
+                    .f32 => {
+                        try pushValue(e, b, ins.third, .f32);
+                        try b.mem(op_f32_store, 2, 0);
+                    },
+                    else => {
+                        try pushValue(e, b, ins.third, .i64);
+                        try emitNarrowFit(b, ins.ty);
+                        try b.mem(op_i64_store, 3, 0);
+                    },
+                }
+                return;
+            }
             try pushValue(e, b, ins.third, .i64);
             switch (ins.ty) {
                 .i64 => try b.mem(op_i64_store, 3, 0),
@@ -1739,7 +1796,7 @@ fn emitFrameRestore(e: *Emitter, b: *Buf) Error!void {
 /// `base + (index - 1) * width`, the one index origin both faces of a positional
 /// table share. Leaves an i32 address on the stack.
 fn emitIndexAddress(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
-    const scale: i32 = switch (ins.ty) {
+    const scale: i32 = if (ins.record.len != 0) 8 else switch (ins.ty) {
         .i64, .f64 => 8,
         .f32 => 4,
         else => 1,
@@ -5015,6 +5072,52 @@ test "wasm backend lowers graph-connected record parameter writes" {
     }
 }
 
+test "wasm backend relays resident record operands" {
+    try std.testing.expectEqual(@as(u8, 26), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    alter(value)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend relays an alias of a record parameter" {
+    try std.testing.expectEqual(@as(u8, 26), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    copy = value\n    alter(copy)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend relay rebinding preserves the caller record" {
+    try std.testing.expectEqual(@as(u8, 20), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    value = {code = 19}\n    alter(value)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend relay retains aliases across a parameter rebind" {
+    try std.testing.expectEqual(@as(u8, 45), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    copy = value\n    value = {code = 19}\n    alter(copy) + value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+    try std.testing.expectEqual(@as(u8, 20), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    value = {code = 19}\n    copy = value\n    alter(copy)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend shared cells retain declared integer widths" {
+    const cases = [_]struct { descriptor: []const u8, value: []const u8, expected: []const u8 }{
+        .{ .descriptor = "u16", .value = "300", .expected = "300" },
+        .{ .descriptor = "i16", .value = "-300", .expected = "-300" },
+        .{ .descriptor = "u16", .value = "-1", .expected = "65535" },
+        .{ .descriptor = "i8", .value = "300", .expected = "44" },
+        .{ .descriptor = "i16", .value = "65535", .expected = "-1" },
+        .{ .descriptor = "u16", .value = "65536", .expected = "0" },
+    };
+    for (cases) |case| {
+        const source = try std.fmt.allocPrint(std.testing.allocator, "record: {{code: {s}}}\nalter = (value: record): i64\n    value.code = {s}\n    if value.code == {s}\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {{code = 7}}\n    alter(item)\nos.exit(probe(7))\n", .{ case.descriptor, case.value, case.expected });
+        defer std.testing.allocator.free(source);
+        try std.testing.expectEqual(@as(u8, 30), try runTestSourceWasm(source));
+    }
+    try std.testing.expectEqual(@as(u8, 30), try runTestSourceWasm("record: {pad: i64, code: i16}\nalter = (value: record): i64\n    value.pad = 13\n    if value.code == -1\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {pad = code, code = -1}\n    alter(item)\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend shared cells preserve text values" {
+    try std.testing.expectEqual(@as(u8, 37), try runTestSourceWasm("record: {text: str, code: i64}\nread = (text: str): i64\n    if text == \"sixsix\"\n        return 7\n    1\nalter = (value: record): i64\n    value.text = \"sixsix\"\n    if value.text == \"sixsix\"\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {text = \"old\", code = code}\n    out = alter(item)\n    out + read(item.text)\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend shared text retains unproved conditional refusal" {
+    try std.testing.expectError(error.GraphFactsInvalid, runTestSourceWasm("record: {text: str, code: i64}\nalter = (value: record): i64\n    value.text = \"sixsix\"\n    if value.text == \"sixsix\"\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {text = \"old\", code = code}\n    out = alter(item)\n    if item.text == \"sixsix\"\n        return out + 7\n    0\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend shared float records retain the existing refusal" {
+    try std.testing.expectError(error.GraphFactsInvalid, runTestSourceWasm("record: {code: f64}\nalter = (value: record): i64\n    value.code = 1.5\n    if value.code == 1.5\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {code = 0.5}\n    alter(item)\nos.exit(probe(7))\n"));
+}
+
 test "wasm backend projects demanded record fields and preserves fresh writes" {
     const cases = [_]struct { source: []const u8, want: u8 }{
         .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n", .want = 28 },
@@ -5046,5 +5149,41 @@ test "wasm backend fresh record aliases share resident fields" {
             return err;
         };
         try std.testing.expectEqual(case.want, actual);
+    }
+}
+
+
+test "wasm backend shared cells retain byte indexing and refuse invalid descriptors" {
+    var diagnostic: Diagnostic = .{};
+    var emitter = Emitter{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diagnostic,
+        .module = .{ .functions = &.{}, .globals = &.{}, .records = &.{.{ .name = "record", .fields = &.{"code"}, .kinds = &.{.i64}, .widths = &.{.u16} }} },
+        .types = .{ .alloc = std.testing.allocator },
+        .strings = .{ .alloc = std.testing.allocator },
+    };
+    defer emitter.deinit();
+    var buffer = Buf{ .alloc = std.testing.allocator };
+    defer buffer.deinit();
+    var instruction = dnir.Instr{ .op = .store_index, .lhs = .{ .i64 = 256 }, .rhs = .{ .i64 = 1 }, .third = .{ .i64 = 300 }, .ty = .u8 };
+    try emitInstr(&emitter, &buffer, instruction, .{ .instrs = &.{}, .leaders = &.{} });
+    try std.testing.expectEqualSlices(u8, &.{ op_i64_store8, 0, 0 }, buffer.items.items[buffer.items.items.len - 3 ..]);
+    instruction.record = "record";
+    instruction.field = "code";
+    instruction.ty = .u16;
+    buffer.items.clearRetainingCapacity();
+    try emitInstr(&emitter, &buffer, instruction, .{ .instrs = &.{}, .leaders = &.{} });
+    try std.testing.expectEqualSlices(u8, &.{ op_i64_store, 3, 0 }, buffer.items.items[buffer.items.items.len - 3 ..]);
+    const original = instruction;
+    for (0..4) |damage| {
+        switch (damage) {
+            0 => instruction.record = "absent",
+            1 => instruction.field = "absent",
+            2 => instruction.rhs = .{ .i64 = 2 },
+            3 => instruction.ty = .i64,
+            else => unreachable,
+        }
+        try std.testing.expectError(error.UnsupportedProgram, emitter.cell(instruction));
+        instruction = original;
     }
 }

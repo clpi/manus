@@ -704,7 +704,7 @@ const Adjacency = struct {
         try slot.value_ptr.append(alloc, to);
     }
 
-    fn of(self: *const Adjacency, from: id) []const id {
+    pub fn of(self: *const Adjacency, from: id) []const id {
         const list = self.map.get(from) orelse return &.{};
         return list.items;
     }
@@ -1082,7 +1082,7 @@ pub const BindingObservation = struct {
 pub const BindingInitialization = struct {
     binding: id,
     value: id,
-    place: u32,
+    place: ?u32,
 };
 
 /// Three producer-coverage states for `BindingInitialization`.
@@ -2134,7 +2134,8 @@ pub const SemanticGraph = struct {
 
     /// Exact module place by its census identity. The array position is only a
     /// physical acceleration: every read rechecks `Place.id` before answering.
-    pub fn modulePlace(self: *const SemanticGraph, site: u32) ?*const place.Place {
+    pub fn modulePlace(self: *const SemanticGraph, location: ?u32) ?*const place.Place {
+        const site = location orelse return null;
         const census = if (self.places) |*known| known else return null;
         if (site >= census.places.items.len) return null;
         const found = &census.places.items[site];
@@ -2142,7 +2143,8 @@ pub const SemanticGraph = struct {
         return found;
     }
 
-    pub fn initializationPlace(self: *const SemanticGraph, binding: id, site: u32) ?*const place.Place {
+    pub fn initializationPlace(self: *const SemanticGraph, binding: id, location: ?u32) ?*const place.Place {
+        const site = location orelse return null;
         const owner = (self.get(binding) orelse return null).scope orelse return null;
         if (owner == self.module_root) return self.modulePlace(site);
         const body = self.bodyOf(owner) orelse return null;
@@ -2174,6 +2176,21 @@ pub const SemanticGraph = struct {
             const expression = self.valueExpression(fact.value) orelse return .invalid;
             if (self.valueByAst(expression) != fact.value) return .invalid;
         }
+        if (fact.place == null) {
+            if (binding_node.scope == self.module_root) return .invalid;
+            const expression = self.valueExpression(fact.value) orelse return .invalid;
+            const source = switch (self.valueOrigin(fact.value)) {
+                .one => |origin| origin,
+                .none, .unknown => return .invalid,
+            };
+            const parameter = self.get(source) orelse return .invalid;
+            if (parameter.kind != .param or parameter.scope != binding_node.scope or expression.* != .name or
+                !std.mem.eql(u8, parameter.name orelse return .invalid, expression.name.ident)) return .invalid;
+            const descriptor = value_node.descriptor orelse return .invalid;
+            if (descriptor != .@"struct" and descriptor != .table_type) return .invalid;
+            if (parameter.descriptor) |declared| if (!declared.eql(descriptor)) return .invalid;
+            return .{ .known = fact };
+        }
         const storage = self.initializationPlace(binding, fact.place) orelse return .invalid;
         if (binding_node.scope != self.module_root and
             (value_node.descriptor == null or
@@ -2186,7 +2203,7 @@ pub const SemanticGraph = struct {
         self: *SemanticGraph,
         binding: id,
         value: id,
-        site: u32,
+        site: ?u32,
     ) !void {
         try self.requireOpen();
         const binding_node = self.get(binding) orelse return error.InvalidBindingInitialization;
@@ -2201,11 +2218,20 @@ pub const SemanticGraph = struct {
             if (!binding_descriptor.eql(value_descriptor))
                 return error.InvalidBindingInitialization;
         }
-        const storage = self.initializationPlace(binding, site) orelse return error.InvalidBindingInitialization;
-        if (binding_node.scope != self.module_root and
-            (value_node.descriptor == null or
-                (value_node.descriptor.? != .table_type and value_node.descriptor.? != .@"struct") or
-                storage.shape != .record or storage.region != .function)) return error.InvalidBindingInitialization;
+        if (site) |_| {
+            const storage = self.initializationPlace(binding, site) orelse return error.InvalidBindingInitialization;
+            if (binding_node.scope != self.module_root and
+                (value_node.descriptor == null or
+                    (value_node.descriptor.? != .table_type and value_node.descriptor.? != .@"struct") or
+                    storage.shape != .record or storage.region != .function)) return error.InvalidBindingInitialization;
+        } else {
+            const expression = self.valueExpression(value) orelse return error.InvalidBindingInitialization;
+            const source = self.constructorParameter(binding_node.scope.?, &.{}, expression) orelse return error.InvalidBindingInitialization;
+            if (self.valueOrigin(value) != .one or self.valueOrigin(value).one != source) return error.InvalidBindingInitialization;
+            const descriptor = value_node.descriptor orelse return error.InvalidBindingInitialization;
+            if (descriptor != .@"struct" and descriptor != .table_type) return error.InvalidBindingInitialization;
+            if (self.get(source).?.descriptor) |declared| if (!descriptor.eql(declared)) return error.InvalidBindingInitialization;
+        }
         if (self.binding_initialization_candidates.bit_length < self.nodes.items.len) {
             try self.binding_initialization_candidates.resize(self.alloc, self.nodes.items.len, false);
         }
@@ -5999,7 +6025,25 @@ pub const SemanticGraph = struct {
         if (scope == self.module_root) return;
         const binding = self.resolveBindingInScope(scope, name) orelse return;
         const node = self.get(binding) orelse return;
-        if (node.kind != .local or node.scope != scope) return;
+        if (node.scope != scope) return;
+        if (node.kind == .param) {
+            if (initializer.* != .table or context.refused) return;
+            const descriptor = context.descriptor(initializer) orelse return;
+            if (descriptor != .table_type) return;
+            const loc = initializer.loc();
+            const value = self.valueByAst(initializer) orelse try self.addChild(binding, .{
+                .kind = .value,
+                .span = .{ .file = self.module_path orelse "", .start = loc.line, .end = loc.col },
+                .descriptor = descriptor,
+                .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+                .stage = .sema,
+                .ast_ref = @ptrCast(@constCast(initializer)),
+            });
+            if (self.get(value).?.scope != binding) return;
+            try self.addOperandDescriptorShape(value, scope, descriptor);
+            return;
+        }
+        if (node.kind != .local) return;
         if (binding < self.binding_initialization_candidates.bit_length and self.binding_initialization_candidates.isSet(binding)) {
             try self.refuseInitialization(binding);
             return;
@@ -6012,7 +6056,7 @@ pub const SemanticGraph = struct {
                 descriptor = declared;
             }
         }
-        const site = switch (initializer.*) {
+        const site: ?u32 = switch (initializer.*) {
             .table => table: {
                 const body = self.bodyOf(scope) orelse return;
                 const found = body.places.find(name) orelse return;
@@ -6023,7 +6067,17 @@ pub const SemanticGraph = struct {
                 if (initializer.name.world) return;
                 const source = self.resolveBindingInScope(scope, initializer.name.ident) orelse return;
                 const ancestor = self.get(source) orelse return;
-                if (ancestor.kind != .local or ancestor.scope != scope or source == binding) return;
+                if (ancestor.scope != scope or source == binding) return;
+                if (ancestor.kind == .param) {
+                    if (self.constructorParameter(scope, &.{}, initializer) != source) return;
+                    const body = self.bodyOf(scope) orelse return;
+                    if (body.places.find(initializer.name.ident)) |storage| {
+                        if (storage.bind_origin == .declaration) return;
+                    }
+                    if (ancestor.descriptor) |declared| if (!descriptor.eql(declared)) return;
+                    break :alias null;
+                }
+                if (ancestor.kind != .local) return;
                 const origin = switch (self.bindingInitialization(source)) {
                     .known => |fact| fact,
                     .invalid, .unvisited => return,
@@ -6044,10 +6098,14 @@ pub const SemanticGraph = struct {
         if (self.get(value).?.scope != binding) return;
         if (initializer.* == .name) {
             const source = self.resolveBindingInScope(scope, initializer.name.ident).?;
-            const origin = self.bindingInitialization(source).known;
-            const shape = self.descriptorShape(origin.value, 0) orelse return;
             try self.addEdge(.{ .from = value, .to = source, .kind = .binding });
-            try self.addEdge(.{ .from = value, .to = shape, .kind = .descriptor });
+            if (site == null) {
+                try self.addDescriptorShapeEdge(value, 0, scope, descriptor, null);
+            } else {
+                const origin = self.bindingInitialization(source).known;
+                const shape = self.descriptorShape(origin.value, 0) orelse return;
+                try self.addEdge(.{ .from = value, .to = shape, .kind = .descriptor });
+            }
         } else try self.addOperandDescriptorShape(value, scope, descriptor);
         try self.publishBindingInitialization(binding, value, site);
     }

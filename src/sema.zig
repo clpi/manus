@@ -3495,8 +3495,21 @@ pub const Sema = struct {
                     // filed there rather than smuggled in under a case fix.
                     if (tgt.* == .name) {
                         var vt = if (i < as.values.len) self.type_map.get(as.values[i]) orelse RT.any else RT.any;
-                        if (vt == .table_type and generations.items[i] != self.generation) vt = .any;
-                        if (vt == .table_type and self.idol_mode) {
+                        var aggregate = switch (vt) {
+                            .table_type => true,
+                            .@"struct" => |named| record: {
+                                const declaration = self.alias_defs.get(named.name) orelse break :record false;
+                                if (declaration.type_params != null or declaration.parent != null or declaration.extra_parents.len != 0) break :record false;
+                                break :record declaration.fields.len != 0 or
+                                    (declaration.target != null and declaration.target.? == .record);
+                            },
+                            else => false,
+                        };
+                        if (aggregate and generations.items[i] != self.generation) {
+                            vt = .any;
+                            aggregate = false;
+                        }
+                        if (aggregate and self.idol_mode) {
                             if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
                                 if (sym.typ == .any or sym.inferred != null) {
                                     sym.typ = vt;
@@ -3504,7 +3517,7 @@ pub const Sema = struct {
                                 }
                             }
                         }
-                        if (vt != .table_type) {
+                        if (!aggregate) {
                             if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
                                 if (sym.inferred != null) {
                                     sym.typ = vt;
