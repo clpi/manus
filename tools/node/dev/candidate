@@ -262,8 +262,8 @@ def contract(args):
         endpoints = []
         order = []
         for row in value["rename"]:
-            if not isinstance(row, dict) or set(row) != {"from", "to", "sha256"}:
-                raise Refusal(USAGE, "each candidate rename must have exactly from/to/sha256")
+            if not isinstance(row, dict) or set(row) not in ({"from", "to", "sha256"}, {"from", "to", "sha256", "reference"}):
+                raise Refusal(USAGE, "each candidate rename must have from/to/sha256 and optional reference")
             if not isinstance(row["sha256"], str) or not HEX64.fullmatch(row["sha256"]):
                 raise Refusal(USAGE, "candidate rename source digest is invalid")
             for field in ("from", "to"):
@@ -280,6 +280,25 @@ def contract(args):
             order.append((row["from"], row["to"]))
         if order != sorted(order):
             raise Refusal(USAGE, "candidate rename rows must be sorted")
+        for row in value["rename"]:
+            if "reference" not in row:
+                continue
+            if not isinstance(row["reference"], list) or not row["reference"]:
+                raise Refusal(USAGE, "candidate reference must be a nonempty array")
+            paths = []
+            for reference in row["reference"]:
+                if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+                    raise Refusal(USAGE, "each candidate reference must have exactly path/sha256")
+                path = reference["path"]
+                if not isinstance(path, str) or not validpath(path) or path not in expected:
+                    raise Refusal(USAGE, "candidate reference must name a declared changed path")
+                if path in endpoints or path in compatibility or expected[path] is None:
+                    refuse("candidate reference must be a surviving carrier outside rename endpoints and compatibility")
+                if not isinstance(reference["sha256"], str) or not HEX64.fullmatch(reference["sha256"]):
+                    raise Refusal(USAGE, "candidate reference source digest is invalid")
+                paths.append(path)
+            if paths != sorted(set(paths)):
+                raise Refusal(USAGE, "candidate reference paths must be sorted and unique")
     if eventbase is not None and (value["base"] != eventbase or value["head"] != eventhead):
         refuse("candidate contract base/head differs from pull_request event")
     return value, expected, set(compatibility), digest
@@ -354,6 +373,47 @@ def rename(repo, value, actual):
             refuse(f"candidate rename source digest mismatch: {old}")
         print(f"candidate.rename source={old} destination={new} source_sha256={digest}")
     return {row["from"] for row in declared}
+
+
+def reference(repo, value, statuses):
+    carriers = {}
+    for row in value.get("rename", []):
+        for declared in row.get("reference", []):
+            carriers.setdefault(declared["path"], []).append((row["from"], row["to"], declared["sha256"]))
+    for path, relations in carriers.items():
+        if statuses.get(path) != "M":
+            refuse(f"candidate reference must modify an existing carrier: {path}")
+        if blobmode(repo, value["base"], path) != blobmode(repo, value["head"], path):
+            refuse(f"candidate reference changed carrier mode: {path}")
+        before = sourceblob(repo, value["base"], path)
+        after = sourceblob(repo, value["head"], path)
+        digest = sha(before)
+        spans = []
+        for old, new, expected in relations:
+            if digest != expected:
+                refuse(f"candidate reference source digest mismatch: {path}")
+            if any(source in new for source, _, _ in relations):
+                refuse(f"candidate reference mappings cascade: {path}")
+            old, new = old.encode(), new.encode()
+            index = before.find(old)
+            if index < 0:
+                refuse(f"candidate reference has no source occurrence: {path}")
+            while index >= 0:
+                spans.append((index, index + len(old), new))
+                index = before.find(old, index + 1)
+        spans.sort()
+        chunks = []
+        cursor = 0
+        for start, end, replacement in spans:
+            if start < cursor:
+                refuse(f"candidate reference occurrences overlap: {path}")
+            chunks.extend((before[cursor:start], replacement))
+            cursor = end
+        chunks.append(before[cursor:])
+        if b"".join(chunks) != after:
+            refuse(f"candidate reference contains changes outside declared rebinding: {path}")
+        print(f"candidate.reference path={path} source_sha256={digest} occurrences={len(spans)}")
+    return set(carriers)
 
 
 def diff(repo, base, head, paths):
@@ -875,6 +935,7 @@ def verify(repo, args):
         refuse(f"declared path set differs from exact range: declared={declared!r} actual={actual!r}")
     retired = rename(repo, value, renamed)
     statuses = {path: statusname for statusname, path in rows}
+    carriers = reference(repo, value, statuses)
     for path in actual:
         want = expected[path]
         if statuses[path] == "D":
@@ -897,7 +958,7 @@ def verify(repo, args):
     )
     protected(rows)
     compatibility(repo, base, head, rows, compat)
-    generated(repo, base, [("M", path) for path in sorted(retired)])
+    generated(repo, base, [("M", path) for path in sorted(retired | carriers)])
     generated(repo, head, rows)
     idpaths = [path for _, path in rows if path.endswith(".id")]
     iddiff = diff(repo, base, head, idpaths)
@@ -905,7 +966,7 @@ def verify(repo, args):
     canonicaldiff = diff(repo, base, head, canonicalpaths)
     public(repo, base, head, rows)
 
-    namepacket = "\n".join(path for path in actual if path not in retired).encode() + b"\n"
+    namepacket = "\n".join(path for path in actual if path not in retired | carriers).encode() + b"\n"
     packet = b"IDOLGATE staged\n" + namepacket + b"IDOLGATE namediff\n" + iddiff + b"\nIDOLGATE end\n"
     with tempfile.TemporaryDirectory(prefix="idol-candidate-output-") as temporary:
         private = Path(temporary)
@@ -1529,6 +1590,161 @@ sys.stderr.write(f"✓ {{output}}{{suffix}}\\n")
         fixture(source, move, lambda repo: (repo / "examples/value.id").write_text("value = 2\n")),
         REJECT,
         "rename relation differs",
+    )
+
+    def rebinding(
+        label,
+        code=0,
+        needle="candidate.structural=pass",
+        carrier="docs/guide_note.md",
+        mapping=(("gate/probe.sh", "gate/value.sh"),),
+        before=None,
+        after=None,
+        mutate=None,
+        absent=False,
+        mode=None,
+    ):
+        nonlocal tests
+        payload = before if before is not None else "".join(f'path = "{old}"\n' for old, _ in mapping)
+        pattern = re.compile("|".join(re.escape(old) for old, _ in mapping))
+        replacements = dict(mapping)
+        rewritten = after if after is not None else pattern.sub(lambda match: replacements[match.group()], payload)
+
+        def prepare(repo):
+            for index, (old, _) in enumerate(mapping):
+                (repo / old).parent.mkdir(parents=True, exist_ok=True)
+                (repo / old).write_text(f"printf '{index}\\n'\n", encoding="utf-8")
+            if not absent:
+                (repo / carrier).parent.mkdir(parents=True, exist_ok=True)
+                (repo / carrier).write_text(payload, encoding="utf-8")
+
+        def change(repo):
+            paths = [carrier]
+            for old, new in mapping:
+                (repo / new).parent.mkdir(parents=True, exist_ok=True)
+                (repo / old).rename(repo / new)
+                paths.extend((old, new))
+            (repo / carrier).parent.mkdir(parents=True, exist_ok=True)
+            (repo / carrier).write_text(rewritten, encoding="utf-8")
+            if mode is not None:
+                (repo / carrier).chmod(mode)
+            return paths
+
+        temporary, repo, base, head, paths = fixture(source, change, prepare)
+        try:
+            def description(value):
+                value["version"] = 2
+                value["rename"] = [
+                    {
+                        "from": old,
+                        "to": new,
+                        "sha256": sha(blob(repo, base, old)),
+                        "reference": [{"path": carrier, "sha256": sha(payload.encode())}],
+                    }
+                    for old, new in sorted(mapping)
+                ]
+                if mutate is not None:
+                    mutate(value)
+
+            result = invoke(repo, base, head, paths, mutate=description)
+            if result.returncode != code or needle not in output(result):
+                sys.stderr.write(output(result))
+                raise Refusal(UNAVAILABLE, f"selftest {label} failed")
+            tests += 1
+            print(f"candidate.selftest name={label} outcome=pass")
+        finally:
+            temporary.cleanup()
+
+    rebinding("reference.positive")
+    rebinding("reference.repeated", before='first = "gate/probe.sh"\nsecond = "gate/probe.sh"\n')
+    rebinding("reference.shared", mapping=(("gate/probe.sh", "gate/value.sh"), ("gate/text.sh", "gate/read.sh")))
+    rebinding(
+        "reference.covert",
+        REJECT,
+        "changes outside declared rebinding",
+        before='path = "gate/probe.sh"\nvalue = 1\n',
+        after='path = "gate/value.sh"\nvalue = 2\n',
+    )
+    rebinding(
+        "reference.incomplete",
+        REJECT,
+        "changes outside declared rebinding",
+        before='first = "gate/probe.sh"\nsecond = "gate/probe.sh"\n',
+        after='first = "gate/value.sh"\nsecond = "gate/probe.sh"\n',
+    )
+    rebinding(
+        "reference.digest",
+        REJECT,
+        "reference source digest mismatch",
+        mutate=lambda value: value["rename"][0]["reference"][0].update(sha256="0" * 64),
+    )
+    rebinding("reference.mode", REJECT, "reference changed carrier mode", mode=0o755)
+    rebinding("reference.new", REJECT, "reference must modify an existing carrier", absent=True)
+    rebinding(
+        "reference.stale",
+        REJECT,
+        "reference has no source occurrence",
+        before="value = 1\n",
+        after="value = 2\n",
+    )
+    rebinding(
+        "reference.unlisted",
+        USAGE,
+        "reference must name a declared changed path",
+        mutate=lambda value: value["paths"].remove(next(row for row in value["paths"] if row["path"] == "docs/guide_note.md")),
+    )
+    rebinding(
+        "reference.duplicate",
+        USAGE,
+        "reference paths must be sorted and unique",
+        mutate=lambda value: value["rename"][0]["reference"].append(value["rename"][0]["reference"][0].copy()),
+    )
+    rebinding(
+        "reference.endpoint",
+        REJECT,
+        "reference must be a surviving carrier outside rename endpoints",
+        mutate=lambda value: value["rename"][0]["reference"][0].update(path="gate/value.sh"),
+    )
+    rebinding(
+        "reference.compatibility",
+        REJECT,
+        "reference must be a surviving carrier outside rename endpoints and compatibility",
+        mutate=lambda value: value["compatibility"].append("docs/guide_note.md"),
+    )
+    rebinding("reference.protected", REJECT, "base-owned admission control changed inside candidate", carrier="gate/path.id")
+    rebinding("reference.public", REJECT, "semantic-law/public-vocabulary authority is outside structural admission", carrier="docs/spec/law.md")
+    rebinding(
+        "reference.generated",
+        REJECT,
+        "generated projection changed",
+        before='# GENERATED - do not edit\npath = "gate/probe.sh"\n',
+    )
+    rebinding("reference.generated.name", REJECT, "generated projection changed", carrier="docs/guide_gen.md")
+    rebinding(
+        "reference.idiom",
+        REJECT,
+        "candidate findings reported by gate/idiom.id",
+        carrier="examples/guide_note.id",
+        before='value = local + "gate/probe.sh"\n',
+    )
+    rebinding(
+        "reference.target",
+        REJECT,
+        "candidate findings reported by gate/path.id",
+        mapping=(("gate/probe.sh", "gate/bad_name.sh"),),
+    )
+    rebinding(
+        "reference.cascade",
+        REJECT,
+        "reference mappings cascade",
+        mapping=(("gate/probe.sh", "gate/value.sh"), ("gate/text.sh", "scope/gate/probe.sh")),
+    )
+    rebinding(
+        "reference.overlap",
+        REJECT,
+        "reference occurrences overlap",
+        mapping=(("gate/a", "gate/value.sh"), ("a/read.sh", "gate/text.sh")),
+        before="gate/a/read.sh\n",
     )
 
     expect(
