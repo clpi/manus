@@ -43,16 +43,20 @@ pub const SourceFormIterator = struct {
     next_index: i64 = 1,
     count: i64,
 
+    /// A form the host cannot name, or an ordinal that publishes nothing, is
+    /// the census changing under a walk the bind already established. The walk
+    /// RECORDS that rather than skipping the entry: a skipped form is a shorter
+    /// walk reported as a complete answer, and the recorded refusal is what
+    /// makes every later `sourceFacts` answer unknown.
     pub fn next(self: *SourceFormIterator) ?SourceForm {
-        while (self.next_index <= self.count) {
-            const index = self.next_index;
-            self.next_index += 1;
-            const law = sourceLawFromName(sourceformlaw(index)) orelse continue;
-            const suffix = std.mem.span(sourceformsuffix(index));
-            if (suffix.len == 0) continue;
-            return .{ .law = law, .suffix = suffix, .canonical = sourceformcanonical(index) };
-        }
-        return null;
+        if (self.next_index > self.count) return null;
+        const index = self.next_index;
+        self.next_index += 1;
+        const law = sourceLawFromName(sourceformlaw(index)) orelse
+            return refuseSourceForms(SourceFormError.UnnamedSourceLaw);
+        const suffix = std.mem.span(sourceformsuffix(index));
+        if (suffix.len == 0) return refuseSourceForms(SourceFormError.UnestablishedSourceForms);
+        return .{ .law = law, .suffix = suffix, .canonical = sourceformcanonical(index) };
     }
 };
 
@@ -78,9 +82,111 @@ fn sourceProvenanceFromName(name: [*:0]const u8) ?SourceProvenance {
     return std.meta.stringToEnum(SourceProvenance, std.mem.span(name));
 }
 
+pub const SourceFormError = error{
+    /// The census answered with no walkable number of entries, or counted an
+    /// ordinal it publishes nothing at.
+    UnestablishedSourceForms,
+    /// The census counts fewer forms than the producer publishes, so a walk of
+    /// it covers a prefix and reports it as the whole census.
+    PartialSourceFormCensus,
+    /// The producer publishes a physical form whose law the host cannot name.
+    UnnamedSourceLaw,
+    /// Two published forms share a suffix, so one suffix would select two laws.
+    AmbiguousSourceForm,
+};
+
+/// The producer's published physical source-form census, as the host consumes
+/// it. Ingress binds the real externs and the controls bind planted ones
+/// through this same shape, so a control exercises the walk ingress binds.
+const SourceFormCensus = struct {
+    count: i64,
+    law: @TypeOf(&sourceformlaw),
+    suffix: @TypeOf(&sourceformsuffix),
+};
+
+/// The host holds the published suffixes while it proves them distinct, so the
+/// census it can establish is bounded by that table. A fact about the host's
+/// scratch, not a roster of admitted forms.
+const source_form_capacity = 64;
+
+/// Census walks completed. `establishedSourceForms` is the only caller, so this
+/// separates an ingress that walked the census from one that skipped it.
+var source_form_walks: usize = 0;
+var source_form_count: i64 = 0;
+var source_form_refusal: ?SourceFormError = null;
+
+/// Prove the host can name every physical source form the producer publishes,
+/// and that the census covers all of them, before any path selects a law.
+/// Returns the number of entries walked.
+///
+/// Every predicate downstream reads a NUMBER this census answered with, and a
+/// census that answered with nothing used to arrive as a walk of zero forms —
+/// which reads exactly like a producer that publishes none. An unestablished
+/// census is unknown, and unknown stops law selection rather than counting as
+/// an ordinary negative answer.
+fn bindSourceFormCensus(census: SourceFormCensus) SourceFormError!i64 {
+    // An empty or negative census is the absence of the fact law selection
+    // consumes, not evidence that the host can name what the producer publishes.
+    if (census.count <= 0) return SourceFormError.UnestablishedSourceForms;
+    if (census.count > source_form_capacity) return SourceFormError.UnestablishedSourceForms;
+    const count: usize = @intCast(census.count);
+
+    var seen: [source_form_capacity][]const u8 = undefined;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const ordinal: i64 = @intCast(i + 1);
+        if (sourceLawFromName(census.law(ordinal)) == null)
+            return SourceFormError.UnnamedSourceLaw;
+        const suffix = std.mem.span(census.suffix(ordinal));
+        if (suffix.len == 0) return SourceFormError.UnestablishedSourceForms;
+        for (seen[0..i]) |prior| {
+            if (std.mem.eql(u8, prior, suffix)) return SourceFormError.AmbiguousSourceForm;
+        }
+        seen[i] = suffix;
+    }
+
+    // The count has to cover what the producer publishes rather than a prefix
+    // of it. The producer answers nothing past its last form, so an ordinal
+    // beyond the census that still publishes one is a short census — and the
+    // walk it admits answers cleanly about forms it never saw.
+    const past: i64 = @intCast(count + 1);
+    if (sourceLawFromName(census.law(past)) != null or std.mem.span(census.suffix(past)).len != 0)
+        return SourceFormError.PartialSourceFormCensus;
+
+    source_form_walks += 1;
+    return census.count;
+}
+
+/// The established census, bound once. A refusal is held rather than retried:
+/// the producer answers the same census on every call, so a second ask is a
+/// second chance to read unknown as clean.
+fn establishedSourceForms() SourceFormError!i64 {
+    if (source_form_refusal) |refusal| return refusal;
+    if (source_form_count > 0) return source_form_count;
+    const count = bindSourceFormCensus(.{
+        .count = sourceformcount(),
+        .law = &sourceformlaw,
+        .suffix = &sourceformsuffix,
+    }) catch |refusal| {
+        source_form_refusal = refusal;
+        return refusal;
+    };
+    source_form_count = count;
+    return count;
+}
+
+fn refuseSourceForms(refusal: SourceFormError) ?SourceForm {
+    source_form_refusal = refusal;
+    source_form_count = 0;
+    return null;
+}
+
+/// The established census, or an empty walk that cannot be read as a clean one:
+/// the same recorded refusal that empties it makes `sourceFacts` answer unknown
+/// for every path, so no consumer acts on the difference between "the producer
+/// publishes no form here" and "the host could not establish what it publishes".
 pub fn sourceForms() SourceFormIterator {
-    const count = sourceformcount();
-    return .{ .count = if (count > 0 and count <= 64) count else 0 };
+    return .{ .count = establishedSourceForms() catch 0 };
 }
 
 /// Physical anchor for the repo-relative provenance spelling consumed by the
@@ -158,6 +264,12 @@ fn producerPath(path: []const u8, out: []u8) ?[:0]const u8 {
 /// fallback. Later stages consume this returned fact / `lex.family`; they never
 /// inspect the path again to select source meaning.
 pub fn sourceFacts(path: []const u8) SourceFacts {
+    // The producer's published physical forms are what a law is selected from,
+    // and `sourcepathformlaw` walks that same census inside the producer. Until
+    // the host has established it, no path names a source law: nothing
+    // tokenizes through a producer whose form census the host could not read.
+    _ = establishedSourceForms() catch return .{ .law = .unknown, .provenance = .unknown };
+
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const producer_path = corpusRelative(path, &path_buf) orelse
         producerPath(path, &path_buf) orelse
@@ -368,4 +480,158 @@ test "lexer bridge: an unresolvable path still reaches its unlisted fallback" {
     try std.testing.expectEqual(SourceLaw.idol, gone_id.law);
     try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("no/such/place/absent.txt").law);
     try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("").law);
+}
+
+// Each planted census below differs from the producer's real one in exactly one
+// respect and must fail closed with its own identity.
+
+/// The producer publishes a first form whose law the host has no name for.
+fn unnamedSourceFormLaw(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == 1) return "bash";
+    return sourceformlaw(i);
+}
+
+/// The same, at the last entry: only a walk that reaches the end sees it.
+fn lastUnnamedSourceFormLaw(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == sourceformcount()) return "bash";
+    return sourceformlaw(i);
+}
+
+/// An ordinal the census counts but publishes nothing at.
+fn absentSourceFormSuffix(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == sourceformcount()) return "";
+    return sourceformsuffix(i);
+}
+
+/// The last form repeats the first form's suffix, so one suffix would select
+/// two laws and proving "every form is named" would prove one form twice.
+fn repeatedSourceFormSuffix(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == sourceformcount()) return sourceformsuffix(1);
+    return sourceformsuffix(i);
+}
+
+test "lexer bridge: the producer's source-form census governs law selection" {
+    const real: SourceFormCensus = .{
+        .count = sourceformcount(),
+        .law = &sourceformlaw,
+        .suffix = &sourceformsuffix,
+    };
+    // Both ends of the walk have to be reachable, and the short-census control
+    // needs an ordinal to drop.
+    try std.testing.expect(real.count >= 2);
+
+    // The bound census is total, and the walk covers all of it rather than a
+    // prefix: without this the refusals below are satisfied by a walk that
+    // visited nothing.
+    const before = source_form_walks;
+    try std.testing.expectEqual(real.count, try bindSourceFormCensus(real));
+    try std.testing.expectEqual(before + 1, source_form_walks);
+
+    // empty: a census that publishes nothing arrived as a walk of zero forms,
+    // which reads exactly like a producer that admits none.
+    try std.testing.expectError(SourceFormError.UnestablishedSourceForms, bindSourceFormCensus(.{
+        .count = 0,
+        .law = real.law,
+        .suffix = real.suffix,
+    }));
+
+    // not a count: a census answering with something that is not a number of
+    // entries is unknown, never zero.
+    try std.testing.expectError(SourceFormError.UnestablishedSourceForms, bindSourceFormCensus(.{
+        .count = -1,
+        .law = real.law,
+        .suffix = real.suffix,
+    }));
+
+    // over-long: a census the host cannot hold cannot be proved distinct.
+    try std.testing.expectError(SourceFormError.UnestablishedSourceForms, bindSourceFormCensus(.{
+        .count = source_form_capacity + 1,
+        .law = real.law,
+        .suffix = real.suffix,
+    }));
+
+    // short: the census counts fewer forms than the producer publishes, so a
+    // walk of it answers cleanly about a form it never saw.
+    try std.testing.expectError(SourceFormError.PartialSourceFormCensus, bindSourceFormCensus(.{
+        .count = real.count - 1,
+        .law = real.law,
+        .suffix = real.suffix,
+    }));
+
+    // Unnamed at both ends, so neither a walk that stops after the first entry
+    // nor one that checks only the last can pass.
+    try std.testing.expectError(SourceFormError.UnnamedSourceLaw, bindSourceFormCensus(.{
+        .count = real.count,
+        .law = &unnamedSourceFormLaw,
+        .suffix = real.suffix,
+    }));
+    try std.testing.expectError(SourceFormError.UnnamedSourceLaw, bindSourceFormCensus(.{
+        .count = real.count,
+        .law = &lastUnnamedSourceFormLaw,
+        .suffix = real.suffix,
+    }));
+
+    // Malformed evidence rather than a law the host failed to name, and the two
+    // are separable: an ordinal that publishes nothing, and two forms sharing a
+    // suffix.
+    try std.testing.expectError(SourceFormError.UnestablishedSourceForms, bindSourceFormCensus(.{
+        .count = real.count,
+        .law = real.law,
+        .suffix = &absentSourceFormSuffix,
+    }));
+    try std.testing.expectError(SourceFormError.AmbiguousSourceForm, bindSourceFormCensus(.{
+        .count = real.count,
+        .law = real.law,
+        .suffix = &repeatedSourceFormSuffix,
+    }));
+
+    // A refused census is not a walk. Without this a bind that counted its own
+    // refusals would satisfy the separability the ingress control below rests on.
+    try std.testing.expectEqual(before + 1, source_form_walks);
+}
+
+test "lexer bridge: ingress binds through the governed census" {
+    const held_count = source_form_count;
+    const held_refusal = source_form_refusal;
+    defer {
+        source_form_count = held_count;
+        source_form_refusal = held_refusal;
+    }
+
+    // `sourceFacts` is the one ingress that selects a source law and it is on
+    // the path of every production tokenize. Selecting a law must ADVANCE the
+    // walk; asserting only that it answers stays green with the census call
+    // deleted, which is the shape that makes a transfer decorative. An earlier
+    // test may have bound the census already, so unbind.
+    source_form_count = 0;
+    source_form_refusal = null;
+    const before = source_form_walks;
+    try std.testing.expectEqual(SourceLaw.idol, sourceFacts("compiler.id").law);
+    try std.testing.expectEqual(before + 1, source_form_walks);
+
+    // Bound once, so a second ingress walks nothing further.
+    try std.testing.expectEqual(SourceLaw.lua, sourceFacts("compiler.lua").law);
+    try std.testing.expectEqual(before + 1, source_form_walks);
+
+    // ...and a census the host could not establish is not a clean one: no path
+    // names a law, and the form walk every consumer reads is empty for the same
+    // recorded reason rather than for a fact about the tree.
+    source_form_count = 0;
+    source_form_refusal = SourceFormError.UnestablishedSourceForms;
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.id").law);
+    var forms = sourceForms();
+    try std.testing.expect(forms.next() == null);
+
+    // A walk that outruns the census is the producer changing under one the
+    // bind established. The iterator records that instead of skipping the
+    // ordinal, so the walk ends AND no path names a law afterwards — one fact,
+    // not two. A walk that skipped instead would end in the same place and
+    // leave law selection answering.
+    source_form_count = 0;
+    source_form_refusal = null;
+    var past: SourceFormIterator = .{ .count = sourceformcount() + 1 };
+    var walked: usize = 0;
+    while (past.next()) |_| walked += 1;
+    try std.testing.expectEqual(@as(usize, @intCast(sourceformcount())), walked);
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.id").law);
 }
