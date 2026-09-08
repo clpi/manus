@@ -4,23 +4,24 @@
 # projection src/grammar_role_table.zig. A host module may not carry a second
 # spelling -> token identity table, and a deleted one may not come back.
 #
-# Deletion history, the two named specimens, and why a call-graph census cannot
-# see a zero-consumer producer: gaps/GAP-145.md. Not repeated here.
+# Deletion history, the two named specimens, why this runner is separate from
+# gate/token/read.sh, and why a call-graph census cannot see a zero-consumer
+# producer: gaps/GAP-145.md. Not repeated here.
 #
 # The gate refuses the CLASS (law.repair.class), so its predicate is a ROW
 # recognised by shape: a brace group carrying a text literal beside an owner
-# IDENTITY at its own nesting level. The identity side is a name the owner
-# declares, read from its projection, not the `.kw_` spelling that name happens
-# to wear — a prefix is a spelling, and matching a row by a spelling is the
-# drift this gate has already been repaired for five times. So the identity is
+# IDENTITY at its own nesting level. The identity side is a name the OWNER
+# declares, read from its projection, not the `.kw_` prefix that name happens to
+# wear — a prefix is a spelling, and every repair this gate has needed was a
+# reshaping that its previous spelling could not see. So the identity is
 # recognised as `.name`, as a bare `name`, and inside a text literal that spells
-# it, which is how a row reconstructs identity from source text.
-# `;` and `=>` disqualify it, because they
-# are what separates a row from a BLOCK — a function body, a test, a switch
-# prong all name identities and hold strings, and reporting those reports the
-# ordinary consumers this tree is made of. A group enclosing a row is the list,
-# not a further row. Section 6 plants every shape this replaces, so the shapes
-# it refuses are enumerated by the controls that run, not here.
+# it, which is how a row reconstructs identity from source text. `;` and `=>`
+# disqualify a group, because they are what separates a row from a BLOCK — a
+# function body, a test, a switch prong all name identities and hold strings,
+# and reporting those reports the ordinary consumers this tree is made of. A
+# group enclosing a row is the list, not a further row. Section 6 plants every
+# shape this replaces, so the shapes it refuses are enumerated by the controls
+# that run, not here.
 #
 # The owner's generated projection is admitted BY PATH; a copy of its rows
 # anywhere else is a second producer.
@@ -169,7 +170,7 @@ ROWAWK
 # Every count predicate in this gate tests a number a walk produced, and
 # `[ "" -lt 0 ]` is not false — it is an ERROR, which `if` spends as false and
 # a gate spends as CLEAN. A walk that answered with nothing would therefore
-# retire twelve predicates at once and still reach PASS. An absent answer is
+# retire every count predicate at once and still reach PASS. An absent answer is
 # worse: the read leaves the variables holding the PREVIOUS walk's numbers, so
 # a later walk gets measured by an earlier one.
 #

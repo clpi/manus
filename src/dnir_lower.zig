@@ -9129,7 +9129,7 @@ fn textBindInStmt(stmt: *const ast.Stmt, name: []const u8, out: *TextBind) void 
 ///
 /// Two consumers need the same fact — `determinedTextLen` needs its EXTENT and
 /// `TextBind.note` needs the payload itself — and each spelled its own tag
-/// test for it. `gate/gap-145-consumer.sh` counts exactly that form and caps
+/// test for it. `gate/token/read.sh` counts exactly that form and caps
 /// it, because a consumer reaching a quoted node through an equality test on
 /// the tag is invisible to the switch-arm census GAP-145 reports (and the
 /// census counts the spelling, so this sentence does not write it): `planConcat` was

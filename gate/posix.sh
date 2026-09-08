@@ -1,12 +1,12 @@
 #!/bin/sh
 # gate/posix.sh — every shell gate must PARSE in a strict POSIX shell.
 #
-# WHY THIS EXISTS, precisely. `gate/gap-145-consumer.sh` was reported PASSING
+# WHY THIS EXISTS, precisely. `gate/token/read.sh` was reported PASSING
 # with 13 checks. It was, under this machine's /bin/sh, which is bash 3.2 in
 # POSIX mode. Under dash the same file is:
 #
-#     dash -n gate/gap-145-consumer.sh   ->  Syntax error: end of file unexpected, 2
-#     dash    gate/gap-145-consumer.sh   ->  aborts after the Python section, 2
+#     dash -n gate/token/read.sh   ->  Syntax error: end of file unexpected, 2
+#     dash    gate/token/read.sh   ->  aborts after the Python section, 2
 #
 # One line held a backtick pair inside a DOUBLE-quoted argument. bash parses
 # the substitution body lazily, so an unexecuted branch never complains; dash
