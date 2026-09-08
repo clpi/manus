@@ -4684,29 +4684,36 @@ const Arm64Compiler = struct {
                             pack_conflict = true;
                         }
                     }
-                    const pack_bytes: u16 = if (pack_conflict)
-                        @intCast(std.mem.alignForward(usize, ins.pack_results.len * 8, 16))
+                    // The pack answer's locations, assigned before the save
+                    // window opens (GAP-148, `parkOpenSlots`). The reservation
+                    // and the per-member coordinate now have ONE producer: the
+                    // store carried `save.stack_bytes + i * 8`, a literal true
+                    // only while the save window is the sole thing between the
+                    // reservation and the store, and the reload carried
+                    // `i * 8 - pack_bytes` from an `sp` the close had already
+                    // raised — a byte BELOW `sp`, kept by nothing.
+                    const pack_park: Park = if (pack_conflict)
+                        try self.parkOpenSlots(ins.pack_results.len)
                     else
-                        0;
+                        .{};
                     // The call result's location, assigned before the save
                     // window opens (GAP-148, `parkOpen`). Mutually exclusive
-                    // with `pack_bytes`, which that arm requires to be zero.
-                    const park: Park = if (pack_bytes == 0)
+                    // with the pack park, which that arm requires to be unset.
+                    const park: Park = if (pack_park.bytes == 0)
                         try self.parkOpen(ins.result != null)
                     else
                         .{};
-                    if (pack_bytes > 0) try self.emitSubSpTemp(pack_bytes);
                     const save = try self.emitSaveCallerRegs();
                     const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
                     try self.emitPopVarargs(vbytes);
-                    if (pack_bytes > 0) {
+                    if (pack_park.bytes > 0) {
                         for (ins.pack_results, 0..) |_, i| {
-                            try self.emitStrSp(@intCast(i), save.stack_bytes + @as(u16, @intCast(i * 8)));
+                            try self.emitStrSp(@intCast(i), try self.parkSlotDisp(pack_park, i));
                         }
                     }
                     var call_result: ?u5 = null;
-                    if (ins.result != null and pack_bytes == 0) {
+                    if (ins.result != null and pack_park.bytes == 0) {
                         // A SPILLED REGISTER IS NOT FREE HERE EITHER (GAP-148).
                         //
                         // `saveSetContains(save, 0)` is false in exactly two
@@ -4765,7 +4772,6 @@ const Arm64Compiler = struct {
                         }
                     }
                     try self.emitRestoreCallerRegs(save);
-                    if (pack_bytes > 0) try self.emitAddSpTemp(pack_bytes);
                     if (park.bytes > 0) {
                         // The assignment is the only thing keeping the byte
                         // this function's, so the read precedes the close. A
@@ -4780,14 +4786,16 @@ const Arm64Compiler = struct {
                         try self.parkClose(park);
                     }
                     try self.syncGateLocalTempsAfterCall(temps, pinned);
-                    if (pack_bytes > 0) {
+                    if (pack_park.bytes > 0) {
+                        // The assignment is the only thing keeping these bytes
+                        // this function's, so every read precedes the close.
                         for (ins.pack_results, 0..) |result, i| {
                             const temp = result.temp orelse continue;
                             const dst = try self.allocReg();
-                            const offset: i16 = @as(i16, @intCast(i * 8)) - @as(i16, @intCast(pack_bytes));
-                            try self.emitLdurSp(dst, offset);
+                            try self.emitLdrSp(dst, try self.parkSlotDisp(pack_park, i));
                             try temps.put(self.alloc, temp, dst);
                         }
+                        try self.parkClose(pack_park);
                     } else if (ins.pack_results.len > 0) {
                         for (ins.pack_results, 0..) |result, i| {
                             const temp = result.temp orelse continue;
@@ -9003,7 +9011,22 @@ const Arm64Compiler = struct {
     };
 
     fn parkOpen(self: *Arm64Compiler, wants_result: bool) Error!Park {
-        const bytes = self.parkReserve(wants_result);
+        return self.parkOpenBytes(self.parkReserve(wants_result));
+    }
+
+    /// The pack answer's reservation: one eight-byte slot per returned member,
+    /// on the sixteen-byte grid `emitSubSp` encodes.
+    fn parkReserveSlots(slots: usize) Error!u16 {
+        const bytes = std.mem.alignForward(usize, slots * 8, 16);
+        if (bytes > 65535) return error.RegisterExhausted;
+        return @intCast(bytes);
+    }
+
+    fn parkOpenSlots(self: *Arm64Compiler, slots: usize) Error!Park {
+        return self.parkOpenBytes(try parkReserveSlots(slots));
+    }
+
+    fn parkOpenBytes(self: *Arm64Compiler, bytes: u16) Error!Park {
         if (bytes == 0) return .{};
         try self.emitSubSpTemp(bytes);
         return .{ .bytes = bytes, .base = self.sp_temp_bytes };
@@ -9016,6 +9039,18 @@ const Arm64Compiler = struct {
         if (park.bytes == 0) return error.RegisterExhausted;
         if (self.sp_temp_bytes < park.base) return self.refuse(@src());
         return self.sp_temp_bytes - park.base;
+    }
+
+    /// The `[sp,#imm]` of the park's slot `index`, measured like `parkDisp`
+    /// from wherever `sp` stands. A slot past the reservation is not a byte
+    /// this park was assigned, and answers with the capacity error rather than
+    /// an encodable displacement into someone else's window.
+    fn parkSlotDisp(self: *Arm64Compiler, park: Park, index: usize) Error!u16 {
+        const off = index * 8;
+        if (off + 8 > park.bytes) return error.RegisterExhausted;
+        const disp: usize = @as(usize, try self.parkDisp(park)) + off;
+        if (disp > 65535) return error.RegisterExhausted;
+        return @intCast(disp);
     }
 
     /// Store the call's answer in the slot `parkOpen` assigned it.
@@ -9292,20 +9327,6 @@ const Arm64Compiler = struct {
     fn emitLdrSp(self: *Arm64Compiler, reg: u5, offset: u16) Error!void {
         const imm = try self.spScaledDisp(offset);
         try self.emitFmt(0xf94003e0 | (imm << 10) | @as(u32, reg), "ldr x{d}, [sp, #{d}]", .{ reg, offset });
-    }
-
-    /// Reload a just-returned pack member after restoring the ordinary stack
-    /// pointer. The temporary result area is immediately below `sp`; signed
-    /// unscaled addressing keeps every normal local/spill offset unchanged.
-    fn emitLdurSp(self: *Arm64Compiler, reg: u5, offset: i16) Error!void {
-        if (offset < -256 or offset > 255) return self.refuse(@src());
-        const bits: u16 = @bitCast(offset);
-        const imm9: u32 = @as(u32, bits & 0x01ff);
-        try self.emitFmt(
-            0xf84003e0 | (imm9 << 12) | @as(u32, reg),
-            "ldur x{d}, [sp, #{d}]",
-            .{ reg, offset },
-        );
     }
 
     /// Release `reg` only if it was scratch for this instruction. A `.temp` or a
@@ -21260,10 +21281,10 @@ test "an sp move off the sixteen-byte grid refuses before it moves the frame bas
 // callee-save slot for x19, or with neither the caller's own outgoing word.
 // The store reported success and the byte's owner reported nothing.
 //
-// The sibling pack arm never had this defect: it reserves `pack_bytes` BEFORE
-// the save and stores into that window, so its displacement is window-relative
-// by construction like every other raw `emitStrSp` the transfer left standing.
-// The scalar arm took the same addressing without the reservation.
+// The sibling pack arm reserved its window BEFORE the save, so its store never
+// named a frame byte; the scalar arm took the same addressing without the
+// reservation. Both now measure from an assigned coordinate rather than from a
+// literal — the pack's own residual is the test below this one.
 test "a parked call result names the slot it reserved and not the frame's" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -21437,6 +21458,127 @@ test "a parked call result keeps its location under a window it did not open" {
     // The close of one is the no-op that lets the arm publish nothing.
     try compiler.parkClose(.{});
     try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+}
+
+// THE PACK ANSWER'S SLOTS WERE TWO REWRITTEN LITERALS AND A BYTE BELOW `sp`
+// (GAP-148).
+//
+// The pack arm reserved its window before the save, so its store never named a
+// frame byte — but neither end of it named the RESERVATION either. The store
+// carried `save.stack_bytes + i * 8`, which is the assigned coordinate only
+// while the save window is the sole thing standing between the reservation and
+// the store; and the reload carried `i * 8 - pack_bytes` through `ldur`, taken
+// AFTER `emitAddSpTemp` had already raised `sp` past the window, so the answers
+// were read from bytes below `sp` that the close had returned to the caller and
+// nothing kept. Neither spelling reads `sp_temp_bytes`, so no predicate stated
+// what either assumed.
+//
+// `parkOpenSlots` assigns the locations before emission and `parkSlotDisp` is
+// the sole producer of each member's displacement, so every consumer measures
+// from the `sp` it actually stands on and the read precedes the close.
+// `emitLdurSp` had this one caller and is gone with it: no backend addressing
+// reaches below `sp`.
+test "a parked pack answer names the slots it reserved and reads them before the close" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // A resident that measures the park from OUTSIDE it, so each slot's true
+    // displacement is available without asking the park for it.
+    compiler.stack_frame_bytes = 96;
+    try compiler.gp_stack_locals.put(alloc, 0, 0);
+
+    // Three returned members on the sixteen-byte grid `emitSubSp` encodes.
+    compiler.used_regs[9] = true;
+    const park = try compiler.parkOpenSlots(3);
+    try std.testing.expectEqual(@as(u16, 32), park.bytes);
+    try std.testing.expectEqual(compiler.sp_temp_bytes, park.base);
+
+    const save = try compiler.emitSaveCallerRegs();
+
+    // CO-LOCATED CONTROL: with the save window alone between the reservation and
+    // the store, the location answers exactly the literal the store carried, so
+    // no program that opens no further window changes a byte.
+    try std.testing.expectEqual(save.stack_bytes, try compiler.parkSlotDisp(park, 0));
+    try std.testing.expectEqual(save.stack_bytes + 8, try compiler.parkSlotDisp(park, 1));
+    try std.testing.expectEqual(save.stack_bytes + 16, try compiler.parkSlotDisp(park, 2));
+
+    // CONTROL 1 — ASSIGNED THEN EMITTED FROM THE WRONG `sp` LITERAL.
+    // One more open — the shape `emitPushVarargs` and `preserve_x0` already
+    // have — and `save.stack_bytes + i * 8` names a byte 32 below slot `i`.
+    // Rejected by `parkSlotDisp`, which measures `sp_temp_bytes - park.base`.
+    try compiler.emitSubSpTemp(32);
+    try std.testing.expectEqual(save.stack_bytes + 32, try compiler.parkSlotDisp(park, 0));
+    try std.testing.expect(save.stack_bytes != try compiler.parkSlotDisp(park, 0));
+
+    // CONTROL 3 — THE SLOT MEASURED BY A THIRD PARTY, AND A BASE THAT IS NOT
+    // `parkOpen`'s. The resident at frame offset 0, addressed from this same
+    // `sp` through `frameDisp`, stands exactly `park.bytes` above slot 0, so
+    // the park's answer is checked against a coordinate family it does not
+    // produce. A base `sp` is not standing below was never reserved by this
+    // function; `parkDisp`'s `sp_temp_bytes < park.base` rejects it rather than
+    // measuring a negative distance into a `u16`.
+    const probe_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(0, 9);
+    const slot0 = spDisp(compiler.code.items[probe_at..][0..4].*) - park.bytes;
+    try std.testing.expectEqual(slot0, try compiler.parkSlotDisp(park, 0));
+    try std.testing.expectEqual(slot0 + 16, try compiler.parkSlotDisp(park, 2));
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        compiler.parkSlotDisp(.{ .bytes = park.bytes, .base = compiler.sp_temp_bytes + 16 }, 0),
+    );
+
+    // A SLOT PAST THE RESERVATION IS NOT THIS PARK'S BYTE, and answers with the
+    // capacity error rather than an encodable displacement into the neighbour.
+    try std.testing.expectError(error.RegisterExhausted, compiler.parkSlotDisp(park, 4));
+    try std.testing.expectError(error.RegisterExhausted, compiler.parkSlotDisp(.{}, 0));
+
+    // CONTROL 2 — THE CLOSE IS ORDERED, NOT ONLY SIZED. `emitAddSpTemp` admits
+    // a close of exactly this width here; taking it would leave `sp` 32 bytes
+    // inside the still-open window and every later `frameDisp` wrong by that.
+    // `parkClose`'s `sp_temp_bytes != park.base` is the predicate that rejects,
+    // and a refusal that had already encoded would have shipped the `add`.
+    try std.testing.expect(park.bytes <= compiler.sp_temp_bytes);
+    const at = compiler.code.items.len;
+    const asm_at = compiler.asm_text.items.len;
+    try std.testing.expectError(error.UnsupportedProgram, compiler.parkClose(park));
+    try std.testing.expectEqual(at, compiler.code.items.len);
+    try std.testing.expectEqual(asm_at, compiler.asm_text.items.len);
+
+    // THE STORES AND THE READS ARE ONE COORDINATE FAMILY across every `sp` the
+    // block stands on: the store side under the save window, the read side once
+    // it has closed, both from the reservation.
+    try compiler.emitAddSpTemp(32);
+    const store_at = compiler.code.items.len;
+    try compiler.emitStrSp(2, try compiler.parkSlotDisp(park, 2));
+    try std.testing.expectEqual(
+        save.stack_bytes + 16,
+        spDisp(compiler.code.items[store_at..][0..4].*),
+    );
+    try compiler.emitRestoreCallerRegs(save);
+    const read_at = compiler.code.items.len;
+    try compiler.emitLdrSp(2, try compiler.parkSlotDisp(park, 2));
+    try std.testing.expectEqual(@as(u16, 16), spDisp(compiler.code.items[read_at..][0..4].*));
+
+    // AND THE READ PRECEDED THE CLOSE. Afterwards the bytes are the caller's
+    // again and the retired reload's `i * 8 - pack_bytes` is below `sp`; the
+    // location refuses instead of encoding it.
+    try compiler.parkClose(park);
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+    try std.testing.expectError(error.UnsupportedProgram, compiler.parkSlotDisp(park, 2));
+    try std.testing.expectEqual(@as(u16, 0), try compiler.frameDisp(0));
 }
 
 test "the park reservation is the answer the save set will give" {
