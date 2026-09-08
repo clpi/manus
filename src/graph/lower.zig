@@ -20334,6 +20334,51 @@ test "dnir_lower: record writes require the exact value origin" {
     try std.testing.expectEqualStrings("record-field-write-value", diagnostic.note().?);
 }
 
+test "record writes consume computed value identity" {
+    const source = "record: {code: i64}\nalter = (value: record): i64\n    value.code = value.code + 6\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(13))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    var lexer = @import("../lexer.zig").Lexer.init(source, "write.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("../sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "write.id");
+    const declaration = &module.body.stmts[1].func_decl;
+    const expression = declaration.func.body.stmts[0].assign.values[0];
+    try std.testing.expect(expression.* == .binop);
+    const value = graph.valueByAst(expression) orelse return error.MissingValue;
+    try std.testing.expectEqual(@as(?*const anyopaque, @ptrCast(declaration)), graph.get(graph.get(value).?.scope.?).?.ast_ref);
+    try std.testing.expect(graph.get(value).?.descriptor.?.eql(checked.exprDescriptor(expression).?));
+    try std.testing.expect(graph.exactI64(value) == null);
+    const literal = graph.valueByAst(expression.binop.rhs).?;
+    try std.testing.expect(value != literal);
+    try std.testing.expectEqual(@as(i64, 6), graph.exactI64(literal).?);
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(expression)));
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-write-value", diagnostic.note().?);
+    try graph.value_by_ast.put(alloc, @intFromPtr(expression), literal);
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-write-value", diagnostic.note().?);
+    try graph.value_by_ast.put(alloc, @intFromPtr(expression), value);
+    graph.nodes.items[value].descriptor = .str;
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-write-carrier", diagnostic.note().?);
+}
+
 test "dnir_lower: record arguments follow the target field order" {
     const cases = [_]struct { source: []const u8, slots: []const dnir.Value }{
         .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n", .slots = &.{ .{ .i64 = 2 }, .{ .local = 0 }, .{ .i64 = 5 } } },

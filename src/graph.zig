@@ -6173,7 +6173,21 @@ pub const SemanticGraph = struct {
                 .global_decl => |*gd| for (gd.inits) |seed| try self.liftLiteralFactsInExpr(file, scope, seed, context),
                 .assign => |*asg| {
                     for (asg.targets) |target| try self.liftLiteralFactsInExpr(file, scope, target, context);
-                    for (asg.values) |value| try self.liftLiteralFactsInExpr(file, scope, value, context);
+                    for (asg.values) |value| {
+                        try self.liftLiteralFactsInExpr(file, scope, value, context);
+                        if (value.* != .binop or self.valueByAst(value) != null) continue;
+                        const descriptor = context.read(value) orelse continue;
+                        if (types.scalarFieldCell(descriptor) == null) continue;
+                        const loc = value.loc();
+                        _ = try self.addChild(scope, .{
+                            .kind = .value,
+                            .span = .{ .file = file, .start = loc.line, .end = loc.col },
+                            .descriptor = descriptor,
+                            .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+                            .stage = .sema,
+                            .ast_ref = @ptrCast(@constCast(value)),
+                        });
+                    }
                     for (asg.targets, 0..) |target, i| {
                         if (direct_module and target.* == .name and i < asg.values.len) {
                             try Initialization.lift(self, context, stmt, target.name.ident, asg.values[i]);
