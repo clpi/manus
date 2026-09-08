@@ -65,8 +65,8 @@ with tempfile.TemporaryDirectory(prefix='idol-mcp-', dir=os.environ.get('TMPDIR'
     root = base / 'source'
     root.mkdir()
     git = shutil.which('git')
-    def command(*args):
-        return subprocess.check_output([git, '-C', str(root), *args], stderr=subprocess.PIPE, text=True).strip()
+    def command(*arg):
+        return subprocess.check_output([git, '-C', str(root), *arg], stderr=subprocess.PIPE, text=True).strip()
     command('init', '-q')
     command('config', 'user.email', 'test@invalid')
     command('config', 'user.name', 'test')
@@ -76,9 +76,9 @@ with tempfile.TemporaryDirectory(prefix='idol-mcp-', dir=os.environ.get('TMPDIR'
     command('remote', 'add', 'origin', 'git@github.com:clpi/idol.git')
     head = command('rev-parse', 'HEAD')
     before = digest(root)
-    binaries = base / 'bin'
-    binaries.mkdir()
-    wrapper = binaries / 'git'
+    bin = base / 'bin'
+    bin.mkdir()
+    wrapper = bin / 'git'
     wrapper.write_text('#!' + sys.executable + '\n' + '''import os,pathlib,subprocess,sys,time
 if 'ls-remote' in sys.argv:
  mode=os.environ['MODE']
@@ -99,11 +99,11 @@ else:
  os.execv(''' + repr(git) + ''',[''' + repr(git) + ''',*sys.argv[1:]])
 ''')
     wrapper.chmod(0o755)
-    env = dict(os.environ, PATH=str(binaries) + os.pathsep + os.environ['PATH'],
+    env = dict(os.environ, PATH=str(bin) + os.pathsep + os.environ['PATH'],
                IDOL_ROOT=str(root), IDOL_BIN=str(server), IDOL_MODE='read', MODE='current', PEER=head,
                CHILD=str(base / 'child'), GIT_OPTIONAL_LOCKS='0')
-    def call(name='orient', changes=None, missing=False, arguments=None, cwd=source):
-        context = dict(env, **(changes or {}))
+    def call(name='orient', change=None, missing=False, argument=None, cwd=source):
+        context = dict(env, **(change or {}))
         if missing:
             context.pop('IDOL_ROOT', None)
         process = subprocess.Popen([str(server)], cwd=cwd, env=context,
@@ -120,7 +120,7 @@ else:
             process.stdin.flush()
             response = read()
             check(response['id'] == 1 and response['result']['serverInfo']['name'] == 'idol', 'initialize before EOF')
-            process.stdin.write(json.dumps({'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':name,'arguments':arguments or {}}}, separators=(',',':'))+'\n')
+            process.stdin.write(json.dumps({'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':name,'arguments':argument or {}}}, separators=(',',':'))+'\n')
             process.stdin.flush()
             response = read()
             check(response['id'] == 2 and response['jsonrpc'] == '2.0', 'actual tool response identity')
@@ -139,24 +139,24 @@ else:
     result = call('status')
     check(result['isError'] is False and result['content'][0]['text'].startswith('## '), 'current status')
     result = call()
-    facts = json.loads(result['content'][0]['text'])
-    check(result['isError'] is False and facts['head'] == head and facts['remote']['head'] == head
-          and facts['root'] == str(root) and facts['dirty'] == 0, 'current authority')
-    check(facts['artifact']['digest'] == hashlib.sha256(server.read_bytes()).hexdigest()
-          and facts['artifact']['source'] is None, 'artifact source remains unbound')
+    fact = json.loads(result['content'][0]['text'])
+    check(result['isError'] is False and fact['head'] == head and fact['remote']['head'] == head
+          and fact['root'] == str(root) and fact['dirty'] == 0, 'current authority')
+    check(fact['artifact']['digest'] == hashlib.sha256(server.read_bytes()).hexdigest()
+          and fact['artifact']['source'] is None, 'artifact source remains unbound')
     check(digest(root) == before, 'no target tracked untracked index or config writes')
-    result = call(changes={'PEER':'0'*40})
-    facts = json.loads(result['content'][0]['text'])
-    check(result['isError'] is True and facts['state'] == 'stale' and facts['head'] == head
-          and facts['remote']['head'] == '0'*40, 'stale subject refused')
+    result = call(change={'PEER':'0'*40})
+    fact = json.loads(result['content'][0]['text'])
+    check(result['isError'] is True and fact['state'] == 'stale' and fact['head'] == head
+          and fact['remote']['head'] == '0'*40, 'stale subject refused')
     for name in ('head', 'status'):
         result = call(name, {'PEER':'0'*40})
         check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'stale', name + ' cannot skip freshness')
     for mode in ('offline', 'malformed'):
-        result = call(changes={'MODE':mode})
-        facts = json.loads(result['content'][0]['text'])
-        check(result['isError'] is True and facts['state'] == 'unavailable'
-              and facts['remote']['head'] is None and 'private credential' not in json.dumps(result), mode)
+        result = call(change={'MODE':mode})
+        fact = json.loads(result['content'][0]['text'])
+        check(result['isError'] is True and fact['state'] == 'unavailable'
+              and fact['remote']['head'] is None and 'private credential' not in json.dumps(result), mode)
     command('remote','set-url','origin','https://credential@foreign.invalid/private')
     result = call()
     check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'foreign'
@@ -168,7 +168,7 @@ else:
     check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'dirty'
           and digest(root) == dirty, 'dirty source preserved')
     (root/'untracked').unlink()
-    result = call(changes={'IDOL_MODE':'unknown'})
+    result = call(change={'IDOL_MODE':'unknown'})
     check(result['isError'] is True and json.loads(result['content'][0]['text'])['reason'] == 'mode', 'unknown mode refuses')
     ordinary = call('head', {'IDOL_MODE':'','MODE':'offline'})
     check('isError' not in ordinary and ordinary['content'][0]['text'] == subprocess.check_output([git,'-C',str(source),'rev-parse','HEAD'],text=True).strip(), 'ordinary candidate head unchanged')
@@ -177,28 +177,28 @@ else:
     doc.parent.mkdir(parents=True)
     doc.write_text('#!/bin/sh\nprintf touched > reached\nprintf "%s" "$1" > argument\nprintf "doc: FAIL fixture"\n')
     doc.chmod(0o755)
-    arguments = {'file':str(root/'fact'), 'name':'concept'}
+    argument = {'file':str(root/'fact'), 'name':'concept'}
     for name, mode in (('concept','read'), ('head','read'), ('head','unknown')):
-        result = call(name, {'IDOL_MODE':mode}, arguments=arguments, cwd=private)
+        result = call(name, {'IDOL_MODE':mode}, argument=argument, cwd=private)
         check(result['error']['code'] == -32000 and 'connection mode' in result['error']['message']
               and not (private/'reached').exists(), name + ' cannot execute in ' + mode)
-    result = call('concept', {'IDOL_MODE':''}, arguments=arguments, cwd=private)
+    result = call('concept', {'IDOL_MODE':''}, argument=argument, cwd=private)
     check(result['error']['code'] == -32000 and (private/'reached').read_text() == 'touched', 'ordinary concept path remains executable')
     for subject in ("path with space.id", "quo'te.id", "' ;touch injected; $(touch injected) `touch injected` .id"):
-        result = call('concept', {'IDOL_MODE':''}, arguments={'file':subject}, cwd=private)
+        result = call('concept', {'IDOL_MODE':''}, argument={'file':subject}, cwd=private)
         check(result['error']['code'] == -32000 and (private/'argument').read_text() == subject
               and not (private/'injected').exists(), 'exact single shell argument ' + subject)
     result = call(missing=True)
     check(result['isError'] is True and json.loads(result['content'][0]['text'])['root'] is None, 'explicit root required')
     alias = base/'alias'
     alias.symlink_to(root,target_is_directory=True)
-    result = call(changes={'IDOL_ROOT':str(alias)})
+    result = call(change={'IDOL_ROOT':str(alias)})
     check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'invalid', 'root alias refused')
-    result = call(changes={'MODE':'changed'})
+    result = call(change={'MODE':'changed'})
     check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'changed', 'changing source refused')
     (root/'change').unlink()
     began = time.monotonic()
-    result = call(changes={'MODE':'timeout'})
+    result = call(change={'MODE':'timeout'})
     check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'unavailable'
           and time.monotonic()-began < 12, 'remote deadline bounded')
     child = int((base/'child').read_text())
