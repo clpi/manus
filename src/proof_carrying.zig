@@ -66,7 +66,7 @@ pub const Capability = struct {
 pub const seed_capabilities: []const Capability = &.{
     .{ .id = "cap.cli.compile", .description = "CLI compile orchestration", .status = .supported, .owner = "src/main.zig" },
     .{ .id = "cap.cli.backend_direct", .description = "Explicit --backend=direct selection", .status = .partial, .owner = "src/main.zig" },
-    .{ .id = "cap.native_backend.arm64", .description = "Direct ARM64 Mach-O subset", .status = .experimental, .owner = "src/native_backend.zig" },
+    .{ .id = "cap.native_backend.arm64", .description = "Direct ARM64 Mach-O subset", .status = .experimental, .owner = "src/native.zig" },
     .{ .id = "cap.bootstrap.id_chain", .description = "Zig seed → Duo B → Duo C bootstrap", .status = .planned, .owner = "(archived, deleted — git history)" },
     .{ .id = "cap.repr.native_scalar", .description = "Full native_scalar module without lua runtime", .status = .partial, .owner = "src/codegen.zig" },
     .{ .id = "cap.bench.direct", .description = "Canonical direct-native benchmark profile", .status = .partial, .owner = "src/backend_identity.zig" },

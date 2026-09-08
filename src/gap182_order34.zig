@@ -4,7 +4,7 @@
 // Measured at e7b3dc0b + this diff: `zig build gap182-order34`.
 const std = @import("std");
 const assumption_guard = @import("assumption_guard.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const effect = @import("effect.zig");
 const sema = @import("sema.zig");
 const ast = @import("ast.zig");

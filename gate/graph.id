@@ -18,10 +18,10 @@ transport: str = ()
   text
 
 scope: bool = (path: str)
-  path == "src/semantic_graph.zig" or path == "src/graph_query.zig"
+  path == "src/graph.zig" or path == "src/graph_query.zig"
 
 consumer: bool = (path: str)
-  path == "src/sim_pipeline.zig" or path == "src/knowledge_snapshot.zig" or path == "src/dnir_lower.zig"
+  path == "src/sim_pipeline.zig" or path == "src/knowledge_snapshot.zig" or path == "src/graph/lower.zig"
 
 row: i64 = (path: str, no: i64, code: str, id: str, needle: str, law: str, fix: str)
   if !code:has(needle)
@@ -236,41 +236,41 @@ scan: i64 = (body: str)
 
 control: bool = ()
   ok = true
-  if audit("src/semantic_graph.zig", 1, "x = referencesDescriptorName(n)") == 0
+  if audit("src/graph.zig", 1, "x = referencesDescriptorName(n)") == 0
     print("control FAIL: graph.name did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 2, "r = classifyDescriptorRecursionFromEdges(g, a, d)") != 0
+  if audit("src/graph.zig", 2, "r = classifyDescriptorRecursionFromEdges(g, a, d)") != 0
     print("control FAIL: classifyDescriptorRecursionFromEdges rejected")
     ok = false
-  if audit("src/semantic_graph.zig", 3, "r = classifyDescriptorRecursion(g, a, d)") == 0
+  if audit("src/graph.zig", 3, "r = classifyDescriptorRecursion(g, a, d)") == 0
     print("control FAIL: graph.recursion did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 4, "if edge.kind == .relation") == 0
+  if audit("src/graph.zig", 4, "if edge.kind == .relation") == 0
     print("control FAIL: graph.edge.relation did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 5, 'try self.addEdge(.{ .kind = .capture })') != 0
+  if audit("src/graph.zig", 5, 'try self.addEdge(.{ .kind = .capture })') != 0
     print("control FAIL: lawful .kind = .capture rejected")
     ok = false
-  if audit("src/semantic_graph.zig", 6, "k = EdgeKind.run") == 0
+  if audit("src/graph.zig", 6, "k = EdgeKind.run") == 0
     print("control FAIL: graph.edge.run did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 36, "k = EdgeKind.convert") == 0
+  if audit("src/graph.zig", 36, "k = EdgeKind.convert") == 0
     print("control FAIL: graph.edge.convert did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 37, "k = EdgeKind.compile") == 0
+  if audit("src/graph.zig", 37, "k = EdgeKind.compile") == 0
     print("control FAIL: graph.edge.compile did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 38, "k = EdgeKind.lower") == 0
+  if audit("src/graph.zig", 38, "k = EdgeKind.lower") == 0
     print("control FAIL: graph.edge.lower did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 39, "k = EdgeKind.emit") == 0
+  if audit("src/graph.zig", 39, "k = EdgeKind.emit") == 0
     print("control FAIL: graph.edge.emit did not fire")
     ok = false
   # Was `EdgeKind.transform_output`, which is DELETED — it was written on every
   # compile and read by nothing but its own JSON label. A positive control must
   # name a kind that still exists, or it teaches the next reader a tag that is
   # not there. `provenance` is the replacement and is equally lawful here.
-  if audit("src/semantic_graph.zig", 40, "k = EdgeKind.provenance") != 0
+  if audit("src/graph.zig", 40, "k = EdgeKind.provenance") != 0
     print("control FAIL: lawful EdgeKind.provenance rejected")
     ok = false
   if audit("src/graph_query.zig", 7, "return graph.findFunc(\"main\")") == 0
@@ -288,37 +288,37 @@ control: bool = ()
   if audit("src/sim_pipeline.zig", 12, "const node = graph.tableShapeEntity(record)") != 0
     print("control FAIL: tableShapeEntity rejected in consumer")
     ok = false
-  if audit("src/semantic_graph.zig", 13, "    source_file,") == 0
+  if audit("src/graph.zig", 13, "    source_file,") == 0
     print("control FAIL: source_file NodeKind did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 14, "    concept,") == 0
+  if audit("src/graph.zig", 14, "    concept,") == 0
     print("control FAIL: concept NodeKind did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 15, "    emit_artifact,") == 0
+  if audit("src/graph.zig", 15, "    emit_artifact,") == 0
     print("control FAIL: emit_artifact NodeKind did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 21, "    type_node,") == 0
+  if audit("src/graph.zig", 21, "    type_node,") == 0
     print("control FAIL: type_node NodeKind did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 16, "    type_of,") == 0
+  if audit("src/graph.zig", 16, "    type_of,") == 0
     print("control FAIL: type_of EdgeKind did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 17, "    transform_input,") == 0
+  if audit("src/graph.zig", 17, "    transform_input,") == 0
     print("control FAIL: transform_input EdgeKind did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 18, "    def,") == 0
+  if audit("src/graph.zig", 18, "    def,") == 0
     print("control FAIL: def EdgeKind did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 19, "    use,") == 0
+  if audit("src/graph.zig", 19, "    use,") == 0
     print("control FAIL: use EdgeKind did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 20, "    .kind = .binding") != 0
+  if audit("src/graph.zig", 20, "    .kind = .binding") != 0
     print("control FAIL: lawful binding edge rejected")
     ok = false
-  if audit("src/semantic_graph.zig", 22, "findCallsBySourceCallee(") == 0
+  if audit("src/graph.zig", 22, "findCallsBySourceCallee(") == 0
     print("control FAIL: source-callee recovery did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 23, "findCallsBySourceMethod(") == 0
+  if audit("src/graph.zig", 23, "findCallsBySourceMethod(") == 0
     print("control FAIL: source-method recovery did not fire")
     ok = false
   if audit("src/graph_query.zig", 24, "return representationForRecord(g, r)") == 0
@@ -327,31 +327,31 @@ control: bool = ()
   if audit("src/graph_query.zig", 25, "return descriptor(g, r)") != 0
     print("control FAIL: lawful descriptor query rejected")
     ok = false
-  if audit("src/semantic_graph.zig", 26, 'try self.addEdge(.{ .kind = .home })') == 0
+  if audit("src/graph.zig", 26, 'try self.addEdge(.{ .kind = .home })') == 0
     print("control FAIL: home edge publish did not fire")
     ok = false
   if audit("src/graph_query.zig", 27, "return hardwareDescriptorsOfModule(a, m)") == 0
     print("control FAIL: hardwareDescriptorsOfModule did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 28, "return shapeScopeLabel(node)") == 0
+  if audit("src/graph.zig", 28, "return shapeScopeLabel(node)") == 0
     print("control FAIL: shapeScopeLabel did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 29, "try self.requireHome(entity)") != 0
+  if audit("src/graph.zig", 29, "try self.requireHome(entity)") != 0
     print("control FAIL: requireHome rejected")
     ok = false
-  if audit("src/semantic_graph.zig", 30, "rt = resolveTableShapeType(node)") == 0
+  if audit("src/graph.zig", 30, "rt = resolveTableShapeType(node)") == 0
     print("control FAIL: resolveTableShapeType did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 31, "try self.appendMembersJson(out, alloc, shape)") != 0
+  if audit("src/graph.zig", 31, "try self.appendMembersJson(out, alloc, shape)") != 0
     print("control FAIL: appendMembersJson rejected")
     ok = false
-  if audit("src/semantic_graph.zig", 32, "descriptor_label") == 0
+  if audit("src/graph.zig", 32, "descriptor_label") == 0
     print("control FAIL: descriptor_label did not fire")
     ok = false
-  if audit("src/dnir_lower.zig", 33, "funcResultDescriptor(") == 0
+  if audit("src/graph/lower.zig", 33, "funcResultDescriptor(") == 0
     print("control FAIL: funcResultDescriptor did not fire")
     ok = false
-  if audit("src/dnir_lower.zig", 34, "functionResultDescriptor(") != 0
+  if audit("src/graph/lower.zig", 34, "functionResultDescriptor(") != 0
     print("control FAIL: lawful functionResultDescriptor rejected")
     ok = false
   if audit("src/knowledge_snapshot.zig", 35, "findByNameOfKind(") == 0
@@ -366,7 +366,7 @@ graph: i64 = ()
   body = transport()
   if body:len() == 0
     print("gate/graph: empty input - pipe unified diff on stdin")
-    print("Usage: git diff -U0 --cached -- src/semantic_graph.zig ... | idol run gate/graph.id")
+    print("Usage: git diff -U0 --cached -- src/graph.zig ... | idol run gate/graph.id")
     return 3
   total = scan(body)
   print("")

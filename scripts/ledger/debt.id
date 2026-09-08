@@ -79,7 +79,7 @@ zigcontrol: i64 = ()
   if zigbucket("src/parser.zig") != "zigfront"
     print("ledger/debt: fail control zigfront")
     bad = bad + 1
-  if zigbucket("src/native_backend.zig") != "zignative"
+  if zigbucket("src/native.zig") != "zignative"
     print("ledger/debt: fail control zignative")
     bad = bad + 1
   if zigbucket("src/wasm_semantic.zig") != "zigwasm"

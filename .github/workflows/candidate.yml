@@ -23,11 +23,13 @@ concurrency:
 jobs:
   candidate:
     name: Exact protected-base candidate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, idol]
     timeout-minutes: 60
     env:
       CANDIDATE_BASE: ${{ github.event.pull_request.base.sha }}
       CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
+      IDOL_BUILD_LOCK: /tmp/idol-lock
+      IDOL_LOCK_HELD: '0'
     steps:
       # pull_request_target loads this workflow from the base revision. The
       # candidate checkout is data only: no candidate source is compiled or
@@ -53,9 +55,11 @@ jobs:
           path: candidate-head
 
       - name: Bind exact repositories and ancestry
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
+          test -d "$RUNNER_TEMP"
+          printf 'TMPDIR=%s\nTMP=%s\nTEMP=%s\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
           basework="$GITHUB_WORKSPACE/protected-base"
           headwork="$GITHUB_WORKSPACE/candidate-head"
           test "$GITHUB_SHA" = "$CANDIDATE_BASE"
@@ -67,10 +71,24 @@ jobs:
           fi
           test -z "$(git -C "$basework" status --porcelain=v1 --untracked-files=all)"
           test -z "$(git -C "$headwork" status --porcelain=v1 --untracked-files=all)"
+          python3 - "$basework" "$GITHUB_EVENT_PATH" "$CANDIDATE_BASE" "$CANDIDATE_HEAD" <<'PY'
+          import runpy
+          import sys
+          from types import SimpleNamespace
+          verifier = runpy.run_path(sys.argv[1] + "/tools/node/dev/candidate")
+          try:
+              value, _, _, _ = verifier["contract"](SimpleNamespace(event=sys.argv[2], contractfile=None))
+              if (value["base"], value["head"]) != tuple(sys.argv[3:5]):
+                  sys.exit(1)
+          except verifier["Refusal"] as error:
+              print(f"candidate.refused code={error.code} reason={error.message}", file=sys.stderr)
+              sys.exit(error.code)
+          PY
           bundle="$RUNNER_TEMP/idol-protected-base.bundle"
           git -C "$basework" bundle create "$bundle" HEAD
           git -C "$headwork" fetch --no-tags "$bundle" HEAD
           git -C "$headwork" cat-file -e "$CANDIDATE_BASE^{commit}"
+          git -C "$headwork" merge-base --is-ancestor "$CANDIDATE_BASE" "$CANDIDATE_HEAD"
           test "$(git -C "$headwork" rev-parse HEAD)" = "$CANDIDATE_HEAD"
           test -z "$(git -C "$headwork" status --porcelain=v1 --untracked-files=all)"
 
@@ -80,7 +98,7 @@ jobs:
           version: 0.17.0-dev.1567+f0354179a
 
       - name: Build exact protected-base compiler
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
@@ -93,6 +111,7 @@ jobs:
           (
             cd "$basework"
             ZIG_GLOBAL_CACHE_DIR="$zigglobal" TMPDIR="$buildtmp" TMP="$buildtmp" TEMP="$buildtmp" \
+              "$basework/tools/node/dev/idol-lock" --timeout 5 -- \
               zig build --cache-dir "$ziglocal" --prefix "$prefix"
           )
           test -z "$(git -C "$basework" status --porcelain=v1 --untracked-files=all)"
@@ -105,18 +124,19 @@ jobs:
           printf 'candidate.compiler sha256=%s\n' "$idolsha"
 
       - name: Exercise protected-base verifier controls
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
-          python3 "$basework/tools/node/dev/candidate" \
+          "$basework/tools/node/dev/idol-lock" --timeout 5 -- \
+            python3 "$basework/tools/node/dev/candidate" \
             --selftest \
             --idol "$IDOL_ADMISSION_COMPILER" \
             --idol-sha256 "$IDOL_ADMISSION_COMPILER_SHA256"
 
       - name: Structurally admit exact untrusted candidate
         id: structural
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
@@ -124,7 +144,8 @@ jobs:
           test "$(git -C "$headwork" rev-parse HEAD)" = "$CANDIDATE_HEAD"
           (
             cd "$headwork"
-            python3 "$basework/tools/node/dev/candidate" \
+            "$basework/tools/node/dev/idol-lock" --timeout 5 -- \
+              python3 "$basework/tools/node/dev/candidate" \
               --github-event "$GITHUB_EVENT_PATH" \
               --protected-base "$CANDIDATE_BASE" \
               --trusted-root "$basework" \
@@ -136,14 +157,15 @@ jobs:
       - name: Full semantic admission audit — non-admitting and currently unavailable
         id: full
         continue-on-error: true
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
           headwork="$GITHUB_WORKSPACE/candidate-head"
           (
             cd "$headwork"
-            python3 "$basework/tools/node/dev/candidate" \
+            "$basework/tools/node/dev/idol-lock" --timeout 5 -- \
+              python3 "$basework/tools/node/dev/candidate" \
               --github-event "$GITHUB_EVENT_PATH" \
               --protected-base "$CANDIDATE_BASE" \
               --trusted-root "$basework" \
@@ -154,7 +176,7 @@ jobs:
 
       - name: Record full semantic audit disposition
         if: ${{ always() && steps.structural.conclusion == 'success' }}
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           if test '${{ steps.full.outcome }}' = success; then

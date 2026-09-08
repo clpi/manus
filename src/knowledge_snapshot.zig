@@ -4,7 +4,7 @@
 const std = @import("std");
 const sema = @import("sema.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const types = @import("types.zig");
 
 pub const SCHEMA_VERSION = "knowledge-snapshot-v1";

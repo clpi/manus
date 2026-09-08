@@ -457,30 +457,30 @@ subject() {
   return 1
 }
 
-if subject src/dnir_lower.zig; then
-  producers=$(grep -c 'fn determinedTextLen' src/dnir_lower.zig || true)
-  asks=$(grep -c 'determinedTextLen(ctx' src/dnir_lower.zig || true)
-  emits=$(grep -c '\.op = \.str_len' src/dnir_lower.zig || true)
+if subject src/graph/lower.zig; then
+  producers=$(grep -c 'fn determinedTextLen' src/graph/lower.zig || true)
+  asks=$(grep -c 'determinedTextLen(ctx' src/graph/lower.zig || true)
+  emits=$(grep -c '\.op = \.str_len' src/graph/lower.zig || true)
   if [ "$producers" -ne 1 ]; then
-    bad "§5 src/dnir_lower.zig declares determinedTextLen $producers times — the determined length must have exactly one producer"
+    bad "§5 src/graph/lower.zig declares determinedTextLen $producers times — the determined length must have exactly one producer"
   elif [ "$asks" -lt "$emits" ]; then
-    bad "§5 src/dnir_lower.zig emits str_len at $emits sites but asks determinedTextLen at only $asks — a site that scans to NUL without asking whether the length is already known is the original defect"
+    bad "§5 src/graph/lower.zig emits str_len at $emits sites but asks determinedTextLen at only $asks — a site that scans to NUL without asking whether the length is already known is the original defect"
   else
     note "§5 determined length: 1 producer, asked at $asks of $emits str_len sites"
   fi
 fi
 
-if subject src/native_backend.zig; then
-  decides=$(grep -c 'coalescable = false' src/native_backend.zig || true)
-  carried=$(grep -c 'cstring_coalescable' src/native_backend.zig || true)
+if subject src/native.zig; then
+  decides=$(grep -c 'coalescable = false' src/native.zig || true)
+  carried=$(grep -c 'cstring_coalescable' src/native.zig || true)
   if [ "$decides" -ne 1 ]; then
-    bad "§5 src/native_backend.zig decides literal coalescing at $decides sites — the section type must be decided once, where the literals are known"
+    bad "§5 src/native.zig decides literal coalescing at $decides sites — the section type must be decided once, where the literals are known"
   elif [ "$carried" -lt 3 ]; then
     bad "§5 the coalescing fact is spelled only $carried times — it must be carried from the emitter to the section header, not re-derived from the blob, which cannot answer it"
   else
     note "§5 section choice: 1 decision, carried through $carried references"
   fi
-  if grep -q '0x2); // S_CSTRING_LITERALS' src/native_backend.zig; then
+  if grep -q '0x2); // S_CSTRING_LITERALS' src/native.zig; then
     bad '§5 the section type is an unconditional S_CSTRING_LITERALS again — the fact stopped reaching the header'
   fi
 fi
