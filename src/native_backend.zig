@@ -23493,3 +23493,37 @@ test "native backend: the floored correction spends the retained derivation of i
     try std.testing.expectEqual(without.text, wrong.text);
     try std.testing.expectEqual(@as(usize, 3 * 4), without.text - with.text);
 }
+
+test "native backend: the subject-first face of an application spends the same derivation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const subject_first =
+        \\sum: i64 = (a: i64, b: i64)
+        \\    a + b
+        \\main: i64 = (seed: i64)
+        \\    d = seed % 10
+        \\    n = seed % 1000
+        \\    n % d:sum(1)
+    ;
+    const operand_first =
+        \\sum: i64 = (a: i64, b: i64)
+        \\    a + b
+        \\main: i64 = (seed: i64)
+        \\    d = seed % 10
+        \\    n = seed % 1000
+        \\    n % sum(d, 1)
+    ;
+
+    const subject = try flooredDivisorProbe(alloc, subject_first, "subject.id", false);
+    const operand = try flooredDivisorProbe(alloc, operand_first, "operand.id", false);
+    const stripped = try flooredDivisorProbe(alloc, subject_first, "stripped.id", true);
+
+    try std.testing.expectEqual(dnir.DivisorSign{ .derived = 5 }, subject.divisor);
+    try std.testing.expectEqual(operand.divisor, subject.divisor);
+    try std.testing.expectEqual(operand.text, subject.text);
+
+    try std.testing.expectEqual(dnir.DivisorSign.unknown, stripped.divisor);
+    try std.testing.expectEqual(@as(usize, 3 * 4), stripped.text - subject.text);
+}
