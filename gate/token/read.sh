@@ -62,6 +62,48 @@ forbid() {
     fi
 }
 
+plant() {
+    python3 - "$1" "$2" "$3" <<'PYTHON'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_bytes()
+old = sys.argv[2].encode()
+new = sys.argv[3].encode()
+if not old or old == new or old not in source:
+    sys.stderr.write("gap-145 consumer gate: absent or unchanged perturbation\n")
+    sys.exit(2)
+sys.stdout.buffer.write(source.replace(old, new, 1))
+PYTHON
+}
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    fixture=$(mktemp -d) || exit 2
+    printf 'before first first\nafter first\n' >"$fixture/source"
+    printf 'before second first\nafter first\n' >"$fixture/want"
+    plant "$fixture/source" first second >"$fixture/found"
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 0 ] || ! cmp -s "$fixture/found" "$fixture/want"; then
+        bad 'perturbation did not replace only the first occurrence'
+    fi
+    plant "$fixture/source" missing second >"$fixture/found" 2>"$fixture/error"
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 2 ] || [ -s "$fixture/found" ]; then
+        bad 'perturbation accepted an absent needle'
+    fi
+    printf 'first\r\nlast\000byte' >"$fixture/source"
+    printf 'second\r\nlast\000byte' >"$fixture/want"
+    plant "$fixture/source" first second >"$fixture/found"
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 0 ] || ! cmp -s "$fixture/found" "$fixture/want"; then
+        bad 'perturbation changed bytes outside the first occurrence'
+    fi
+    rm -rf -- "$fixture"
+fi
+
 # ── 1. quote identity reaches the consumers ─────────────────────────────────
 
 has "$AST" 'pub fn quotedLiteralIsByteSequence' \
@@ -863,6 +905,26 @@ has "$PARSER" 'fn currentParserAnchor(self: *Parser) ParseError!bool {' \
     'parser.zig lost the macro/anchor primary consumer'
 has "$PARSER" 'if (try self.currentParserAnchor()) {' \
     'parse_simple_expr bypasses the settled macro/anchor primary face'
+has "$ROOT/lib/compiler/parser.id" 'if kind == token.kindat and index + 1 < count' \
+    'event lost the bare-anchor following-token decision'
+has "$ROOT/lib/compiler/parser.id" 'if following == token.kindrparen or following == token.kindcomma' \
+    'event lost the two bare-anchor closer faces'
+has "$ROOT/lib/compiler/parser.id" '(bare << 7)' \
+    'event lost lane-two bare-anchor bit 7'
+has "$PARSER" 'return (((try self.currentParserDecision()) >> 7) & 1) != 0;' \
+    'Parser bare-anchor reader no longer consumes lane-two bit 7'
+barewalk=$(sed -n '/fn at_is_bare_anchor/,/^    }/p' "$PARSER" | grep -cE 'saveState|restoreState|self\.(adv|pk)\(' || true)
+examined=$((examined + 1))
+if [ "$barewalk" -ne 0 ]; then
+    bad "Parser retained $barewalk bare-anchor host cursor decision(s)"
+fi
+baresweep=$(sed -n '/bare anchor decision executes through whole-pack event/,/^}/p' "$PARSER")
+for predicate in '.{ .at, .rparen }' '.{ .at, .comma }' '.{ .at, .name }' '.{ .at, .lbrace }' '.{ .at, .eof }' '.{ .at, .int_lit }' 'try consumer.at_is_bare_anchor()' 'error.TestExpectedEqual'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$baresweep" | grep -cF "$predicate")" -lt 1 ]; then
+        bad "bare-anchor exact-reader control lost predicate: $predicate"
+    fi
+done
 atarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.at => ' || true)
 examined=$((examined + 1))
 if [ "$atarms" -ne 0 ]; then
@@ -1212,6 +1274,8 @@ if [ "$bare_calls" -ne 0 ]; then
     bad "parser.zig retained $bare_calls bare-declaration scanner call(s)"
 fi
 bare_lane=$(grep -cF 'currentParserDecision()) >> 7' "$PARSER" || true)
+anchor=$(sed -n '/fn at_is_bare_anchor/,/^    }/p' "$PARSER" | grep -cF 'currentParserDecision()) >> 7' || true)
+bare_lane=$((bare_lane - anchor))
 examined=$((examined + 1))
 if [ "$bare_lane" -ne 2 ]; then
     bad "the two remaining bare-declaration consumers must select lane-two bit 7 (calls=$bare_lane)"
@@ -4334,7 +4398,7 @@ rm -rf -- "$amp_probe"
 
 if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     amp_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate refinement perturbation scratch' >&2; exit 2; }
-    sed '0,/infix\.op == \.band/s//infix.op == .add/' "$PARSER" >"$amp_probe/accept.zig"
+    plant "$PARSER" 'infix.op == .band' 'infix.op == .add' >"$amp_probe/accept.zig" || exit 2
     GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$amp_probe/accept.result" 2>&1
     amp_status=$?
     examined=$((examined + 1))
@@ -4344,7 +4408,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
         bad "layout refinement false-accept control did not fail closed: status=$amp_status"
     fi
 
-    sed '0,/try testing\.expect(seen);/s//try testing.expect(!seen);/' "$PARSER" >"$amp_probe/wrong.zig"
+    plant "$PARSER" 'try testing.expect(seen);' 'try testing.expect(!seen);' >"$amp_probe/wrong.zig" || exit 2
     GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$amp_probe/wrong.result" 2>&1
     amp_status=$?
     examined=$((examined + 1))
@@ -4458,7 +4522,7 @@ fi
 
 if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     catch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate catch perturbation scratch' >&2; exit 2; }
-    sed '0,/== 32/s//== 14/' "$PARSER" >"$catch_probe/accept.zig"
+    plant "$PARSER" '== 32' '== 14' >"$catch_probe/accept.zig" || exit 2
     GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$catch_probe/accept.result" 2>&1
     catch_status=$?
     examined=$((examined + 1))
@@ -4675,7 +4739,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # FALSE ACCEPT. Drop the override arm. Every site still compiles and the
     # ceiling still reads 0, but the reader now answers false at exactly the
     # `:` the producer moved to face 26.
-    sed '0,/return face == 16 or face == 26;/s//return face == 16;/' "$PARSER" >"$colon_probe/accept.zig"
+    plant "$PARSER" 'return face == 16 or face == 26;' 'return face == 16;' >"$colon_probe/accept.zig" || exit 2
     GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$colon_probe/accept.result" 2>&1
     colon_status=$?
     examined=$((examined + 1))
@@ -4819,7 +4883,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
 
     # FALSE ACCEPT. Stop reading the settled face and answer for everything.
     # Every transferred site still compiles and the ceiling still reads 0.
-    sed '0,/return (try self.currentParserFace()) == 11;/s//return true;/' "$PARSER" >"$dots_probe/accept.zig"
+    plant "$PARSER" 'return (try self.currentParserFace()) == 11;' 'return true;' >"$dots_probe/accept.zig" || exit 2
     GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$dots_probe/accept.result" 2>&1
     dots_status=$?
     examined=$((examined + 1))
@@ -4844,7 +4908,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
 
     # LEFTOVER. Restore one retired spelling at a transferred site. The reader
     # is intact and the sweep still passes, so only the ceiling can catch it.
-    sed '0,/if (try self.eatParserVararg()) {/s//if (try self.eat(.dots) != null) {/' "$PARSER" >"$dots_probe/left.zig"
+    plant "$PARSER" 'if (try self.eatParserVararg()) {' 'if (try self.eat(.dots) != null) {' >"$dots_probe/left.zig" || exit 2
     GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/left.zig" sh "$ROOT/gate/token/read.sh" >"$dots_probe/left.result" 2>&1
     dots_status=$?
     examined=$((examined + 1))
@@ -4997,7 +5061,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
 
     # FALSE ACCEPT. Stop reading the settled bit and answer for everything.
     # Every transferred site still compiles and the ceiling still reads 2.
-    sed '0,/return (((try self.currentParserEvent()) >> 14) & 1) != 0;/s//return true;/' "$PARSER" >"$end_probe/accept.zig"
+    plant "$PARSER" 'return (((try self.currentParserEvent()) >> 14) & 1) != 0;' 'return true;' >"$end_probe/accept.zig" || exit 2
     GAP145_PERTURB=1 GAP145_PARSER="$end_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$end_probe/accept.result" 2>&1
     end_status=$?
     examined=$((examined + 1))
@@ -5023,7 +5087,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # LEFTOVER. Restore one retired spelling at a transferred site. The reader
     # is intact and the sweep still passes, so only the ceiling, the region
     # count and the class count can catch it.
-    sed '0,/_ = try self.eatParserEnd();/s//_ = try self.eat(.kw_end);/' "$PARSER" >"$end_probe/left.zig"
+    plant "$PARSER" '_ = try self.eatParserEnd();' '_ = try self.eat(.kw_end);' >"$end_probe/left.zig" || exit 2
     GAP145_PERTURB=1 GAP145_PARSER="$end_probe/left.zig" sh "$ROOT/gate/token/read.sh" >"$end_probe/left.result" 2>&1
     end_status=$?
     examined=$((examined + 1))
