@@ -1238,6 +1238,14 @@ const WalkCtx = struct {
     any_effect: Tri = .no,
     /// Monotone: any applied relation the walk cannot prove boundary-local.
     any_boundary: Tri = .no,
+    /// Block nesting. `walkBlock` is entered once for the module's own body, so
+    /// `depth > 1` is a declaration the module does not publish under its name.
+    depth: u16 = 0,
+    /// The module relations this walk descends into, the ones a call actually
+    /// read as walked, and the ones another binding rebinds.
+    walked: *const RelationSet,
+    relied: *RelationSet,
+    rebound: *RelationSet,
 };
 
 /// `yes` dominates `unknown` dominates `no`, so a second visit can raise the
@@ -1283,6 +1291,33 @@ fn markEffectUnknown(ctx: *WalkCtx) void {
 
 fn markBoundaryUnknown(ctx: *WalkCtx) void {
     ctx.any_boundary = raise(ctx.any_boundary, .unknown);
+}
+
+const RelationSet = std.StringHashMapUnmanaged(void);
+
+/// AN APPLIED RELATION THIS WALK ALREADY READ.
+///
+/// `walkStmt`'s `.func_decl` arm descends into every module relation body, so
+/// applying one reaches nothing outside the region: whatever that body observes
+/// was marked at its own site and `raise` never lowers a reading. Marking the
+/// CALL unknown a second time is the recognizer reach limit GAP-245's floor
+/// measured — 46 module collections examined, zero `permitted`, every one
+/// because it applies a relation.
+///
+/// This is not `isEffectName`'s inverse. That list answers a SPELLING and can
+/// never say "not an effect". This answers whether the relation's body is
+/// inside the region the report covers, which is the question `any_boundary`
+/// asks, and the walk establishes it by having walked it.
+fn noteWalkedRelation(ctx: *WalkCtx, n: []const u8) !void {
+    try ctx.relied.put(ctx.prog.alloc, n, {});
+}
+
+/// A word another binding also binds is not that relation. The walk carries no
+/// scopes, so it cannot say which occurrence a call meant — and unknown must
+/// not become permission.
+fn noteRebound(ctx: *WalkCtx, n: []const u8) !void {
+    if (!ctx.walked.contains(n)) return;
+    try ctx.rebound.put(ctx.prog.alloc, n, {});
 }
 
 fn evOf(ctx: *WalkCtx, name: []const u8) ?*Evidence {
@@ -1381,9 +1416,48 @@ pub fn analyzeScoped(
 
     var reads: std.ArrayListUnmanaged([]const u8) = .empty;
     defer reads.deinit(alloc);
-    var ctx = WalkCtx{ .prog = &prog, .loop_reads = &reads };
+
+    // A word declared twice at module scope denotes neither declaration
+    // uniquely, and `path.len != 1` is a method-path coordinate rather than a
+    // bare module name; both are dropped before the walk can rely on them.
+    var declarations: std.StringHashMapUnmanaged(u32) = .empty;
+    defer declarations.deinit(alloc);
+    for (mod.body.stmts) |*s| {
+        if (s.* != .func_decl or s.func_decl.path.len != 1) continue;
+        const gop = try declarations.getOrPut(alloc, s.func_decl.path[0]);
+        gop.value_ptr.* = if (gop.found_existing) gop.value_ptr.* + 1 else 1;
+    }
+    var walked: RelationSet = .empty;
+    defer walked.deinit(alloc);
+    var declared = declarations.iterator();
+    while (declared.next()) |d| {
+        if (d.value_ptr.* == 1) try walked.put(alloc, d.key_ptr.*, {});
+    }
+    var relied: RelationSet = .empty;
+    defer relied.deinit(alloc);
+    var rebound: RelationSet = .empty;
+    defer rebound.deinit(alloc);
+
+    var ctx = WalkCtx{
+        .prog = &prog,
+        .loop_reads = &reads,
+        .walked = &walked,
+        .relied = &relied,
+        .rebound = &rebound,
+    };
 
     try walkBlock(&ctx, &mod.body);
+
+    // Settled after the walk, for the reason `has_effect` is: a shadow written
+    // BELOW the call that relied on the name still withdraws the reading, and
+    // one such name withdraws it for the whole region.
+    var relied_on = relied.keyIterator();
+    while (relied_on.next()) |name| {
+        if (!rebound.contains(name.*)) continue;
+        ctx.any_boundary = raise(ctx.any_boundary, .unknown);
+        ctx.any_effect = raise(ctx.any_effect, .unknown);
+        break;
+    }
 
     if (scope == .relation and relations > 1) refuseRegion(&ctx);
 
@@ -1447,6 +1521,8 @@ pub fn ruledModuleCensus(
 }
 
 fn walkBlock(ctx: *WalkCtx, b: *const ast.Block) anyerror!void {
+    ctx.depth +|= 1;
+    defer ctx.depth -= 1;
     for (b.stmts) |*s| try walkStmt(ctx, s);
     if (b.tail_expr) |t| try walkExpr(ctx, t, .read);
 }
@@ -1456,21 +1532,28 @@ const Position = enum { read, effect_arg, boundary_arg };
 fn walkStmt(ctx: *WalkCtx, s: *const ast.Stmt) anyerror!void {
     ctx.prog.points += 1;
     switch (s.*) {
-        .local_decl => |d| for (d.inits) |e| try walkExpr(ctx, e, .read),
+        .local_decl => |d| {
+            for (d.inits) |e| try walkExpr(ctx, e, .read);
+            for (d.names) |b| try noteRebound(ctx, b.ident);
+        },
         .global_decl => |d| {
             for (d.inits) |e| try walkExpr(ctx, e, .read);
+            for (d.names) |b| try noteRebound(ctx, b.ident);
             // A module-scope binding outlives the region and may be named from
             // outside it unless the world is closed.
             if (!ctx.prog.world.has(.closed_world)) {
                 for (ctx.prog.ev.items) |*e| e.escapes = .unknown;
             }
         },
-        .const_decl => |d| try walkExpr(ctx, d.val, .read),
+        .const_decl => |d| {
+            try walkExpr(ctx, d.val, .read);
+            try noteRebound(ctx, d.ident);
+        },
         .assign => |a| {
             for (a.values) |v| try walkExpr(ctx, v, .read);
             for (a.targets) |t| {
                 switch (t.*) {
-                    .name => {},
+                    .name => |b| try noteRebound(ctx, b.ident),
                     .call => |c| for (c.args) |x| try walkExpr(ctx, x, .read),
                     .index => |ix| try walkExpr(ctx, ix.key, .read),
                     else => refuseRegion(ctx),
@@ -1492,10 +1575,12 @@ fn walkStmt(ctx: *WalkCtx, s: *const ast.Stmt) anyerror!void {
             try walkExpr(ctx, nf.start, .read);
             try walkExpr(ctx, nf.stop, .read);
             if (nf.step) |st| try walkExpr(ctx, st, .read);
+            try noteRebound(ctx, nf.var_name);
             try walkLoop(ctx, &nf.body);
         },
         .gen_for => |gf| {
             for (gf.iters) |it| try walkExpr(ctx, it, .read);
+            for (gf.vars) |v| try noteRebound(ctx, v);
             try walkLoop(ctx, &gf.body);
         },
         .if_stmt => |f| {
@@ -1510,7 +1595,11 @@ fn walkStmt(ctx: *WalkCtx, s: *const ast.Stmt) anyerror!void {
         },
         .ret => |r| for (r.vals) |v| try walkExpr(ctx, v, .read),
         .brk, .cont => {},
-        .func_decl => |fd| try walkBlock(ctx, &fd.func.body),
+        .func_decl => |fd| {
+            if (ctx.depth > 1 and fd.path.len == 1) try noteRebound(ctx, fd.path[0]);
+            for (fd.func.params) |param| try noteRebound(ctx, param.name);
+            try walkBlock(ctx, &fd.func.body);
+        },
         // A refusal, not a gap. The whole region goes pessimistic.
         else => refuseRegion(ctx),
     }
@@ -1599,6 +1688,10 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                     try noteLoopRead(ctx, fname);
                     for (c.args) |a| try walkExpr(ctx, a, .read);
                     return;
+                }
+                if (!recognized and ctx.walked.contains(fname)) {
+                    try noteWalkedRelation(ctx, fname);
+                    recognized = true;
                 }
                 if (!recognized) {
                     markEffectUnknown(ctx);
@@ -1736,18 +1829,16 @@ test "observation: the module census carries the existence ruling the fold takes
 
     // THE INTENDED FAILING CASE — the hole, exhibited. Every PLACE clause
     // admits: unmutated, unaliased, non-escaping, exactly determined, bound
-    // once. The walk cannot prove the applied relation boundary-local, so
-    // `allocation_identity` reads `unknown` and the existence freedom is not
-    // granted. Before the ruling reached the row, `residencyRefusal` answered
-    // `.none` here and the fold answered the read as an immediate on evidence
-    // nobody had.
+    // once. `stdin:read()` names a relation this module does not declare, so
+    // this walk never reads its body, `allocation_identity` reads `unknown`
+    // and the existence freedom is not granted. Before the ruling reached the
+    // row, `residencyRefusal` answered `.none` here and the fold answered the
+    // read as an immediate on evidence nobody had.
     var opaque_call = try ruledOf(&arena,
         \\t = (10, 20, 30)
-        \\step: i64 = (x: i64)
-        \\    x + 1
         \\main: i64 = ()
-        \\    step(1)
-        \\    t[2]
+        \\    x = stdin:read()
+        \\    t[2] + x
         \\
     , ordinary_executable);
     defer opaque_call.deinit();
@@ -1785,6 +1876,80 @@ test "observation: the module census carries the existence ruling the fold takes
     const seen = hostile.byName("t").?;
     try testing.expectEqual(place.Existence.blocked_observed, seen.existence);
     try testing.expectEqual(place.Refusal.observed, place.residencyRefusal(seen));
+}
+
+test "observation: a walked module relation is boundary-local and a rebound word is not" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // FEATURE-USE. `step` is declared once at module scope and `walkStmt`'s
+    // `.func_decl` arm walks its body, so applying it reaches nothing this
+    // report does not already cover: its facts were raised at their own sites.
+    // GAP-245's floor measured the cost of not knowing this — 46 module
+    // collections examined, zero `permitted`, every one of them because it
+    // applies a relation.
+    var local = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\step: i64 = (x: i64)
+        \\    x + 1
+        \\main: i64 = ()
+        \\    step(1)
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer local.deinit();
+    const walked = local.byName("t").?;
+    try testing.expectEqual(place.Existence.permitted, walked.existence);
+    try testing.expectEqual(place.Refusal.none, place.residencyRefusal(walked));
+
+    // THE INTENDED FAILING CASE. The same program with the word rebound: a
+    // parameter named `step` shadows the declaration, the walk carries no
+    // scopes, so which relation `step(1)` applies is unknown — and unknown is
+    // not permission. The shadow is written BELOW the call that relied on it,
+    // which is why the reading is settled after the walk.
+    var shadowed = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\step: i64 = (x: i64)
+        \\    x + 1
+        \\main: i64 = (step: i64)
+        \\    step(1)
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer shadowed.deinit();
+    try testing.expectEqual(place.Existence.blocked_unknown, shadowed.byName("t").?.existence);
+
+    // PRODUCTION-USE. What the walked relation's BODY applies still decides.
+    // `stdin:read()` inside `step` raises the region at its own site, so the
+    // freedom is withdrawn by having walked the body rather than by a
+    // recognizer that stopped at the call.
+    var reaching = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\step: i64 = (x: i64)
+        \\    x + stdin:read()
+        \\main: i64 = ()
+        \\    step(1)
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer reaching.deinit();
+    try testing.expectEqual(place.Existence.blocked_unknown, reaching.byName("t").?.existence);
+
+    // A WORD DECLARED TWICE denotes neither declaration uniquely, so no call
+    // of it is a call of a relation this walk can name.
+    var twice = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\step: i64 = (x: i64)
+        \\    x + 1
+        \\step: i64 = (x: i64)
+        \\    x + 2
+        \\main: i64 = ()
+        \\    step(1)
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer twice.deinit();
+    try testing.expectEqual(place.Existence.blocked_unknown, twice.byName("t").?.existence);
 }
 
 test "observation: module scope censuses the module a sibling relation refuses" {

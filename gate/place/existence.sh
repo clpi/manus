@@ -17,10 +17,17 @@
 # `permits`*.
 #
 # The two are not the same question, and this gate's second probe is a program
-# where they DISAGREE: every place fact admits, and the walk cannot prove the
-# module's one applied relation boundary-local, so `allocation_identity` reads
-# `unknown` and the freedom is refused. Before the ruling reached the row, the
-# fold answered that read as an immediate on evidence nobody had.
+# where they DISAGREE: every place fact admits, and the applied relation is one
+# the walk never reads, so `allocation_identity` reads `unknown` and the freedom
+# is refused. Before the ruling reached the row, the fold answered that read as
+# an immediate on evidence nobody had.
+#
+# WHICH RELATIONS THE WALK READS IS ITSELF A FACT, and arm 6 is its controls.
+# `observation.walkStmt` descends into every module relation body, so applying
+# one reaches nothing the report does not already cover and the freedom stands;
+# a word another binding rebinds names no relation the walk can identify and the
+# freedom is withdrawn. GAP-245's floor measured what not knowing this cost: 46
+# module collections examined, zero `permitted`.
 #
 # ═══ WHY THE EXPORT AND NOT THE BACKEND ════════════════════════════════════
 #
@@ -52,6 +59,10 @@
 #   5  STRUCTURAL          `residencyRefusal` carries the `existence` clause and
 #                          `absentModulePlace` still routes through
 #                          `residencyRefusal`. Not found is a FAIL.
+#   6  WALKED RELATION     a module relation the walk descends into keeps the
+#                           freedom; the same program with the word rebound by a
+#                           parameter loses it. Equal answers mean the walk is
+#                           not reading the declaration at all.
 set -u
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 idol="${IDOL_BIN:-$root/zig-out/bin/idol}"
@@ -74,13 +85,36 @@ main: i64 = ()
 ID
 
 # THE SAME PLACE, ONE APPLIED RELATION AWAY. Every place fact is identical;
-# the walk cannot prove `step` boundary-local, so nothing proves an observer
-# cannot distinguish `t` existing from `t` not existing.
+# `stdin:read()` names a relation this module does not declare, so no walk
+# read its body and nothing proves an observer cannot distinguish `t` existing
+# from `t` not existing.
 cat > "$probe/opaque.id" <<'ID'
+t = { 10, 20, 30 }
+main: i64 = ()
+    x = stdin:read()
+    t[2] + x
+ID
+
+# THE RELATION THE WALK READS. `step` is declared once at module scope and
+# `walkStmt` descends into it, so applying it reaches nothing outside the
+# region the report covers.
+cat > "$probe/walked.id" <<'ID'
 t = { 10, 20, 30 }
 step: i64 = (x: i64)
     x + 1
 main: i64 = ()
+    step(1)
+    t[2]
+ID
+
+# THE SAME PROGRAM WITH THE WORD REBOUND. A parameter named `step` shadows the
+# declaration; which relation `step(1)` applies is unknown, and unknown is not
+# permission.
+cat > "$probe/shadow.id" <<'ID'
+t = { 10, 20, 30 }
+step: i64 = (x: i64)
+    x + 1
+main: i64 = (step: i64)
     step(1)
     t[2]
 ID
@@ -103,7 +137,7 @@ main: i64 = ()
     t[2]
 ID
 
-for f in fold opaque capture write; do
+for f in fold opaque capture write walked shadow; do
   "$idol" graph "$probe/$f.id" > "$probe/$f.json" 2>/dev/null || {
     echo "existence: FAIL — idol graph did not emit for probe $f" >&2; exit 1; }
 done
@@ -171,7 +205,8 @@ def row(name):
     return rs[0]
 
 
-R = {n: row(n) for n in ("fold", "opaque", "capture", "write")}
+R = {n: row(n) for n in ("fold", "opaque", "capture", "write",
+                         "walked", "shadow")}
 if bad:
     print("existence: no subjects to examine")
     sys.exit(1)
@@ -259,6 +294,31 @@ if refusal(R["write"]) == "none":
          "place, and a granted existence freedom is not permission to overrule "
          "a place fact")
 
+# ── arm 6: WALKED RELATION ─────────────────────────────────────────────────
+for n in ("walked", "shadow"):
+    if places_only(R[n]) != "none":
+        fail(f"probe {n}: place clauses answered {places_only(R[n])!r}; this "
+             f"pair exists to hold every place fact equal to the folding "
+             f"program and move only which relation the walk read")
+if R["walked"]["existence"] != "permitted":
+    fail(f"applying a module relation the walk DESCENDS INTO answered "
+         f"existence={R['walked']['existence']!r}; its body is inside the "
+         f"region this report covers, so the call reaches nothing the report "
+         f"does not already carry and refusing it is the recognizer reach "
+         f"limit GAP-245's floor measured, not a proof")
+if refusal(R["walked"]) != "none":
+    fail(f"the walked-relation program's whole residency decision refused "
+         f"({refusal(R['walked'])})")
+if R["shadow"]["existence"] != "blocked_unknown":
+    fail(f"a parameter named `step` shadows the declaration and the program "
+         f"answered existence={R['shadow']['existence']!r}; the walk carries no "
+         f"scopes, so which relation `step(1)` applies is UNKNOWN and unknown "
+         f"is not permission")
+if R["walked"]["existence"] == R["shadow"]["existence"]:
+    fail(f"the walked and the rebound program both answered "
+         f"{R['walked']['existence']!r}; the walk is not reading the "
+         f"declaration at all and arm 6 decides nothing")
+
 # ── arm 5: STRUCTURAL ──────────────────────────────────────────────────────
 st = dict(line.split(":", 1) for line in
           open(os.path.join(probe, "structure.txt")).read().split())
@@ -278,10 +338,12 @@ elif st.get("consumer") != "yes":
          "see")
 
 if bad:
-    print(f"existence: 4 probes, {bad} finding(s)")
+    print(f"existence: {len(R)} probes, {bad} finding(s)")
     sys.exit(1)
 print(f"existence: fold {R['fold']['existence']}/{refusal(R['fold'])}, "
       f"opaque {R['opaque']['existence']} (places {places_only(R['opaque'])}, "
       f"whole {refusal(R['opaque'])}), capture {R['capture']['existence']}, "
-      f"write {R['write']['existence']}/{refusal(R['write'])}")
+      f"write {R['write']['existence']}/{refusal(R['write'])}, "
+      f"walked {R['walked']['existence']}/{refusal(R['walked'])}, "
+      f"shadow {R['shadow']['existence']}")
 PY
