@@ -463,6 +463,7 @@ const DiagnosticEvidence = enum {
 
 pub const Sema = struct {
     generation: u64 = 0,
+    frame: ?usize = null,
     constructor: std.ArrayListUnmanaged([]types.FieldType) = .empty,
     alloc: Allocator,
     scope: Scope,
@@ -3224,6 +3225,16 @@ pub const Sema = struct {
         }
     }
 
+    fn local(self: *const Sema, name: []const u8) bool {
+        const frame = self.frame orelse return false;
+        var index = self.scope.maps.items.len;
+        while (index > frame) {
+            index -= 1;
+            if (self.scope.maps.items[index].contains(name)) return true;
+        }
+        return false;
+    }
+
     fn check_stmt(self: *Sema, stmt: *ast.Stmt) SemaError!void {
         const boundary = switch (stmt.*) {
             .if_stmt, .while_loop, .repeat_loop, .num_for, .gen_for, .func_decl, .try_stmt, .match_stmt => true,
@@ -3505,11 +3516,14 @@ pub const Sema = struct {
                             },
                             else => false,
                         };
-                        if (aggregate and generations.items[i] != self.generation) {
+                        var scalar = self.idol_mode and self.local(tgt.name.ident) and
+                            (vt.is_numeric() or vt == .bool or vt == .str);
+                        if ((aggregate or scalar) and generations.items[i] != self.generation) {
                             vt = .any;
                             aggregate = false;
+                            scalar = false;
                         }
-                        if (aggregate and self.idol_mode) {
+                        if ((aggregate or scalar) and self.idol_mode) {
                             if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
                                 if (sym.typ == .any or sym.inferred != null) {
                                     sym.typ = vt;
@@ -3517,7 +3531,7 @@ pub const Sema = struct {
                                 }
                             }
                         }
-                        if (!aggregate) {
+                        if (!aggregate and !scalar) {
                             if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
                                 if (sym.inferred != null) {
                                     sym.typ = vt;
@@ -3759,6 +3773,9 @@ pub const Sema = struct {
         for (fb.params) |*p| {
             if (p.default_val) |default_val| _ = try self.check_expr(default_val);
         }
+        const frame = self.frame;
+        self.frame = self.scope.maps.items.len;
+        defer self.frame = frame;
         try self.scope.push();
         for (fb.params, 0..) |*p, i|
             try self.scope.define(p.name, .{ .typ = param_types[i], .is_const = false });
@@ -6365,6 +6382,9 @@ pub const Sema = struct {
         for (fb.params) |*p| {
             if (p.default_val) |default_val| _ = try self.check_expr(default_val);
         }
+        const frame = self.frame;
+        self.frame = self.scope.maps.items.len;
+        defer self.frame = frame;
         try self.scope.push();
         for (fb.params, param_types) |*p, pt|
             try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
@@ -17594,5 +17614,31 @@ test "sema: constructor shape follows the selected alternative" {
             try testing.expectEqualStrings("code", descriptor.table_type.fields[0].name);
             try testing.expect(descriptor.table_type.fields[0].typ == .i64);
         } else try testing.expect(descriptor == .any);
+    }
+}
+
+test "sema: implicit scalar occurrences satisfy only current constructor demands" {
+    const row = [_]struct { source: []const u8, valid: bool }{
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64)\n    item = value\n    {code = item}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nread: i64 = () 17\nmake: record = ()\n    item = read()\n    {code = item}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = ()\n    item = 7\n    item = 13\n    {code = item}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = ()\n    item = 7\n    other = item\n    item = \"changed\"\n    {code = other}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = ()\n    item = 7\n    item = \"changed\"\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (value: any)\n    item = value\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        item = \"changed\"\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    while choice\n        result: record = {code = item}\n        item = \"changed\"\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\ntouch: i64 = () 0\nmake: record = ()\n    item = 7\n    touch()\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64)\n    item = value / 2\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nif true\n    item = 7\n    result: record = {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nglobal item: any = nil\nmake: record = ()\n    item = 7\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = ()\n    item = 7\n    inner: record = ()\n        item = 13\n        {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: any = (): record\n    item = 7\n    {code = item}\n", .valid = true },
+    };
+    for (row) |entry| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        var checked = try runIdolSema(entry.source, &arena);
+        defer checked.deinit();
+        try testing.expectEqual(entry.valid, checked.errors == 0);
     }
 }
