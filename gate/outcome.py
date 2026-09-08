@@ -21,7 +21,7 @@ if not limit:
 rows = []
 with tempfile.TemporaryDirectory(prefix='outcome-control-') as directory:
     root = pathlib.Path(directory)
-    for name, compilecode, runcode, output, artifact, want in [
+    for name, compile, run, output, artifact, want in [
         ('success', 0, 0, '1 0 0', True, True),
         ('failed guest with matching output', 0, 7, '1 0 0', True, False),
         ('compiler failure without diagnostic', 1, 0, '1 0 0', False, False),
@@ -35,8 +35,8 @@ with tempfile.TemporaryDirectory(prefix='outcome-control-') as directory:
         ('missing artifact', 0, 0, '1 0 0', False, False),
     ]:
         (root / 'probe.wasm').unlink(missing_ok=True)
-        compiler = ('printf wasm > "$4"\n' if artifact else '') + 'exit ' + str(compilecode) + '\n'
-        runner = "printf '%s\\n' '" + output + "'\nexit " + str(runcode) + '\n'
+        compiler = ('printf wasm > "$4"\n' if artifact else '') + 'exit ' + str(compile) + '\n'
+        runner = "printf '%s\\n' '" + output + "'\nexit " + str(run) + '\n'
         for path, content in [(root / 'compiler', compiler), (root / 'runner', runner)]:
             path.write_text('#!/bin/sh\n' + content)
             path.chmod(0o700)
