@@ -2343,12 +2343,8 @@ const Arm64Compiler = struct {
                             if (read[0] == e.key_ptr.* and read[1] >= head and read[1] <= def) break :blk true;
                         }
                         for (forward) |jump| {
-                            // A forward control edge that crosses the first
-                            // definition lets the entering value reach the loop
-                            // tail without that definition. The next iteration
-                            // can then read the entering value even when the
-                            // jump lands after its last textual read.
-                            if (jump[0] >= head and jump[0] < def and jump[1] > def and jump[1] <= tail) break :blk true;
+                            if (jump[0] >= head and jump[0] < def and jump[1] > def and
+                                jump[1] <= tail and jump[1] <= e.value_ptr.*) break :blk true;
                         }
                         break :blk false;
                     }
@@ -18211,19 +18207,71 @@ test "CFG liveness carries a value when control skips its loop definition" {
     Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back, &bypass);
     try std.testing.expectEqual(@as(?u32, 8), last.get(7));
 
-    // Landing after the last textual read still carries the entering value to
-    // the back edge. The header reads it on the next iteration before the
-    // skipped definition can replace it.
     try last.put(alloc, 7, 6);
     const late = [_][2]u32{.{ 2, 7 }};
     Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back, &late);
+    try std.testing.expectEqual(@as(?u32, 6), last.get(7));
+
+    try last.put(alloc, 7, 6);
+    const nested = [_][2]u32{ .{ 2, 8 }, .{ 5, 7 } };
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &nested, &late);
     try std.testing.expectEqual(@as(?u32, 8), last.get(7));
+
+    try last.put(alloc, 7, 6);
+    const crossed = [_][2]u32{ .{ 2, 8 }, .{ 3, 7 } };
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &crossed, &late);
+    try std.testing.expectEqual(@as(?u32, 6), last.get(7));
 
     // Edges wholly before or after the definition do not bypass it.
     try last.put(alloc, 7, 6);
     const separate = [_][2]u32{ .{ 2, 3 }, .{ 5, 6 } };
     Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back, &separate);
     try std.testing.expectEqual(@as(?u32, 6), last.get(7));
+}
+
+test "CFG liveness retains nested and deferred consumption" {
+    const alloc = std.testing.allocator;
+    var last: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer last.deinit(alloc);
+    var defined: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer defined.deinit(alloc);
+    try defined.put(alloc, 7, 4);
+    const forward = [_][2]u32{.{ 2, 7 }};
+    const nested = [_][2]u32{ .{ 2, 8 }, .{ 1, 7 } };
+    const reversed = [_][2]u32{ .{ 1, 7 }, .{ 2, 8 } };
+    const prior = [_][2]u32{.{ 7, 1 }};
+    for ([_][]const [2]u32{ &nested, &reversed }) |back| {
+        try last.put(alloc, 7, 1);
+        Arm64Compiler.widenValueLastUses(&last, &prior, &defined, back, &forward);
+        try std.testing.expectEqual(@as(?u32, 8), last.get(7));
+    }
+    const back = [_][2]u32{.{ 2, 8 }};
+    const staged = [_][2]u32{.{ 7, 6 }};
+    try last.put(alloc, 7, 7);
+    Arm64Compiler.widenValueLastUses(&last, &staged, &defined, &back, &forward);
+    try std.testing.expectEqual(@as(?u32, 8), last.get(7));
+}
+
+test "CFG liveness releases values when a branch skips their definition and read" {
+    const alloc = std.testing.allocator;
+    const parameter = [_]dnir.Param{.{ .name = "n", .ty = .i64 }};
+    var instruction: [83]dnir.Instr = undefined;
+    instruction[0] = .{ .op = .br, .lhs = .{ .local = 0 }, .branch_target = 81, .branch_condition = .when_true };
+    for (0..40) |index| {
+        const value: u32 = @intCast(index + 1);
+        instruction[index * 2 + 1] = .{ .op = .@"const", .result = value, .lhs = .{ .i64 = @intCast(index + 3) }, .ty = .i64 };
+        instruction[index * 2 + 2] = .{ .op = .binop, .result = value + 40, .lhs = .{ .temp = value }, .rhs = .{ .local = 0 }, .binop = .add, .ty = .i64 };
+    }
+    instruction[81] = .{ .op = .br, .lhs = .{ .local = 0 }, .branch_target = 0, .branch_condition = .when_true };
+    instruction[82] = .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 };
+    const block = [_]dnir.Block{.{ .instrs = &instruction }};
+    const function = [_]dnir.Function{.{ .name = "scan", .ret = .i64, .params = &parameter, .blocks = &block }};
+    const module = dnir.Module{ .functions = &function };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.text.len > 0);
+    for (output.cost) |entry| try std.testing.expect(entry.kind != .spill);
 }
 
 test "CFG liveness does not read ABI staging slots as value definitions" {
