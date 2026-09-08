@@ -1362,17 +1362,7 @@ pub const Parser = struct {
     /// Argument-list closers only — the position §20 writes it in — so this
     /// cannot reinterpret an existing attribute.
     fn at_is_bare_anchor(self: *Parser) ParseError!bool {
-        const saved = self.saveState();
-        const saved_line = self.prev_line;
-        const saved_end = self.prev_end_col;
-        defer {
-            self.restoreState(saved);
-            self.prev_line = saved_line;
-            self.prev_end_col = saved_end;
-        }
-        _ = try self.adv();
-        const nxt = (try self.pk()).kind;
-        return nxt == .rparen or nxt == .comma;
+        return (((try self.currentParserDecision()) >> 7) & 1) != 0;
     }
 
     fn expect(self: *Parser, kind: TK) ParseError!Token {
@@ -12389,6 +12379,61 @@ test "parse: the anchor face admits exactly the `@` identity" {
     try testing.expect(refused);
 }
 
+test "parse: bare anchor decision executes through whole-pack event" {
+    const proof = struct {
+        fn check(source: [2]TK, shown: [2]TK, damage: bool, want: bool) !void {
+            const one: i64 = @intCast(@as(u64, @backingInt(source[0])) |
+                (@as(u64, 1) << 8) |
+                (@as(u64, 1) << 36));
+            const two: i64 = @intCast(@as(u64, @backingInt(source[1])) |
+                (@as(u64, 1) << 8) |
+                (@as(u64, 2) << 36));
+            var fact = [_]i64{ 0, one, 0, two, 0 };
+            var event = [4]i64{ 0, 0, 0, 0 };
+            try parserEventsForTest(fact[0..], event[0..], true);
+            if (damage) event[2] &= ~(@as(i64, 1) << 7);
+            var token = [_]Token{
+                .{ .kind = shown[0], .loc = .{ .file = "anchor.id", .line = 1, .col = 1 }, .text = shown[0].spelling() },
+                .{ .kind = shown[1], .loc = .{ .file = "anchor.id", .line = 1, .col = 2 }, .text = shown[1].spelling() },
+            };
+            var lexer = Lexer.init("", "anchor.id");
+            var consumer = Parser.init(&lexer, testing.allocator);
+            consumer.pack_tokens = &token;
+            consumer.parser_events = &event;
+            try testing.expectEqual(want, try consumer.at_is_bare_anchor());
+        }
+    };
+
+    try proof.check(.{ .at, .rparen }, .{ .at, .rparen }, false, true);
+    try proof.check(.{ .at, .comma }, .{ .at, .comma }, false, true);
+    try proof.check(.{ .at, .name }, .{ .at, .name }, false, false);
+    try proof.check(.{ .at, .lbrace }, .{ .at, .lbrace }, false, false);
+    try proof.check(.{ .at, .eof }, .{ .at, .eof }, false, false);
+    try proof.check(.{ .at, .int_lit }, .{ .at, .int_lit }, false, false);
+    try testing.expectError(error.TestExpectedEqual, proof.check(.{ .at, .rparen }, .{ .at, .rparen }, true, true));
+    try testing.expectError(error.TestExpectedEqual, proof.check(.{ .at, .name }, .{ .at, .rparen }, false, true));
+}
+
+test "parse: bare anchor keeps construction coordinates and named macro behavior" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const closed = try parseDuoSource("x = f(@)", &arena);
+    const first = closed.body.stmts[0].assign.values[0].call.args[0].name;
+    try testing.expectEqualStrings("self", first.ident);
+    try testing.expectEqual(@as(u32, 1), first.loc.line);
+    try testing.expectEqual(@as(u32, 7), first.loc.col);
+
+    const comma = try parseDuoSource("x = f(@, 1)", &arena);
+    const arg = comma.body.stmts[0].assign.values[0].call.args;
+    try testing.expectEqual(@as(usize, 2), arg.len);
+    try testing.expectEqualStrings("self", arg[0].name.ident);
+
+    const macro = try parseSource("@twice(21)", &arena);
+    const expr = macro.body.tail_expr.?;
+    try testing.expect(expr.* == .macro_call);
+    try testing.expectEqualStrings("twice", expr.macro_call.name);
+}
+
 test "parse: the projection face admits exactly the `.` identity" {
     var seen = false;
     var rejected = false;
@@ -12862,4 +12907,46 @@ test "parse: boundary event encodes the layout verdict" {
     try testing.expectEqual(@as(i64, 0), idol_parser_boundary(false, 1, true, 0, 5, 8, ordinary, 2, 1, 8, true) & 0x3);
     try testing.expectEqual(@as(i64, 1), idol_parser_boundary(false, 1, true, 0, 5, 8, terminator, 2, 1, 7, true) & 0x3);
     try testing.expectEqual(@as(i64, 2), idol_parser_boundary(false, 1, true, 0, 5, 8, ordinary, 2, 1, 7, true) & 0x3);
+}
+
+test "parse: bare anchor follows retained trivia" {
+    const row = [_]struct { source: []const u8, kind: TK, want: bool }{
+        .{ .source = "@ # note\n)", .kind = .rparen, .want = true },
+        .{ .source = "@ # first\n# second\n)", .kind = .rparen, .want = true },
+        .{ .source = "@ # note\n,", .kind = .comma, .want = true },
+        .{ .source = "@ # note\nname", .kind = .name, .want = false },
+        .{ .source = "@ # note\n{", .kind = .lbrace, .want = false },
+        .{ .source = "@ # note", .kind = .eof, .want = false },
+        .{ .source = "@ # note\n17", .kind = .int_lit, .want = false },
+    };
+    for (row) |entry| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        var lexer = Lexer.init(entry.source, "anchor.id");
+        var consumer = Parser.init(&lexer, arena.allocator());
+        consumer.idol_mode = true;
+        try consumer.ensureProducerPack();
+        const token = consumer.pack_tokens.?;
+        try testing.expectEqual(TK.at, token[0].kind);
+        try testing.expectEqual(TK.comment, token[1].kind);
+        const before = consumer.saveState();
+        _ = try consumer.adv();
+        try testing.expectEqual(entry.kind, (try consumer.pk()).kind);
+        consumer.restoreState(before);
+        try testing.expectEqual(entry.want, try consumer.at_is_bare_anchor());
+        try testing.expectEqual(before.pack_index, consumer.pack_index);
+        try testing.expectEqual(before.prev_line, consumer.prev_line);
+        try testing.expectEqual(before.prev_end_col, consumer.prev_end_col);
+    }
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const closed = try parseDuoSource("x = f(@ # note\n)", &arena);
+    const first = closed.body.stmts[0].assign.values[0].call.args[0].name;
+    try testing.expectEqualStrings("self", first.ident);
+    try testing.expectEqual(@as(u32, 1), first.loc.line);
+    try testing.expectEqual(@as(u32, 7), first.loc.col);
+    const comma = try parseDuoSource("x = f(@ # note\n, 1)", &arena);
+    const arg = comma.body.stmts[0].assign.values[0].call.args;
+    try testing.expectEqual(@as(usize, 2), arg.len);
+    try testing.expectEqualStrings("self", arg[0].name.ident);
 }
