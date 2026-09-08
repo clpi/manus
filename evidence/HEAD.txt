@@ -1,7 +1,7 @@
-HEAD: 9f5d84869ac11b5dff928c2dd8f3de2ba1448683
-Date: 2026-09-04T14:49:45-07:00
-Branch: main
-Tree: dirty (9 entries)
+HEAD: ca04779a0ac22a1acf121b7d17e350bf8199d32c
+Date: 2026-09-08T10:36:05-07:00
+Branch: named/named-claude-GAP-145-bind-residual-20260908T084504
+Tree: dirty (3 entries)
 Integration: present
 Measurement: absent
 Compiler_B: absent
