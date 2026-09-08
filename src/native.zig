@@ -1283,6 +1283,11 @@ const Arm64Compiler = struct {
     stack_frame_bytes: u16 = 0,
     /// Bytes `sp` currently sits below the frame base `stack_frame_bytes` measures from.
     sp_temp_bytes: u16 = 0,
+    /// True once the prologue has finished laying the frame out and body
+    /// emission owns it. The prologue rebases what its own growth displaces;
+    /// after this there is no rebasing owner, so `frameGrow` over a resident
+    /// would rename that resident's address and refuses instead.
+    frame_sealed: bool = false,
     /// x19–x28 belong to the caller. Saved under the locals/spill frame so
     /// `[sp,#off]` homes stay zero-based. Without this, `strip`'s `i += 1`
     /// left x19–x21 in the caller's registers and `callfirstrel` SIGSEGV'd.
@@ -3154,6 +3159,7 @@ const Arm64Compiler = struct {
         self.fp_stack_slots.clearRetainingCapacity();
         self.stack_frame_bytes = 0;
         self.sp_temp_bytes = 0;
+        self.frame_sealed = false;
         self.callee_save_bytes = 0;
         // `callee_save_plan` is set by the CALLER from the probe and must
         // survive this reset; what it measures must not.
@@ -3668,6 +3674,8 @@ const Arm64Compiler = struct {
                 }
             }
         }
+
+        self.frame_sealed = true;
 
         var code_offsets: std.ArrayList(u32) = .empty;
         defer code_offsets.deinit(self.alloc);
@@ -7293,9 +7301,7 @@ const Arm64Compiler = struct {
             // above the caller-save homes, which now reserves a spill area in
             // the prologue (see `wants_spill`) and takes the branch above.
             if (self.gate_transport) return error.RegisterExhausted;
-            if (self.gp_stack_locals.count() > 0 or
-                self.slot_bases.count() > 0 or
-                self.fp_stack_slots.count() > 0) return error.RegisterExhausted;
+            if (self.frameResidents() > 0) return error.RegisterExhausted;
             if (self.stack_frame_bytes + 16 > self.spill_frame_budget) return error.RegisterExhausted;
             const slot = self.stack_frame_bytes;
             try self.frameGrow(16);
@@ -8183,12 +8189,23 @@ const Arm64Compiler = struct {
     fn assignF64RecordFromFpAbiRegs(self: *Arm64Compiler, base: []const u8, desc: F64RecordDesc) Error!void {
         const n = desc.field_names.len;
         if (n == 0 or n > 8) return self.refuse(@src());
-        const raw_frame: u16 = @intCast(n * 8);
-        const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
-        try self.frameGrow(frame);
+
+        // Reserved once per record local, not once per execution — the same
+        // reuse the scalar arm above carries. Growing again on the next loop
+        // iteration walks `sp` down by a frame per iteration.
+        const first_key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[0] });
+        defer self.alloc.free(first_key);
+        var base_off: u16 = 0;
+        if (self.fp_stack_slots.get(first_key)) |slot| {
+            base_off = slot.off;
+        } else {
+            const raw_frame: u16 = @intCast(n * 8);
+            const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
+            try self.frameGrow(frame);
+        }
         var i: usize = 0;
         while (i < n) : (i += 1) {
-            const off: u16 = @intCast(i * 8);
+            const off: u16 = base_off + @as(u16, @intCast(i * 8));
             const abi_d: u5 = @intCast(i);
             self.used_fp_regs[abi_d] = true;
             try self.emitStrFrameFp(abi_d, off);
@@ -9113,8 +9130,19 @@ const Arm64Compiler = struct {
         self.sp_temp_bytes -= bytes;
     }
 
+    /// Frame residents named from the BOTTOM — a distance UP from `sp` — so a
+    /// move of `sp` renames every one of them. `frameSlotOff`'s spill
+    /// coordinate counts down from the top instead and rides growth unchanged;
+    /// these do not, and only their owner knows the rebase.
+    fn frameResidents(self: *const Arm64Compiler) usize {
+        return self.gp_stack_locals.count() +
+            self.slot_bases.count() +
+            self.fp_stack_slots.count();
+    }
+
     fn frameGrow(self: *Arm64Compiler, bytes: u16) Error!void {
         if (self.sp_temp_bytes != 0) return self.refuse(@src());
+        if (self.frame_sealed and self.frameResidents() > 0) return self.refuse(@src());
         try self.emitSubSp(bytes);
         self.stack_frame_bytes += bytes;
     }
@@ -20960,6 +20988,102 @@ test "a spill and its reload name one byte across a temporary sp window" {
     try std.testing.expectError(error.UnsupportedProgram, compiler.restoreStackFrame());
     try compiler.emitAddSpTemp(16);
     try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+}
+
+// GROWTH RENAMES A BOTTOM-ANCHORED RESIDENT, AND ONLY THE PROLOGUE REBASES ONE
+// (GAP-148).
+//
+// `frameSlotOff` counts DOWN FROM THE TOP, so a spill slot's displacement grows
+// with the frame and names one byte across any growth. GP stack locals, table
+// slot bases and record field slots count UP FROM `sp`: growth leaves their
+// displacement alone, so the same `[sp,#imm]` reaches a byte `bytes` further
+// from the top than the one it means, and the growth's own reservation reaches
+// it too. One address, two owners — this gap's shape at the frame.
+//
+// The prologue rebases what its own growth displaces (the record region under
+// the table region, both under the locals/spill region). Three sites grow during
+// BODY emission, where no rebasing owner exists: `spillReg`'s last resort, which
+// stated the rule by hand for itself, and `assignRecordFromAbiRegs` /
+// `assignF64RecordFromFpAbiRegs`, which stated nothing. `frame_sealed` is the
+// boundary between the two, and `frameResidents` is the one fact both refusals
+// read.
+//
+// Not the closure. Closure remains authoritative `register`/`frame` assignment
+// before emission, per this gap's record, under which the frame is laid out once
+// from the assignment and no emission-time growth exists to rename anything.
+test "a sealed frame refuses growth that would rename a bottom-anchored resident" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.stack_frame_bytes = 64;
+    const local_off: u16 = 24;
+    try compiler.gp_stack_locals.put(alloc, 3, local_off);
+
+    const spill_off: u16 = 16;
+    const store_at = compiler.code.items.len;
+    try compiler.emitStrFrame(9, try compiler.frameSlotOff(spill_off));
+    const store_addr = spDisp(compiler.code.items[store_at..][0..4].*);
+
+    const local_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(local_off, 11);
+    const local_addr = spDisp(compiler.code.items[local_at..][0..4].*);
+    try std.testing.expectEqual(local_off, local_addr);
+    const local_from_top: u16 = compiler.stack_frame_bytes - local_addr - 8;
+
+    // Prologue staging: growth is admitted, and the caller owes the rebase.
+    const grow: u16 = 16;
+    try compiler.frameGrow(grow);
+
+    // Top-anchored: `sp` is `grow` lower and the displacement is `grow` larger,
+    // so the reload names the byte the store wrote.
+    const reload_at = compiler.code.items.len;
+    try compiler.emitLdrFrame(9, try compiler.frameSlotOff(spill_off));
+    try std.testing.expectEqual(store_addr + grow, spDisp(compiler.code.items[reload_at..][0..4].*));
+
+    // Bottom-anchored: the same displacement, `grow` further from the top.
+    const after_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(local_off, 11);
+    try std.testing.expectEqual(local_addr, spDisp(compiler.code.items[after_at..][0..4].*));
+    try std.testing.expectEqual(local_from_top + grow, compiler.stack_frame_bytes - local_addr - 8);
+
+    // FAIL CLOSED once the frame is the body's: no rebasing owner, so growth
+    // over a resident refuses and emits nothing.
+    compiler.frame_sealed = true;
+    try std.testing.expectEqual(@as(usize, 1), compiler.frameResidents());
+    const sealed_len = compiler.code.items.len;
+    const sealed_frame = compiler.stack_frame_bytes;
+    try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(grow));
+    try std.testing.expectEqual(sealed_len, compiler.code.items.len);
+    try std.testing.expectEqual(sealed_frame, compiler.stack_frame_bytes);
+
+    // `spillReg`'s last resort reads the same fact under its own refusal, which
+    // is the capacity answer its callers already handle.
+    try std.testing.expectError(error.RegisterExhausted, compiler.spillReg(9));
+
+    // An empty frame has nothing to rename, so that last resort survives the
+    // seal.
+    compiler.gp_stack_locals.clearRetainingCapacity();
+    try std.testing.expectEqual(@as(usize, 0), compiler.frameResidents());
+    try compiler.frameGrow(grow);
+    try std.testing.expectEqual(sealed_frame + grow, compiler.stack_frame_bytes);
+
+    // A window is still the other refusal, and it holds after the seal.
+    try compiler.emitSubSpTemp(16);
+    try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(grow));
+    try compiler.emitAddSpTemp(16);
 }
 
 // THE CALL'S ANSWER TOOK THE ONE REGISTER THE SPILL MAP WAS STILL DESCRIBING
