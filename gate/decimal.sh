@@ -46,6 +46,10 @@
 #   §4  `1e-19` and `-9223372036854775808` are not merely accepted, they are
 #       carried: the program distinguishes them from the values a dropped fact
 #       would collapse them to (`0` and `0`).
+#
+#   §5  ORDER IS A SEAM TOO, and it opens exactly where two distinct values
+#       share one f64: the realization holds ONE number for both and cannot
+#       order them at all, while the values are strictly ordered.
 set -u
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -231,6 +235,38 @@ holds: i64 = ()
     0
 
 print(holds())
+'
+
+# EQUALITY IS NOT THE ONLY SEAM. `0.1 + 0.2 <= 0.3` does NOT separate the two
+# carriers — the exact sum's f64 projection IS the f64 nearest `0.3`, so asking
+# the realization about an exact sum still answers correctly. The seam only
+# opens where two DISTINCT values share one f64, and then the realization cannot
+# order them at all because it holds one number for both.
+#
+# Both pairs below are one f64 and two values, so f64 calls them EQUAL and
+# answers '0 0 1' — the exact inverse of the expected row.
+carrier ordered '1 1 0' '
+tight: i64 = ()
+  if 0.1 < 0.1 + 1e-19
+    1
+  else
+    0
+
+crowded: i64 = ()
+  if 9223372036854775807.0 < 9223372036854775808.0
+    1
+  else
+    0
+
+merged: i64 = ()
+  if 0.1 >= 0.1 + 1e-19
+    1
+  else
+    0
+
+print(tight())
+print(crowded())
+print(merged())
 '
 
 # ─── the census ────────────────────────────────────────────────────────────

@@ -229,6 +229,22 @@ pub fn sub(a: Decimal, b: Decimal) ?Decimal {
     return add(a, b.neg());
 }
 
+/// The order two exact decimals name, or `null` when the gap between them
+/// demands an alignment `units` cannot hold — the same decline `add` makes, so
+/// the exact fact only ever ADDS an answer here too.
+///
+/// Sign and zero decide before magnitude does, so no alignment is attempted
+/// across a sign boundary and `0` needs none at any scale.
+pub fn compare(a: Decimal, b: Decimal) ?std.math.Order {
+    if (a.isZero() and b.isZero()) return .eq;
+    if (a.isZero()) return if (b.negative) .gt else .lt;
+    if (b.isZero()) return if (a.negative) .lt else .gt;
+    if (a.negative != b.negative) return if (a.negative) .lt else .gt;
+    const parts = align2(a, b) orelse return null;
+    const magnitude = std.math.order(parts.a, parts.b);
+    return if (a.negative) magnitude.invert() else magnitude;
+}
+
 pub fn mul(a: Decimal, b: Decimal) ?Decimal {
     if (a.isZero() or b.isZero()) return Decimal.zero;
     const product = @mulWithOverflow(a.units, b.units);
@@ -326,6 +342,34 @@ test "decimal: the sum of two tenths is the value a third names" {
     try testing.expect(mul(read("0.1").?, read("0.2").?).?.same(read("0.02").?));
     try testing.expect(add(read("1e-19").?, read("0").?).?.same(read("1e-19").?));
     try testing.expect(add(read("1e-30").?, read("1e-30").?).?.same(read("2e-30").?));
+}
+
+test "decimal: the order two values name is the order of the values, not of their roundings" {
+    const sum = add(read("0.1").?, read("0.2").?).?;
+    const third = read("0.3").?;
+    try testing.expectEqual(@as(?std.math.Order, .eq), compare(sum, third));
+    // The positive control: the f64 realization of the same three spellings
+    // puts the sum ABOVE the third, so this row cannot pass by accident.
+    try testing.expect(read("0.1").?.toFloat() + read("0.2").?.toFloat() > third.toFloat());
+
+    try testing.expectEqual(@as(?std.math.Order, .lt), compare(read("0.1").?, read("0.2").?));
+    try testing.expectEqual(@as(?std.math.Order, .gt), compare(read("0.2").?, read("0.1").?));
+    try testing.expectEqual(@as(?std.math.Order, .lt), compare(read("-0.2").?, read("-0.1").?));
+    try testing.expectEqual(@as(?std.math.Order, .lt), compare(read("-1e-30").?, Decimal.zero));
+    try testing.expectEqual(@as(?std.math.Order, .gt), compare(read("1e-30").?, Decimal.zero));
+    try testing.expectEqual(@as(?std.math.Order, .eq), compare(Decimal.zero, read("-0").?));
+    try testing.expectEqual(@as(?std.math.Order, .lt), compare(read("-1e1000000000").?, read("1e-30").?));
+
+    // `1e-19` is far below the ulp of `0.1`, so the f64 realization calls these
+    // EQUAL. The values are not.
+    try testing.expectEqual(
+        @as(?std.math.Order, .lt),
+        compare(read("0.1").?, add(read("0.1").?, read("1e-19").?).?),
+    );
+
+    // An alignment the carrier cannot hold declines rather than guessing a side.
+    try testing.expectEqual(@as(?std.math.Order, null), compare(read("1e40").?, read("1").?));
+    try testing.expectEqual(@as(?std.math.Order, .eq), compare(read("1e40").?, read("1e40").?));
 }
 
 test "decimal: alignment declines a gap it cannot hold instead of spinning on it" {

@@ -2698,6 +2698,21 @@ fn evalInteger(op: ast.BinOp, left: Value, right: Value) EvalError!Value {
 }
 
 fn evalComparison(op: ast.BinOp, left: Value, right: Value) EvalError!Value {
+    // EXACT FIRST, on the same terms as `+`, `-` and `*`. A carrier whose `==`
+    // is exact and whose `<=` is not answers `a + b == 0.3` TRUE and
+    // `a + b <= 0.3` FALSE for the same two values — the fact surviving one
+    // seam and dropping at the next, which is the whole defect class here.
+    if (exactPair(left, right)) |pair| {
+        if (decimal.compare(pair.l, pair.r)) |order| {
+            return .{ .bool = switch (op) {
+                .lt => order == .lt,
+                .gt => order == .gt,
+                .leq => order != .gt,
+                .geq => order != .lt,
+                else => unreachable,
+            } };
+        }
+    }
     if (numericAsFloat(left)) |l| {
         const r = numericAsFloat(right) orelse return error.UnsupportedOperator;
         return .{ .bool = switch (op) {
