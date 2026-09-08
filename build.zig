@@ -431,15 +431,21 @@ pub fn build(b: *std.Build) void {
         }),
     });
     linkProductionIdolFrontend(b, unit_tests.root_module);
-    if (b.args) |arg| {
-        if (arg.len != 0) unit_tests.step.dependOn(&b.addFail("unit-test does not accept runtime arguments; use -Dtest-filter=<name>").step);
-    }
+    const refusal: ?*std.Build.Step = if (b.args) |arg|
+        if (arg.len != 0) &b.addFail("unit-test does not accept runtime arguments; use -Dtest-filter=<name>").step else null
+    else
+        null;
+    if (refusal) |failure| unit_tests.step.dependOn(failure);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&grammar_projection_cmd.step);
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
-    unit_test_step.dependOn(&run_unit_tests.step);
-    unit_test_step.dependOn(&parser_artifact_cmd.step);
+    if (refusal) |failure| {
+        unit_test_step.dependOn(failure);
+    } else {
+        unit_test_step.dependOn(&run_unit_tests.step);
+        unit_test_step.dependOn(&parser_artifact_cmd.step);
+    }
 
     // A DNIR module-global initializer is one fact consumed by both physical
     // realizations. Both columns exit 40, so this gate compares stdout too; an
