@@ -23402,3 +23402,94 @@ test "a release does not give back the claim a pin holds" {
     try std.testing.expect(compiler.spilled_regs.contains(arg_reg));
     try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
 }
+
+/// The machine text one program emits, and the `.mod` instruction's divisor
+/// fact — both read off ONE compile so the two cannot describe different runs.
+fn flooredDivisorProbe(
+    alloc: std.mem.Allocator,
+    source: []const u8,
+    file: []const u8,
+    strip_derivations: bool,
+) !struct { text: usize, divisor: dnir.DivisorSign } {
+    var diagnostic: Diagnostic = .{};
+    var lexer = Lexer.init(source, file);
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    const module = try alloc.create(ast.Module);
+    module.* = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    checked.idol_mode = true;
+    try checked.check_module(module);
+
+    const graph = try alloc.create(semantic_graph.SemanticGraph);
+    graph.* = semantic_graph.SemanticGraph.init(alloc);
+    try liftCheckedTestGraph(module, &checked, graph);
+    // THE CORRUPTION ARM. Nothing else about the program changes: same source,
+    // same graph, same call site, same arguments — only the retained
+    // derivations are gone.
+    if (strip_derivations) graph.results.clearRetainingCapacity();
+
+    var divisor: dnir.DivisorSign = .unknown;
+    const lowered = try dnir_lower.lowerModuleWithGraph(alloc, module, graph);
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.op != .binop) continue;
+                if (instruction.binop != .mod) continue;
+                divisor = instruction.divisor;
+            }
+        }
+    }
+
+    var output = try emitArm64ModuleWithGraph(alloc, module, null, graph, &diagnostic);
+    defer output.deinit(alloc);
+    return .{ .text = output.text.len, .divisor = divisor };
+}
+
+test "native backend: the floored correction spends the retained derivation of its divisor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `n % sum(d, 1)`. The divisor is an APPLICATION, so before a result
+    // relation retained anything about its own result this took the general
+    // eight-instruction floored correction that `n % (d + 1)` does not.
+    const proved =
+        \\sum: i64 = (a: i64, b: i64)
+        \\    a + b
+        \\main: i64 = (seed: i64)
+        \\    d = seed % 10
+        \\    n = seed % 1000
+        \\    n % sum(d, 1)
+    ;
+    // The SAME PROGRAM with the same word over a difference. A difference can
+    // be negative, so no width is proved and the general correction stays —
+    // which is the discrimination `sum` would otherwise have bought by spelling.
+    const spelled =
+        \\sum: i64 = (a: i64, b: i64)
+        \\    a - b
+        \\main: i64 = (seed: i64)
+        \\    d = seed % 10
+        \\    n = seed % 1000
+        \\    n % sum(d, 1)
+    ;
+
+    const with = try flooredDivisorProbe(alloc, proved, "proved.id", false);
+    const without = try flooredDivisorProbe(alloc, proved, "stripped.id", true);
+    const wrong = try flooredDivisorProbe(alloc, spelled, "spelled.id", false);
+
+    // THE FACT REACHES THE INSTRUCTION, as the width it was derived at.
+    try std.testing.expectEqual(dnir.DivisorSign{ .derived = 5 }, with.divisor);
+    try std.testing.expect(with.divisor.proved());
+    // REMOVING IT PREVENTS THE UNJUSTIFIED USE, and the WORD does not restore it.
+    try std.testing.expectEqual(dnir.DivisorSign.unknown, without.divisor);
+    try std.testing.expectEqual(dnir.DivisorSign.unknown, wrong.divisor);
+
+    // AND THE REALIZATION IS DIFFERENT, which is what makes the fact worth
+    // retaining rather than worth asserting. The cheap correction is three
+    // AArch64 instructions shorter, and the two refusals emit the same text as
+    // each other because they are the same program with the same proof missing.
+    try std.testing.expect(with.text < without.text);
+    try std.testing.expectEqual(without.text, wrong.text);
+    try std.testing.expectEqual(@as(usize, 3 * 4), without.text - with.text);
+}

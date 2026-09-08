@@ -949,6 +949,53 @@ pub const RangeFact = struct {
     nonneg_width: u8,
 };
 
+/// THE CHECKED DERIVATION OF ONE ORDINARY RESULT — what `relation`'s result IS,
+/// stated over that relation's own parameters.
+///
+/// ════════════════════════════════════════════════════════════════════════════
+/// THE HOLE THIS CLOSES
+/// ════════════════════════════════════════════════════════════════════════════
+///
+/// `RangeFact` above bounds `a + b` and answered nothing for `sum(a, b)`, and
+/// those are the same value written twice. The relation kept no statement of
+/// its own result, so every consumer of `ranges` lost its proof the moment a
+/// program factored one expression into one relation — a penalty aimed exactly
+/// at the decomposition `AGENTS.md` §"the decomposition" requires. Measured on
+/// the divisor consumer: `n % sum(x, 1)` took the eight-instruction general
+/// floored correction that `n % (x + 1)` does not.
+///
+/// ════════════════════════════════════════════════════════════════════════════
+/// SUBJECT IS THE RELATION ENTITY, AND THE SPELLING IS NOT THE FACT
+/// ════════════════════════════════════════════════════════════════════════════
+///
+/// `relation` is the exact callable entity; `name` is the module coordinate a
+/// call site resolves THROUGH, and it is not what grants anything. A relation
+/// spelled `sum` whose body is `a - b` retains `a - b`, and the range transfer
+/// refuses `-` because a difference can be negative — so the word `sum` buys
+/// nothing and the retained expression is the whole guarantee
+/// (`law.identity.projection`: a name is a coordinate, never semantic
+/// selection). `resultDerivationNamed` additionally refuses an AMBIGUOUS
+/// spelling and a spelling a caller's own local or parameter shadows, so the
+/// coordinate never reaches a relation source resolution would not have.
+///
+/// PRODUCER: `publishResultDerivations`, once per lift, over
+/// `range.derivationOf` — which is the check, and reads the BODY.
+/// INVALIDATION: the relation's parameter list and its body's tail expression.
+/// The claim is over the parameters alone, so no caller, lowering order or
+/// realization decision can move it.
+/// CONSUMER: `range.widthOfExpr`'s application arm, reached from
+/// `nonNegativeWidthOfExpr` and from `publishBindingRanges`; through
+/// `dnir_lower.divisorSign` it reaches `native_backend.emitFlooredDivRem`,
+/// which spends five instructions instead of eight when the divisor is proved.
+/// A consumer that never reads the column stays correct and stays slower.
+pub const ResultFact = struct {
+    relation: id,
+    /// The module coordinate the relation was declared at — the key a call site
+    /// resolves through, never the reason a derivation applies.
+    name: []const u8,
+    derivation: @import("range.zig").Derivation,
+};
+
 /// GAP-182 order 1: graph-emitted experiment(P) tuple face.
 ///
 /// `experiment(P)` = { proposition, evidence kind, cost, conditional theorem }.
@@ -1327,6 +1374,9 @@ pub const SemanticGraph = struct {
     /// PROVED BOUNDS, keyed by the exact binding entity. §2 lists ranges among
     /// the facts this graph carries; this is the column.
     ranges: std.ArrayListUnmanaged(RangeFact) = .empty,
+    /// CHECKED RESULT DERIVATIONS, keyed by the exact callable entity — what
+    /// each ordinary result relation's result IS, over its own parameters.
+    results: std.ArrayListUnmanaged(ResultFact) = .empty,
     /// GAP-182 order 1: graph-emitted experiment(P) facts.
     experiments: std.ArrayListUnmanaged(ExperimentFact) = .empty,
     /// `place[value]` for application values, ascending by value id.
@@ -1418,6 +1468,7 @@ pub const SemanticGraph = struct {
         self.mutation_closure.deinit(self.alloc);
         self.mutation_places.deinit(self.alloc);
         self.ranges.deinit(self.alloc);
+        self.results.deinit(self.alloc);
         for (self.experiments.items) |*exp| {
             self.alloc.free(exp.proposition);
             self.alloc.free(exp.producer);
@@ -4301,6 +4352,79 @@ pub const SemanticGraph = struct {
         return census.count();
     }
 
+    /// THE ONE WRITE SITE for `SemanticGraph.results`.
+    ///
+    /// One module relation at a time: ask `range.derivationOf` whether the
+    /// relation's result is one expression closed over its own parameters, and
+    /// publish the answer keyed to the callable entity. The CHECK is the whole
+    /// admission and it lives in the producer beside the transfer that consumes
+    /// it, so there is no second opinion about what a retained derivation is.
+    ///
+    /// A METHOD-PATH DECLARATION IS NOT RETAINED (`fd.path.len != 1`). Its
+    /// coordinate is not a bare module name, so `resultDerivationNamed` could
+    /// not resolve to it without inventing a resolution rule source does not
+    /// have — and inventing one is how a fact reaches a relation the program
+    /// never named.
+    fn publishResultDerivations(self: *SemanticGraph, mod: *const ast.Module) !void {
+        const value_range = @import("range.zig");
+        if (self.results.items.len > 0) return;
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1) continue;
+            const relation = self.findFuncDecl(fd) orelse continue;
+            const derivation = value_range.derivationOf(&fd.func) orelse continue;
+            try self.results.append(self.alloc, .{
+                .relation = relation,
+                .name = fd.path[0],
+                .derivation = derivation,
+            });
+        }
+    }
+
+    /// The checked derivation of one relation's result, or null for RETAINED
+    /// NOTHING — which is not "the result is unknown" and not "the relation has
+    /// no result". It is "this relation's result is not a function of its
+    /// arguments alone, so nothing about it was retained".
+    pub fn resultDerivation(self: *const SemanticGraph, relation: id) ?@import("range.zig").Derivation {
+        for (self.results.items) |fact| {
+            if (fact.relation == relation) return fact.derivation;
+        }
+        return null;
+    }
+
+    /// The derivation a CALLEE SPELLING reaches from inside `caller`, or null.
+    ///
+    /// THIS IS THE RESOLUTION STEP, AND IT IS WHERE A SPELLING IS REFUSED. The
+    /// derivation is keyed to a callable entity; a name is how a call site
+    /// reaches one, and it reaches nothing when
+    ///
+    ///   * the caller owns a local or parameter of that spelling. A binding
+    ///     WINS over an outer relation (`AGENTS.md` consequence 3), so the
+    ///     application is of a value this column says nothing about;
+    ///   * two module relations share the spelling. A name-facing projection
+    ///     that picked the first would let declaration order decide a proof;
+    ///   * the entity the row names is no longer a callable in this graph.
+    ///
+    /// Each of those answers null, and null is "nothing proved".
+    fn resultDerivationNamed(
+        self: *const SemanticGraph,
+        caller: id,
+        callee: []const u8,
+    ) ?@import("range.zig").Derivation {
+        if (self.bindingNamedIn(caller, callee) != null) return null;
+        var match: ?usize = null;
+        for (self.results.items, 0..) |fact, i| {
+            if (!std.mem.eql(u8, fact.name, callee)) continue;
+            if (match != null) return null;
+            match = i;
+        }
+        const at = match orelse return null;
+        const fact = self.results.items[at];
+        if (!self.callable(fact.relation)) return null;
+        return fact.derivation;
+    }
+
     /// The place and region censuses of one relation body. Idempotent: a second
     /// lift is a no-op, so a graph lifted twice does not get two censuses.
     /// THE ONE WRITE SITE for `SemanticGraph.ranges`.
@@ -4325,7 +4449,13 @@ pub const SemanticGraph = struct {
             const fd = &stmt.func_decl;
             if (fd.path.len != 1) continue;
             const relation = self.findFuncDecl(fd) orelse continue;
-            var widths = try value_range.widthsOf(self.alloc, &fd.func, outer);
+            // THE SAME COLUMN THE CONSUMER READS. Without this the producer
+            // would answer nothing for `d = sum(x, 1)` while
+            // `nonNegativeWidthOfExpr` answered a width for the identical
+            // application — one fact with two answers, which is the shape
+            // `law.fact.producer.one` refuses.
+            var reach = RangeReach{ .graph = self, .relation = relation };
+            var widths = try value_range.widthsOf(self.alloc, &fd.func, outer, reach.results());
             defer widths.deinit(self.alloc);
             if (widths.count() == 0) continue;
             for (self.nodes.items, 0..) |node, i| {
@@ -4373,13 +4503,25 @@ pub const SemanticGraph = struct {
         relation: id,
 
         fn lookup(self: *const RangeReach) @import("range.zig").Lookup {
-            return .{ .ctx = self, .of = widthOfName };
+            return .{ .ctx = self, .of = widthOfName, .result = derivationOfCallee };
+        }
+
+        /// The producer's face of the same reach: `range.widthsOf` settles a
+        /// lattice with its own in-flight widths, but resolves an APPLICATION
+        /// against this published column exactly as a consumer does.
+        fn results(self: *const RangeReach) @import("range.zig").Results {
+            return .{ .ctx = self, .of = derivationOfCallee };
         }
 
         fn widthOfName(ctx: *const anyopaque, name: []const u8) ?u8 {
             const self: *const RangeReach = @ptrCast(@alignCast(ctx));
             const subject = self.graph.bindingNamedIn(self.relation, name) orelse return null;
             return self.graph.nonNegativeWidth(subject);
+        }
+
+        fn derivationOfCallee(ctx: *const anyopaque, callee: []const u8) ?@import("range.zig").Derivation {
+            const self: *const RangeReach = @ptrCast(@alignCast(ctx));
+            return self.graph.resultDerivationNamed(self.relation, callee);
         }
     };
 
@@ -4917,6 +5059,10 @@ pub const SemanticGraph = struct {
         try self.liftBindingsInStmts(file, mod_id, &mod.body);
         try self.liftPlaces(mod);
         try self.liftBodies(mod);
+        // BEFORE the ranges, which consume it: a body being settled resolves an
+        // application through this column, and a column published afterwards
+        // would leave the producer answering less than the consumer.
+        try self.publishResultDerivations(mod);
         // AFTER the bindings, because a range is keyed by binding entity and
         // there is nothing to key it to before `liftBindingsInStmts` has run.
         try self.publishBindingRanges(mod);
@@ -11485,6 +11631,150 @@ test "semantic_graph: applied relation and selected target remain distinct" {
     graph.application_facts.items[row].applied = .{ .one = applied };
     graph.application_facts.items[row].target = .unknown;
     try std.testing.expect(graph.application(application) == null);
+}
+
+test "semantic_graph: a retained result derivation is what proves an application's divisor" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `d` is four bits (`%` takes the divisor's bound), `1` is one, so `a + b`
+    // over them is `max(4,1)+1` — the SAME answer `n % (d + 1)` gets, which is
+    // the point: factoring one expression into one relation costs no proof.
+    const source =
+        \\sum: i64 = (a: i64, b: i64)
+        \\    a + b
+        \\main: i64 = (seed: i64)
+        \\    d = seed % 10
+        \\    n = seed % 1000
+        \\    n % sum(d, 1)
+    ;
+    var lexer = Lexer.init(source, "derivation.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&module, "derivation.id");
+
+    var caller: ?id = null;
+    var divisor: ?*const ast.Expr = null;
+    for (module.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        const fd = &stmt.func_decl;
+        if (!std.mem.eql(u8, fd.path[0], "main")) continue;
+        caller = graph.findFuncDecl(fd).?;
+        const tail = fd.func.body.tail_expr.?;
+        try std.testing.expect(tail.* == .binop);
+        divisor = tail.binop.rhs;
+    }
+    const relation = caller.?;
+    const application = divisor.?;
+    try std.testing.expect(application.* == .call);
+
+    // ONE FACT, KEYED TO THE CALLABLE ENTITY.
+    try std.testing.expectEqual(@as(usize, 1), graph.results.items.len);
+    const retained = graph.results.items[0];
+    try std.testing.expect(graph.callable(retained.relation));
+    try std.testing.expect(graph.resultDerivation(retained.relation) != null);
+    try std.testing.expectEqualStrings("sum", retained.name);
+    try std.testing.expectEqual(@as(usize, 2), retained.derivation.params.len);
+    // `main` retains nothing: its body is statements, so its result is not a
+    // function of its own parameters.
+    try std.testing.expectEqual(@as(?@import("range.zig").Derivation, null), graph.resultDerivation(relation));
+
+    // THE CONSUMER READS IT. This is the query `dnir_lower.divisorSign` asks,
+    // and its answer is what `native_backend.emitFlooredDivRem` spends five
+    // instructions on instead of eight.
+    try std.testing.expectEqual(@as(?u8, 5), graph.nonNegativeWidthOfExpr(relation, application));
+
+    // A BINDING OF THAT SPELLING WINS AND IS NOT THIS RELATION. `bindingNamedIn`
+    // is the resolution boundary, so a caller holding its own `sum` reaches a
+    // value this column says nothing about.
+    try std.testing.expect(graph.resultDerivationNamed(relation, "sum") != null);
+    try std.testing.expect(graph.resultDerivationNamed(relation, "d") == null);
+
+    // REMOVED: the transform is not licensed. The application is unchanged, the
+    // arguments are unchanged, and the divisor is unproved again.
+    const saved = graph.results.items[0];
+    graph.results.clearRetainingCapacity();
+    try std.testing.expectEqual(@as(?u8, null), graph.nonNegativeWidthOfExpr(relation, application));
+
+    // CORRUPT ARITY: one parameter against two arguments proves nothing rather
+    // than reading a parameter bound to no argument as unknown.
+    try graph.results.append(alloc, .{
+        .relation = saved.relation,
+        .name = saved.name,
+        .derivation = .{ .params = saved.derivation.params[0..1], .expr = saved.derivation.expr },
+    });
+    try std.testing.expectEqual(@as(?u8, null), graph.nonNegativeWidthOfExpr(relation, application));
+
+    // CORRUPT SUBJECT: the row names an entity that is not a callable in this
+    // graph, so the spelling reaches nothing even though the spelling matches.
+    graph.results.items[0] = .{
+        .relation = @intCast(graph.nodes.items.len + 1),
+        .name = saved.name,
+        .derivation = saved.derivation,
+    };
+    try std.testing.expectEqual(@as(?u8, null), graph.nonNegativeWidthOfExpr(relation, application));
+
+    // RESTORED: the same fact answers the same width again, so every refusal
+    // above was the fact's absence and not the query going cold.
+    graph.results.items[0] = saved;
+    try std.testing.expectEqual(@as(?u8, 5), graph.nonNegativeWidthOfExpr(relation, application));
+}
+
+test "semantic_graph: the spelling of a relation does not confer the derivation of another" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Same program, same word, same call site — and `sum` subtracts. A
+    // difference can be negative, so the transfer refuses it and the divisor
+    // stays unproved. The guarantee is the retained expression, never the name.
+    const source =
+        \\sum: i64 = (a: i64, b: i64)
+        \\    a - b
+        \\main: i64 = (seed: i64)
+        \\    d = seed % 10
+        \\    n = seed % 1000
+        \\    n % sum(d, 1)
+    ;
+    var lexer = Lexer.init(source, "spelling.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&module, "spelling.id");
+
+    var relation: ?id = null;
+    var application: ?*const ast.Expr = null;
+    for (module.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        const fd = &stmt.func_decl;
+        if (!std.mem.eql(u8, fd.path[0], "main")) continue;
+        relation = graph.findFuncDecl(fd).?;
+        application = fd.func.body.tail_expr.?.binop.rhs;
+    }
+
+    // The derivation IS retained — the check reads closure, not arithmetic.
+    try std.testing.expectEqual(@as(usize, 1), graph.results.items.len);
+    try std.testing.expectEqualStrings("sum", graph.results.items[0].name);
+    // And it proves nothing.
+    try std.testing.expectEqual(@as(?u8, null), graph.nonNegativeWidthOfExpr(relation.?, application.?));
 }
 
 test "semantic_graph: checked occurrences keep distinct packed ranges" {

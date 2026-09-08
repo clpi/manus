@@ -142,6 +142,13 @@ FOREIGN  foreign_transpile.zig
 
 DRIVER   main.zig
 DRIVER   tests.zig
+# `run -> completion -> outcome`, and the outcome belongs to the DRIVER because
+# nothing below it reads one: `main.zig` and `tests.zig` are its only importers
+# and `scratch.zig` (RUNTIME) is its only import, so no edge here crosses a
+# layer in the forbidden direction. It arrived with the exit-discrimination
+# transfer and was never classified, which failed the whole gate closed —
+# correctly, and for every agent at once.
+DRIVER   run_outcome.zig
 DRIVER   property_tests.zig
 # The graph-sovereignty instrument. `poison.zig` needs only AST, but it is
 # EVIDENCE, not a compiler stage: no production path may import either of these,

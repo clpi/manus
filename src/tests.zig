@@ -31,6 +31,10 @@ test {
     _ = @import("transform_engine.zig");
     _ = @import("meta_dispatch.zig");
     _ = @import("semantic_graph.zig");
+    // The range lattice and the result derivations it consumes. Its tests never
+    // ran from here, so `derivationOf`'s admission table was unexercised by the
+    // aggregate that gates a merge.
+    _ = @import("range.zig");
     _ = @import("semantic_algebra.zig");
     _ = @import("sim.zig");
     _ = @import("c_frontend.zig");
