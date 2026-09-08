@@ -112,5 +112,36 @@ cp "$here/subject.sh" "$mirror/gate/subject.sh"
 printf '0\n' >"$mirror/examples/one.id"
 expect_fail "archive-shaped tree without Git is never evidence" "$mirror/gate/vocabulary.sh" --diff "$tmp/body.diff"
 
+# IDENTITY CLASS. Every case below names a declaration that ALREADY EXISTS in
+# this tree, so the answer comes from the production graph rather than from a
+# fixture agreeing with itself. The pair that motivated them: `first_value` and
+# `firstvalue` were both graph-proven for one file, which proves only that the
+# parser accepted two spellings.
+tree_diff() {
+    name=$1
+    path=$2
+    line=$3
+    {
+        printf -- '--- a/%s\n' "$path"
+        printf -- '+++ b/%s\n' "$path"
+        printf -- '@@ -1,0 +1 @@\n'
+        printf '+%s\n' "$line"
+    } >"$tmp/$name.diff"
+}
+
+tree_diff word lib/compiler/parser.id 'eval: i64 = (src: str)'
+expect_pass "a native word on an Idol callable" "$gate" --diff "$tmp/word.diff"
+tree_diff bytes lib/compiler/parser.id 'is_digit: i64 = (c: i64)'
+expect_fail "foreign exact bytes on an Idol callable, which binds nothing" "$gate" --diff "$tmp/bytes.diff"
+tree_diff bound lib/sqlite.id 'sqlite3_open: int = (path: str, db: any)'
+expect_pass "foreign exact bytes carried by a real foreign binding" "$gate" --diff "$tmp/bound.diff"
+tree_diff aliased vendor/mathc.id 'sin_c: f64 = (x: f64)'
+expect_fail "a foreign spelling that is not the symbol it binds" "$gate" --diff "$tmp/aliased.diff"
+
+# The selftest carries the in-graph damage controls (no normalization; foreign
+# bytes need a binding; a binding admits only its own bytes) and nothing else
+# runs it, so `--controls` would otherwise never reach them.
+expect_pass "gate selftest, including the identity damage controls" "$gate" --selftest
+
 printf '\ncontrols: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
