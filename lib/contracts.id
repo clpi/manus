@@ -76,11 +76,6 @@ all: str = (conditions: any)
   for i = 1, conditions:len()
     parts[i] = "(" .. conditions[i] .. ")"
   str_join(parts, " && ")
-any: str = (conditions: any)
-  parts = {}
-  for i = 1, conditions:len()
-    parts[i] = "(" .. conditions[i] .. ")"
-  str_join(parts, " || ")
 implies: str = (antecedent: str, consequent: str)
   "(!(" .. antecedent .. ") || (" .. consequent .. "))"
 between: str = (value: str, lo: str, hi: str)

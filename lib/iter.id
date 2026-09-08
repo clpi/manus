@@ -23,17 +23,6 @@ filter: any = (list: any, fn_ref: any)
 reduce: any = (list: any, init: any, fn_ref: any)
   fn.foldl(list, init, fn_ref)
 
-# any: return true if any element satisfies the predicate.
-any: bool = (list: any, fn_ref: any)
-  if list == nil
-    return false
-  i = 1
-  while i <= list:len()
-    if fn_ref(list[i])
-      return true
-    i = i + 1
-  false
-
 # all: return true if all elements satisfy the predicate.
 all: bool = (list: any, fn_ref: any)
   if list == nil

@@ -453,12 +453,6 @@ where: any = (condition, x, y)
             result.data[i] = y.data[i]
     result
 
-# Any (returns true if any element is non-zero)
-any: bool = (t)
-    for i = 1, t.size
-        if t.data[i] != 0 return true 
-    false
-
 # All (returns true if all elements are non-zero)
 all: bool = (t)
     for i = 1, t.size
