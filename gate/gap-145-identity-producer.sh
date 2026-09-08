@@ -8,8 +8,14 @@
 # see a zero-consumer producer: gaps/GAP-145.md. Not repeated here.
 #
 # The gate refuses the CLASS (law.repair.class), so its predicate is a ROW
-# recognised by shape: a brace group carrying a text literal beside a `.kw_`
-# identity at its own nesting level. `;` and `=>` disqualify it, because they
+# recognised by shape: a brace group carrying a text literal beside an owner
+# IDENTITY at its own nesting level. The identity side is a name the owner
+# declares, read from its projection, not the `.kw_` spelling that name happens
+# to wear — a prefix is a spelling, and matching a row by a spelling is the
+# drift this gate has already been repaired for five times. So the identity is
+# recognised as `.name`, as a bare `name`, and inside a text literal that spells
+# it, which is how a row reconstructs identity from source text.
+# `;` and `=>` disqualify it, because they
 # are what separates a row from a BLOCK — a function body, a test, a switch
 # prong all name identities and hold strings, and reporting those reports the
 # ordinary consumers this tree is made of. A group enclosing a row is the list,
@@ -97,33 +103,57 @@ function leave(   qual) {
 
 # One left-to-right pass. Comments and literals are consumed where they start,
 # so a brace, a quote or a `.kw_` inside either cannot reach the row state.
-function scan(line,   L, i, c, d) {
+# A text literal that spells one of the owner's identities is that identity
+# being named through source text, not a keyword's spelling.
+function text(s) {
+    if (depth < 1) return
+    if (s in id) k[depth] = 1
+    else q[depth] = 1
+}
+
+function scan(line,   L, i, j, c, d, s) {
     L = length(line)
     for (i = 1; i <= L; i++) {
         c = substr(line, i, 1)
         if (c == "/") { if (substr(line, i + 1, 1) == "/") return }
-        else if (c == "\\") { if (substr(line, i + 1, 1) == "\\") { if (depth > 0) q[depth] = 1; return } }
+        else if (c == "\\") {
+            if (substr(line, i + 1, 1) == "\\") {
+                s = substr(line, i + 2)
+                sub(/^[ \t]+/, "", s)
+                sub(/[ \t\r]+$/, "", s)
+                text(s)
+                return
+            }
+        }
         else if (c == "\"" || c == "'") {
-            if (c == "\"" && depth > 0) q[depth] = 1
+            s = ""
             for (i++; i <= L; i++) {
                 d = substr(line, i, 1)
-                if (d == "\\") i++
+                if (d == "\\") { s = s d substr(line, i + 1, 1); i++ }
                 else if (d == c) break
+                else s = s d
             }
+            if (c == "\"") text(s)
         }
         else if (c == "{") enter()
         else if (c == "}") { if (!leave()) return }
         else if (c == ";") { if (depth > 0) sc[depth] = 1 }
         else if (c == "=") { if (substr(line, i + 1, 1) == ">" && depth > 0) sc[depth] = 1 }
-        else if (c == ".") {
-            if (substr(line, i, 4) == ".kw_" && substr(line, i + 4, 1) ~ /[a-z]/ && depth > 0) k[depth] = 1
+        else if (c ~ /[A-Za-z_]/) {
+            for (j = i + 1; j <= L && substr(line, j, 1) ~ /[A-Za-z0-9_]/; j++) ;
+            if (depth > 0 && (substr(line, i, j - i) in id)) k[depth] = 1
+            i = j - 1
         }
     }
 }
 
 BEGIN {
-    listfile = ARGV[1]
+    idfile = ARGV[1]
+    listfile = ARGV[2]
     ARGV[1] = ""
+    ARGV[2] = ""
+    while ((getline w < idfile) > 0) if (w != "") id[w] = 1
+    close(idfile)
     while ((getline unit < listfile) > 0) {
         count = 0; depth = 0; bad = 0; r = 0
         while ((r = (getline line < unit)) > 0) scan(line)
@@ -181,7 +211,8 @@ walk() {
     walkseen=0
     walkowner=0
     walkhits=""
-    find "$walkroot" -name '*.zig' 2>/dev/null | sort >"$walkout.units"
+    find "$walkroot" \( -name '*.zig' -o -name '*.zon' \) 2>/dev/null |
+        sort >"$walkout.units"
     : >"$walkout.scanned"
     while IFS= read -r unit; do
         walkseen=$((walkseen + 1))
@@ -198,7 +229,8 @@ walk() {
         printf '%s\n' "$unit" >>"$walkout.scanned"
     done <"$walkout.units"
 
-    awk -f "$scratch/row.awk" "$walkout.scanned" >"$walkout.counts" 2>/dev/null
+    awk -f "$scratch/row.awk" "$scratch/ids" "$walkout.scanned" \
+        >"$walkout.counts" 2>/dev/null
 
     # Paired in list order. A short, absent or unparsable count file leaves
     # units without a count, and an uncounted unit is unknown, never clean.
@@ -239,6 +271,15 @@ census() {
     echo $((clast - cfirst + 1))
 }
 
+# The identity names the owner DECLARES as keywords, one per line, from the row
+# it marks `.keyword = true`. Refuses rather than returning a short set: an
+# empty set makes every row's identity side false, and the walk would then
+# measure nothing and report it as a clean tree.
+identities() {
+    sed -n 's/^.*\.kind = \.\([a-z][a-z0-9_]*\),.*\.keyword = true.*$/\1/p' \
+        "$1" 2>/dev/null | sort -u
+}
+
 # ── 1. the run is bound to a real candidate tree ────────────────────────────
 #
 # Every section below reports zero against an absent tree. A zero from a tree
@@ -262,6 +303,18 @@ fi
 examined=$((examined + 1))
 if [ ! -f "$ROOT/$OWNERPROJ" ] || [ ! -f "$ROOT/$CLASSIFIER" ]; then
     bad "$OWNERPROJ or $CLASSIFIER absent — the single producer is not present to be held to anything"
+    bound=0
+fi
+
+examined=$((examined + 1))
+identities "$ROOT/$OWNERPROJ" >"$scratch/ids" 2>/dev/null
+idcount=$(grep -c . "$scratch/ids" 2>/dev/null)
+rowcount=$(grep -c '\.keyword = true' "$ROOT/$OWNERPROJ" 2>/dev/null)
+case ${idcount:-x}${rowcount:-x} in
+    *[!0-9]*) idcount=-1; rowcount=-1 ;;
+esac
+if [ "$idcount" -lt 1 ] || [ "$idcount" -ne "$rowcount" ]; then
+    bad "the owner declares ${idcount} keyword identities against ${rowcount} keyword rows in $OWNERPROJ — the identity side of the row predicate is not established"
     bound=0
 fi
 
@@ -387,6 +440,21 @@ printf 'pub const keywords = .{ .{ .text = "while", .kind = .kw_while, .flags = 
 printf 'pub const keywords = [_]Entry{ Entry{ .text = "while", .kind = .kw_while } };\n' \
     >"$plant/typed.zig"
 
+# atfield: the identity is reached through its own name as source text, which
+# is the shape a `.kw_` prefix cannot see and the one law.identity.projection
+# refuses most directly — a name selecting meaning after resolution.
+printf 'pub const keywords = .{ .{ .text = "while", .kind = @field(TokenKind, "kw_while") } };\n' \
+    >"$plant/atfield.zig"
+
+# bareid: the identity carries no leading dot, because the enum was aliased in.
+printf 'const kw_while = TokenKind.kw_while;\npub const keywords = .{ .{ .text = "while", .kind = kw_while } };\n' \
+    >"$plant/bareid.zig"
+
+# zon: the rows leave .zig entirely. A second producer is a second producer at
+# whatever extension it is imported through.
+printf '.{ .{ .text = "while", .kind = .kw_while } }\n' \
+    >"$plant/table.zon"
+
 # The owner projection's rows. Admitted at the owner's path...
 cat >"$plant/grammar_role_table.zig" <<'PROBE'
 pub const rows = [_]Row{
@@ -440,15 +508,16 @@ PROBE
 walk "$scratch/planted" "$scratch/plantedout"
 
 examined=$((examined + 1))
-if [ "$rows" -ne 9 ] || [ "$seen" -ne 10 ] || [ "$ownerseen" -ne 1 ]; then
-    bad "the row scanner is broken: rows=$rows (want 9) units=$seen (want 10) owner=$ownerseen (want 1) hits:$hits"
+if [ "$rows" -ne 12 ] || [ "$seen" -ne 13 ] || [ "$ownerseen" -ne 1 ]; then
+    bad "the row scanner is broken: rows=$rows (want 12) units=$seen (want 13) owner=$ownerseen (want 1) hits:$hits"
 fi
 
-for variant in splitrow reorder renamefield tuple deep/nested inner typed ownercopy; do
+for variant in splitrow.zig reorder.zig renamefield.zig tuple.zig deep/nested.zig \
+    inner.zig typed.zig ownercopy.zig atfield.zig bareid.zig table.zon; do
     examined=$((examined + 1))
     case $hits in
-        *"src/$variant.zig("*) ;;
-        *) bad "src/$variant.zig is accepted by the row scanner" ;;
+        *"src/$variant("*) ;;
+        *) bad "src/$variant is accepted by the row scanner" ;;
     esac
 done
 
@@ -461,6 +530,47 @@ for admitted in grammar_role_table clean; do
         *) ;;
     esac
 done
+
+# The identity side of the row predicate. It is read from the owner rather than
+# spelled here, so what has to be controlled is the read: that it recovers the
+# names a projection declares, that it recovers none from a projection that
+# declares none, and that the empty set it would then hand the scanner makes
+# every row's identity side false. That last arm is why section 1b stops the run
+# instead of letting the zero it produces be reported as a clean tree.
+
+cat >"$scratch/idsource.zig" <<'PROBE'
+pub const rows = [_]Row{
+    .{ .kind = .kw_while, .spell = "while", .keyword = true },
+    .{ .kind = .kw_match, .spell = "match", .keyword = true },
+    .{ .kind = .name, .spell = "", .keyword = false },
+};
+PROBE
+: >"$scratch/idnone.zig"
+
+examined=$((examined + 1))
+if [ "$(identities "$scratch/idsource.zig" | tr '\n' ' ')" != "kw_match kw_while " ]; then
+    bad "the identity-set control is broken: a projection declaring kw_while and kw_match read as '$(identities "$scratch/idsource.zig" | tr '\n' ' ')'"
+fi
+
+examined=$((examined + 1))
+if [ -n "$(identities "$scratch/idnone.zig")" ]; then
+    bad "the identity-set control is broken: a projection declaring no keyword row still produced identities"
+fi
+
+examined=$((examined + 1))
+cp "$scratch/ids" "$scratch/ids.held" || cannot "the identity-set control could not hold the established set"
+: >"$scratch/ids"
+walk "$scratch/planted" "$scratch/blindout"
+cp "$scratch/ids.held" "$scratch/ids" || cannot "the identity-set control could not restore the established set"
+if [ "$rows" -ne 0 ]; then
+    bad "the identity-set control is broken: an empty identity set still counted rows=$rows, so its refusal in section 1b proves nothing"
+fi
+
+walk "$scratch/planted" "$scratch/plantedout"
+examined=$((examined + 1))
+if [ "$rows" -ne 12 ]; then
+    bad "the identity-set control is broken: the established set did not restore the planted count (rows=$rows, want 12)"
+fi
 
 # The empty tree, which is exactly the state section 3's unit and owner
 # predicates reject. Without this they are satisfied by a walk that never ran.
