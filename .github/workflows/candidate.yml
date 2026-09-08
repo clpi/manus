@@ -23,11 +23,13 @@ concurrency:
 jobs:
   candidate:
     name: Exact protected-base candidate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, idol]
     timeout-minutes: 60
     env:
       CANDIDATE_BASE: ${{ github.event.pull_request.base.sha }}
       CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
+      IDOL_BUILD_LOCK: /tmp/idol-lock
+      IDOL_LOCK_HELD: '0'
     steps:
       # pull_request_target loads this workflow from the base revision. The
       # candidate checkout is data only: no candidate source is compiled or
@@ -56,6 +58,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test -d "$RUNNER_TEMP"
+          printf 'TMPDIR=%s\nTMP=%s\nTEMP=%s\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
           basework="$GITHUB_WORKSPACE/protected-base"
           headwork="$GITHUB_WORKSPACE/candidate-head"
           test "$GITHUB_SHA" = "$CANDIDATE_BASE"
@@ -93,6 +97,7 @@ jobs:
           (
             cd "$basework"
             ZIG_GLOBAL_CACHE_DIR="$zigglobal" TMPDIR="$buildtmp" TMP="$buildtmp" TEMP="$buildtmp" \
+              "$basework/tools/node/dev/idol-lock" --timeout 5 -- \
               zig build --cache-dir "$ziglocal" --prefix "$prefix"
           )
           test -z "$(git -C "$basework" status --porcelain=v1 --untracked-files=all)"
@@ -109,7 +114,8 @@ jobs:
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
-          python3 "$basework/tools/node/dev/candidate" \
+          "$basework/tools/node/dev/idol-lock" --timeout 5 -- \
+            python3 "$basework/tools/node/dev/candidate" \
             --selftest \
             --idol "$IDOL_ADMISSION_COMPILER" \
             --idol-sha256 "$IDOL_ADMISSION_COMPILER_SHA256"
@@ -124,7 +130,8 @@ jobs:
           test "$(git -C "$headwork" rev-parse HEAD)" = "$CANDIDATE_HEAD"
           (
             cd "$headwork"
-            python3 "$basework/tools/node/dev/candidate" \
+            "$basework/tools/node/dev/idol-lock" --timeout 5 -- \
+              python3 "$basework/tools/node/dev/candidate" \
               --github-event "$GITHUB_EVENT_PATH" \
               --protected-base "$CANDIDATE_BASE" \
               --trusted-root "$basework" \
@@ -143,7 +150,8 @@ jobs:
           headwork="$GITHUB_WORKSPACE/candidate-head"
           (
             cd "$headwork"
-            python3 "$basework/tools/node/dev/candidate" \
+            "$basework/tools/node/dev/idol-lock" --timeout 5 -- \
+              python3 "$basework/tools/node/dev/candidate" \
               --github-event "$GITHUB_EVENT_PATH" \
               --protected-base "$CANDIDATE_BASE" \
               --trusted-root "$basework" \
