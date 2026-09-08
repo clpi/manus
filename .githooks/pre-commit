@@ -104,7 +104,7 @@ if [ -s "$host" ]; then
   }
 fi
 
-git diff --cached -U0 --diff-filter=ACM -- 'src/semantic_graph.zig' 'src/graph_query.zig' 'src/graph_fact_producer.zig' 'src/sim_pipeline.zig' 'src/knowledge_snapshot.zig' >"$graph" || true
+git diff --cached -U0 --diff-filter=ACM -- 'src/graph.zig' 'src/graph_query.zig' 'src/graph_fact_producer.zig' 'src/sim_pipeline.zig' 'src/knowledge_snapshot.zig' >"$graph" || true
 if [ -s "$graph" ]; then
   "$idol" check "$root/gate/graph.id" || {
     echo "" >&2
