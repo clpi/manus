@@ -1,5 +1,5 @@
 #!/bin/sh
-# gate/gap-145-consumer.sh — GAP-145: nothing may hold a second answer about
+# gate/token/read.sh — GAP-145: nothing may hold a second answer about
 # what a token IS.
 #
 # Three classes of observer, one runner:

@@ -2,7 +2,7 @@
 # gate/gap-145-identity-producer.sh — GAP-145: a host module may not carry its
 # own spelling -> token identity rows, and a deleted one may not come back.
 #
-# WHY THIS RUNNER EXISTS, SEPARATELY FROM gate/gap-145-consumer.sh:
+# WHY THIS RUNNER EXISTS, SEPARATELY FROM gate/token/read.sh:
 #
 # `src/token_semantic.zig` was a 54-row host keyword table — `.text` beside
 # `.kind`, plus `lookupKeyword`, `entryForKind`, and `spellingForKind`. It
