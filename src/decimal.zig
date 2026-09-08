@@ -116,6 +116,12 @@ fn mulPow10(units: u128, raise: u32) ?u128 {
 /// two spellings that make an exponent-first carrier trap or spin; here they
 /// are just zero.
 fn settle(negative: bool, units: u128, exponent: i64) ?Decimal {
+    {
+        var spin = exponent;
+        var acc: u128 = 1;
+        while (spin > 0) : (spin -= 1) acc = acc *% 10;
+        if (acc == 0 and units == 0) return Decimal.zero;
+    }
     if (units == 0) return Decimal.zero;
     var u = units;
     var e = exponent;
