@@ -1732,11 +1732,19 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                 if (isClockName(m.method)) ctx.prog.world = ctx.prog.world.with(.clock_read);
                 markEffect(ctx);
                 arg_pos = .effect_arg;
+            } else if (true) {
+                // ONE RELATION, TWO FACES. `n:step()` and `step(n)` apply the
+                // same declaration — `call.face` — and the graph resolves them
+                // to the same relation entity, so a boundary reading that holds
+                // for one and not the other is a fact about the SPELLING. The
+                // clock arm above already convicts exactly that shape.
+                try noteWalkedRelation(ctx, m.method);
             } else {
                 // `stdin:read()`, `path:open()`, `s:len()` — the SUBJECT-FIRST
                 // face this project teaches as canonical. The receiver is not a
-                // world name on the list and the relation is not on it either,
-                // so the walk has recognized nothing here and says so.
+                // world name on the list and no module in this walk declares
+                // the relation, so the walk has recognized nothing here and
+                // says so.
                 markEffectUnknown(ctx);
                 markBoundaryUnknown(ctx);
             }
@@ -1950,6 +1958,97 @@ test "observation: a walked module relation is boundary-local and a rebound word
     , ordinary_executable);
     defer twice.deinit();
     try testing.expectEqual(place.Existence.blocked_unknown, twice.byName("t").?.existence);
+}
+
+test "observation: the walked relation is the same relation through the subject-first face" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // THE INTENDED FAILING CASE — two spellings of ONE application. `idol
+    // graph` on this program publishes one row, `callee_kind:"method"`, bound
+    // to the `step` declaration; the same program written `step(n)` publishes
+    // the same relation. Before this reading the by-name face answered
+    // `permitted` and the subject-first face `blocked_unknown`, so the
+    // existence freedom was decided by which face the call was written with.
+    // `CLAUDE.md` teaches the subject-first face as canonical, so the reach
+    // limit fell on exactly the spelling the project asks for.
+    var subject = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\step: i64 = (x: i64)
+        \\    x + 1
+        \\main: i64 = ()
+        \\    n = 1
+        \\    n:step()
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer subject.deinit();
+    try testing.expectEqual(place.Existence.permitted, subject.byName("t").?.existence);
+    try testing.expectEqual(place.Refusal.none, place.residencyRefusal(subject.byName("t").?));
+
+    // CONTROL — the withdrawal travels with the fact. A parameter named `step`
+    // rebinds the word, and the subject-first call of it names no relation the
+    // walk can identify, exactly as the by-name call does not.
+    var shadowed = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\step: i64 = (x: i64)
+        \\    x + 1
+        \\main: i64 = (step: i64)
+        \\    n = 1
+        \\    n:step()
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer shadowed.deinit();
+    try testing.expectEqual(place.Existence.blocked_unknown, shadowed.byName("t").?.existence);
+
+    // CONTROL — NOT A SPELLING GUESS. `push` is the intrinsic sequence face
+    // and no module here declares it, so the walk has read no body and says
+    // unknown. This is the reading `idol graph` publishes for the same site:
+    // an unresolved application with no relation. The reach limit that
+    // remains is the intrinsic relation, not the face.
+    var intrinsic = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\main: i64 = ()
+        \\    st = (1)
+        \\    st:push(2)
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer intrinsic.deinit();
+    try testing.expectEqual(place.Existence.blocked_unknown, intrinsic.byName("t").?.existence);
+
+    // CONTROL — the effect spelling still wins. A module that declares `print`
+    // does not turn `x:print()` into a proof that nothing is written; the
+    // relation-name effect arm runs before this reading, so the region keeps
+    // its effect and the identity handed to it is OBSERVED.
+    var effect = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\print: i64 = (x: i64)
+        \\    x
+        \\main: i64 = ()
+        \\    t:print()
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer effect.deinit();
+    try testing.expectEqual(place.Existence.blocked_observed, effect.byName("t").?.existence);
+
+    // PRODUCTION-USE — the body still decides through this face too. `step`'s
+    // own body applies a relation no module declares, and the region is raised
+    // at that site rather than at the call.
+    var reaching = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\step: i64 = (x: i64)
+        \\    x + stdin:read()
+        \\main: i64 = ()
+        \\    n = 1
+        \\    n:step()
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer reaching.deinit();
+    try testing.expectEqual(place.Existence.blocked_unknown, reaching.byName("t").?.existence);
 }
 
 test "observation: module scope censuses the module a sibling relation refuses" {
