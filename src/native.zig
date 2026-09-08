@@ -7823,11 +7823,13 @@ const Arm64Compiler = struct {
     }
 
     fn emitStrSpFp(self: *Arm64Compiler, dreg: u5, offset: u16) Error!void {
-        try self.emitFmt(0xfd0003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, dreg), "str d{d}, [sp, #{d}]", .{ dreg, offset });
+        const imm = try self.spScaledDisp(offset);
+        try self.emitFmt(0xfd0003e0 | (imm << 10) | @as(u32, dreg), "str d{d}, [sp, #{d}]", .{ dreg, offset });
     }
 
     fn emitLdrSpFp(self: *Arm64Compiler, dreg: u5, offset: u16) Error!void {
-        try self.emitFmt(0xfd4003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, dreg), "ldr d{d}, [sp, #{d}]", .{ dreg, offset });
+        const imm = try self.spScaledDisp(offset);
+        try self.emitFmt(0xfd4003e0 | (imm << 10) | @as(u32, dreg), "ldr d{d}, [sp, #{d}]", .{ dreg, offset });
     }
 
     /// A GENERAL REGISTER READ INTO THE FLOAT FILE IS STILL A GENERAL REGISTER
@@ -9099,7 +9101,11 @@ const Arm64Compiler = struct {
     /// Largest 16-byte-aligned `sub/add sp` immediate on AArch64 (imm12 max 4095).
     const sp_imm_max: u16 = 4080;
 
+    /// `sp` is the base every frame and window displacement is measured from,
+    /// and AAPCS64 requires it sixteen-aligned at every instruction that uses
+    /// it. `sp_imm_max` is a multiple of sixteen so each chunk keeps the grid.
     fn emitSubSp(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (bytes % 16 != 0) return self.refuse(@src());
         var rem: u32 = bytes;
         while (rem > 0) {
             const chunk: u16 = if (rem > sp_imm_max) sp_imm_max else @intCast(rem);
@@ -9109,6 +9115,7 @@ const Arm64Compiler = struct {
     }
 
     fn emitAddSp(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (bytes % 16 != 0) return self.refuse(@src());
         var rem: u32 = bytes;
         while (rem > 0) {
             const chunk: u16 = if (rem > sp_imm_max) sp_imm_max else @intCast(rem);
@@ -9192,12 +9199,25 @@ const Arm64Compiler = struct {
         try self.emitAddSpImm(dst, try self.frameDisp(frame_off));
     }
 
+    /// The scaled `[sp,#imm]` field carries `offset / 8`. A displacement with a
+    /// low bit set addressed `offset & ~7` in the OBJECT while `asm_text`
+    /// printed `offset`, and one past 32760 left the field for the base
+    /// register. Both were held by construction at ten producers and asked at
+    /// none of them.
+    fn spScaledDisp(self: *Arm64Compiler, offset: u16) Error!u32 {
+        if (offset % 8 != 0) return self.refuse(@src());
+        if (offset > 32760) return self.refuse(@src());
+        return @as(u32, offset) / 8;
+    }
+
     fn emitStrSp(self: *Arm64Compiler, reg: u5, offset: u16) Error!void {
-        try self.emitFmt(0xf90003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, reg), "str x{d}, [sp, #{d}]", .{ reg, offset });
+        const imm = try self.spScaledDisp(offset);
+        try self.emitFmt(0xf90003e0 | (imm << 10) | @as(u32, reg), "str x{d}, [sp, #{d}]", .{ reg, offset });
     }
 
     fn emitLdrSp(self: *Arm64Compiler, reg: u5, offset: u16) Error!void {
-        try self.emitFmt(0xf94003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, reg), "ldr x{d}, [sp, #{d}]", .{ reg, offset });
+        const imm = try self.spScaledDisp(offset);
+        try self.emitFmt(0xf94003e0 | (imm << 10) | @as(u32, reg), "ldr x{d}, [sp, #{d}]", .{ reg, offset });
     }
 
     /// Reload a just-returned pack member after restoring the ordinary stack
@@ -21084,6 +21104,77 @@ test "a sealed frame refuses growth that would rename a bottom-anchored resident
     try compiler.emitSubSpTemp(16);
     try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(grow));
     try compiler.emitAddSpTemp(16);
+}
+
+test "a displacement the scaled field cannot carry exactly refuses before it encodes" {
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // ALIGNMENT: 12 encodes as 8 and prints as 12 — object and assembly
+    // disagree and both report success.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitStrSp(9, 12));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitLdrSp(9, 12));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitStrSpFp(1, 12));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitLdrSpFp(1, 12));
+    // BOUND: 32768 scales to 4096, which leaves the imm12 for the base field.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitStrSp(9, 32768));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitLdrSpFp(1, 32768));
+    // A refusal that had already encoded would have sent the wrong bytes.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+    try std.testing.expectEqual(@as(usize, 0), compiler.asm_text.items.len);
+
+    // BOUND-IS-NOT-ALIGNMENT: the last addressable slot encodes.
+    try compiler.emitStrSp(9, 32760);
+    // ALIGNMENT-IS-NOT-THE-BOUND: an aligned displacement inside it encodes.
+    try compiler.emitLdrSp(9, 8);
+    try std.testing.expectEqual(@as(usize, 8), compiler.code.items.len);
+    const top = std.mem.readInt(u32, compiler.code.items[0..4], .little);
+    try std.testing.expectEqual(@as(u32, 4095), (top >> 10) & 0xfff);
+    const near = std.mem.readInt(u32, compiler.code.items[4..8], .little);
+    try std.testing.expectEqual(@as(u32, 1), (near >> 10) & 0xfff);
+}
+
+test "an sp move off the sixteen-byte grid refuses before it moves the frame base" {
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitSubSp(24));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitAddSp(8));
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+
+    // The window and the frame reach the same predicate through their own
+    // producers, and neither leaves the displacement they carry behind.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitSubSpTemp(8));
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+    try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(8));
+    try std.testing.expectEqual(@as(u16, 0), compiler.stack_frame_bytes);
+
+    // GRID-IS-NOT-THE-CHUNK: a move past `sp_imm_max` splits, and every chunk
+    // is on the grid.
+    try compiler.emitSubSp(4096);
+    try std.testing.expectEqual(@as(usize, 8), compiler.code.items.len);
+    const first = std.mem.readInt(u32, compiler.code.items[0..4], .little);
+    try std.testing.expectEqual(@as(u32, 4080), (first >> 10) & 0xfff);
+    const rest = std.mem.readInt(u32, compiler.code.items[4..8], .little);
+    try std.testing.expectEqual(@as(u32, 16), (rest >> 10) & 0xfff);
 }
 
 // THE CALL'S ANSWER TOOK THE ONE REGISTER THE SPILL MAP WAS STILL DESCRIBING
