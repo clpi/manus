@@ -1509,6 +1509,215 @@ pub const SemanticGraph = struct {
         };
     }
 
+    const Constructor = struct {
+        sema: *const sema.Sema,
+        writes: std.AutoHashMapUnmanaged(id, types.ResolvedType) = .empty,
+        invalidated: std.AutoHashMapUnmanaged(id, void) = .empty,
+
+        fn resolve(self: *const SemanticGraph, scope: id, declared: []const []const u8, expr: *const Expr) ?id {
+            if (expr.* != .name or expr.name.world) return null;
+            for (declared) |name| if (std.mem.eql(u8, name, expr.name.ident)) return null;
+            const binding = self.resolveBindingInScope(scope, expr.name.ident) orelse return null;
+            const node = self.get(binding) orelse return null;
+            if (node.kind != .param or node.scope != scope) return null;
+            for (self.nested.of(scope)) |other| {
+                if (other == binding) continue;
+                const candidate = self.get(other) orelse continue;
+                if (candidate.kind != .param) continue;
+                const name = candidate.name orelse continue;
+                if (std.mem.eql(u8, name, expr.name.ident)) return null;
+            }
+            return binding;
+        }
+
+        fn write(self: *SemanticGraph, scope: id, declared: []const []const u8, target: *const Expr, value: ?*const Expr, checked: *Constructor) !void {
+            const binding = Constructor.resolve(self, scope, declared, target) orelse return;
+            const descriptor = if (value) |expression| checked.sema.exprDescriptor(expression) orelse .any else types.ResolvedType.any;
+            const prior = try checked.writes.getOrPut(self.alloc, binding);
+            if (!prior.found_existing) {
+                prior.value_ptr.* = descriptor;
+            } else if (!prior.value_ptr.eql(descriptor)) {
+                prior.value_ptr.* = .any;
+            }
+        }
+
+        fn invalidate(self: *SemanticGraph, scope: id, checked: *Constructor) !void {
+            try checked.invalidated.put(self.alloc, scope, {});
+        }
+
+        fn publish(
+            self: *SemanticGraph,
+            scope: id,
+            declared: []const []const u8,
+            expr: *const Expr,
+            checked: *Constructor,
+        ) !void {
+            if (checked.invalidated.contains(scope) or self.valueByAst(expr) != null) return;
+            const binding = Constructor.resolve(self, scope, declared, expr) orelse return;
+            const descriptor = checked.sema.exprDescriptor(expr) orelse return;
+            if (types.scalarFieldCell(descriptor) == null) return;
+            if (checked.writes.get(binding)) |written| {
+                if (!descriptor.eql(written)) return;
+            }
+            const loc = expr.loc();
+            const value = try self.addChild(scope, .{
+                .kind = .value,
+                .span = .{ .file = self.get(scope).?.span.file, .start = loc.line, .end = loc.col },
+                .descriptor = descriptor,
+                .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+                .stage = .sema,
+                .ast_ref = @ptrCast(@constCast(expr)),
+            });
+            try self.addEdge(.{ .from = value, .to = binding, .kind = .binding });
+        }
+    };
+
+    pub const Initialization = struct {
+        checked: ?*const sema.Sema = null,
+        scope: id,
+        refused: bool = false,
+
+        fn read(self: *const Initialization, expression: *const Expr) ?types.ResolvedType {
+            const checked = self.checked orelse return null;
+            return checked.exprDescriptor(expression);
+        }
+
+        pub fn locate(self: *const SemanticGraph, binding: id, location: ?u32) ?*const place.Place {
+            const site = location orelse return null;
+            const owner = (self.get(binding) orelse return null).scope orelse return null;
+            if (owner == self.module_root) return self.modulePlace(site);
+            const body = self.bodyOf(owner) orelse return null;
+            if (site >= body.places.places.items.len) return null;
+            const found = &body.places.places.items[site];
+            return if (found.id == site) found else null;
+        }
+
+        fn refuse(self: *SemanticGraph, binding: id) !void {
+            if (self.binding_initialization_candidates.bit_length < self.nodes.items.len)
+                try self.binding_initialization_candidates.resize(self.alloc, self.nodes.items.len, false);
+            self.binding_initialization_candidates.set(binding);
+            _ = self.binding_initialization_rows.remove(binding);
+        }
+
+        fn clear(self: *SemanticGraph, scope: id) !void {
+            for (self.nested.of(scope)) |binding| {
+                const node = self.get(binding) orelse continue;
+                if (node.kind != .local) continue;
+                if (binding < self.binding_initialization_candidates.bit_length and
+                    self.binding_initialization_candidates.isSet(binding)) try Initialization.refuse(self, binding);
+            }
+        }
+
+        fn target(self: *SemanticGraph, scope: id, expression: *const Expr) !void {
+            if (scope == self.module_root) return;
+            const base = switch (expression.*) {
+                .name => expression,
+                .field => |field| return Initialization.target(self, scope, field.obj),
+                .index => |index| return Initialization.target(self, scope, index.obj),
+                else => return,
+            };
+            const binding = self.resolveBindingInScope(scope, base.name.ident) orelse return;
+            const node = self.get(binding) orelse return;
+            if (node.kind == .local and node.scope == scope) try Initialization.refuse(self, binding);
+        }
+
+        fn lift(
+            self: *SemanticGraph,
+            context: *Initialization,
+            statement: *const ast.Stmt,
+            name: []const u8,
+            initializer: *const Expr,
+        ) !void {
+            const scope = context.scope;
+            if (scope == self.module_root) return;
+            const binding = self.resolveBindingInScope(scope, name) orelse return;
+            const node = self.get(binding) orelse return;
+            if (node.scope != scope) return;
+            if (node.kind == .param) {
+                if (initializer.* != .table or context.refused) return;
+                const descriptor = context.read(initializer) orelse return;
+                if (descriptor != .table_type) return;
+                const loc = initializer.loc();
+                const value = self.valueByAst(initializer) orelse try self.addChild(binding, .{
+                    .kind = .value,
+                    .span = .{ .file = self.module_path orelse "", .start = loc.line, .end = loc.col },
+                    .descriptor = descriptor,
+                    .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+                    .stage = .sema,
+                    .ast_ref = @ptrCast(@constCast(initializer)),
+                });
+                if (self.get(value).?.scope != binding) return;
+                try self.describe(value, scope, descriptor);
+                return;
+            }
+            if (node.kind != .local) return;
+            if (binding < self.binding_initialization_candidates.bit_length and self.binding_initialization_candidates.isSet(binding)) {
+                try Initialization.refuse(self, binding);
+                return;
+            }
+            var descriptor = context.read(initializer) orelse return;
+            if (descriptor != .table_type and descriptor != .@"struct") return;
+            if (node.descriptor) |declared| {
+                if (!declared.eql(descriptor)) {
+                    if (initializer.* != .table or descriptor != .table_type or declared != .@"struct") return;
+                    descriptor = declared;
+                }
+            }
+            const site: ?u32 = switch (initializer.*) {
+                .table => table: {
+                    const body = self.bodyOf(scope) orelse return;
+                    const found = body.places.find(name) orelse return;
+                    if (found.binding != statement or found.init != initializer or found.shape != .record) return;
+                    break :table found.id;
+                },
+                .name => alias: {
+                    if (initializer.name.world) return;
+                    const source = self.resolveBindingInScope(scope, initializer.name.ident) orelse return;
+                    const ancestor = self.get(source) orelse return;
+                    if (ancestor.scope != scope or source == binding) return;
+                    if (ancestor.kind == .param) {
+                        if (Constructor.resolve(self, scope, &.{}, initializer) != source) return;
+                        const body = self.bodyOf(scope) orelse return;
+                        if (body.places.find(initializer.name.ident)) |storage| {
+                            if (storage.bind_origin == .declaration) return;
+                        }
+                        if (ancestor.descriptor) |declared| if (!descriptor.eql(declared)) return;
+                        break :alias null;
+                    }
+                    if (ancestor.kind != .local) return;
+                    const origin = switch (self.bindingInitialization(source)) {
+                        .known => |fact| fact,
+                        .invalid, .unvisited => return,
+                    };
+                    break :alias origin.place;
+                },
+                else => return,
+            };
+            const loc = initializer.loc();
+            const value = self.valueByAst(initializer) orelse try self.addChild(binding, .{
+                .kind = .value,
+                .span = .{ .file = self.module_path orelse "", .start = loc.line, .end = loc.col },
+                .descriptor = descriptor,
+                .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+                .stage = .sema,
+                .ast_ref = @ptrCast(@constCast(initializer)),
+            });
+            if (self.get(value).?.scope != binding) return;
+            if (initializer.* == .name) {
+                const source = self.resolveBindingInScope(scope, initializer.name.ident).?;
+                try self.addEdge(.{ .from = value, .to = source, .kind = .binding });
+                if (site == null) {
+                    try self.addDescriptorShapeEdge(value, 0, scope, descriptor, null);
+                } else {
+                    const origin = self.bindingInitialization(source).known;
+                    const shape = self.descriptorShape(origin.value, 0) orelse return;
+                    try self.addEdge(.{ .from = value, .to = shape, .kind = .descriptor });
+                }
+            } else try self.describe(value, scope, descriptor);
+            try self.publishBindingInitialization(binding, value, site);
+        }
+    };
+
     fn deinitNode(self: *SemanticGraph, node: Node) void {
         if (node.why) |why| self.alloc.free(why);
         if (node.owns_name) {
@@ -2144,15 +2353,6 @@ pub const SemanticGraph = struct {
         return found;
     }
 
-    pub fn initializationPlace(self: *const SemanticGraph, binding: id, location: ?u32) ?*const place.Place {
-        const site = location orelse return null;
-        const owner = (self.get(binding) orelse return null).scope orelse return null;
-        if (owner == self.module_root) return self.modulePlace(site);
-        const body = self.bodyOf(owner) orelse return null;
-        if (site >= body.places.places.items.len) return null;
-        const found = &body.places.places.items[site];
-        return if (found.id == site) found else null;
-    }
 
     pub fn bindingInitialization(self: *const SemanticGraph, binding: id) BindingInitializationState {
         if (binding >= self.binding_initialization_candidates.bit_length or
@@ -2192,7 +2392,7 @@ pub const SemanticGraph = struct {
             if (parameter.descriptor) |declared| if (!declared.eql(descriptor)) return .invalid;
             return .{ .known = fact };
         }
-        const storage = self.initializationPlace(binding, fact.place) orelse return .invalid;
+        const storage = Initialization.locate(self, binding, fact.place) orelse return .invalid;
         if (binding_node.scope != self.module_root and
             (value_node.descriptor == null or
                 (value_node.descriptor.? != .table_type and value_node.descriptor.? != .@"struct") or
@@ -2220,14 +2420,14 @@ pub const SemanticGraph = struct {
                 return error.InvalidBindingInitialization;
         }
         if (site) |_| {
-            const storage = self.initializationPlace(binding, site) orelse return error.InvalidBindingInitialization;
+            const storage = Initialization.locate(self, binding, site) orelse return error.InvalidBindingInitialization;
             if (binding_node.scope != self.module_root and
                 (value_node.descriptor == null or
                     (value_node.descriptor.? != .table_type and value_node.descriptor.? != .@"struct") or
                     storage.shape != .record or storage.region != .function)) return error.InvalidBindingInitialization;
         } else {
             const expression = self.valueExpression(value) orelse return error.InvalidBindingInitialization;
-            const source = self.constructorParameter(binding_node.scope.?, &.{}, expression) orelse return error.InvalidBindingInitialization;
+            const source = Constructor.resolve(self, binding_node.scope.?, &.{}, expression) orelse return error.InvalidBindingInitialization;
             if (self.valueOrigin(value) != .one or self.valueOrigin(value).one != source) return error.InvalidBindingInitialization;
             const descriptor = value_node.descriptor orelse return error.InvalidBindingInitialization;
             if (descriptor != .@"struct" and descriptor != .table_type) return error.InvalidBindingInitialization;
@@ -2978,7 +3178,7 @@ pub const SemanticGraph = struct {
         }
     }
 
-    fn addOperandDescriptorShape(self: *SemanticGraph, entity: id, scope: id, descriptor: types.ResolvedType) !void {
+    fn describe(self: *SemanticGraph, entity: id, scope: id, descriptor: types.ResolvedType) !void {
         if (descriptor != .table_type) return;
         const span = (self.get(entity) orelse return error.InvalidDescriptorFact).span;
         const exact = try self.addChild(scope, .{
@@ -2997,7 +3197,7 @@ pub const SemanticGraph = struct {
         for (members) |member| {
             const nested = (self.get(member) orelse return error.InvalidDescriptorFact).descriptor orelse continue;
             if (nested == .table_type) {
-                try self.addOperandDescriptorShape(member, scope, nested);
+                try self.describe(member, scope, nested);
             } else {
                 try self.addDescriptorShapeEdge(member, 0, scope, nested, null);
             }
@@ -3893,7 +4093,7 @@ pub const SemanticGraph = struct {
         return self.binding_mutations.items;
     }
 
-    pub fn relationMutatesParameter(self: *const SemanticGraph, relation: id, name: []const u8) bool {
+    pub fn mutates(self: *const SemanticGraph, relation: id, name: []const u8) bool {
         if (mutationSevered()) return false;
         var parameter: ?id = null;
         for (self.nested.of(relation)) |child| {
@@ -3979,11 +4179,6 @@ pub const SemanticGraph = struct {
         try self.publishSourceQuote(value, quote);
     }
 
-    const CheckedReads = struct {
-        sema: *const sema.Sema,
-        writes: std.AutoHashMapUnmanaged(id, types.ResolvedType) = .empty,
-        invalidated: std.AutoHashMapUnmanaged(id, void) = .empty,
-    };
 
     /// EVERY NAME A SCOPE BINDS, IN TWO SWEEPS, AND THE ORDER IS THE POINT.
     ///
@@ -4005,7 +4200,7 @@ pub const SemanticGraph = struct {
         file: []const u8,
         scope: id,
         block: *const ast.Block,
-        checked: ?*CheckedReads,
+        checked: ?*Constructor,
     ) !void {
         // THE SHADOW ROSTER, GROWN IN SOURCE ORDER AND TRUNCATED AT EVERY BLOCK
         // BOUNDARY. A bare-name assignment is a write to the module binding it
@@ -4043,7 +4238,7 @@ pub const SemanticGraph = struct {
         scope: id,
         block: *const ast.Block,
         declared: *std.ArrayListUnmanaged([]const u8),
-        checked: ?*CheckedReads,
+        checked: ?*Constructor,
     ) anyerror!void {
         const mark = declared.items.len;
         defer declared.shrinkRetainingCapacity(mark);
@@ -4138,62 +4333,9 @@ pub const SemanticGraph = struct {
         try self.publishBindingRead(relation, binding);
     }
 
-    fn constructorParameter(self: *const SemanticGraph, scope: id, declared: []const []const u8, expr: *const Expr) ?id {
-        if (expr.* != .name or expr.name.world) return null;
-        for (declared) |name| if (std.mem.eql(u8, name, expr.name.ident)) return null;
-        const binding = self.resolveBindingInScope(scope, expr.name.ident) orelse return null;
-        const node = self.get(binding) orelse return null;
-        if (node.kind != .param or node.scope != scope) return null;
-        for (self.nested.of(scope)) |other| {
-            if (other == binding) continue;
-            const candidate = self.get(other) orelse continue;
-            if (candidate.kind != .param) continue;
-            const name = candidate.name orelse continue;
-            if (std.mem.eql(u8, name, expr.name.ident)) return null;
-        }
-        return binding;
-    }
 
-    fn noteConstructorWrite(self: *SemanticGraph, scope: id, declared: []const []const u8, target: *const Expr, value: ?*const Expr, checked: *CheckedReads) !void {
-        const binding = self.constructorParameter(scope, declared, target) orelse return;
-        const descriptor = if (value) |expression| checked.sema.exprDescriptor(expression) orelse .any else types.ResolvedType.any;
-        const prior = try checked.writes.getOrPut(self.alloc, binding);
-        if (!prior.found_existing) {
-            prior.value_ptr.* = descriptor;
-        } else if (!prior.value_ptr.eql(descriptor)) {
-            prior.value_ptr.* = .any;
-        }
-    }
 
-    fn invalidateConstructorParameters(self: *SemanticGraph, scope: id, checked: *CheckedReads) !void {
-        try checked.invalidated.put(self.alloc, scope, {});
-    }
 
-    fn publishConstructorName(
-        self: *SemanticGraph,
-        scope: id,
-        declared: []const []const u8,
-        expr: *const Expr,
-        checked: *CheckedReads,
-    ) !void {
-        if (checked.invalidated.contains(scope) or self.valueByAst(expr) != null) return;
-        const binding = self.constructorParameter(scope, declared, expr) orelse return;
-        const descriptor = checked.sema.exprDescriptor(expr) orelse return;
-        if (types.scalarFieldCell(descriptor) == null) return;
-        if (checked.writes.get(binding)) |written| {
-            if (!descriptor.eql(written)) return;
-        }
-        const loc = expr.loc();
-        const value = try self.addChild(scope, .{
-            .kind = .value,
-            .span = .{ .file = self.get(scope).?.span.file, .start = loc.line, .end = loc.col },
-            .descriptor = descriptor,
-            .knowledge = semantic_algebra.knowledgeOfType(descriptor),
-            .stage = .sema,
-            .ast_ref = @ptrCast(@constCast(expr)),
-        });
-        try self.addEdge(.{ .from = value, .to = binding, .kind = .binding });
-    }
 
     /// EVERY BARE NAME AN EXPRESSION READS, against the roster as it stands.
     ///
@@ -4210,7 +4352,7 @@ pub const SemanticGraph = struct {
         scope: id,
         declared: []const []const u8,
         expr: *const ast.Expr,
-        checked: ?*CheckedReads,
+        checked: ?*Constructor,
     ) anyerror!void {
         switch (expr.*) {
             // `@x` reads the CURRENT WORLD and never the lexical scope — the
@@ -4228,12 +4370,12 @@ pub const SemanticGraph = struct {
             .call => |c| {
                 try self.noteExprReads(scope, declared, c.func, checked);
                 for (c.args) |a| try self.noteExprReads(scope, declared, a, checked);
-                if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                if (checked) |facts| try Constructor.invalidate(self, scope, facts);
             },
             .method_call => |m| {
                 try self.noteExprReads(scope, declared, m.obj, checked);
                 for (m.args) |a| try self.noteExprReads(scope, declared, a, checked);
-                if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                if (checked) |facts| try Constructor.invalidate(self, scope, facts);
             },
             .binop => |b| {
                 try self.noteExprReads(scope, declared, b.lhs, checked);
@@ -4244,7 +4386,7 @@ pub const SemanticGraph = struct {
             .unwrap_expr => |v| try self.noteExprReads(scope, declared, v.operand, checked),
             .await_expr => |v| {
                 try self.noteExprReads(scope, declared, v.operand, checked);
-                if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                if (checked) |facts| try Constructor.invalidate(self, scope, facts);
             },
             .contains_expr => |v| {
                 try self.noteExprReads(scope, declared, v.lhs, checked);
@@ -4267,7 +4409,7 @@ pub const SemanticGraph = struct {
                     try self.noteExprReads(scope, declared, v.val, checked);
                 },
                 .named => |v| {
-                    if (checked) |facts| try self.publishConstructorName(scope, declared, v.val, facts);
+                    if (checked) |facts| try Constructor.publish(self, scope, declared, v.val, facts);
                     try self.noteExprReads(scope, declared, v.val, checked);
                 },
                 .positional => |v| try self.noteExprReads(scope, declared, v, checked),
@@ -4276,7 +4418,7 @@ pub const SemanticGraph = struct {
             },
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => {},
             // NOT MODELLED — bounded exactly as the write walk is.
-            .func_expr, .list_comp, .match_expr, .quote, .unquote, .macro_call, .semantic, .semantic_scope => if (checked) |facts| try self.invalidateConstructorParameters(scope, facts),
+            .func_expr, .list_comp, .match_expr, .quote, .unquote, .macro_call, .semantic, .semantic_scope => if (checked) |facts| try Constructor.invalidate(self, scope, facts),
         }
     }
 
@@ -4288,7 +4430,7 @@ pub const SemanticGraph = struct {
         file: []const u8,
         scope: id,
         stmts: []ast.Stmt,
-        checked: ?*CheckedReads,
+        checked: ?*Constructor,
     ) anyerror!void {
         for (stmts) |*stmt| {
             switch (stmt.*) {
@@ -4329,7 +4471,7 @@ pub const SemanticGraph = struct {
         scope: id,
         block: *const ast.Block,
         declared: *std.ArrayListUnmanaged([]const u8),
-        checked: ?*CheckedReads,
+        checked: ?*Constructor,
     ) anyerror!void {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
@@ -4396,7 +4538,7 @@ pub const SemanticGraph = struct {
                             if (target.* == .field and target.field.obj.* == .name) {
                                 const binding = self.resolveBindingInScope(scope, target.field.obj.name.ident) orelse continue;
                                 const node = self.get(binding) orelse continue;
-                                if ((node.kind == .local or node.kind == .param) and node.scope == scope) {
+                                if ((node.kind == .local or node.kind == .param) and node.scope == scope and self.callable(scope)) {
                                     if (checked) |facts| if (node.kind == .param and facts.writes.contains(binding)) continue;
                                     try self.publishBindingMutation(scope, binding);
                                 }
@@ -4409,7 +4551,7 @@ pub const SemanticGraph = struct {
                         // in this relation is what made the two indistinguishable
                         // (gaps/GAP-225.md).
                         if (try self.noteModuleWrite(scope, declared.items, target.name.ident)) continue;
-                        if (checked) |facts| try self.noteConstructorWrite(scope, declared.items, target, if (i < asg.values.len) asg.values[i] else null, facts);
+                        if (checked) |facts| try Constructor.write(self, scope, declared.items, target, if (i < asg.values.len) asg.values[i] else null, facts);
                         try self.noteLocalBinding(file, scope, target.name.ident, target.loc(), null, null);
                     }
                 },
@@ -4418,12 +4560,12 @@ pub const SemanticGraph = struct {
                 .ret => |*r| for (r.vals) |v| try self.noteExprReads(scope, declared.items, v, checked),
                 .do_block => |*d| try self.liftBindingsInBlock(file, scope, &d.body, declared, checked),
                 .while_loop => |*w| {
-                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                    if (checked) |facts| try Constructor.invalidate(self, scope, facts);
                     try self.noteExprReads(scope, declared.items, w.cond, checked);
                     try self.liftBindingsInBlock(file, scope, &w.body, declared, checked);
                 },
                 .repeat_loop => |*r| {
-                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                    if (checked) |facts| try Constructor.invalidate(self, scope, facts);
                     // The `until` condition can see the body's declarations, so
                     // the roster extent covers both.
                     const mark = declared.items.len;
@@ -4452,7 +4594,7 @@ pub const SemanticGraph = struct {
                     if (i.else_body) |*eb| try self.liftBindingsInBlock(file, scope, eb, declared, checked);
                 },
                 .num_for => |*nf| {
-                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                    if (checked) |facts| try Constructor.invalidate(self, scope, facts);
                     const mark = declared.items.len;
                     defer declared.shrinkRetainingCapacity(mark);
                     // The bounds are read before the loop variable binds.
@@ -4464,7 +4606,7 @@ pub const SemanticGraph = struct {
                     try self.liftBindingsAtScope(file, scope, &nf.body, declared, checked);
                 },
                 .gen_for => |*g| {
-                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                    if (checked) |facts| try Constructor.invalidate(self, scope, facts);
                     const mark = declared.items.len;
                     defer declared.shrinkRetainingCapacity(mark);
                     for (g.iters) |iter| try self.noteExprReads(scope, declared.items, iter, checked);
@@ -4475,12 +4617,12 @@ pub const SemanticGraph = struct {
                 // `.func_decl` IS SWEEP TWO'S. Descending here is exactly the
                 // order dependence `liftBindingsInStmts` split the walk to end.
                 .try_stmt => |*t| {
-                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                    if (checked) |facts| try Constructor.invalidate(self, scope, facts);
                     try self.liftBindingsInBlock(file, scope, &t.body, declared, checked);
                     for (t.catches) |*cc| try self.liftBindingsInBlock(file, scope, &cc.body, declared, checked);
                 },
                 .defer_stmt => |*d| try self.liftBindingsInBlock(file, scope, &d.body, declared, checked),
-                .match_stmt => if (checked) |facts| try self.invalidateConstructorParameters(scope, facts),
+                .match_stmt => if (checked) |facts| try Constructor.invalidate(self, scope, facts),
                 else => {},
             }
         }
@@ -5224,10 +5366,10 @@ pub const SemanticGraph = struct {
 
     /// Lift module-level symbols, alias table shapes, and enum shapes.
     pub fn liftModuleFull(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
-        return self.liftModuleFullChecked(mod, file, null);
+        return self.collect(mod, file, null);
     }
 
-    fn liftModuleFullChecked(self: *SemanticGraph, mod: *const ast.Module, file: []const u8, checked: ?*CheckedReads) !id {
+    fn collect(self: *SemanticGraph, mod: *const ast.Module, file: []const u8, checked: ?*Constructor) !id {
         const mod_id = try self.liftModule(mod, file);
         try self.liftAliasShapes(mod, file, mod_id);
         try self.liftEnumShapes(mod, file, mod_id);
@@ -5903,7 +6045,7 @@ pub const SemanticGraph = struct {
     /// Lift module fully including call sites (Phase 1 complete lift).
     pub fn liftModuleWithCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModuleCalls(mod, file, null);
-        var initialization = InitializationContext{ .scope = mod_id };
+        var initialization = Initialization{ .scope = mod_id };
         try self.liftLiteralFacts(file, mod_id, &mod.body, true, &initialization);
         return mod_id;
     }
@@ -5914,8 +6056,8 @@ pub const SemanticGraph = struct {
     /// literal occurrence, and an occurrence an application names is better
     /// owned by the application's operand entity, which carries the resolved
     /// descriptor, the operand pack membership and the origin.
-    fn liftModuleCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8, checked: ?*CheckedReads) !id {
-        const mod_id = try self.liftModuleFullChecked(mod, file, checked);
+    fn liftModuleCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8, checked: ?*Constructor) !id {
+        const mod_id = try self.collect(mod, file, checked);
         try self.liftCalls(mod, file, mod_id);
         return mod_id;
     }
@@ -5991,141 +6133,10 @@ pub const SemanticGraph = struct {
         try self.publishBindingInitialization(binding, value, bound_place.id);
     }
 
-    const InitializationContext = struct {
-        checked: ?*const sema.Sema = null,
-        scope: id,
-        refused: bool = false,
 
-        fn descriptor(self: *const InitializationContext, expression: *const Expr) ?types.ResolvedType {
-            const checked = self.checked orelse return null;
-            return checked.exprDescriptor(expression);
-        }
-    };
 
-    fn refuseInitialization(self: *SemanticGraph, binding: id) !void {
-        if (self.binding_initialization_candidates.bit_length < self.nodes.items.len)
-            try self.binding_initialization_candidates.resize(self.alloc, self.nodes.items.len, false);
-        self.binding_initialization_candidates.set(binding);
-        _ = self.binding_initialization_rows.remove(binding);
-    }
 
-    fn refuseInitializations(self: *SemanticGraph, scope: id) !void {
-        for (self.nested.of(scope)) |binding| {
-            const node = self.get(binding) orelse continue;
-            if (node.kind != .local) continue;
-            if (binding < self.binding_initialization_candidates.bit_length and
-                self.binding_initialization_candidates.isSet(binding)) try self.refuseInitialization(binding);
-        }
-    }
 
-    fn refuseInitializationTarget(self: *SemanticGraph, scope: id, target: *const Expr) !void {
-        if (scope == self.module_root) return;
-        const base = switch (target.*) {
-            .name => target,
-            .field => |field| return self.refuseInitializationTarget(scope, field.obj),
-            .index => |index| return self.refuseInitializationTarget(scope, index.obj),
-            else => return,
-        };
-        const binding = self.resolveBindingInScope(scope, base.name.ident) orelse return;
-        const node = self.get(binding) orelse return;
-        if (node.kind == .local and node.scope == scope) try self.refuseInitialization(binding);
-    }
-
-    fn liftRecordInitialization(
-        self: *SemanticGraph,
-        context: *InitializationContext,
-        statement: *const ast.Stmt,
-        name: []const u8,
-        initializer: *const Expr,
-    ) !void {
-        const scope = context.scope;
-        if (scope == self.module_root) return;
-        const binding = self.resolveBindingInScope(scope, name) orelse return;
-        const node = self.get(binding) orelse return;
-        if (node.scope != scope) return;
-        if (node.kind == .param) {
-            if (initializer.* != .table or context.refused) return;
-            const descriptor = context.descriptor(initializer) orelse return;
-            if (descriptor != .table_type) return;
-            const loc = initializer.loc();
-            const value = self.valueByAst(initializer) orelse try self.addChild(binding, .{
-                .kind = .value,
-                .span = .{ .file = self.module_path orelse "", .start = loc.line, .end = loc.col },
-                .descriptor = descriptor,
-                .knowledge = semantic_algebra.knowledgeOfType(descriptor),
-                .stage = .sema,
-                .ast_ref = @ptrCast(@constCast(initializer)),
-            });
-            if (self.get(value).?.scope != binding) return;
-            try self.addOperandDescriptorShape(value, scope, descriptor);
-            return;
-        }
-        if (node.kind != .local) return;
-        if (binding < self.binding_initialization_candidates.bit_length and self.binding_initialization_candidates.isSet(binding)) {
-            try self.refuseInitialization(binding);
-            return;
-        }
-        var descriptor = context.descriptor(initializer) orelse return;
-        if (descriptor != .table_type and descriptor != .@"struct") return;
-        if (node.descriptor) |declared| {
-            if (!declared.eql(descriptor)) {
-                if (initializer.* != .table or descriptor != .table_type or declared != .@"struct") return;
-                descriptor = declared;
-            }
-        }
-        const site: ?u32 = switch (initializer.*) {
-            .table => table: {
-                const body = self.bodyOf(scope) orelse return;
-                const found = body.places.find(name) orelse return;
-                if (found.binding != statement or found.init != initializer or found.shape != .record) return;
-                break :table found.id;
-            },
-            .name => alias: {
-                if (initializer.name.world) return;
-                const source = self.resolveBindingInScope(scope, initializer.name.ident) orelse return;
-                const ancestor = self.get(source) orelse return;
-                if (ancestor.scope != scope or source == binding) return;
-                if (ancestor.kind == .param) {
-                    if (self.constructorParameter(scope, &.{}, initializer) != source) return;
-                    const body = self.bodyOf(scope) orelse return;
-                    if (body.places.find(initializer.name.ident)) |storage| {
-                        if (storage.bind_origin == .declaration) return;
-                    }
-                    if (ancestor.descriptor) |declared| if (!descriptor.eql(declared)) return;
-                    break :alias null;
-                }
-                if (ancestor.kind != .local) return;
-                const origin = switch (self.bindingInitialization(source)) {
-                    .known => |fact| fact,
-                    .invalid, .unvisited => return,
-                };
-                break :alias origin.place;
-            },
-            else => return,
-        };
-        const loc = initializer.loc();
-        const value = self.valueByAst(initializer) orelse try self.addChild(binding, .{
-            .kind = .value,
-            .span = .{ .file = self.module_path orelse "", .start = loc.line, .end = loc.col },
-            .descriptor = descriptor,
-            .knowledge = semantic_algebra.knowledgeOfType(descriptor),
-            .stage = .sema,
-            .ast_ref = @ptrCast(@constCast(initializer)),
-        });
-        if (self.get(value).?.scope != binding) return;
-        if (initializer.* == .name) {
-            const source = self.resolveBindingInScope(scope, initializer.name.ident).?;
-            try self.addEdge(.{ .from = value, .to = source, .kind = .binding });
-            if (site == null) {
-                try self.addDescriptorShapeEdge(value, 0, scope, descriptor, null);
-            } else {
-                const origin = self.bindingInitialization(source).known;
-                const shape = self.descriptorShape(origin.value, 0) orelse return;
-                try self.addEdge(.{ .from = value, .to = shape, .kind = .descriptor });
-            }
-        } else try self.addOperandDescriptorShape(value, scope, descriptor);
-        try self.publishBindingInitialization(binding, value, site);
-    }
 
     fn liftLiteralFacts(
         self: *SemanticGraph,
@@ -6133,7 +6144,7 @@ pub const SemanticGraph = struct {
         scope: id,
         block: *const ast.Block,
         direct_module: bool,
-        context: *InitializationContext,
+        context: *Initialization,
     ) anyerror!void {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
@@ -6149,14 +6160,14 @@ pub const SemanticGraph = struct {
                     if (direct_module) for (ld.names, 0..) |*name, i| {
                         if (i >= ld.inits.len) break;
                         try self.liftBindingInitialization(scope, stmt, name.ident, ld.inits[i]);
-                        try self.liftRecordInitialization(context, stmt, name.ident, ld.inits[i]);
+                        try Initialization.lift(self, context, stmt, name.ident, ld.inits[i]);
                     };
                 },
                 .const_decl => |*cd| {
                     try self.liftLiteralFactsInExpr(file, scope, cd.val, context);
                     if (direct_module) {
                         try self.liftBindingInitialization(scope, stmt, cd.ident, cd.val);
-                        try self.liftRecordInitialization(context, stmt, cd.ident, cd.val);
+                        try Initialization.lift(self, context, stmt, cd.ident, cd.val);
                     }
                 },
                 .global_decl => |*gd| for (gd.inits) |seed| try self.liftLiteralFactsInExpr(file, scope, seed, context),
@@ -6165,14 +6176,14 @@ pub const SemanticGraph = struct {
                     for (asg.values) |value| try self.liftLiteralFactsInExpr(file, scope, value, context);
                     for (asg.targets, 0..) |target, i| {
                         if (direct_module and target.* == .name and i < asg.values.len) {
-                            try self.liftRecordInitialization(context, stmt, target.name.ident, asg.values[i]);
-                        } else try self.refuseInitializationTarget(scope, target);
+                            try Initialization.lift(self, context, stmt, target.name.ident, asg.values[i]);
+                        } else try Initialization.target(self, scope, target);
                     }
                 },
                 .call_stmt => |*cs| try self.liftLiteralFactsInExpr(file, scope, cs.expr, context),
                 .expr_stmt => |*es| try self.liftLiteralFactsInExpr(file, scope, es.expr, context),
                 .ret => |*r| for (r.vals) |value| {
-                    if (context.descriptor(value)) |descriptor|
+                    if (context.read(value)) |descriptor|
                         if (descriptor == .table_type or descriptor == .@"struct") {
                             context.refused = true;
                         };
@@ -6223,9 +6234,9 @@ pub const SemanticGraph = struct {
                 },
                 .func_decl => |*fd| {
                     const nested = self.findFuncDecl(fd) orelse continue;
-                    var frame = InitializationContext{ .checked = context.checked, .scope = nested };
+                    var frame = Initialization{ .checked = context.checked, .scope = nested };
                     try self.liftLiteralFacts(file, nested, &fd.func.body, true, &frame);
-                    if (frame.refused) try self.refuseInitializations(nested);
+                    if (frame.refused) try Initialization.clear(self, nested);
                 },
                 else => {},
             }
@@ -6234,7 +6245,7 @@ pub const SemanticGraph = struct {
         // `stmts`. Omitting it here left every one-line relation's literals
         // unreached, which is most of them.
         if (block.tail_expr) |tail| {
-            if (context.descriptor(tail)) |descriptor|
+            if (context.read(tail)) |descriptor|
                 if (descriptor == .table_type or descriptor == .@"struct") {
                     context.refused = true;
                 };
@@ -6247,13 +6258,13 @@ pub const SemanticGraph = struct {
         file: []const u8,
         scope: id,
         expr: *const Expr,
-        context: *InitializationContext,
+        context: *Initialization,
     ) anyerror!void {
         switch (expr.*) {
             .call, .method_call => {
                 const occurrence = if (self.valueByAst(expr)) |value| self.get(value).?.scope else null;
                 if (occurrence == null or self.applicationEffect(occurrence.?) != .none) context.refused = true;
-                if (context.descriptor(expr)) |descriptor| switch (descriptor) {
+                if (context.read(expr)) |descriptor| switch (descriptor) {
                     .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64, .bool, .str, .void => {},
                     else => context.refused = true,
                 } else context.refused = true;
@@ -6267,7 +6278,7 @@ pub const SemanticGraph = struct {
                     .spread => |entry| entry,
                     .semantic => |entry| entry.val,
                 };
-                if (context.descriptor(child)) |descriptor| {
+                if (context.read(child)) |descriptor| {
                     if ((descriptor == .table_type or descriptor == .@"struct") and child.* != .table) context.refused = true;
                 }
             },
@@ -7302,7 +7313,7 @@ pub const SemanticGraph = struct {
                 self.home = h;
             } else |_| {}
         }
-        var reads: CheckedReads = .{ .sema = checked };
+        var reads: Constructor = .{ .sema = checked };
         defer reads.writes.deinit(self.alloc);
         defer reads.invalidated.deinit(self.alloc);
         const module = try self.liftModuleCalls(mod, file, &reads);
@@ -7361,7 +7372,7 @@ pub const SemanticGraph = struct {
                     return error.MissingApplicationDescriptor;
                 subject_value = try self.addApplicationValue(call_id, subject, file, descriptor);
                 try self.noteOrigin(subject_value.?, subject, caller);
-                try self.addOperandDescriptorShape(subject_value.?, caller, descriptor);
+                try self.describe(subject_value.?, caller, descriptor);
             }
             const arguments = try self.alloc.alloc(id, fact.arguments.len);
             defer self.alloc.free(arguments);
@@ -7370,7 +7381,7 @@ pub const SemanticGraph = struct {
                     return error.MissingApplicationDescriptor;
                 arguments[i] = try self.addApplicationValue(call_id, argument, file, descriptor);
                 try self.noteOrigin(arguments[i], argument, caller);
-                try self.addOperandDescriptorShape(arguments[i], caller, descriptor);
+                try self.describe(arguments[i], caller, descriptor);
             }
             const results = try self.alloc.alloc(id, result_descriptors.len);
             defer self.alloc.free(results);
@@ -7430,7 +7441,7 @@ pub const SemanticGraph = struct {
         // occurrence it names and this sweep reaches only what nothing else
         // does. Running it inside `liftModuleCalls` would have made the sweep
         // the owner of every checked operand literal instead.
-        var initialization = InitializationContext{ .checked = checked, .scope = module };
+        var initialization = Initialization{ .checked = checked, .scope = module };
         try self.liftLiteralFacts(file, module, &mod.body, true, &initialization);
         // `law.file.one`, LAST — after every child, application and world fact
         // exists, so the concept counts are answers over the finished graph.
@@ -14246,60 +14257,9 @@ test "semantic_graph: injection cannot manufacture authority and refuses by name
     try std.testing.expectEqual(@as(usize, 0), g.derived_worlds.items.len);
 }
 
-fn expectConstructorShapes(source: []const u8, expected: []const bool) !void {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lexer = Lexer.init(source, "constructor.id");
-    var parser = Parser.init(&lexer, alloc);
-    parser.idol_mode = true;
-    var module = try parser.parse_module();
-    var checked = sema.Sema.init(alloc);
-    defer checked.deinit();
-    checked.idol_mode = true;
-    try checked.check_module(&module);
-    try std.testing.expectEqual(@as(u32, 0), checked.errors);
-    var graph = SemanticGraph.init(alloc);
-    defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "constructor.id");
-    const target = graph.findFunc("take") orelse return error.TestExpectedEqual;
-    var count: usize = 0;
-    for (graph.applications()) |application| {
-        if (graph.applicationRelation(application.application) != target) continue;
-        const subject = graph.applicationSubject(application.application) orelse return error.TestExpectedEqual;
-        try std.testing.expect(count < expected.len);
-        const shape = graph.descriptorShape(subject, 0);
-        try std.testing.expectEqual(expected[count], shape != null);
-        if (shape) |exact| {
-            const members = try graph.membersOf(exact, alloc);
-            try std.testing.expect(members.len > 0);
-            const descriptor = graph.get(subject).?.descriptor.?;
-            try std.testing.expect(descriptor == .table_type);
-            try std.testing.expectEqual(descriptor.table_type.fields.len, members.len);
-            for (members, descriptor.table_type.fields) |member, field| {
-                try std.testing.expectEqualStrings(field.name, graph.get(member).?.name.?);
-                try std.testing.expect(field.typ.eql(graph.get(member).?.descriptor.?));
-                if (field.typ == .table_type) {
-                    const nested = graph.descriptorShape(member, 0) orelse return error.TestExpectedEqual;
-                    const fields = try graph.membersOf(nested, alloc);
-                    try std.testing.expectEqual(field.typ.table_type.fields.len, fields.len);
-                    for (fields, field.typ.table_type.fields) |child, inner| {
-                        try std.testing.expectEqualStrings(inner.name, graph.get(child).?.name.?);
-                        try std.testing.expect(inner.typ.eql(graph.get(child).?.descriptor.?));
-                    }
-                }
-            }
-            try std.testing.expect(graph.valueOrigin(subject) == .one);
-        }
-        count += 1;
-    }
-    try std.testing.expectEqual(expected.len, count);
-}
 
 test "semantic_graph: constructor operands retain ordered heterogeneous fields" {
-    try expectConstructorShapes(
+    try Fixture.compare(
         \\take = (value: any) value
         \\item = {text = "ok", code = 7, flag = false, fraction = 1.5}
         \\take(item)
@@ -14318,9 +14278,9 @@ test "semantic_graph: constructor knowledge does not survive unproved effects" {
         "item = {code = 7}\nif true\n  item = {other = 13}\ntake(item)\n",
         "item = {code = 7}\nitem[1] = 13\ntake(item)\n",
     };
-    inline for (cases) |source| try expectConstructorShapes(prefix ++ source, &.{false});
-    try expectConstructorShapes(prefix ++ "item = {code = 7}\ntake(item)\ntake(item)\n", &.{ true, false });
-    try expectConstructorShapes(prefix ++ "item = {code = 7}\ntake(item)\nitem = {code = 13}\ntake(item)\n", &.{ true, true });
+    inline for (cases) |source| try Fixture.compare(prefix ++ source, &.{false});
+    try Fixture.compare(prefix ++ "item = {code = 7}\ntake(item)\ntake(item)\n", &.{ true, false });
+    try Fixture.compare(prefix ++ "item = {code = 7}\ntake(item)\nitem = {code = 13}\ntake(item)\n", &.{ true, true });
 }
 
 test "semantic_graph: unproved constructors retain unknown shape" {
@@ -14332,7 +14292,7 @@ test "semantic_graph: unproved constructors retain unknown shape" {
         "item = {code = missing}\ntake(item)\n",
         "item = {}\ntake(item)\n",
     };
-    inline for (cases) |source| try expectConstructorShapes(prefix ++ source, &.{false});
+    inline for (cases) |source| try Fixture.compare(prefix ++ source, &.{false});
 }
 
 test "semantic_graph: later argument effects invalidate earlier record operands" {
@@ -14344,12 +14304,12 @@ test "semantic_graph: later argument effects invalidate earlier record operands"
         \\item = {code = 7}
         \\
     ;
-    try expectConstructorShapes(prefix ++ "take(item, change(item))\n", &.{false});
-    try expectConstructorShapes(prefix ++ "copy, status = item, change(item)\ntake(copy, status)\n", &.{false});
+    try Fixture.compare(prefix ++ "take(item, change(item))\n", &.{false});
+    try Fixture.compare(prefix ++ "copy, status = item, change(item)\ntake(copy, status)\n", &.{false});
 }
 
 test "semantic_graph: explicit record annotations retain their contract" {
-    try expectConstructorShapes(
+    try Fixture.compare(
         \\take = (value: any) value
         \\item: {code: i64} = {code = 7}
         \\take(item)
@@ -14358,118 +14318,38 @@ test "semantic_graph: explicit record annotations retain their contract" {
 }
 
 test "semantic_graph: nested constructor fields have exact descriptor homes" {
-    try expectConstructorShapes(
+    try Fixture.compare(
         \\take = (value: any) value
         \\item = {context = {world = 7}, predecessor = 13}
         \\take(item)
     , &.{true});
 }
 
-fn constructorInitializerInBlock(block: *const ast.Block) anyerror!?*const Expr {
-    var initializer: ?*const Expr = null;
-    for (block.stmts) |*item| {
-        const nested: ?*const ast.Block = switch (item.*) {
-            .while_loop => |*loop| &loop.body,
-            .repeat_loop => |*loop| &loop.body,
-            .num_for => |*loop| &loop.body,
-            .gen_for => |*loop| &loop.body,
-            .do_block => |*body| &body.body,
-            else => null,
-        };
-        if (nested) |body| {
-            if (try constructorInitializerInBlock(body)) |value| {
-                try std.testing.expect(initializer == null);
-                initializer = value;
-            }
-        }
-        const values: []const *Expr = switch (item.*) {
-            .assign => |assignment| assignment.values,
-            .local_decl => |declaration| declaration.inits,
-            else => &.{},
-        };
-        for (values) |value| {
-            if (value.* != .table) continue;
-            for (value.table.fields) |field| {
-                if (field != .named or !std.mem.eql(u8, field.named.key, "code")) continue;
-                try std.testing.expect(initializer == null);
-                initializer = field.named.val;
-            }
-        }
-    }
-    return initializer;
-}
 
-fn expectConstructorParameterOrigin(source: []const u8, expected: bool) !void {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lexer = @import("lexer.zig").Lexer.init(source, "constructor-origin.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
-    parser.idol_mode = true;
-    var module = try parser.parse_module();
-    var checked = sema.Sema.init(alloc);
-    defer checked.deinit();
-    checked.idol_mode = true;
-    try checked.check_module(&module);
-    if (checked.errors != 0) {
-        try std.testing.expect(!expected);
-        return;
-    }
-    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
-    var graph = SemanticGraph.init(alloc);
-    defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "constructor-origin.id");
-    var initializer: ?*const Expr = null;
-    for (module.body.stmts) |*statement| {
-        if (statement.* != .func_decl) continue;
-        const function = &statement.func_decl;
-        if (function.path.len != 1 or !std.mem.eql(u8, function.path[0], "probe")) continue;
-        initializer = try constructorInitializerInBlock(&function.func.body);
-    }
-    const expression = initializer orelse return error.TestExpectedEqual;
-    try std.testing.expect(expression.* == .name);
-    const value = graph.valueByAst(expression);
-    std.testing.expectEqual(expected, value != null) catch |err| {
-        std.debug.print("{s}\n", .{source});
-        return err;
-    };
-    if (value) |exact| {
-        try std.testing.expect(graph.get(exact).?.descriptor.? == .i64);
-        try std.testing.expect(graph.valueExpression(exact).? == expression);
-        const binding = switch (graph.valueOrigin(exact)) {
-            .one => |origin| origin,
-            .none, .unknown => return error.TestExpectedEqual,
-        };
-        const parameter = graph.get(binding).?;
-        try std.testing.expect(parameter.kind == .param);
-        try std.testing.expectEqualStrings("code", parameter.name.?);
-        try std.testing.expectEqual(graph.findFunc("probe").?, parameter.scope.?);
-    }
-}
 
 test "semantic_graph: constructor parameter initializers preserve exact origin" {
     const prefix = "record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n";
     const body = "    item = {code = code, other = 91}\n    read(2, item, 5)\n";
-    try expectConstructorParameterOrigin(prefix ++ body ++ "os.exit(probe(7))\n", true);
-    try expectConstructorParameterOrigin(prefix ++ body ++ "os.exit(probe(13))\n", true);
-    try expectConstructorParameterOrigin("code = \"changed\"\n" ++ prefix ++ body ++ "os.exit(probe(7))\n", true);
-    try expectConstructorParameterOrigin(prefix ++ "    code = 13\n" ++ body ++ "os.exit(probe(7))\n", true);
-    try expectConstructorParameterOrigin(prefix ++ "    if true\n        code = 13\n" ++ body ++ "os.exit(probe(7))\n", true);
+    try Fixture.verify(prefix ++ body ++ "os.exit(probe(7))\n", true);
+    try Fixture.verify(prefix ++ body ++ "os.exit(probe(13))\n", true);
+    try Fixture.verify("code = \"changed\"\n" ++ prefix ++ body ++ "os.exit(probe(7))\n", true);
+    try Fixture.verify(prefix ++ "    code = 13\n" ++ body ++ "os.exit(probe(7))\n", true);
+    try Fixture.verify(prefix ++ "    if true\n        code = 13\n" ++ body ++ "os.exit(probe(7))\n", true);
 }
 
 test "semantic_graph: constructor parameter initializers refuse shadow identity" {
     const prefix = "record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n";
     const suffix = "    item = {code = code, other = 91}\n    read(2, item, 5)\nos.exit(probe(7))\n";
-    try expectConstructorParameterOrigin(prefix ++ "    code: str = \"changed\"\n" ++ suffix, false);
-    try expectConstructorParameterOrigin(prefix ++ "    code = \"changed\"\n" ++ suffix, false);
-    try expectConstructorParameterOrigin(prefix ++ "    code: i64 = 13\n" ++ suffix, false);
-    try expectConstructorParameterOrigin(prefix ++ "    if true\n        code = \"changed\"\n" ++ suffix, false);
-    try expectConstructorParameterOrigin(prefix ++ "    code = 1.5\n" ++ suffix, false);
-    try expectConstructorParameterOrigin(prefix ++ "    code = nil\n" ++ suffix, false);
-    try expectConstructorParameterOrigin("touch = (): i64 0\n" ++ prefix ++ "    touch()\n" ++ suffix, false);
-    try expectConstructorParameterOrigin(prefix ++ "    count = 0\n    while count < 2\n        item = {code = code, other = 91}\n        code = \"changed\"\n        count += 1\n    0\nos.exit(probe(7))\n", false);
-    try expectConstructorParameterOrigin("touch = (): i64 0\n" ++ prefix ++ "    ignored = {touch() for value in {1}}\n" ++ suffix, false);
-    try expectConstructorParameterOrigin("record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64, code: i64): i64\n    item = {code = code, other = 91}\n    read(2, item, 5)\nos.exit(probe(7, 13))\n", false);
+    try Fixture.verify(prefix ++ "    code: str = \"changed\"\n" ++ suffix, false);
+    try Fixture.verify(prefix ++ "    code = \"changed\"\n" ++ suffix, false);
+    try Fixture.verify(prefix ++ "    code: i64 = 13\n" ++ suffix, false);
+    try Fixture.verify(prefix ++ "    if true\n        code = \"changed\"\n" ++ suffix, false);
+    try Fixture.verify(prefix ++ "    code = 1.5\n" ++ suffix, false);
+    try Fixture.verify(prefix ++ "    code = nil\n" ++ suffix, false);
+    try Fixture.verify("touch = (): i64 0\n" ++ prefix ++ "    touch()\n" ++ suffix, false);
+    try Fixture.verify(prefix ++ "    count = 0\n    while count < 2\n        item = {code = code, other = 91}\n        code = \"changed\"\n        count += 1\n    0\nos.exit(probe(7))\n", false);
+    try Fixture.verify("touch = (): i64 0\n" ++ prefix ++ "    ignored = {touch() for value in {1}}\n" ++ suffix, false);
+    try Fixture.verify("record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64, code: i64): i64\n    item = {code = code, other = 91}\n    read(2, item, 5)\nos.exit(probe(7, 13))\n", false);
 }
 
 test "semantic_graph: fresh record aliases retain initializer and place identity" {
@@ -14509,6 +14389,143 @@ test "semantic_graph: fresh record aliases retain initializer and place identity
     try std.testing.expectEqual(item, graph.valueOrigin(alias.value).one);
     try std.testing.expect(graph.descriptorShape(original.value, 0) != null);
     try std.testing.expectEqual(graph.descriptorShape(original.value, 0), graph.descriptorShape(alias.value, 0));
-    try std.testing.expect(graph.initializationPlace(copy, alias.place).? == graph.initializationPlace(item, original.place).?);
-    try std.testing.expectEqual(place.Tri.unknown, graph.initializationPlace(item, original.place).?.facts.alias);
+    try std.testing.expect(SemanticGraph.Initialization.locate(&graph, copy, alias.place).? == SemanticGraph.Initialization.locate(&graph, item, original.place).?);
+    try std.testing.expectEqual(place.Tri.unknown, SemanticGraph.Initialization.locate(&graph, item, original.place).?.facts.alias);
 }
+
+const Fixture = struct {
+
+    fn compare(source: []const u8, expected: []const bool) !void {
+        const Lexer = @import("lexer.zig").Lexer;
+        const Parser = @import("parser.zig").Parser;
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = Lexer.init(source, "constructor.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = sema.Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+        var graph = SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "constructor.id");
+        const target = graph.findFunc("take") orelse return error.TestExpectedEqual;
+        var count: usize = 0;
+        for (graph.applications()) |application| {
+            if (graph.applicationRelation(application.application) != target) continue;
+            const subject = graph.applicationSubject(application.application) orelse return error.TestExpectedEqual;
+            try std.testing.expect(count < expected.len);
+            const shape = graph.descriptorShape(subject, 0);
+            try std.testing.expectEqual(expected[count], shape != null);
+            if (shape) |exact| {
+                const members = try graph.membersOf(exact, alloc);
+                try std.testing.expect(members.len > 0);
+                const descriptor = graph.get(subject).?.descriptor.?;
+                try std.testing.expect(descriptor == .table_type);
+                try std.testing.expectEqual(descriptor.table_type.fields.len, members.len);
+                for (members, descriptor.table_type.fields) |member, field| {
+                    try std.testing.expectEqualStrings(field.name, graph.get(member).?.name.?);
+                    try std.testing.expect(field.typ.eql(graph.get(member).?.descriptor.?));
+                    if (field.typ == .table_type) {
+                        const nested = graph.descriptorShape(member, 0) orelse return error.TestExpectedEqual;
+                        const fields = try graph.membersOf(nested, alloc);
+                        try std.testing.expectEqual(field.typ.table_type.fields.len, fields.len);
+                        for (fields, field.typ.table_type.fields) |child, inner| {
+                            try std.testing.expectEqualStrings(inner.name, graph.get(child).?.name.?);
+                            try std.testing.expect(inner.typ.eql(graph.get(child).?.descriptor.?));
+                        }
+                    }
+                }
+                try std.testing.expect(graph.valueOrigin(subject) == .one);
+            }
+            count += 1;
+        }
+        try std.testing.expectEqual(expected.len, count);
+    }
+
+    fn find(block: *const ast.Block) anyerror!?*const Expr {
+        var initializer: ?*const Expr = null;
+        for (block.stmts) |*item| {
+            const nested: ?*const ast.Block = switch (item.*) {
+                .while_loop => |*loop| &loop.body,
+                .repeat_loop => |*loop| &loop.body,
+                .num_for => |*loop| &loop.body,
+                .gen_for => |*loop| &loop.body,
+                .do_block => |*body| &body.body,
+                else => null,
+            };
+            if (nested) |body| {
+                if (try find(body)) |value| {
+                    try std.testing.expect(initializer == null);
+                    initializer = value;
+                }
+            }
+            const values: []const *Expr = switch (item.*) {
+                .assign => |assignment| assignment.values,
+                .local_decl => |declaration| declaration.inits,
+                else => &.{},
+            };
+            for (values) |value| {
+                if (value.* != .table) continue;
+                for (value.table.fields) |field| {
+                    if (field != .named or !std.mem.eql(u8, field.named.key, "code")) continue;
+                    try std.testing.expect(initializer == null);
+                    initializer = field.named.val;
+                }
+            }
+        }
+        return initializer;
+    }
+
+    fn verify(source: []const u8, expected: bool) !void {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = @import("lexer.zig").Lexer.init(source, "constructor-origin.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = sema.Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        if (checked.errors != 0) {
+            try std.testing.expect(!expected);
+            return;
+        }
+        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        var graph = SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "constructor-origin.id");
+        var initializer: ?*const Expr = null;
+        for (module.body.stmts) |*statement| {
+            if (statement.* != .func_decl) continue;
+            const function = &statement.func_decl;
+            if (function.path.len != 1 or !std.mem.eql(u8, function.path[0], "probe")) continue;
+            initializer = try Fixture.find(&function.func.body);
+        }
+        const expression = initializer orelse return error.TestExpectedEqual;
+        try std.testing.expect(expression.* == .name);
+        const value = graph.valueByAst(expression);
+        std.testing.expectEqual(expected, value != null) catch |err| {
+            std.debug.print("{s}\n", .{source});
+            return err;
+        };
+        if (value) |exact| {
+            try std.testing.expect(graph.get(exact).?.descriptor.? == .i64);
+            try std.testing.expect(graph.valueExpression(exact).? == expression);
+            const binding = switch (graph.valueOrigin(exact)) {
+                .one => |origin| origin,
+                .none, .unknown => return error.TestExpectedEqual,
+            };
+            const parameter = graph.get(binding).?;
+            try std.testing.expect(parameter.kind == .param);
+            try std.testing.expectEqualStrings("code", parameter.name.?);
+            try std.testing.expectEqual(graph.findFunc("probe").?, parameter.scope.?);
+        }
+    }
+};

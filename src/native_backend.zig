@@ -939,6 +939,7 @@ const Arm64Compiler = struct {
     diagnostic: *Diagnostic,
     f64_records: *const F64RecordMap,
     scal_records: *const ScalRecordMap,
+    record: []const dnir.RecordDesc = &.{},
     code: std.ArrayList(u8) = .empty,
     asm_text: std.ArrayList(u8) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
@@ -1819,6 +1820,7 @@ const Arm64Compiler = struct {
         // §12 TAIL reads the CALLEE's declaration out of here. Borrowed for the
         // length of this call; `m` outlives it.
         self.cur_module_functions = m.functions;
+        self.record = m.records;
         // §12 `error.depth` — which frames are metered, decided ONCE for the
         // whole module and BEFORE any function is probed. Both passes read this
         // map, so both emit the same prologue: `probeCalleeSaveUse`'s premise is
@@ -1981,6 +1983,7 @@ const Arm64Compiler = struct {
         probe.depth_module_meters = self.depth_module_meters;
         probe.next_func_metered = self.next_func_metered;
         probe.cur_module_functions = self.cur_module_functions;
+        probe.record = self.record;
         if (self.graph_const_bases.count() != 0) {
             var last_symbol: u32 = 0;
             var bases = self.graph_const_bases.iterator();
@@ -3998,6 +4001,24 @@ const Arm64Compiler = struct {
         preferred_result: ?u5,
         at: u32,
     ) Error!void {
+        if ((ins.op == .load_index or ins.op == .store_index) and try self.cell(ins)) {
+            const base = try self.evalDnirValue(temps, ins.lhs);
+            if (ins.op == .load_index) {
+                const result = ins.result orelse return self.refuse(@src());
+                const value = try self.allocReg();
+                try self.emitLdrBaseImm(value, base, 0);
+                _ = try self.emitNarrowFit(value, value, ins.ty);
+                try temps.put(self.alloc, result, value);
+            } else {
+                const value = try self.evalDnirValue(temps, ins.third);
+                const fit = try self.narrowedFrameSource(value, ins.ty);
+                try self.emitStrBaseImm(fit, base, 0);
+                if (fit != value) self.releaseReg(fit);
+                self.releaseDnirTemp(pinned, ins.third, value);
+            }
+            self.releaseDnirTemp(pinned, ins.lhs, base);
+            return;
+        }
         switch (ins.op) {
             .@"const" => switch (ins.ty) {
                 .f64 => {
@@ -8318,6 +8339,37 @@ const Arm64Compiler = struct {
         const scratch = try self.allocRegExcluding(src);
         _ = try self.emitNarrowFit(scratch, src, ty);
         return scratch;
+    }
+
+    fn cell(self: *const Arm64Compiler, instruction: dnir.Instr) Error!bool {
+        if (instruction.record.len == 0) return false;
+        var record: ?dnir.RecordDesc = null;
+        for (self.record) |candidate| {
+            if (!std.mem.eql(u8, candidate.name, instruction.record)) continue;
+            if (record != null) return recordRefusalWith(self.diagnostic, @src(), "record-cell-descriptor");
+            record = candidate;
+        }
+        const layout = record orelse return recordRefusalWith(self.diagnostic, @src(), "record-cell-descriptor");
+        if (layout.fields.len != layout.kinds.len or instruction.rhs != .i64 or instruction.rhs.i64 != 1)
+            return recordRefusalWith(self.diagnostic, @src(), "record-cell-layout");
+        var found = false;
+        for (layout.fields, layout.kinds, 0..) |field, kind, index| {
+            if (!std.mem.eql(u8, field, instruction.field)) continue;
+            if (found) return recordRefusalWith(self.diagnostic, @src(), "record-cell-field");
+            const descriptor: native_types.ResolvedType = switch (kind) {
+                .str => .str,
+                .f64 => .f64,
+                .i64 => if (index < layout.widths.len) layout.widths[index] orelse .i64 else .i64,
+            };
+            if (!descriptor.eql(instruction.ty)) return recordRefusalWith(self.diagnostic, @src(), "record-cell-carrier");
+            found = true;
+        }
+        if (!found) return recordRefusalWith(self.diagnostic, @src(), "record-cell-field");
+        switch (instruction.ty) {
+            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .bool, .str, .pointer => {},
+            else => return recordRefusalWith(self.diagnostic, @src(), "record-cell-carrier"),
+        }
+        return true;
     }
 
     fn emitRet(self: *Arm64Compiler) Error!void {
@@ -23699,4 +23751,99 @@ test "native backend: the subject-first face of an application spends the same d
 
     try std.testing.expectEqual(dnir.DivisorSign.unknown, stripped.divisor);
     try std.testing.expectEqual(@as(usize, 3 * 4), stripped.text - subject.text);
+}
+
+test "native record cells preserve word storage and independent source values" {
+    const alloc = std.testing.allocator;
+    var scalar: ScalRecordMap = .empty;
+    var floating: F64RecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &floating,
+        .scal_records = &scalar,
+        .record = &.{.{ .name = "record", .fields = &.{"code"}, .kinds = &.{.i64}, .widths = &.{.u16} }},
+    };
+    defer compiler.deinit();
+    var value: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer value.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch.deinit(alloc);
+    try value.put(alloc, 0, 9);
+    try value.put(alloc, 1, 10);
+    try pinned.put(alloc, 0, 9);
+    try pinned.put(alloc, 1, 10);
+    compiler.eval_pinned = &pinned;
+    compiler.eval_temps = &value;
+    compiler.markGpHome(9);
+    compiler.markGpHome(10);
+    var instruction = dnir.Instr{ .op = .store_index, .record = "record", .field = "code", .ty = .u16, .lhs = .{ .local = 0 }, .rhs = .{ .i64 = 1 }, .third = .{ .local = 1 } };
+    try compiler.compileDnirInstr(&value, &pinned, instruction, &branch, null, 0);
+    try std.testing.expectEqual(@as(usize, 8), compiler.code.items.len);
+    const fit = std.mem.readInt(u32, compiler.code.items[0..4], .little);
+    const store = std.mem.readInt(u32, compiler.code.items[4..8], .little);
+    try std.testing.expectEqual(@as(u32, 10), (fit >> 5) & 31);
+    try std.testing.expect((fit & 31) != 10);
+    try std.testing.expectEqual(fit & 31, store & 31);
+    try std.testing.expectEqual(@as(u32, 0xf9000000), store & 0xffc00000);
+    try std.testing.expectEqual(@as(u32, 9), (store >> 5) & 31);
+    try std.testing.expectEqual(@as(?u5, 10), value.get(1));
+    try std.testing.expect(compiler.used_regs[10]);
+    instruction.op = .load_index;
+    instruction.result = 2;
+    const before = compiler.code.items.len;
+    try compiler.compileDnirInstr(&value, &pinned, instruction, &branch, null, 0);
+    try std.testing.expectEqual(before + 8, compiler.code.items.len);
+    const load = std.mem.readInt(u32, compiler.code.items[before..][0..4], .little);
+    try std.testing.expectEqual(@as(u32, 0xf9400000), load & 0xffc00000);
+    try std.testing.expectEqual(@as(u32, 9), (load >> 5) & 31);
+    instruction.op = .store_index;
+    instruction.record = "";
+    instruction.ty = .u8;
+    instruction.result = null;
+    try compiler.compileDnirInstr(&value, &pinned, instruction, &branch, null, 0);
+    const byte = std.mem.readInt(u32, compiler.code.items[compiler.code.items.len - 4 ..][0..4], .little);
+    try std.testing.expectEqual(@as(u32, 0x39000000), byte & 0xffc00000);
+}
+
+test "native record cells refuse damaged descriptors before emission" {
+    const alloc = std.testing.allocator;
+    var scalar: ScalRecordMap = .empty;
+    var floating: F64RecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &floating,
+        .scal_records = &scalar,
+        .record = &.{.{ .name = "record", .fields = &.{"code"}, .kinds = &.{.i64}, .widths = &.{.u16} }},
+    };
+    defer compiler.deinit();
+    var value: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer value.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch.deinit(alloc);
+    const original = dnir.Instr{ .op = .store_index, .record = "record", .field = "code", .ty = .u16, .lhs = .{ .local = 0 }, .rhs = .{ .i64 = 1 }, .third = .{ .local = 1 } };
+    for (0..7) |damage| {
+        var instruction = original;
+        const record = compiler.record;
+        defer compiler.record = record;
+        switch (damage) {
+            0 => instruction.record = "absent",
+            1 => instruction.field = "absent",
+            2 => instruction.rhs = .{ .i64 = 2 },
+            3 => instruction.ty = .i64,
+            4 => compiler.record = &.{ record[0], record[0] },
+            5 => compiler.record = &.{.{ .name = "record", .fields = &.{ "code", "code" }, .kinds = &.{ .i64, .i64 }, .widths = &.{ .u16, .u16 } }},
+            6 => compiler.record = &.{.{ .name = "record", .fields = &.{"code"}, .kinds = &.{} }},
+            else => unreachable,
+        }
+        try std.testing.expectError(error.UnsupportedProgram, compiler.compileDnirInstr(&value, &pinned, instruction, &branch, null, 0));
+        try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+    }
 }

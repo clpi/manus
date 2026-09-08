@@ -3062,7 +3062,7 @@ pub const Sema = struct {
         // alternative was written; every other mismatch still reports.
         if (self.current_ret_fallible and actual == .nil) return;
         if (!type_annotation_accepts_init(self.current_ret, actual) and
-            !self.constructorMeetsRecordDemand(self.current_ret, value))
+            !Constructor.accepts(self, self.current_ret, value))
         {
             var want_buf: [128]u8 = undefined;
             var got_buf: [128]u8 = undefined;
@@ -3270,7 +3270,7 @@ pub const Sema = struct {
                                 nominal_accepts_literal(ann, ld.inits[i]);
                             if (self.errors == before and ann != .any and init_t != .any and init_t != .nil and
                                 !cdr_literal and !type_annotation_accepts_init(ann, init_t) and
-                                !(i < ld.inits.len and self.constructorMeetsRecordDemand(ann, ld.inits[i])))
+                                !(i < ld.inits.len and Constructor.accepts(self, ann, ld.inits[i])))
                             {
                                 {
                                     var ann_buf: [128]u8 = undefined;
@@ -4655,56 +4655,12 @@ pub const Sema = struct {
     /// gap's own "Do not" places the diagnostic exactly there. The subject
     /// resolution and the label test mirror `check_descriptor_application`
     /// clause for clause so the two faces cannot drift apart.
-    fn constructorMeetsRecordDemand(self: *Sema, descriptor: RT, value: *const Expr) bool {
-        if (value.* != .table) return false;
-        var owned: ?[]types.FieldType = null;
-        defer if (owned) |fields| self.alloc.free(fields);
-        const fields = switch (descriptor) {
-            .table_type => |record_type| record_type.fields,
-            .@"struct" => |named| fields: {
-                const declaration = self.alias_defs.get(named.name) orelse return false;
-                if (declaration.type_params != null) return false;
-                if (declaration.parent) |parent| {
-                    if (!self.foreign_records.contains(parent)) return false;
-                }
-                for (declaration.extra_parents) |parent| {
-                    if (!self.foreign_records.contains(parent)) return false;
-                }
-                if (declaration.fields.len == 0 and
-                    (declaration.target == null or declaration.target.? != .record)) return false;
-                owned = self.mergedForeignAliasFields(declaration) catch return false;
-                break :fields owned.?;
-            },
-            else => return false,
-        };
-        if (fields.len == 0 and value.table.fields.len == 0) return true;
-        const actual = self.exprDescriptor(value) orelse return false;
-        if (actual != .table_type) return false;
-        if (fields.len != actual.table_type.fields.len) return false;
-        var supplied: std.StringHashMapUnmanaged(*const Expr) = .empty;
-        defer supplied.deinit(self.alloc);
-        for (value.table.fields) |field| {
-            if (field != .named or supplied.contains(field.named.key)) return false;
-            supplied.put(self.alloc, field.named.key, field.named.val) catch return false;
-        }
-        for (fields) |field| {
-            const input = supplied.get(field.name) orelse return false;
-            const found = self.exprDescriptor(input) orelse return false;
-            if (found == .any or found == .nil or found == .void) return false;
-            if (literalOutOfRange(field.typ, input) != null) return false;
-            if (field.typ == .any or type_annotation_accepts_init(field.typ, found)) continue;
-            if (numericDemandAcceptsLiteral(field.typ, input) or nominal_accepts_literal(field.typ, input)) continue;
-            if (self.constructorMeetsRecordDemand(field.typ, input)) continue;
-            return false;
-        }
-        return true;
-    }
 
     fn check_demanded_pack(self: *Sema, ann: ast.TypeExpr, rhs: *ast.Expr) void {
         if (ann == .named) return self.check_demanded_pack_for(ann.named, rhs);
         if (!self.idol_mode or ann != .record or rhs.* != .table) return;
         const descriptor = self.resolve_type(ann) catch return;
-        if (!self.constructorMeetsRecordDemand(descriptor, rhs)) {
+        if (!Constructor.accepts(self, descriptor, rhs)) {
             self.err(rhs.loc(), "record constructor does not satisfy the demanded field descriptors", .{});
         }
     }
@@ -4717,7 +4673,7 @@ pub const Sema = struct {
     fn check_demanded_pack_result(self: *Sema, rhs: *ast.Expr) void {
         if (self.current_ret == .@"struct") return self.check_demanded_pack_for(self.current_ret.@"struct".name, rhs);
         if (!self.idol_mode or self.current_ret != .table_type or rhs.* != .table) return;
-        if (!self.constructorMeetsRecordDemand(self.current_ret, rhs)) {
+        if (!Constructor.accepts(self, self.current_ret, rhs)) {
             self.err(rhs.loc(), "record constructor does not satisfy the demanded field descriptors", .{});
         }
     }
@@ -4745,7 +4701,7 @@ pub const Sema = struct {
                 );
             }
         }
-        if (self.idol_mode and before == self.errors and !self.constructorMeetsRecordDemand(.{ .@"struct" = .{ .name = subject } }, rhs)) {
+        if (self.idol_mode and before == self.errors and !Constructor.accepts(self, .{ .@"struct" = .{ .name = subject } }, rhs)) {
             self.err(rhs.loc(), "record constructor does not satisfy descriptor '{s}'", .{subject});
         }
     }
@@ -13931,6 +13887,53 @@ pub const Sema = struct {
                     break :blk .any;
                 },
             };
+        }
+    };
+    const Constructor = struct {
+
+        fn accepts(self: *Sema, descriptor: RT, value: *const Expr) bool {
+            if (value.* != .table) return false;
+            var owned: ?[]types.FieldType = null;
+            defer if (owned) |fields| self.alloc.free(fields);
+            const fields = switch (descriptor) {
+                .table_type => |record_type| record_type.fields,
+                .@"struct" => |named| fields: {
+                    const declaration = self.alias_defs.get(named.name) orelse return false;
+                    if (declaration.type_params != null) return false;
+                    if (declaration.parent) |parent| {
+                        if (!self.foreign_records.contains(parent)) return false;
+                    }
+                    for (declaration.extra_parents) |parent| {
+                        if (!self.foreign_records.contains(parent)) return false;
+                    }
+                    if (declaration.fields.len == 0 and
+                        (declaration.target == null or declaration.target.? != .record)) return false;
+                    owned = self.mergedForeignAliasFields(declaration) catch return false;
+                    break :fields owned.?;
+                },
+                else => return false,
+            };
+            if (fields.len == 0 and value.table.fields.len == 0) return true;
+            const actual = self.exprDescriptor(value) orelse return false;
+            if (actual != .table_type) return false;
+            if (fields.len != actual.table_type.fields.len) return false;
+            var supplied: std.StringHashMapUnmanaged(*const Expr) = .empty;
+            defer supplied.deinit(self.alloc);
+            for (value.table.fields) |field| {
+                if (field != .named or supplied.contains(field.named.key)) return false;
+                supplied.put(self.alloc, field.named.key, field.named.val) catch return false;
+            }
+            for (fields) |field| {
+                const input = supplied.get(field.name) orelse return false;
+                const found = self.exprDescriptor(input) orelse return false;
+                if (found == .any or found == .nil or found == .void) return false;
+                if (literalOutOfRange(field.typ, input) != null) return false;
+                if (field.typ == .any or type_annotation_accepts_init(field.typ, found)) continue;
+                if (numericDemandAcceptsLiteral(field.typ, input) or nominal_accepts_literal(field.typ, input)) continue;
+                if (Constructor.accepts(self, field.typ, input)) continue;
+                return false;
+            }
+            return true;
         }
     };
 };
