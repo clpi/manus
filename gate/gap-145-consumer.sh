@@ -3901,7 +3901,6 @@ if [ "$consumed_after_advance" -ne 1 ]; then
     bad "the attribute-argument paren read is no longer after its advance: count=$consumed_after_advance"
 fi
 # (b) The sweep test is the equivalence oracle itself: it is required to
-#     compare the face against the identity, over every generated row.
 sweep_oracle=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
     grep -cF 'kind == .lparen' || true)
 examined=$((examined + 1))
@@ -3909,17 +3908,23 @@ if [ "$sweep_oracle" -ne 1 ]; then
     bad "the group-opening equivalence sweep lost its identity comparison: count=$sweep_oracle"
 fi
 sweep_bit=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF '>> 63) & 1' || true)
+    grep -cF 'try testing.expectEqual(expected, try consumer.currentParserCall());' || true)
 examined=$((examined + 1))
 if [ "$sweep_bit" -ne 1 ]; then
-    bad "the group-opening equivalence sweep does not read event bit 63: count=$sweep_bit"
+    bad "the group-opening equivalence sweep does not execute the reader: count=$sweep_bit"
 fi
-sweep_nonvacuous=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'try testing.expect(seen);' || true)
+sweep_refusal=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserCall());' || true)
 examined=$((examined + 1))
-if [ "$sweep_nonvacuous" -ne 1 ]; then
-    bad "the group-opening equivalence sweep could pass on a face that admits nothing: count=$sweep_nonvacuous"
+if [ "$sweep_refusal" -ne 1 ]; then
+    bad "the group-opening equivalence sweep does not assert the reader's trivia refusal: count=$sweep_refusal"
 fi
+for predicate in 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "group-opening equivalence oracle lost predicate: $predicate"
+    fi
+done
 
 # Each transferred region must select a nonempty region of the parser AND
 # carry the settled face. A count of one cannot be luck if the region it is
@@ -4053,27 +4058,28 @@ if [ "$at_sweep_oracle" -ne 1 ]; then
     bad "the anchor equivalence sweep lost its identity comparison: count=$at_sweep_oracle"
 fi
 at_sweep_face=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'face == 17' || true)
+    grep -cF 'try testing.expectEqual(expected, try consumer.currentParserAnchor());' || true)
 examined=$((examined + 1))
 if [ "$at_sweep_face" -ne 1 ]; then
-    bad "the anchor equivalence sweep does not read the settled face: count=$at_sweep_face"
+    bad "the anchor equivalence sweep does not execute the reader: count=$at_sweep_face"
 fi
 # A `(` carries a matching-close COORDINATE in the same lane-two field, and a
-# coordinate ranges over every face value including 17. The reader guards on
-# event bit 63; a sweep that skipped the guard would not be measuring the
-# reader.
+has "$PARSER" '        if (try self.currentParserCall()) return 0;' \
+    'currentParserFace lost the group-opening guard that keeps a matching-close coordinate out of the face'
+has "$PARSER" '        return (try self.currentParserFace()) == 17;' \
+    'the anchor consumer no longer reads the settled anchor face'
 at_sweep_guard=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF '>> 63) & 1' || true)
+    grep -cF 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserAnchor());' || true)
 examined=$((examined + 1))
 if [ "$at_sweep_guard" -ne 1 ]; then
-    bad "the anchor equivalence sweep dropped the group-opening guard the reader carries: count=$at_sweep_guard"
+    bad "the anchor equivalence sweep does not assert the reader's trivia refusal: count=$at_sweep_guard"
 fi
-at_sweep_nonvacuous=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'try testing.expect(seen);' || true)
-examined=$((examined + 1))
-if [ "$at_sweep_nonvacuous" -ne 1 ]; then
-    bad "the anchor equivalence sweep could pass on a face that admits nothing: count=$at_sweep_nonvacuous"
-fi
+for predicate in 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "anchor equivalence oracle lost predicate: $predicate"
+    fi
+done
 
 # Each transferred region must select a nonempty region of the parser AND carry
 # the settled face at its exact count.
@@ -4194,36 +4200,27 @@ if [ "$dot_sweep_oracle" -ne 1 ]; then
     bad "the projection equivalence sweep lost its identity comparison: count=$dot_sweep_oracle"
 fi
 dot_sweep_face=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'face == 15' || true)
+    grep -cF 'try testing.expectEqual(expected, try consumer.currentParserField());' || true)
 examined=$((examined + 1))
 if [ "$dot_sweep_face" -ne 1 ]; then
-    bad "the projection equivalence sweep does not read the settled face: count=$dot_sweep_face"
+    bad "the projection equivalence sweep does not execute the reader: count=$dot_sweep_face"
 fi
-# A `(` carries a matching-close COORDINATE in the same lane-two field, and a
-# coordinate ranges over every face value including 15. The reader guards on
-# event bit 63; a sweep that skipped the guard would not be measuring the
-# reader.
+has "$PARSER" '        return (try self.currentParserFace()) == 15 and' \
+    'the projection consumer no longer reads the settled projection face'
+has "$PARSER" '            !try self.currentParserPrefix();' \
+    'the projection consumer lost the prefix discriminator at the same coordinate'
 dot_sweep_guard=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF '>> 63) & 1' || true)
+    grep -cF 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserField());' || true)
 examined=$((examined + 1))
 if [ "$dot_sweep_guard" -ne 1 ]; then
-    bad "the projection equivalence sweep dropped the group-opening guard the reader carries: count=$dot_sweep_guard"
+    bad "the projection equivalence sweep does not assert the reader's trivia refusal: count=$dot_sweep_guard"
 fi
-# The reader also refuses a prefix identity at that coordinate — the second
-# discriminator gate section above pins in `currentParserField` itself. A sweep
-# that mirrored only one of the two would not be measuring the reader either.
-dot_sweep_prefix=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF '>> 20) & 1' || true)
-examined=$((examined + 1))
-if [ "$dot_sweep_prefix" -ne 1 ]; then
-    bad "the projection equivalence sweep dropped the parenthesis-boundary discriminator the reader carries: count=$dot_sweep_prefix"
-fi
-dot_sweep_nonvacuous=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'try testing.expect(seen);' || true)
-examined=$((examined + 1))
-if [ "$dot_sweep_nonvacuous" -ne 1 ]; then
-    bad "the projection equivalence sweep could pass on a face that admits nothing: count=$dot_sweep_nonvacuous"
-fi
+for predicate in 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "projection equivalence oracle lost predicate: $predicate"
+    fi
+done
 
 # Each transferred region must select a nonempty region of the parser AND carry
 # the settled face at its exact count.
@@ -5242,6 +5239,143 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     fi
 
     rm -rf -- "$branch_probe"
+fi
+
+blind_oracle() {
+    awk '
+        /^test "/ { block = $0 "\n"; inside = 1; next }
+        inside { block = block $0 "\n" }
+        /^}$/ {
+            if (inside) {
+                if ((index(block, "parserEventsForTest(") > 0 ||
+                     index(block, "parserEventForTest(") > 0 ||
+                     index(block, "parserDecisionForTest(") > 0) &&
+                    (index(block, "row.kind) |kind| kind == .") > 0 ||
+                     index(block, "const expected = kind == .") > 0 ||
+                     index(block, "(kind == .") > 0) &&
+                    index(block, "consumer.currentParser") == 0 &&
+                    index(block, "consumer.eatParser") == 0 &&
+                    index(block, "consumer.infix_prec") == 0) hits += 1
+                inside = 0
+            }
+        }
+        END { print hits + 0 }
+    ' "$1"
+}
+blind_count=$(blind_oracle "$PARSER")
+examined=$((examined + 1))
+if [ "$blind_count" -ne 0 ]; then
+    bad "a parser identity oracle answers without executing the reader it names: count=$blind_count"
+fi
+
+for reader in currentParserCall currentParserAnchor currentParserField currentParserMember currentParserName; do
+    examined=$((examined + 1))
+    if [ "$(grep -cF "try consumer.$reader()" "$PARSER")" -lt 1 ]; then
+        bad "no identity oracle executes $reader"
+    fi
+done
+has "$PARSER" '    try testing.expect(!try consumer.currentParserName());' \
+    'the header-paren discriminator no longer executes the name reader at the `(` coordinate'
+has "$PARSER" '        try testing.expect(try consumer.currentParserName());' \
+    'the header-paren discriminator no longer executes the name reader at its name coordinates'
+has "$PARSER" '    consumer.pack_index = 1;' \
+    'the header-paren discriminator no longer positions the reader at the `(` coordinate'
+
+blind_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate blind-oracle scratch' >&2; exit 2; }
+cat >"$blind_probe/old.zig" <<'PROBE'
+test "parse: retired blind identity oracle" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const expected = if (row.kind) |kind| kind == .lparen else false;
+        try testing.expectEqual(expected, ((event >> 63) & 1) != 0);
+    }
+}
+PROBE
+cat >"$blind_probe/new.zig" <<'PROBE'
+test "parse: canonical executed identity oracle" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
+        try parserEventsForTest(facts[0..], events[0..], true);
+        const expected = kind == .lparen;
+        try testing.expectEqual(expected, try consumer.currentParserCall());
+    }
+}
+PROBE
+cat >"$blind_probe/property.zig" <<'PROBE'
+test "parse: production prefix decision executes through whole-pack event" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        try testing.expectEqual(row.prefix, ((event >> 20) & 1) != 0);
+    }
+}
+PROBE
+blind_old=$(blind_oracle "$blind_probe/old.zig")
+blind_new=$(blind_oracle "$blind_probe/new.zig")
+blind_property=$(blind_oracle "$blind_probe/property.zig")
+rm -rf -- "$blind_probe"
+examined=$((examined + 1))
+if [ "$blind_old" -ne 1 ]; then
+    bad "the blind-oracle detector does not see the retired shape: count=$blind_old"
+fi
+examined=$((examined + 1))
+if [ "$blind_new" -ne 0 ]; then
+    bad "the blind-oracle detector misreads the canonical shape: count=$blind_new"
+fi
+examined=$((examined + 1))
+if [ "$blind_property" -ne 0 ]; then
+    bad "the blind-oracle detector claims a producer-property test: count=$blind_property"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    blind_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate blind perturbation scratch' >&2; exit 2; }
+
+    {
+        cat "$PARSER"
+        cat <<'PLANT'
+
+test "parse: planted blind identity oracle" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const expected = if (row.kind) |kind| kind == .kw_do else false;
+        try testing.expectEqual(expected, ((event >> 63) & 1) != 0);
+    }
+}
+PLANT
+    } >"$blind_probe/plant.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$blind_probe/plant.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$blind_probe/plant.result" 2>&1
+    blind_status=$?
+    examined=$((examined + 1))
+    if [ "$blind_status" -ne 1 ] || [ ! -s "$blind_probe/plant.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names: count=1' "$blind_probe/plant.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$blind_probe/plant.result"; then
+        bad "blind-oracle plant control did not fail closed: status=$blind_status"
+    fi
+
+    sed 's/        try testing.expectEqual(expected, try consumer.currentParserAnchor());/        const face: i64 = if (((events[0] >> 63) \& 1) != 0) 0 else events[1] >> 13;\n        try testing.expectEqual(expected, face == 17);/;
+         s/            try testing.expectError(error.InvalidRecordCount, consumer.currentParserAnchor());/            refused = true;/' "$PARSER" >"$blind_probe/mirror.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$blind_probe/mirror.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$blind_probe/mirror.result" 2>&1
+    blind_status=$?
+    examined=$((examined + 1))
+    if [ "$blind_status" -ne 1 ] || [ ! -s "$blind_probe/mirror.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names: count=1' "$blind_probe/mirror.result" ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the anchor equivalence sweep does not execute the reader: count=0' "$blind_probe/mirror.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the projection equivalence sweep does not execute the reader' "$blind_probe/mirror.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$blind_probe/mirror.result"; then
+        bad "blind-oracle mirror control did not fail closed: status=$blind_status"
+    fi
+
+    sed 's/        return (try self.currentParserFace()) == 17;/        return (try self.currentParserFace()) == 17 or (try self.currentParserFace()) == 18;/' "$PARSER" >"$blind_probe/widen.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$blind_probe/widen.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$blind_probe/widen.result" 2>&1
+    blind_status=$?
+    examined=$((examined + 1))
+    if [ "$blind_status" -ne 1 ] || [ ! -s "$blind_probe/widen.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the anchor consumer no longer reads the settled anchor face' "$blind_probe/widen.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names' "$blind_probe/widen.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$blind_probe/widen.result"; then
+        bad "blind-oracle reader-widening control did not fail closed: status=$blind_status"
+    fi
+
+    rm -rf -- "$blind_probe"
 fi
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then

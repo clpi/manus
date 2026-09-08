@@ -12327,52 +12327,98 @@ test "parse: the branch face admits exactly the `else` and `elseif` identities" 
 
 test "parse: the group-opening face admits exactly the `(` identity" {
     var seen = false;
+    var rejected = false;
+    var refused = false;
     for (grammar_roles.rows, 0..) |row, index| {
-        const event = try parserEventForTest(@intCast(index), true);
-        const expected = if (row.kind) |kind| kind == .lparen else false;
-        if (expected) seen = true;
-        try testing.expectEqual(expected, ((event >> 63) & 1) != 0);
+        const kind = row.kind orelse continue;
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "group.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "group.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserCall());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .lparen;
+        try testing.expectEqual(expected, try consumer.currentParserCall());
+        if (expected) seen = true else rejected = true;
     }
-    // Without this the sweep would pass on a face that admits nothing at all.
     try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
 }
 
 test "parse: the anchor face admits exactly the `@` identity" {
     var seen = false;
+    var rejected = false;
+    var refused = false;
     for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
         var facts = [3]i64{ 0, @intCast(index), 0 };
         var events = [2]i64{ 0, 0 };
         try parserEventsForTest(facts[0..], events[0..], true);
-        // Mirrors `currentParserAnchor` exactly, guard included: a `(` has no
-        // primary face at all, because its lane-two field carries the matching
-        // close COORDINATE, which ranges over every face value including 17.
-        const face: i64 = if (((events[0] >> 63) & 1) != 0) 0 else events[1] >> 13;
-        const expected = if (row.kind) |kind| kind == .at else false;
-        if (expected) seen = true;
-        try testing.expectEqual(expected, face == 17);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "anchor.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "anchor.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserAnchor());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .at;
+        try testing.expectEqual(expected, try consumer.currentParserAnchor());
+        if (expected) seen = true else rejected = true;
     }
-    // Without this the sweep would pass on a face that admits nothing at all.
     try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
 }
 
 test "parse: the projection face admits exactly the `.` identity" {
     var seen = false;
+    var rejected = false;
+    var refused = false;
     for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
         var facts = [3]i64{ 0, @intCast(index), 0 };
         var events = [2]i64{ 0, 0 };
         try parserEventsForTest(facts[0..], events[0..], true);
-        // Mirrors `currentParserField` exactly, both discriminators included:
-        // a `(` has no primary face at all, because its lane-two field carries
-        // the matching close COORDINATE, which ranges over every face value
-        // including 15, and the reader also refuses a prefix identity there.
-        const face: i64 = if (((events[0] >> 63) & 1) != 0) 0 else events[1] >> 13;
-        const prefix = ((events[0] >> 20) & 1) != 0;
-        const expected = if (row.kind) |kind| kind == .dot else false;
-        if (expected) seen = true;
-        try testing.expectEqual(expected, face == 15 and !prefix);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "projection.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "projection.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserField());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .dot;
+        try testing.expectEqual(expected, try consumer.currentParserField());
+        if (expected) seen = true else rejected = true;
     }
-    // Without this the sweep would pass on a face that admits nothing at all.
     try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
 }
 
 test "parse: the colon face admits exactly the `:` identity" {
@@ -12466,22 +12512,67 @@ test "parse: the colon face admits exactly the `:` identity under the applied-de
 }
 
 test "parse: production member identity executes through whole-pack event" {
+    var seen = false;
+    var rejected = false;
+    var refused = false;
     for (grammar_roles.rows, 0..) |row, index| {
-        const event = try parserEventForTest(@intCast(index), true);
-        const expected = if (row.kind) |kind| kind == .name or row.keyword else false;
-        try testing.expectEqual(expected, ((event >> 9) & 1) != 0);
+        const kind = row.kind orelse continue;
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "member.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "member.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserMember());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .name or row.keyword;
+        try testing.expectEqual(expected, try consumer.currentParserMember());
+        if (expected) seen = true else rejected = true;
     }
+    try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
 }
 
 test "parse: the ordinary-name face admits exactly the name identity" {
+    var seen = false;
+    var rejected = false;
+    var refused = false;
     for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
         var facts = [3]i64{ 0, @intCast(index), 0 };
-        const decision = try parserDecisionForTest(facts[0..], 0, true);
-        const event = try parserEventForTest(@intCast(index), true);
-        const face = ((decision >> 5) & 1) != 0 and ((event >> 9) & 1) != 0;
-        const expected = if (row.kind) |kind| kind == .name else false;
-        try testing.expectEqual(expected, face);
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "name.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "name.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserName());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .name;
+        try testing.expectEqual(expected, try consumer.currentParserName());
+        if (expected) seen = true else rejected = true;
     }
+    try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
 }
 
 test "parse: the ordinary-name face refuses a header paren that shares decision bit 5" {
@@ -12507,19 +12598,26 @@ test "parse: the ordinary-name face refuses a header paren that shares decision 
     defer testing.allocator.free(events);
     try parserEventsForTest(facts[0..], events, true);
 
-    const face = struct {
-        fn at(all: []const i64, total: usize, index: usize) bool {
-            return ((all[total + index] >> 5) & 1) != 0 and ((all[index] >> 9) & 1) != 0;
-        }
-    }.at;
+    var tokens = [_]Token{
+        .{ .kind = .name, .loc = .{ .file = "header.id", .line = 1, .col = 1 }, .text = "a" },
+        .{ .kind = .lparen, .loc = .{ .file = "header.id", .line = 1, .col = 2 }, .text = "(" },
+        .{ .kind = .name, .loc = .{ .file = "header.id", .line = 1, .col = 3 }, .text = "b" },
+        .{ .kind = .rparen, .loc = .{ .file = "header.id", .line = 1, .col = 4 }, .text = ")" },
+        .{ .kind = .name, .loc = .{ .file = "header.id", .line = 1, .col = 5 }, .text = "c" },
+        .{ .kind = .eof, .loc = .{ .file = "header.id", .line = 1, .col = 6 }, .text = "" },
+    };
+    var lexer = Lexer.init("", "header.id");
+    var consumer = Parser.init(&lexer, testing.allocator);
+    consumer.pack_tokens = &tokens;
+    consumer.parser_events = events;
 
-    // Without this the conjunction below would pass vacuously: the `(` must be
-    // a coordinate that actually carries decision bit 5.
     try testing.expect(((events[count + 1] >> 5) & 1) != 0);
-    try testing.expect(!face(events, count, 1));
+    consumer.pack_index = 1;
+    try testing.expect(!try consumer.currentParserName());
 
     for ([_]usize{ 0, 2, 4 }) |index| {
-        try testing.expect(face(events, count, index));
+        consumer.pack_index = index;
+        try testing.expect(try consumer.currentParserName());
     }
 }
 
