@@ -1070,7 +1070,7 @@ pub fn build(b: *std.Build) void {
     // A ceiling nothing runs is not a ratchet: host `TokenKind` regressed
     // measurably while these were unwired, which is precisely the class the
     // gap opened this item for.
-    const gap145_cmd = b.addSystemCommand(&.{ "sh", "gate/gap-145-consumer.sh" });
+    const gap145_cmd = b.addSystemCommand(&.{ "sh", "gate/token/read.sh" });
     gap145_cmd.setCwd(b.path("."));
     gap145_cmd.step.dependOn(b.getInstallStep());
     const gap145_step = b.step("gap-145-consumer", "no consumer observes the collapsed quote/text/byte identity, and the editor grammar agrees with the token owner (GAP-145 O1/O5/O7)");

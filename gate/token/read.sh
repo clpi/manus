@@ -22,7 +22,7 @@
 # reports a number that proves nothing (law.gate.protocol).
 set -u
 
-ROOT=${GAP145_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
+ROOT=${GAP145_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}
 TYPES="$ROOT/src/types.zig"
 SEMA="$ROOT/src/sema.zig"
 CODEGEN="$ROOT/src/codegen.zig"
@@ -4335,7 +4335,7 @@ rm -rf -- "$amp_probe"
 if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     amp_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate refinement perturbation scratch' >&2; exit 2; }
     sed '0,/infix\.op == \.band/s//infix.op == .add/' "$PARSER" >"$amp_probe/accept.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$amp_probe/accept.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$amp_probe/accept.result" 2>&1
     amp_status=$?
     examined=$((examined + 1))
     if [ "$amp_status" -ne 1 ] || [ ! -s "$amp_probe/accept.result" ] ||
@@ -4345,7 +4345,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     fi
 
     sed '0,/try testing\.expect(seen);/s//try testing.expect(!seen);/' "$PARSER" >"$amp_probe/wrong.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$amp_probe/wrong.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$amp_probe/wrong.result" 2>&1
     amp_status=$?
     examined=$((examined + 1))
     if [ "$amp_status" -ne 1 ] || [ ! -s "$amp_probe/wrong.result" ] ||
@@ -4459,7 +4459,7 @@ fi
 if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     catch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate catch perturbation scratch' >&2; exit 2; }
     sed '0,/== 32/s//== 14/' "$PARSER" >"$catch_probe/accept.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/accept.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$catch_probe/accept.result" 2>&1
     catch_status=$?
     examined=$((examined + 1))
     if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/accept.result" ] ||
@@ -4469,7 +4469,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     fi
 
     sed '/catch identity executes through whole-pack event/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$catch_probe/wrong.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/wrong.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$catch_probe/wrong.result" 2>&1
     catch_status=$?
     examined=$((examined + 1))
     if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/wrong.result" ] ||
@@ -4486,7 +4486,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # predicate ratchet cannot see it; the class detector must.
     sed '/catch identity executes through whole-pack event/,/^}/ s/var events = \[2\]i64{ 0, 0 };/var events = [_]i64{ event, 0 };/' \
         "$PARSER" >"$catch_probe/lane.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/lane.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/lane.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/lane.zig" sh "$ROOT/gate/token/read.sh" >"$catch_probe/lane.result" 2>&1
     catch_status=$?
     examined=$((examined + 1))
     if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/lane.result" ] ||
@@ -4676,7 +4676,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # ceiling still reads 0, but the reader now answers false at exactly the
     # `:` the producer moved to face 26.
     sed '0,/return face == 16 or face == 26;/s//return face == 16;/' "$PARSER" >"$colon_probe/accept.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$colon_probe/accept.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$colon_probe/accept.result" 2>&1
     colon_status=$?
     examined=$((examined + 1))
     if [ "$colon_status" -ne 1 ] || [ ! -s "$colon_probe/accept.result" ] ||
@@ -4688,7 +4688,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # WRONG ERROR. Break the override oracle's non-vacuity and require the gate
     # to name THAT and not the arm above.
     sed '/under the applied-descriptor override/,/^}/ s/try testing\.expect(override);/try testing.expect(!override);/' "$PARSER" >"$colon_probe/wrong.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$colon_probe/wrong.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$colon_probe/wrong.result" 2>&1
     colon_status=$?
     examined=$((examined + 1))
     if [ "$colon_status" -ne 1 ] || [ ! -s "$colon_probe/wrong.result" ] ||
@@ -4820,7 +4820,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # FALSE ACCEPT. Stop reading the settled face and answer for everything.
     # Every transferred site still compiles and the ceiling still reads 0.
     sed '0,/return (try self.currentParserFace()) == 11;/s//return true;/' "$PARSER" >"$dots_probe/accept.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$dots_probe/accept.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$dots_probe/accept.result" 2>&1
     dots_status=$?
     examined=$((examined + 1))
     if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/accept.result" ] ||
@@ -4832,7 +4832,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
     # THAT and not the reader above.
     sed '/the vararg face admits exactly/,/^}/ s/try testing\.expect(seen);/try testing.expect(!seen);/' "$PARSER" >"$dots_probe/wrong.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$dots_probe/wrong.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$dots_probe/wrong.result" 2>&1
     dots_status=$?
     examined=$((examined + 1))
     if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/wrong.result" ] ||
@@ -4845,7 +4845,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # LEFTOVER. Restore one retired spelling at a transferred site. The reader
     # is intact and the sweep still passes, so only the ceiling can catch it.
     sed '0,/if (try self.eatParserVararg()) {/s//if (try self.eat(.dots) != null) {/' "$PARSER" >"$dots_probe/left.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/left.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$dots_probe/left.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/left.zig" sh "$ROOT/gate/token/read.sh" >"$dots_probe/left.result" 2>&1
     dots_status=$?
     examined=$((examined + 1))
     if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/left.result" ] ||
@@ -4998,7 +4998,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # FALSE ACCEPT. Stop reading the settled bit and answer for everything.
     # Every transferred site still compiles and the ceiling still reads 2.
     sed '0,/return (((try self.currentParserEvent()) >> 14) & 1) != 0;/s//return true;/' "$PARSER" >"$end_probe/accept.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$end_probe/accept.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$end_probe/accept.result" 2>&1
     end_status=$?
     examined=$((examined + 1))
     if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/accept.result" ] ||
@@ -5010,7 +5010,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
     # THAT and not the reader above.
     sed '/the written-end bit admits exactly/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$end_probe/wrong.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$end_probe/wrong.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$end_probe/wrong.result" 2>&1
     end_status=$?
     examined=$((examined + 1))
     if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/wrong.result" ] ||
@@ -5024,7 +5024,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # is intact and the sweep still passes, so only the ceiling, the region
     # count and the class count can catch it.
     sed '0,/_ = try self.eatParserEnd();/s//_ = try self.eat(.kw_end);/' "$PARSER" >"$end_probe/left.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/left.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$end_probe/left.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/left.zig" sh "$ROOT/gate/token/read.sh" >"$end_probe/left.result" 2>&1
     end_status=$?
     examined=$((examined + 1))
     if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/left.result" ] ||
@@ -5186,7 +5186,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # coordinate. Every transferred site still compiles, every ceiling still
     # reads 1, the class count still reads 5, and the oracle text is intact.
     sed 's/return @intCast(((try self.currentParserEvent()) >> 11) & 3);/return 2;/' "$PARSER" >"$branch_probe/accept.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$branch_probe/accept.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$branch_probe/accept.result" 2>&1
     branch_status=$?
     examined=$((examined + 1))
     if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/accept.result" ] ||
@@ -5200,7 +5200,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # every region count and the oracle are intact; only the discriminator
     # above can catch it.
     sed 's/if ((try self.currentParserBranch()) != 2) return null;/if ((try self.currentParserBranch()) == 0) return null;/' "$PARSER" >"$branch_probe/collapse.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/collapse.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$branch_probe/collapse.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/collapse.zig" sh "$ROOT/gate/token/read.sh" >"$branch_probe/collapse.result" 2>&1
     branch_status=$?
     examined=$((examined + 1))
     if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/collapse.result" ] ||
@@ -5213,7 +5213,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
     # THAT and not either reader above.
     sed '/the branch face admits exactly/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$branch_probe/wrong.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$branch_probe/wrong.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$branch_probe/wrong.result" 2>&1
     branch_status=$?
     examined=$((examined + 1))
     if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/wrong.result" ] ||
@@ -5228,7 +5228,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # readers and the oracle are intact, so only the helper ceiling, the region
     # count and the class count can catch it.
     sed 's/if (try self.eatParserElseif()) {/if (try self.eat(.kw_elseif) != null) {/' "$PARSER" >"$branch_probe/left.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/left.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$branch_probe/left.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/left.zig" sh "$ROOT/gate/token/read.sh" >"$branch_probe/left.result" 2>&1
     branch_status=$?
     examined=$((examined + 1))
     if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/left.result" ] ||
@@ -5342,7 +5342,7 @@ test "parse: planted blind identity oracle" {
 }
 PLANT
     } >"$probe/plant.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$probe/plant.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$probe/plant.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/plant.zig" sh "$ROOT/gate/token/read.sh" >"$probe/plant.result" 2>&1
     status=$?
     examined=$((examined + 1))
     if [ "$status" -ne 1 ] || [ ! -s "$probe/plant.result" ] ||
@@ -5353,7 +5353,7 @@ PLANT
 
     sed 's/        try testing.expectEqual(expected, try consumer.currentParserAnchor());/        const face: i64 = if (((events[0] >> 63) \& 1) != 0) 0 else events[1] >> 13;\n        try testing.expectEqual(expected, face == 17);/;
          s/            try testing.expectError(error.InvalidRecordCount, consumer.currentParserAnchor());/            refused = true;/' "$PARSER" >"$probe/mirror.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$probe/mirror.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$probe/mirror.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/mirror.zig" sh "$ROOT/gate/token/read.sh" >"$probe/mirror.result" 2>&1
     status=$?
     examined=$((examined + 1))
     if [ "$status" -ne 1 ] || [ ! -s "$probe/mirror.result" ] ||
@@ -5365,7 +5365,7 @@ PLANT
     fi
 
     sed 's/        return (try self.currentParserFace()) == 17;/        return (try self.currentParserFace()) == 17 or (try self.currentParserFace()) == 18;/' "$PARSER" >"$probe/widen.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$probe/widen.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$probe/widen.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/widen.zig" sh "$ROOT/gate/token/read.sh" >"$probe/widen.result" 2>&1
     status=$?
     examined=$((examined + 1))
     if [ "$status" -ne 1 ] || [ ! -s "$probe/widen.result" ] ||
