@@ -71,7 +71,7 @@ while true
             argument = "{argument}'\\''"
         else
             argument = "{argument}{part}"
-        index = index + 1
+        index += 1
     argument = "{argument}'"
 
     command: str = if line:has("\"name\":\"status\"")
