@@ -4688,7 +4688,16 @@ const Arm64Compiler = struct {
                         @intCast(std.mem.alignForward(usize, ins.pack_results.len * 8, 16))
                     else
                         0;
+                    // The park's reservation, read before the save window
+                    // opens so the slot exists whenever the arm below takes it
+                    // (GAP-148, `parkCallResult`). Mutually exclusive with
+                    // `pack_bytes`, which that arm requires to be zero.
+                    const park_bytes: u16 = if (pack_bytes == 0)
+                        self.parkReserve(ins.result != null)
+                    else
+                        0;
                     if (pack_bytes > 0) try self.emitSubSpTemp(pack_bytes);
+                    if (park_bytes > 0) try self.emitSubSpTemp(park_bytes);
                     const save = try self.emitSaveCallerRegs();
                     const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
@@ -4699,7 +4708,6 @@ const Arm64Compiler = struct {
                         }
                     }
                     var call_result: ?u5 = null;
-                    var call_result_on_stack = false;
                     if (ins.result != null and pack_bytes == 0) {
                         // A SPILLED REGISTER IS NOT FREE HERE EITHER (GAP-148).
                         //
@@ -4754,14 +4762,27 @@ const Arm64Compiler = struct {
                             call_result = dst;
                         } else |_| {
                             // Every allocatable register was live at save time.
-                            // Park the return just above the save block; after
-                            // restore that slot sits at [sp, #0].
-                            try self.emitStrSp(0, save.stack_bytes);
-                            call_result_on_stack = true;
+                            // Park the return in the slot reserved above the
+                            // save block; after restore it sits at [sp, #0].
+                            try self.parkCallResult(save, park_bytes);
                         }
                     }
                     try self.emitRestoreCallerRegs(save);
                     if (pack_bytes > 0) try self.emitAddSpTemp(pack_bytes);
+                    if (park_bytes > 0) {
+                        // The slot stands at [sp, #0] now the save window has
+                        // closed, and the reservation is the only thing keeping
+                        // the byte this function's, so the read precedes the
+                        // close. A reservation exists only for a demanded
+                        // result and both register arms publish one, so an
+                        // unset `call_result` here is the parked one.
+                        if (call_result == null) {
+                            const dst = try self.allocReg();
+                            try self.emitLdrSp(dst, 0);
+                            call_result = dst;
+                        }
+                        try self.emitAddSpTemp(park_bytes);
+                    }
                     try self.syncGateLocalTempsAfterCall(temps, pinned);
                     if (pack_bytes > 0) {
                         for (ins.pack_results, 0..) |result, i| {
@@ -4802,11 +4823,6 @@ const Arm64Compiler = struct {
                         } else return self.refuse(@src());
                     }
                     if (ins.result) |result| {
-                        if (call_result_on_stack) {
-                            const dst = try self.allocReg();
-                            try self.emitLdrSp(dst, 0);
-                            call_result = dst;
-                        }
                         if (call_result) |dst| {
                             try temps.put(self.alloc, result, dst);
                         }
@@ -8935,30 +8951,64 @@ const Arm64Compiler = struct {
         return false;
     }
 
-    /// Pick a GP register that `emitRestoreCallerRegs` will not reload. A return
-    /// value parked in a register that was live at save time is overwritten by
-    /// restore even when the mov ran after `bl`.
-    fn allocRegOutsideSaveSet(self: *Arm64Compiler, save: SaveSet) Error!u5 {
+    fn resultRegFree(self: *const Arm64Compiler, save: ?SaveSet, reg: u5) bool {
+        if (save) |s| {
+            if (saveSetContains(s, reg)) return false;
+        }
+        if (self.spilled_regs.contains(reg)) return false;
+        return !self.used_regs[reg];
+    }
+
+    /// A GP register `emitRestoreCallerRegs` will not reload: a return value
+    /// parked in a register that was live at save time is overwritten by
+    /// restore even when the mov ran after `bl`. x8 and x18 are not candidates
+    /// and are not scanned.
+    ///
+    /// ONE PRODUCER, READ TWICE. `save` is null before the save window opens,
+    /// where the set that window will contain is exactly the `used_regs`
+    /// registers and nothing between the two points claims or releases one, so
+    /// the null answer here is the answer `allocRegOutsideSaveSet` gives after
+    /// it. That is what the frame park's reservation is decided from.
+    fn resultReg(self: *const Arm64Compiler, save: ?SaveSet) ?u5 {
         var reg: u5 = 9;
         while (reg < 29) : (reg += 1) {
             if (reg == platform_reserved_reg) continue;
-            if (saveSetContains(save, reg)) continue;
-            if (self.spilled_regs.contains(reg)) continue;
-            if (!self.used_regs[reg]) {
-                self.claimReg(reg);
-                return reg;
-            }
+            if (self.resultRegFree(save, reg)) return reg;
         }
         reg = 0;
         while (reg < 8) : (reg += 1) {
-            if (saveSetContains(save, reg)) continue;
-            if (self.spilled_regs.contains(reg)) continue;
-            if (!self.used_regs[reg]) {
-                self.claimReg(reg);
-                return reg;
-            }
+            if (self.resultRegFree(save, reg)) return reg;
         }
-        return error.RegisterExhausted;
+        return null;
+    }
+
+    fn allocRegOutsideSaveSet(self: *Arm64Compiler, save: SaveSet) Error!u5 {
+        const reg = self.resultReg(save) orelse return error.RegisterExhausted;
+        self.claimReg(reg);
+        return reg;
+    }
+
+    /// The park's reservation, read before the save window opens: sixteen bytes
+    /// exactly when the answer will have no register to go to, and nothing
+    /// otherwise.
+    fn parkReserve(self: *const Arm64Compiler, wants_result: bool) u16 {
+        if (!wants_result) return 0;
+        return if (self.resultReg(null) == null) 16 else 0;
+    }
+
+    /// Store the call's answer in the slot `parkReserve` claimed for it.
+    ///
+    /// `park_bytes` is that claim. Without it there is no byte of this
+    /// function's to write and the store lands at `[sp, #save.stack_bytes]` —
+    /// the byte `sp` stood on before the save window opened, a FRAME coordinate
+    /// reached outside `frameDisp` and owned by whatever the prologue put
+    /// there: the GP stack local at frame offset 0, or with an empty frame the
+    /// callee-save slot for x19, or with neither the caller's own outgoing
+    /// word. Unknown ownership is not permission; `RegisterExhausted` is the
+    /// capacity answer `probeFunctionPlan` already steps its ladder down on.
+    fn parkCallResult(self: *Arm64Compiler, save: SaveSet, park_bytes: u16) Error!void {
+        if (park_bytes == 0) return error.RegisterExhausted;
+        try self.emitStrSp(0, save.stack_bytes);
     }
 
     fn emitSaveCallerRegs(self: *Arm64Compiler) Error!SaveSet {
@@ -21175,6 +21225,151 @@ test "an sp move off the sixteen-byte grid refuses before it moves the frame bas
     try std.testing.expectEqual(@as(u32, 4080), (first >> 10) & 0xfff);
     const rest = std.mem.readInt(u32, compiler.code.items[4..8], .little);
     try std.testing.expectEqual(@as(u32, 16), (rest >> 10) & 0xfff);
+}
+
+// THE PARK WROTE A FRAME BYTE IT NEVER RESERVED (GAP-148).
+//
+// `[sp, #save.stack_bytes]` is the byte `sp` stood on before the save window
+// opened. That is a FRAME coordinate — reached outside `frameDisp`, which the
+// frame/window transfer made the sole reader of every one of them — and it is
+// owned: the GP stack local at frame offset 0, or with an empty frame the
+// callee-save slot for x19, or with neither the caller's own outgoing word.
+// The store reported success and the byte's owner reported nothing.
+//
+// The sibling pack arm never had this defect: it reserves `pack_bytes` BEFORE
+// the save and stores into that window, so its displacement is window-relative
+// by construction like every other raw `emitStrSp` the transfer left standing.
+// The scalar arm took the same addressing without the reservation.
+test "a parked call result names the slot it reserved and not the frame's" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // A frame with a resident on the byte the unreserved store named.
+    compiler.stack_frame_bytes = 96;
+    try compiler.gp_stack_locals.put(alloc, 0, 0);
+
+    // The state the arm is reached in: every candidate live, nothing left for
+    // the answer.
+    var reg: u5 = 0;
+    while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
+    const park_bytes = compiler.parkReserve(true);
+    try std.testing.expectEqual(@as(u16, 16), park_bytes);
+
+    try compiler.emitSubSpTemp(park_bytes);
+    const save = try compiler.emitSaveCallerRegs();
+    // The reservation answered before the save window existed what the
+    // allocation answers after it.
+    try std.testing.expectError(error.RegisterExhausted, compiler.allocRegOutsideSaveSet(save));
+
+    // AN UNRESERVED PARK REFUSES, and a refusal that had already encoded would
+    // have shipped the store.
+    const at = compiler.code.items.len;
+    const asm_at = compiler.asm_text.items.len;
+    try std.testing.expectError(error.RegisterExhausted, compiler.parkCallResult(save, 0));
+    try std.testing.expectEqual(at, compiler.code.items.len);
+    try std.testing.expectEqual(asm_at, compiler.asm_text.items.len);
+
+    // A RESERVED PARK stores once, at the reservation.
+    try compiler.parkCallResult(save, park_bytes);
+    try std.testing.expectEqual(at + 4, compiler.code.items.len);
+    const park_addr = spDisp(compiler.code.items[at..][0..4].*);
+    try std.testing.expectEqual(save.stack_bytes, park_addr);
+
+    // AND IT IS NOT THE FRAME'S. The resident at frame offset 0, addressed from
+    // the same `sp` through `frameDisp`, is the byte the unreserved store named
+    // and it is a different byte — exactly `park_bytes` above this one.
+    const local_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(0, 9);
+    const local_addr = spDisp(compiler.code.items[local_at..][0..4].*);
+    try std.testing.expectEqual(park_addr + park_bytes, local_addr);
+
+    // THE READ IS THE SAME BYTE FROM A DIFFERENT `sp`. Once the save window
+    // closes the slot stands at [sp, #0], and the reservation is the only thing
+    // that still makes it this function's.
+    const store_sp_temp = compiler.sp_temp_bytes;
+    try compiler.emitRestoreCallerRegs(save);
+    const reload_sp_temp = compiler.sp_temp_bytes;
+    try std.testing.expectEqual(park_bytes, reload_sp_temp);
+    try std.testing.expectEqual(
+        @as(i32, park_addr) - @as(i32, store_sp_temp),
+        @as(i32, 0) - @as(i32, reload_sp_temp),
+    );
+    // The resident moved with `sp` and the parked byte did not.
+    const after_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(0, 9);
+    try std.testing.expectEqual(park_bytes, spDisp(compiler.code.items[after_at..][0..4].*));
+
+    // The close returns the frame to itself.
+    try compiler.emitAddSpTemp(park_bytes);
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+    try std.testing.expectEqual(@as(u16, 0), try compiler.frameDisp(0));
+}
+
+test "the park reservation is the answer the save set will give" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var reg: u5 = 0;
+    while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
+
+    // NO RESULT DEMANDED: nothing to park whatever the pool holds.
+    try std.testing.expectEqual(@as(u16, 0), compiler.parkReserve(false));
+
+    // x8 IS NOT A CANDIDATE and neither is x18: leaving either clear must not
+    // withdraw the reservation, because the allocation will not hand it out.
+    compiler.used_regs[8] = false;
+    compiler.used_regs[Arm64Compiler.platform_reserved_reg] = false;
+    try std.testing.expectEqual(@as(u16, 16), compiler.parkReserve(true));
+    compiler.used_regs[8] = true;
+    compiler.used_regs[Arm64Compiler.platform_reserved_reg] = true;
+
+    // A SPILLED REGISTER IS NOT FREE: `spillReg` clears `used_regs`, and both
+    // readers skip the map that still describes it.
+    compiler.used_regs[11] = false;
+    try compiler.spilled_regs.put(alloc, 11, 0);
+    try std.testing.expectEqual(@as(u16, 16), compiler.parkReserve(true));
+
+    // ONE FREE CANDIDATE withdraws the reservation, and the allocation takes
+    // exactly that register once the save set exists.
+    _ = compiler.spilled_regs.remove(11);
+    try std.testing.expectEqual(@as(u16, 0), compiler.parkReserve(true));
+    const save = try compiler.emitSaveCallerRegs();
+    try std.testing.expectEqual(@as(u5, 11), try compiler.allocRegOutsideSaveSet(save));
+
+    // AND `save` IS NOT `used_regs`, WHICH IS WHY THE RESERVATION IS READ
+    // BEFORE THE WINDOW OPENS. A register released after the save is free in
+    // the pool and still reloaded by restore, so the two readers diverge from
+    // that moment on: x12 was live at save, so restore will overwrite it, and
+    // only the set remembers that.
+    compiler.used_regs[12] = false;
+    try std.testing.expectEqual(@as(u16, 0), compiler.parkReserve(true));
+    try std.testing.expectError(error.RegisterExhausted, compiler.allocRegOutsideSaveSet(save));
 }
 
 // THE CALL'S ANSWER TOOK THE ONE REGISTER THE SPILL MAP WAS STILL DESCRIBING
