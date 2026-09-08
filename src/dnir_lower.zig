@@ -828,10 +828,10 @@ fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?str
     const relation = ctx.function orelse return null;
     const base_binding = ctx.graph.bindingNamedIn(relation, base) orelse return null;
     const base_node = ctx.graph.get(base_binding) orelse return null;
-    
+
     // Only use module storage when the binding is at module scope
     if (base_node.scope != ctx.graph.module_root) return null;
-    
+
     const gty = ctx.module_globals.types.get(key) orelse return null;
     const storage_key = ctx.module_globals.storageKey(key) orelse return null;
     return .{ gty, storage_key };
@@ -847,10 +847,10 @@ fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
     const relation = ctx.function orelse return false;
     const binding = ctx.graph.bindingNamedIn(relation, name) orelse return false;
     const node = ctx.graph.get(binding) orelse return false;
-    
+
     // Only use module storage when the binding is at module scope
     if (node.scope != ctx.graph.module_root) return false;
-    
+
     var it = ctx.module_globals.types.keyIterator();
     while (it.next()) |k| {
         const key = k.*;
@@ -2811,6 +2811,7 @@ fn lowerModuleFromGraph(
         if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "function-provenance-collision");
         slot.value_ptr.* = entity;
     }
+    try verifyAnyParameterCarriers(graph, &declarations, diagnostic);
     var decl_it = declarations.iterator();
     while (decl_it.next()) |entry| {
         const fd = entry.key_ptr.*;
@@ -2888,6 +2889,15 @@ fn lowerModuleFromGraph(
         for (externs.items) |external| deinitExtern(alloc, external);
         externs.deinit(alloc);
     }
+    var signature: PhysicalParams = .empty;
+    defer {
+        var it = signature.valueIterator();
+        while (it.next()) |layout| {
+            for (layout.params) |parameter| deinitParam(alloc, parameter);
+            alloc.free(layout.params);
+        }
+        signature.deinit(alloc);
+    }
     var func_record_returns: std.StringHashMapUnmanaged([]const u8) = .empty;
     defer {
         var returns = func_record_returns.iterator();
@@ -2911,6 +2921,14 @@ fn lowerModuleFromGraph(
         const fd = &stmt.func_decl;
         if (!shouldIncludeFuncDecl(fd, graph)) continue;
         if (!functionEligible(fd, records.items, graph, mod)) continue;
+        if (require_graph_facts and !graph.gateTransportModule()) {
+            const entity = declarations.get(fd) orelse
+                return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
+            const layout = try signature.getOrPut(alloc, entity);
+            if (layout.found_existing) return invalidGraphFacts(diagnostic, @src(), "duplicate-function-id");
+            layout.value_ptr.* = .{ .params = &.{} };
+            layout.value_ptr.params = try lowerGraphParams(alloc, fd, records.items, graph, entity);
+        }
         const rec_name = recordReturnNameForDecl(records.items, graph, fd) orelse continue;
         const entity = declarations.get(fd) orelse
             return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
@@ -2991,6 +3009,7 @@ fn lowerModuleFromGraph(
             &module_globals,
             &entity_linkage,
             &relation_edges,
+            &signature,
         );
         functions.append(alloc, f) catch |err| {
             deinitFunction(alloc, f);
@@ -3019,6 +3038,7 @@ fn lowerModuleFromGraph(
             &module_globals,
             &entity_linkage,
             &relation_edges,
+            &signature,
         );
         functions.append(alloc, body) catch |err| {
             deinitFunction(alloc, body);
@@ -3117,6 +3137,8 @@ fn lowerModuleFromGraph(
         .dense_tables = owned_dense_tables,
         .externs = owned_externs,
     };
+    if (require_graph_facts and !graph.gateTransportModule())
+        try verifyRecordParameterCarriers(graph, &result, &signature, diagnostic);
     return .{
         .graph = graph,
         .functions = result.functions,
@@ -3192,6 +3214,110 @@ pub fn lowerTestSourceWithGraph(
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, file);
     var diagnostic: Diagnostic = .{};
     return lowerModuleWithGraphObserved(alloc, &module, graph, &diagnostic);
+}
+
+fn recordCarrierFits(actual: dnir.RecordDesc, required: dnir.RecordDesc) bool {
+    if (actual.fields.len < required.fields.len or
+        actual.kinds.len != actual.fields.len or
+        required.kinds.len != required.fields.len) return false;
+    for (required.fields, required.kinds, 0..) |field, kind, required_index| {
+        var match: ?usize = null;
+        for (actual.fields, 0..) |candidate, index| {
+            if (!std.mem.eql(u8, candidate, field)) continue;
+            if (match != null) return false;
+            match = index;
+        }
+        const index = match orelse return false;
+        if (actual.kinds[index] != kind) return false;
+        const left = if (index < actual.widths.len) actual.widths[index] else null;
+        const right = if (required_index < required.widths.len) required.widths[required_index] else null;
+        if (left) |width| {
+            if (!width.eql(right orelse return false)) return false;
+        } else if (right != null) return false;
+    }
+    return true;
+}
+
+fn checkedRecordParameter(
+    graph: *const semantic_graph.SemanticGraph,
+    records: []const dnir.RecordDesc,
+    diagnostic: *Diagnostic,
+    operand: semantic_graph.id,
+    required: dnir.RecordDesc,
+) Error!void {
+    const node = graph.get(operand) orelse
+        return invalidGraphFacts(diagnostic, @src(), "application-parameter-value");
+    const descriptor = node.descriptor orelse
+        return invalidGraphFacts(diagnostic, @src(), "application-parameter-descriptor");
+    if (descriptor == .any)
+        return invalidGraphFacts(diagnostic, @src(), "record-parameter-operand-unknown");
+    if (descriptor != .table_type and descriptor != .@"struct")
+        return invalidGraphFacts(diagnostic, @src(), "record-parameter-operand-abi");
+    const actual = blk: {
+        if (graph.descriptorShape(operand, 0)) |shape| {
+            for (records) |record| {
+                if (record.semantic_shape == shape) break :blk record;
+            }
+            return invalidGraphFacts(diagnostic, @src(), "record-parameter-operand-shape");
+        }
+        if (descriptor == .table_type)
+            return invalidGraphFacts(diagnostic, @src(), "record-parameter-operand-shape");
+        break :blk recordForDescriptor(records, descriptor, graph) orelse
+            return invalidGraphFacts(diagnostic, @src(), "record-parameter-operand-shape");
+    };
+    if (!recordCarrierFits(actual, required))
+        return invalidGraphFacts(diagnostic, @src(), "record-parameter-carrier-mismatch");
+}
+
+fn verifyRecordParameterCarriers(
+    graph: *const semantic_graph.SemanticGraph,
+    module: *const dnir.Module,
+    signature: *const PhysicalParams,
+    diagnostic: *Diagnostic,
+) Error!void {
+    for (module.functions) |caller| {
+        for (caller.blocks) |body| {
+            for (body.instrs) |instruction| {
+                if (instruction.op != .call_direct) continue;
+                const target = instruction.target orelse continue;
+                const layout = signature.get(target) orelse continue;
+                var aggregate = false;
+                for (layout.params) |parameter| if (parameter.record != null) {
+                    aggregate = true;
+                };
+                if (!aggregate) continue;
+                const function = for (module.functions) |candidate| {
+                    if (candidate.id == target) break candidate;
+                } else return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
+                const application = instruction.application orelse
+                    return invalidGraphFacts(diagnostic, @src(), "missing-application-id");
+                if (graph.applicationTarget(application) != target)
+                    return invalidGraphFacts(diagnostic, @src(), "application-target");
+                if (function.params.len != layout.params.len)
+                    return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
+                bindOccurrence(diagnostic, graph, application);
+                const subject = graph.applicationSubject(application);
+                const arguments = graph.applicationArguments(application) orelse
+                    return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
+                const offset: usize = if (subject != null) 1 else 0;
+                if (offset + arguments.len != layout.params.len)
+                    return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
+                for (layout.params, 0..) |parameter, index| {
+                    const name = parameter.record orelse continue;
+                    const required = findRecordName(module.records, .{ .named = name }) orelse
+                        return invalidGraphFacts(diagnostic, @src(), "record-parameter-carrier");
+                    if (parameter.ty.eql(physical_pointer)) {
+                        if (!function.params[index].ty.eql(physical_pointer) or function.params[index].record != null)
+                            return invalidGraphFacts(diagnostic, @src(), "record-parameter-carrier");
+                    } else if (function.params[index].ty.eql(physical_pointer) or function.params[index].record == null) {
+                        return invalidGraphFacts(diagnostic, @src(), "record-parameter-carrier");
+                    }
+                    const operand = if (index == 0 and subject != null) subject.? else arguments[index - offset];
+                    try checkedRecordParameter(graph, module.records, diagnostic, operand, required);
+                }
+            }
+        }
+    }
 }
 
 fn applyGraphToModule(
@@ -3423,8 +3549,6 @@ fn recordKindsMixed(record: dnir.RecordDesc) bool {
 /// `functionEligible` today, so this is correct by construction rather than by
 /// an invariant that has to hold somewhere else.
 ///
-/// Caller owns the returned slice. Null when a record parameter is not one this
-/// pass can explode, which is the same refusal the eligibility check makes.
 fn paramSlotIsFp(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
@@ -3435,10 +3559,8 @@ fn paramSlotIsFp(
     for (fd.func.params) |p| {
         if (isFloatType(p.typ)) {
             try list.append(alloc, true);
-        } else if (isF64Record(recs, p.typ)) |r| {
-            try list.appendNTimes(alloc, true, r.fields.len);
-        } else if (findRecordName(recs, p.typ)) |r| {
-            try list.appendNTimes(alloc, false, r.fields.len);
+        } else if (findRecordName(recs, p.typ) != null) {
+            try list.append(alloc, false);
         } else {
             try list.append(alloc, false);
         }
@@ -3447,20 +3569,16 @@ fn paramSlotIsFp(
 }
 
 fn f64AbiParamSlots(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) ?usize {
+    _ = recs;
     var slots: usize = 0;
     for (fd.func.params) |p| {
         if (isFloatType(p.typ)) {
             slots += 1;
-        } else if (isF64Record(recs, p.typ)) |r| {
-            slots += r.fields.len;
         } else return null;
     }
     return slots;
 }
 
-/// A record crossing a function boundary is exploded into one field per
-/// argument register, and there are eight of them (x0..x7). Eight is therefore
-/// the register file, not a conservative cap.
 pub const max_reg_record_fields = 8;
 
 /// Past `max_reg_record_fields` a record return uses the AAPCS64 indirect-result
@@ -3612,24 +3730,7 @@ fn functionEligibleReason(
                 return "f64-record-return-wider-than-8-registers";
         }
         for (fd.func.params) |p| {
-            // A record PARAMETER is still one field per argument register —
-            // only the RETURN gained an indirect form. Admitting a wide record
-            // here would explode past x7 and read caller garbage.
-            if (recordForTypeExpr(recs, p.typ, graph)) |r| {
-                var all_f64 = r.fields.len > 0;
-                for (r.kinds) |k| {
-                    if (k != .f64) {
-                        all_f64 = false;
-                        break;
-                    }
-                }
-                if (all_f64) {
-                    if (r.fields.len > max_reg_record_fields)
-                        return "f64-record-parameter-wider-than-8-registers";
-                    continue;
-                }
-                continue;
-            }
+            if (recordForTypeExpr(recs, p.typ, graph) != null) continue;
             if (isFloatType(p.typ)) continue;
             if (p.typ == .named) continue;
             if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ) and
@@ -3660,57 +3761,10 @@ fn functionEligibleReason(
     var gp_slots: usize = 0;
     for (fd.func.params) |p| {
         if (isFloatType(p.typ)) return "f64-parameter-mixed-with-gp";
-        if (recordForTypeExpr(recs, p.typ, graph)) |r| {
-            var all_f64 = r.fields.len > 0;
-            for (r.kinds) |k| {
-                if (k != .f64) {
-                    all_f64 = false;
-                    break;
-                }
-            }
-            if (all_f64) return "all-f64-record-parameter-mixed-with-gp";
-        }
-        if (recordForTypeExpr(recs, p.typ, graph)) |r| {
-            // Wide module tables (`lexer`, …) cross calls as one opaque handle,
-            // matching `checkedScalarOperand`'s `.table_type` local path.
-            //
-            // THE THRESHOLD IS THE RECORD CEILING, NOT THE REGISTER COUNT. With
-            // `max_reg_record_fields` here, a DECLARED nine-field record param
-            // counted as one slot, so the `gp_slots > max_reg_record_fields`
-            // refusal three lines down could never fire for it — this `if` and
-            // that comment contradicted each other, and the nine-field param
-            // was accepted into a frame that cannot hold it. Only a module
-            // table, which is wider than any explodable record, is opaque.
-            if (r.fields.len > max_record_fields) {
-                gp_slots += 1;
-            } else {
-                gp_slots += r.fields.len;
-            }
-            // A RECORD FIELD IS A GENERAL-PURPOSE WORD AND ITS BUDGET IS THE
-            // GENERAL-PURPOSE BUDGET. This read `max_reg_record_fields` and
-            // said "its fields are never stacked" — but nothing about a record
-            // field makes it unstackable. It is exploded into one word per
-            // slot, exactly like a scalar operand, and the slot index is the
-            // only thing either end consults: the caller's `mov_arg` already
-            // routes slot >= 8 into the outgoing argument block, and the
-            // callee prologue's `slot_cursor` — which counts record fields,
-            // not parameters — already homes slot >= 8 from the incoming
-            // frame. Both ends were slot-generic before this line was; the
-            // eight was the refusal, not the mechanism.
-            //
-            // MEASURED: `lexer.peek_char(self: lexer)` and
-            // `parser.parse_factor_tok(lx: lexer)` — the two relations between
-            // the direct backend and compiler B — take one fourteen-field
-            // record each and were refused here, taking both modules with
-            // them.
-            //
-            // `max_direct_scalar_args` is the same sixteen a scalar operand
-            // gets (eight registers plus the eight stack slots the backend's
-            // outgoing block can carry) and for the same physical reason, so
-            // the two budgets are now one budget rather than two numbers that
-            // can drift apart.
+        if (recordForTypeExpr(recs, p.typ, graph)) |_| {
+            gp_slots += 1;
             if (gp_slots > max_direct_scalar_args)
-                return "record-parameter-overflows-16-gp-slots";
+                return "more-than-16-gp-arguments";
             continue;
         }
         // A SCALAR IS A SCALAR WHATEVER ITS SPELLING. `i64`, `bool`, `str`,
@@ -3730,7 +3784,8 @@ fn functionEligibleReason(
         // a stack slot past the eighth. `.pointer` already took this path, so
         // `ptr` and `*T` had different argument budgets for the same word.
         if (isIntType(p.typ) or isBoolType(p.typ) or isStrType(p.typ) or typeIsPtr(p.typ) or
-            isAnyType(p.typ) or typeIsScalarCaseSet(mod, p.typ))
+            isAnyType(p.typ) or (p.typ == .inferred and resolveType(p.typ) == .any) or
+            typeIsScalarCaseSet(mod, p.typ))
         {
             gp_slots += 1;
             if (gp_slots > max_direct_scalar_args) return "more-than-16-gp-arguments";
@@ -3756,6 +3811,49 @@ fn functionEligible(
     mod: *const ast.Module,
 ) bool {
     return functionEligibleReason(fd, recs, graph, mod) == null;
+}
+
+fn verifyAnyParameterCarriers(
+    graph: *const semantic_graph.SemanticGraph,
+    declarations: *const std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.id),
+    diagnostic: *Diagnostic,
+) Error!void {
+    for (graph.application_facts.items) |application| {
+        const target = graph.applicationTarget(application.application) orelse continue;
+        const node = graph.get(target) orelse continue;
+        if (node.kind != .func) continue;
+        const raw = node.ast_ref orelse continue;
+        const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
+        if (declarations.get(declaration) != target) continue;
+        if (!shouldIncludeFuncDecl(declaration, graph)) continue;
+        var untyped = false;
+        for (declaration.func.params) |parameter| {
+            if (isAnyType(parameter.typ) or (parameter.typ == .inferred and resolveType(parameter.typ) == .any))
+                untyped = true;
+        }
+        if (!untyped) continue;
+        bindOccurrence(diagnostic, graph, application.application);
+        const subject = graph.applicationSubject(application.application);
+        const arguments = graph.applicationArguments(application.application) orelse
+            return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
+        const offset: usize = if (subject != null) 1 else 0;
+        if (offset + arguments.len != declaration.func.params.len)
+            return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
+        for (declaration.func.params, 0..) |parameter, index| {
+            if (!isAnyType(parameter.typ) and parameter.typ != .inferred) continue;
+            const operand = if (index == 0 and subject != null) subject.? else arguments[index - offset];
+            const value = graph.get(operand) orelse
+                return invalidGraphFacts(diagnostic, @src(), "application-parameter-value");
+            const descriptor = value.descriptor orelse
+                return invalidGraphFacts(diagnostic, @src(), "application-parameter-descriptor");
+            if (descriptor == .any)
+                return invalidGraphFacts(diagnostic, @src(), "any-parameter-operand-unknown");
+            if (descriptor.is_float())
+                return invalidGraphFacts(diagnostic, @src(), "any-parameter-fp-operand");
+            if (descriptor != .pointer and !types.scalarRepr(descriptor))
+                return invalidGraphFacts(diagnostic, @src(), "any-parameter-operand-abi");
+        }
+    }
 }
 
 const GraphFieldFact = struct {
@@ -4029,7 +4127,7 @@ fn collectRecordsFromGraph(
     defer alloc.free(shapes);
     for (shapes) |shape| {
         const node = graph.tableShapeEntity(shape) orelse continue;
-        const semantic_name = node.name orelse continue;
+        const semantic_name = node.name;
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer {
             for (names.items) |name| alloc.free(name);
@@ -4051,10 +4149,10 @@ fn collectRecordsFromGraph(
         errdefer alloc.free(owned_kinds);
         const owned_widths = try widths.toOwnedSlice(alloc);
         errdefer alloc.free(owned_widths);
-        const name = if (node.foreign_home != null)
+        const name = if (node.foreign_home != null or semantic_name == null)
             try std.fmt.allocPrint(alloc, "$shape.{d}", .{shape})
         else
-            try alloc.dupe(u8, semantic_name);
+            try alloc.dupe(u8, semantic_name.?);
         const record: dnir.RecordDesc = .{
             .semantic_shape = shape,
             .name = name,
@@ -4193,6 +4291,7 @@ pub const LowerCtx = struct {
     graph: *const semantic_graph.SemanticGraph,
     occurrences: *const OccurrenceBridge,
     require_graph_facts: bool,
+    signature: ?*const PhysicalParams = null,
     /// Some table in this function is too wide for a select chain, so EVERY
     /// positional table here is materialized into frame memory. See
     /// `stmtsBindWideTable` for why the choice is per-function, not per-table.
@@ -4257,6 +4356,7 @@ pub const LowerCtx = struct {
     /// materialized by `materializeTableSlots`. `t[i]` on one of these is a
     /// scaled 8-byte load, not a select-chain.
     ptr_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    directory: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Slots bound to the BYTE-SEQUENCE face (GAP-145 `law.text.byte`,
     /// GAP-207). A byte sequence is not text and it is not an integer, and
     /// `dnir.Value` has no member that carries one, so this pass cannot render
@@ -4382,6 +4482,7 @@ pub const LowerCtx = struct {
         self.bool_slots.deinit(self.alloc);
         self.narrow_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
+        self.directory.deinit(self.alloc);
         self.byteseq_slots.deinit(self.alloc);
         var pr = self.param_record_types.iterator();
         while (pr.next()) |entry| self.alloc.free(entry.key_ptr.*);
@@ -4540,6 +4641,88 @@ fn scanReturnPackArities(block: *const ast.Block, arity: *?usize) bool {
     return seen;
 }
 
+const PhysicalParams = std.AutoHashMapUnmanaged(semantic_graph.id, struct {
+    params: []const dnir.Param,
+});
+
+fn lowerParams(alloc: std.mem.Allocator, fd: *const ast.FuncDecl, records: []const dnir.RecordDesc) Error![]const dnir.Param {
+    var params: std.ArrayList(dnir.Param) = .empty;
+    defer params.deinit(alloc);
+    errdefer for (params.items) |param| deinitParam(alloc, param);
+    if (fd.path.len == 1) {
+        if (relationEdgeLevel(fd.path[0])) |level| {
+            if (blockMentionsIdent(&fd.func.body, level)) {
+                const param_name = try alloc.dupe(u8, level);
+                params.append(alloc, .{
+                    .name = param_name,
+                    .ty = .str,
+                    .record = null,
+                }) catch |err| {
+                    alloc.free(param_name);
+                    return err;
+                };
+            }
+        }
+    }
+    for (fd.func.params) |par| {
+        const rec_name = if (findRecordName(records, par.typ)) |r| try alloc.dupe(u8, r.name) else null;
+        const param_name = alloc.dupe(u8, par.name) catch |err| {
+            if (rec_name) |record| alloc.free(record);
+            return err;
+        };
+        params.append(alloc, .{
+            .name = param_name,
+            .ty = resolveType(par.typ),
+            .record = rec_name,
+        }) catch |err| {
+            alloc.free(param_name);
+            if (rec_name) |record| alloc.free(record);
+            return err;
+        };
+    }
+
+    return try params.toOwnedSlice(alloc);
+}
+
+fn lowerGraphParams(
+    alloc: std.mem.Allocator,
+    fd: *const ast.FuncDecl,
+    records: []const dnir.RecordDesc,
+    graph: *const semantic_graph.SemanticGraph,
+    relation: semantic_graph.id,
+) Error![]const dnir.Param {
+    const params = @constCast(try lowerParams(alloc, fd, records));
+    for (params) |parameter| {
+        if (parameter.record != null and graph.relationMutatesParameter(relation, parameter.name)) {
+            for (params) |*candidate| {
+                if (candidate.record != null) candidate.ty = physical_pointer;
+            }
+            break;
+        }
+    }
+    return params;
+}
+
+fn backendParams(alloc: std.mem.Allocator, physical: []const dnir.Param) Error![]const dnir.Param {
+    const out = try alloc.alloc(dnir.Param, physical.len);
+    var initialized: usize = 0;
+    errdefer {
+        for (out[0..initialized]) |parameter| deinitParam(alloc, parameter);
+        alloc.free(out);
+    }
+    for (physical, 0..) |parameter, index| {
+        const name = try alloc.dupe(u8, parameter.name);
+        errdefer alloc.free(name);
+        const record = if (parameter.ty.eql(physical_pointer) or parameter.record == null)
+            null
+        else
+            try alloc.dupe(u8, parameter.record.?);
+        out[index] = .{ .name = name, .ty = parameter.ty, .record = record };
+        initialized += 1;
+    }
+    return out;
+}
+
 fn lowerFunction(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
@@ -4556,7 +4739,19 @@ fn lowerFunction(
     module_globals: *const ModuleGlobals,
     entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
     relation_edges: *const std.StringHashMapUnmanaged([]const u8),
+    signature: *const PhysicalParams,
 ) Error!dnir.Function {
+    const borrowed = if (id) |entity| if (signature.get(entity)) |layout| layout.params else null else null;
+    const physical = borrowed orelse try lowerParams(alloc, fd, records);
+    defer if (borrowed == null) {
+        for (physical) |parameter| deinitParam(alloc, parameter);
+        alloc.free(physical);
+    };
+    const owned_params = try backendParams(alloc, physical);
+    errdefer {
+        for (owned_params) |parameter| deinitParam(alloc, parameter);
+        alloc.free(owned_params);
+    }
     var ret_pack = try resultPackTypes(alloc, fd.func.ret_type);
     errdefer if (ret_pack.len > 0) alloc.free(ret_pack);
     if (ret_pack.len == 0 and fd.func.ret_type != .tuple) {
@@ -4577,6 +4772,7 @@ fn lowerFunction(
         .alloc = alloc,
         .diagnostic = diagnostic,
         .records = records,
+        .signature = signature,
         .graph = graph,
         .function = id,
         .occurrences = occurrences,
@@ -4599,9 +4795,6 @@ fn lowerFunction(
     };
     defer ctx.deinit();
 
-    // A record parameter arrives as its exploded fields in consecutive argument
-    // registers — the same shape records already have as locals — so it consumes
-    // one slot per field and shifts the slots of every later parameter.
     var param_slot_cursor: u32 = 0;
     // A relation-edge / projection variant (`subject(tail) = (code)`, mangled to
     // `subject__tail`) receives the projection level (`tail`) as an implicit
@@ -4630,7 +4823,12 @@ fn lowerFunction(
             }
         }
     }
+    var cursor: usize = edge_level_slots;
     for (fd.func.params) |par| {
+        if (cursor >= physical.len)
+            return invalidGraphFacts(ctx.diagnostic, @src(), "function-parameter-pack");
+        const parameter = physical[cursor];
+        cursor += 1;
         if (blk: {
             if (findRecordName(records, par.typ)) |r| break :blk r;
             if (par.typ == .named) {
@@ -4640,25 +4838,35 @@ fn lowerFunction(
         }) |rec| {
             const param_key = try alloc.dupe(u8, par.name);
             try ctx.param_record_types.put(alloc, param_key, rec.name);
-            var all_scalar = rec.fields.len > 0;
-            for (rec.kinds) |k| {
-                if (k == .f64) all_scalar = false;
+            if (parameter.ty.eql(physical_pointer)) {
+                const owned = try alloc.dupe(u8, par.name);
+                ctx.locals.put(alloc, owned, param_slot_cursor) catch |err| {
+                    alloc.free(owned);
+                    return err;
+                };
+                try ctx.ptr_slots.put(alloc, param_slot_cursor, {});
+                try ctx.directory.put(alloc, param_slot_cursor, {});
+                param_slot_cursor += 1;
+                continue;
             }
+            var all_scalar = rec.fields.len > 0;
+            for (rec.kinds) |kind| if (kind == .f64) {
+                all_scalar = false;
+            };
             if (all_scalar) {
-                for (rec.fields, 0..) |fname, fi| {
-                    const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ par.name, fname });
+                for (rec.fields, 0..) |field, field_index| {
+                    const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ par.name, field });
                     ctx.locals.put(alloc, key, param_slot_cursor) catch |err| {
                         alloc.free(key);
                         return err;
                     };
-                    if (fi < rec.kinds.len) switch (rec.kinds[fi]) {
+                    if (field_index < rec.kinds.len) switch (rec.kinds[field_index]) {
                         .str => try ctx.str_slots.put(alloc, param_slot_cursor, {}),
                         .f64 => try ctx.f64_slots.put(alloc, param_slot_cursor, {}),
                         .i64 => {},
                     };
-                    if (fi < rec.widths.len) if (rec.widths[fi]) |width| {
+                    if (field_index < rec.widths.len) if (rec.widths[field_index]) |width|
                         try ctx.narrow_slots.put(alloc, param_slot_cursor, width);
-                    };
                     param_slot_cursor += 1;
                 }
                 continue;
@@ -4696,7 +4904,6 @@ fn lowerFunction(
     // see an operand's binding, so "the body binds this name exactly once"
     // does not describe a parameter — see `determinedTextLen`.
     ctx.param_slots = param_slot_cursor;
-
 
     // §12 TAIL, armed only for a flat scalar frame. `param_slot_cursor` counts
     // the slots actually assigned above, so this equality IS the test for "one
@@ -4802,46 +5009,6 @@ fn lowerFunction(
         if (!ends_in_ret) try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .any });
     }
 
-    var params: std.ArrayList(dnir.Param) = .empty;
-    defer params.deinit(alloc);
-    errdefer for (params.items) |param| deinitParam(alloc, param);
-    if (fd.path.len == 1) {
-        if (relationEdgeLevel(fd.path[0])) |level| {
-            if (blockMentionsIdent(&fd.func.body, level)) {
-                const param_name = try alloc.dupe(u8, level);
-                params.append(alloc, .{
-                    .name = param_name,
-                    .ty = .str,
-                    .record = null,
-                }) catch |err| {
-                    alloc.free(param_name);
-                    return err;
-                };
-            }
-        }
-    }
-    for (fd.func.params) |par| {
-        const rec_name = if (findRecordName(records, par.typ)) |r| try alloc.dupe(u8, r.name) else null;
-        const param_name = alloc.dupe(u8, par.name) catch |err| {
-            if (rec_name) |record| alloc.free(record);
-            return err;
-        };
-        params.append(alloc, .{
-            .name = param_name,
-            .ty = resolveType(par.typ),
-            .record = rec_name,
-        }) catch |err| {
-            alloc.free(param_name);
-            if (rec_name) |record| alloc.free(record);
-            return err;
-        };
-    }
-
-    const owned_params = try params.toOwnedSlice(alloc);
-    errdefer {
-        for (owned_params) |param| deinitParam(alloc, param);
-        alloc.free(owned_params);
-    }
     const owned_instrs = try ctx.instrs.toOwnedSlice(alloc);
     var strings_interned = false;
     errdefer {
@@ -4921,11 +5088,13 @@ fn root(
     module_globals: *const ModuleGlobals,
     entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
     relation_edges: *const std.StringHashMapUnmanaged([]const u8),
+    signature: *const PhysicalParams,
 ) Error!dnir.Function {
     var ctx: LowerCtx = .{
         .alloc = alloc,
         .diagnostic = diagnostic,
         .records = records,
+        .signature = signature,
         .graph = graph,
         .function = id,
         .occurrences = occurrences,
@@ -5496,7 +5665,75 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
     defer ctx.alloc.free(fk);
     const v = try lowerExprCons(ctx, value, .single);
+    if (physicalRecordBase(ctx, obj.name.ident)) |base| {
+        const rec = recordLocalDesc(ctx, obj.name.ident) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-carrier");
+        const projected = physicalRecordField(rec, field_name) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-projection");
+        if (ctx.require_graph_facts) {
+            const origin = ctx.graph.valueByAst(value) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-value");
+            const node = ctx.graph.get(origin) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-value");
+            const descriptor = node.descriptor orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-descriptor");
+            const incoming = types.scalarFieldCell(descriptor) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-carrier");
+            const resident: types.ScalarFieldCell = if (projected.ty == .f64)
+                .f64
+            else if (projected.ty == .str)
+                .str
+            else
+                .i64;
+            if (incoming != resident)
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-carrier");
+        }
+        var carrier: dnir.Value = .{ .local = base };
+        var index = projected.index;
+        if (ctx.directory.contains(base)) {
+            const cell = ctx.freshTemp();
+            try ctx.emit(.{
+                .op = .load_index,
+                .ty = .i64,
+                .result = cell,
+                .lhs = .{ .local = base },
+                .rhs = .{ .i64 = projected.index },
+            });
+            try ctx.ptr_slots.put(ctx.alloc, cell, {});
+            carrier = .{ .temp = cell };
+            index = 1;
+        }
+        try ctx.emit(.{
+            .op = .store_index,
+            .ty = projected.ty,
+            .lhs = carrier,
+            .rhs = .{ .i64 = index },
+            .third = v,
+        });
+        subsumeProducerRefit(ctx);
+        return;
+    }
     if (ctx.locals.get(fk)) |slot| {
+        if (ctx.require_graph_facts and !ctx.graph.gateTransportModule() and slot < ctx.param_slots)
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-parameter-place-unproved");
+        if (ctx.require_graph_facts) {
+            const origin = ctx.graph.valueByAst(value) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-value");
+            const node = ctx.graph.get(origin) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-value");
+            const descriptor = node.descriptor orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-descriptor");
+            const incoming = types.scalarFieldCell(descriptor) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-carrier");
+            const resident: types.ScalarFieldCell = if (ctx.f64_slots.contains(slot))
+                .f64
+            else if (ctx.str_slots.contains(slot))
+                .str
+            else
+                .i64;
+            if (incoming != resident)
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-carrier");
+        }
         // THE FIELD'S DECLARED WIDTH APPLIES AT EVERY WRITE, not only at the
         // literal that created the storage. This read is the whole repair:
         // `store_ty` was unconditionally `.any` here, so `r.f = r.f + K` on an
@@ -5538,6 +5775,8 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
         subsumeProducerRefit(ctx);
         return;
     }
+    if (ctx.require_graph_facts and ctx.locals.contains(obj.name.ident))
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-place-unproved");
     const store_ty: RT = if (exprIsF64(ctx, value)) .f64 else .any;
     const slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), slot);
@@ -8323,6 +8562,85 @@ fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) 
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
 
+fn lowerRecordAlias(ctx: *LowerCtx, name: []const u8, expression: *const ast.Expr) Error!bool {
+    if (!ctx.require_graph_facts or ctx.graph.gateTransportModule() or expression.* != .name) return false;
+    const value = ctx.graph.valueByAst(expression) orelse return false;
+    const node = ctx.graph.get(value) orelse return false;
+    const descriptor = node.descriptor orelse return false;
+    if (descriptor != .table_type) return false;
+    const binding = node.scope orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding");
+    const target = ctx.graph.get(binding) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding");
+    if (target.kind != .local or target.scope != ctx.function or !std.mem.eql(u8, target.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding"), name))
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding");
+    const initialization = switch (ctx.graph.bindingInitialization(binding)) {
+        .known => |fact| fact,
+        .invalid, .unvisited => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-initializer"),
+    };
+    if (initialization.value != value) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-initializer");
+    const shape = ctx.graph.descriptorShape(value, 0) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
+    const record = record: {
+        for (ctx.records) |candidate| {
+            if (candidate.semantic_shape == shape and checkedRecordResultSupported(candidate)) break :record candidate;
+        }
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
+    };
+    var current = binding;
+    var fact = initialization;
+    var remaining = ctx.graph.nodes.items.len;
+    while (remaining > 0) : (remaining -= 1) {
+        switch (ctx.graph.valueOrigin(fact.value)) {
+            .unknown => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin"),
+            .none => break,
+            .one => |source| {
+                const source_node = ctx.graph.get(source) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+                if (source_node.kind != .local or source_node.scope != target.scope or source == current)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+                const predecessor = switch (ctx.graph.bindingInitialization(source)) {
+                    .known => |known| known,
+                    .invalid, .unvisited => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin"),
+                };
+                if (predecessor.place != initialization.place)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
+                const initialized = ctx.graph.get(predecessor.value) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+                if (!descriptor.eql(initialized.descriptor orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-descriptor")))
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-descriptor");
+                if (ctx.graph.descriptorShape(predecessor.value, 0) != shape)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
+                fact = predecessor;
+                current = source;
+            },
+        }
+    }
+    if (remaining == 0 or current == binding) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+    const label = ctx.graph.get(current).?.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+    if (physicalRecordBase(ctx, label)) |base| {
+        if (ctx.locals.contains(name)) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        try bindPhysicalRecordName(ctx, name, record, base);
+        return true;
+    }
+    const storage = ctx.graph.initializationPlace(current, fact.place) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
+    if (storage.shape != .record or storage.region != .function or storage.facts.mutation != .no or storage.facts.escape != .no or storage.facts.determinacy != .exact)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
+    switch (storage.bindCount()) {
+        .exact => |count| if (count != 1) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place"),
+        .bounded, .unknown => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place"),
+    }
+    if (storage.init == null or ctx.graph.valueExpression(fact.value) != storage.init)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
+    const marker = ctx.locals.get(label) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+    if (ctx.locals.contains(name)) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+    for (record.fields) |field| {
+        const from = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ label, field });
+        defer ctx.alloc.free(from);
+        const slot = ctx.locals.get(from) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        if (slot < ctx.param_slots) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        const to = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, field });
+        try ctx.locals.put(ctx.alloc, to, slot);
+    }
+    try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), marker);
+    return true;
+}
+
 fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!void {
     if (applicationNeedsGraphOccurrence(ctx, value) and !recordExportMapAssignable(ctx, value)) {
         return refuseMissingApplication(ctx, @src(), value);
@@ -8403,6 +8721,7 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         try lowerRecordLiteralAssign(ctx, name, value);
         return;
     }
+    if (try lowerRecordAlias(ctx, name, value)) return;
     const v = try lowerExprCons(ctx, value, .single);
     const f64_store = exprIsF64(ctx, value);
     const pointer_store = exprIsPointer(ctx, value);
@@ -8671,7 +8990,7 @@ fn lowerCheckedRecordCall(
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
     var slot_storage: [max_direct_scalar_args]StagedSlot = undefined;
-    const slots = try evaluateCheckedScalarOperands(ctx, operands, &slot_storage);
+    const slots = try evaluateCheckedScalarOperands(ctx, application, operands, &slot_storage);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     try stageCheckedScalarOperands(ctx, slots);
     const descriptor = try publishedDescriptor(ctx, application);
@@ -8765,7 +9084,7 @@ fn lowerCheckedRecordCallAssign(
     // and the result side of a call has no reason to differ from the rest.
     const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
     var slot_storage: [max_direct_scalar_args]StagedSlot = undefined;
-    const slots = try evaluateCheckedScalarOperands(ctx, operands, &slot_storage);
+    const slots = try evaluateCheckedScalarOperands(ctx, application, operands, &slot_storage);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     try stageCheckedScalarOperands(ctx, slots);
     const descriptor = try publishedDescriptor(ctx, application);
@@ -9129,7 +9448,7 @@ fn textBindInStmt(stmt: *const ast.Stmt, name: []const u8, out: *TextBind) void 
 ///
 /// Two consumers need the same fact — `determinedTextLen` needs its EXTENT and
 /// `TextBind.note` needs the payload itself — and each spelled its own tag
-/// test for it. `gate/gap-145-consumer.sh` counts exactly that form and caps
+/// test for it. `gate/token/read.sh` counts exactly that form and caps
 /// it, because a consumer reaching a quoted node through an equality test on
 /// the tag is invisible to the switch-arm census GAP-145 reports (and the
 /// census counts the spelling, so this sentence does not write it): `planConcat` was
@@ -10084,8 +10403,26 @@ fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const as
             try ctx.emit(.{ .op = .init_record, .result = sub_slot, .record = sub_name });
             continue;
         } else if (nf.val.* == .name) {
-            try copyPrefixedLocalsFromRecordRef(ctx, fk, nf.val.name.ident);
-            continue;
+            const reference = blk: {
+                if (!ctx.require_graph_facts or ctx.graph.gateTransportModule()) break :blk true;
+                const value = ctx.graph.valueByAst(nf.val) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-initializer-value");
+                switch (ctx.graph.valueOrigin(value)) {
+                    .one => {},
+                    .none, .unknown => return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-initializer-origin"),
+                }
+                const node = ctx.graph.get(value) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-initializer-value");
+                const descriptor = node.descriptor orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-initializer-descriptor");
+                if (types.scalarFieldCell(descriptor) != null) break :blk false;
+                if (descriptor == .table_type or descriptor == .@"struct") break :blk true;
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-initializer-carrier");
+            };
+            if (reference) {
+                try copyPrefixedLocalsFromRecordRef(ctx, fk, nf.val.name.ident);
+                continue;
+            }
         }
         // THE LITERAL IS THE FIELD'S FIRST WRITE. When the field owns a
         // `__DATA` word, that write is what puts its initial content there —
@@ -10198,11 +10535,7 @@ fn lowerInlineRecordArg(ctx: *LowerCtx, table: *const ast.Expr, rec_name: []cons
 }
 
 fn recordLocalDesc(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
-    for (ctx.records) |rec| {
-        if (rec.fields.len == 0) continue;
-        if (recordFieldsPresent(ctx, name, rec)) return rec;
-    }
-    if (ctx.locals.get(name)) |_| {
+    if (ctx.locals.contains(name)) {
         if (ctx.param_record_types.get(name)) |rec_name| {
             for (ctx.records) |rec| {
                 if (std.mem.eql(u8, rec.name, rec_name)) return rec;
@@ -10210,7 +10543,221 @@ fn recordLocalDesc(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
             if (findRecordByNominal(ctx.records, rec_name, ctx.graph)) |rec| return rec;
         }
     }
+    for (ctx.records) |rec| {
+        if (rec.fields.len == 0) continue;
+        if (recordFieldsPresent(ctx, name, rec)) return rec;
+    }
     return null;
+}
+
+const PhysicalRecordField = struct {
+    index: i64,
+    ty: RT,
+};
+
+fn physicalRecordField(rec: dnir.RecordDesc, field: []const u8) ?PhysicalRecordField {
+    for (rec.fields, 0..) |candidate, index| {
+        if (!std.mem.eql(u8, candidate, field)) continue;
+        const kind = if (index < rec.kinds.len) rec.kinds[index] else .i64;
+        const ty: RT = switch (kind) {
+            .str => .str,
+            .f64 => .f64,
+            .i64 => if (index < rec.widths.len) rec.widths[index] orelse .i64 else .i64,
+        };
+        return .{ .index = @intCast(index + 1), .ty = ty };
+    }
+    return null;
+}
+
+fn bindPhysicalRecordName(ctx: *LowerCtx, name: []const u8, rec: dnir.RecordDesc, base: u32) Error!void {
+    if (ctx.locals.getPtr(name)) |slot| {
+        slot.* = base;
+    } else {
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), base);
+    }
+    if (!ctx.param_record_types.contains(name))
+        try ctx.param_record_types.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec.name);
+    try ctx.ptr_slots.put(ctx.alloc, base, {});
+}
+
+fn recordValueForName(ctx: *const LowerCtx, name: []const u8) ?semantic_graph.id {
+    const relation = ctx.function orelse return null;
+    var binding = ctx.graph.bindingNamedIn(relation, name) orelse return null;
+    const node = ctx.graph.get(binding) orelse return null;
+    if (node.kind == .param) return binding;
+    if (node.kind != .local or node.scope != relation) return null;
+    var initialization = switch (ctx.graph.bindingInitialization(binding)) {
+        .known => |fact| fact,
+        .invalid, .unvisited => return null,
+    };
+    var remaining = ctx.graph.nodes.items.len;
+    while (remaining > 0) : (remaining -= 1) {
+        const storage = ctx.graph.initializationPlace(binding, initialization.place) orelse return null;
+        if (storage.shape != .record or storage.region != .function) return null;
+        switch (ctx.graph.valueOrigin(initialization.value)) {
+            .none => {
+                if (ctx.graph.valueExpression(initialization.value) != storage.init) return null;
+                return initialization.value;
+            },
+            .unknown => return null,
+            .one => |source| {
+                const origin = ctx.graph.get(source) orelse return null;
+                if (origin.kind != .local or origin.scope != relation or source == binding) return null;
+                const next = switch (ctx.graph.bindingInitialization(source)) {
+                    .known => |fact| fact,
+                    .invalid, .unvisited => return null,
+                };
+                if (next.place != initialization.place) return null;
+                binding = source;
+                initialization = next;
+            },
+        }
+    }
+    return null;
+}
+
+fn physicalRecordBase(ctx: *const LowerCtx, name: []const u8) ?u32 {
+    if (ctx.locals.get(name)) |slot| if (ctx.ptr_slots.contains(slot)) return slot;
+    const aggregate = recordValueForName(ctx, name) orelse return null;
+    return ctx.aggregate_bases.get(aggregate);
+}
+
+fn loadPhysicalRecordField(ctx: *LowerCtx, name: []const u8, field: []const u8) Error!?dnir.Value {
+    const base = physicalRecordBase(ctx, name) orelse return null;
+    const rec = recordLocalDesc(ctx, name) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-carrier");
+    const projected = physicalRecordField(rec, field) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-projection");
+    const carrier: dnir.Value = if (ctx.directory.contains(base)) blk: {
+        const cell = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .load_index,
+            .ty = .i64,
+            .result = cell,
+            .lhs = .{ .local = base },
+            .rhs = .{ .i64 = projected.index },
+        });
+        try ctx.ptr_slots.put(ctx.alloc, cell, {});
+        break :blk .{ .temp = cell };
+    } else .{ .local = base };
+    const index: i64 = if (ctx.directory.contains(base)) 1 else projected.index;
+    const result = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .load_index,
+        .ty = projected.ty,
+        .result = result,
+        .lhs = carrier,
+        .rhs = .{ .i64 = index },
+    });
+    if (projected.ty == .f64) try ctx.f64_slots.put(ctx.alloc, result, {});
+    if (projected.ty == .str) try ctx.str_slots.put(ctx.alloc, result, {});
+    return .{ .temp = result };
+}
+
+fn recordLayoutsEqual(lhs: dnir.RecordDesc, rhs: dnir.RecordDesc) bool {
+    if (lhs.fields.len != rhs.fields.len) return false;
+    for (lhs.fields, rhs.fields) |left, right| {
+        if (!std.mem.eql(u8, left, right)) return false;
+    }
+    return true;
+}
+
+fn materializeRecordView(
+    ctx: *LowerCtx,
+    base: u32,
+    actual: dnir.RecordDesc,
+    required: dnir.RecordDesc,
+) Error!u32 {
+    if (recordLayoutsEqual(actual, required)) return base;
+    const view = ctx.freshTemp();
+    try ctx.emit(.{ .op = .alloc_slots, .result = view, .lhs = .{ .i64 = @intCast(required.fields.len) } });
+    for (required.fields, 0..) |field, index| {
+        const source = physicalRecordField(actual, field) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier-mismatch");
+        const cell = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .load_index,
+            .ty = .i64,
+            .result = cell,
+            .lhs = .{ .local = base },
+            .rhs = .{ .i64 = source.index },
+        });
+        try ctx.emit(.{
+            .op = .store_index,
+            .ty = .i64,
+            .lhs = .{ .temp = view },
+            .rhs = .{ .i64 = @intCast(index + 1) },
+            .third = .{ .temp = cell },
+        });
+    }
+    try ctx.ptr_slots.put(ctx.alloc, view, {});
+    try ctx.directory.put(ctx.alloc, view, {});
+    return view;
+}
+
+fn materializeProvenRecordBase(
+    ctx: *LowerCtx,
+    operand: *const CheckedScalarOperand,
+    actual: dnir.RecordDesc,
+    required: dnir.RecordDesc,
+) Error!u32 {
+    const name = try checkedOperandName(ctx, operand);
+    if (physicalRecordBase(ctx, name)) |base| {
+        const resident = recordLocalDesc(ctx, name) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
+        return materializeRecordView(ctx, base, resident, required);
+    }
+    const aggregate = recordValueForName(ctx, name) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved-origin");
+    const relation = ctx.function orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved-binding");
+    const binding = ctx.graph.bindingNamedIn(relation, name) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved-binding");
+    const shape = ctx.graph.descriptorShape(binding, 0) orelse
+        ctx.graph.descriptorShape(aggregate, 0) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved-shape");
+    const resident = for (ctx.records) |candidate| {
+        if (candidate.semantic_shape == shape) break candidate;
+    } else return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved-layout");
+    if (!recordCarrierFits(resident, actual) or !recordCarrierFits(resident, required))
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier-mismatch");
+    if (ctx.aggregate_bases.get(aggregate)) |base| {
+        try bindPhysicalRecordName(ctx, name, resident, base);
+        return materializeRecordView(ctx, base, resident, required);
+    }
+    const base = ctx.freshTemp();
+    try ctx.emit(.{ .op = .alloc_slots, .result = base, .lhs = .{ .i64 = @intCast(resident.fields.len) } });
+    for (resident.fields, resident.kinds, 0..) |field, kind, index| {
+        const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, field });
+        defer ctx.alloc.free(key);
+        const slot = ctx.locals.get(key) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
+        const ty: RT = switch (kind) {
+            .str => .str,
+            .f64 => .f64,
+            .i64 => if (index < resident.widths.len) resident.widths[index] orelse .i64 else .i64,
+        };
+        const cell = ctx.freshTemp();
+        try ctx.emit(.{ .op = .alloc_slots, .result = cell, .lhs = .{ .i64 = 1 } });
+        try ctx.emit(.{
+            .op = .store_index,
+            .ty = ty,
+            .lhs = .{ .temp = cell },
+            .rhs = .{ .i64 = 1 },
+            .third = .{ .local = slot },
+        });
+        try ctx.emit(.{
+            .op = .store_index,
+            .ty = .i64,
+            .lhs = .{ .temp = base },
+            .rhs = .{ .i64 = @intCast(index + 1) },
+            .third = .{ .temp = cell },
+        });
+    }
+    try ctx.aggregate_bases.put(ctx.alloc, aggregate, base);
+    try ctx.directory.put(ctx.alloc, base, {});
+    try bindPhysicalRecordName(ctx, name, resident, base);
+    return materializeRecordView(ctx, base, resident, required);
 }
 
 fn materializeRecordBase(ctx: *LowerCtx, name: []const u8) Error!u32 {
@@ -10292,6 +10839,10 @@ fn isRecordLocalName(ctx: *LowerCtx, e: *const ast.Expr) bool {
     const rec_name = ctx.ret_record orelse return false;
     const rec = findRecordName(ctx.records, .{ .named = rec_name }) orelse return false;
     if (rec.fields.len == 0) return false;
+    if (physicalRecordBase(ctx, e.name.ident) != null) {
+        const actual = recordLocalDesc(ctx, e.name.ident) orelse return false;
+        return std.mem.eql(u8, actual.name, rec.name);
+    }
     var buf: [256]u8 = undefined;
     const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ e.name.ident, rec.fields[0] }) catch return false;
     return ctx.locals.get(key) != null;
@@ -10313,7 +10864,21 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
         const base = table.name.ident;
         const nvals = try ctx.alloc.alloc(dnir.Value, count);
         errdefer ctx.alloc.free(nvals);
-        for (rec.fields, 0..) |fname, i| {
+        if (physicalRecordBase(ctx, base)) |record_base| {
+            for (rec.fields, 0..) |fname, i| {
+                const projected = physicalRecordField(rec, fname) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-projection");
+                const slot = ctx.freshTemp();
+                try ctx.emit(.{
+                    .op = .load_index,
+                    .ty = projected.ty,
+                    .result = slot,
+                    .lhs = .{ .local = record_base },
+                    .rhs = .{ .i64 = projected.index },
+                });
+                nvals[i] = .{ .temp = slot };
+            }
+        } else for (rec.fields, 0..) |fname, i| {
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base, fname });
             defer ctx.alloc.free(key);
             const slot = ctx.locals.get(key) orelse return bailNamed(ctx.diagnostic, @src(), "local-slot-missing", fname);
@@ -11482,7 +12047,10 @@ fn checkedScalarOperand(
         .table_type => {
             // A local table binding (`lx: lexer = …`) crosses home as one opaque
             // pointer operand — same treatment struct locals already get above.
-            if (expression.* == .name and ctx.locals.get(expression.name.ident) != null) {
+            if (expression.* == .name and
+                (ctx.locals.get(expression.name.ident) != null or
+                    (ctx.graph.descriptorShape(value, 0) != null and recordForGraphOperand(ctx, value) != null)))
+            {
                 effective = .any;
             } else {
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
@@ -11624,6 +12192,8 @@ fn checkedBindingI64(
         .invalid => return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer"),
         .known => |fact| fact,
     };
+    if (ctx.graph.get(binding).?.scope != ctx.graph.module_root)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
     const p = ctx.graph.modulePlace(initialization.place) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
     if (p.shape != .scalar or p.region != .module or p.init == null)
@@ -11720,12 +12290,70 @@ const StagedSlot = struct {
 
 fn evaluateCheckedScalarOperands(
     ctx: *LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
     operands: []const CheckedScalarOperand,
     storage: *[max_direct_scalar_args]StagedSlot,
 ) Error![]const StagedSlot {
+    const parameters = blk: {
+        if (!ctx.require_graph_facts or ctx.graph.gateTransportModule()) break :blk null;
+        const layouts = ctx.signature orelse break :blk null;
+        const target = ctx.graph.applicationTarget(application.application) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-target");
+        const layout = layouts.get(target) orelse break :blk null;
+        var aggregate = false;
+        for (layout.params) |parameter| if (parameter.record != null) {
+            aggregate = true;
+        };
+        if (!aggregate) break :blk null;
+        if (layout.params.len != operands.len)
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-parameter-pack");
+        break :blk layout.params;
+    };
     var fp_count: usize = 0;
     var count: usize = 0;
-    for (operands) |*operand| {
+    for (operands, 0..) |*operand, operand_index| {
+        const demand: ?dnir.Param = if (parameters) |params| params[operand_index] else null;
+        const carrier = blk: {
+            const params = parameters orelse break :blk null;
+            const name = params[operand_index].record orelse break :blk null;
+            const required = findRecordName(ctx.records, .{ .named = name }) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier");
+            const node = ctx.graph.get(operand.value) orelse break :blk null;
+            const descriptor = node.descriptor orelse break :blk null;
+            const actual = actual: {
+                if (ctx.graph.descriptorShape(operand.value, 0)) |shape| {
+                    for (ctx.records) |candidate| {
+                        if (candidate.semantic_shape == shape) break :actual candidate;
+                    }
+                    break :blk null;
+                }
+                if (descriptor != .@"struct") break :blk null;
+                break :actual recordForDescriptor(ctx.records, descriptor, ctx.graph) orelse break :blk null;
+            };
+            if (!recordCarrierFits(actual, required))
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier-mismatch");
+            break :blk .{ .required = required, .actual = actual };
+        };
+        const required: ?dnir.RecordDesc = if (carrier) |records| records.required else null;
+        if (demand) |parameter| {
+            if (parameter.record != null and parameter.ty.eql(physical_pointer)) {
+                if (count >= storage.len)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                const records = carrier orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier");
+                if (operand.expression.* != .name)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
+                const base = try materializeProvenRecordBase(ctx, operand, records.actual, records.required);
+                storage[count] = .{
+                    .operand = operand,
+                    .projection = "",
+                    .descriptor = physical_pointer,
+                    .value = .{ .local = base },
+                };
+                count += 1;
+                continue;
+            }
+        }
         // ONE SEMANTIC VALUE, A CONSUMER-DIRECTED REALIZATION. A record operand
         // is not materialized into an aggregate and it is not given an address:
         // this consumer wants scalar fields in registers, so the fields are what
@@ -11739,7 +12367,7 @@ fn evaluateCheckedScalarOperands(
         // DESCRIPTOR ORDER IS THE CONTRACT, and it is the same order the callee
         // homes its parameter from (`rec.fields`, one register each). The two
         // ends read the same list, which is why they cannot drift.
-        if (operandRecordStorage(ctx, operand.*)) |rec| {
+        if (required orelse operandRecordStorage(ctx, operand.*)) |rec| {
             // THE GENERAL-PURPOSE ARGUMENT BUDGET IS THE BOUND, and it is the
             // same bound the CALLEE applies when it homes the parameter
             // (`functionEligibleReason` admits a record parameter up to
@@ -11775,19 +12403,27 @@ fn evaluateCheckedScalarOperands(
                     if (kind == .f64) {
                         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
                     }
-                    const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ try checkedOperandName(ctx, operand), fname });
-                    defer ctx.alloc.free(key);
-                    const slot = ctx.locals.get(key) orelse
-                        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                    const name = try checkedOperandName(ctx, operand);
+                    const descriptor: RT = switch (kind) {
+                        .str => .str,
+                        .i64 => .i64,
+                        .f64 => unreachable,
+                    };
+                    const value: dnir.Value = if (physicalRecordBase(ctx, name) != null)
+                        (try loadPhysicalRecordField(ctx, name, fname)) orelse
+                            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi")
+                    else blk: {
+                        const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
+                        defer ctx.alloc.free(key);
+                        const slot = ctx.locals.get(key) orelse
+                            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                        break :blk .{ .local = slot };
+                    };
                     storage[count] = .{
                         .operand = operand,
                         .projection = fname,
-                        .descriptor = switch (kind) {
-                            .str => .str,
-                            .i64 => .i64,
-                            .f64 => unreachable,
-                        },
-                        .value = .{ .local = slot },
+                        .descriptor = descriptor,
+                        .value = value,
                     };
                     count += 1;
                 }
@@ -11910,7 +12546,7 @@ fn lowerCheckedPackCall(
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
     var slot_storage: [max_direct_scalar_args]StagedSlot = undefined;
-    const slots = try evaluateCheckedScalarOperands(ctx, operands, &slot_storage);
+    const slots = try evaluateCheckedScalarOperands(ctx, application, operands, &slot_storage);
     const first_ty = try checkedGpPackResultType(ctx, results[0]);
     // THE FAST PATH WANTS ONE SLOT THAT REALIZES ITS OPERAND ENTIRE, and now it
     // asks for exactly that. `operands.len == 1 and staged.count == 1` stood
@@ -11994,7 +12630,7 @@ fn lowerCheckedScalarCall(
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
     var slot_storage: [max_direct_scalar_args]StagedSlot = undefined;
-    const slots = try evaluateCheckedScalarOperands(ctx, operands, &slot_storage);
+    const slots = try evaluateCheckedScalarOperands(ctx, application, operands, &slot_storage);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     // Admit only the fixed-width integer contract with byte-equivalence proof.
     // Other general-register descriptors remain staged until their result and
@@ -15013,6 +15649,7 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         // covering another. Measured with the scan repaired and this order
         // unchanged: `M = { x = 1 }` at module scope, `M: cell = { x = 5 }` and
         // `M.x = 99` in a relation, and the relation's own `M.x` answered 1.
+        if (try loadPhysicalRecordField(ctx, fld.obj.name.ident, fld.field)) |value| return value;
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
         // Module-level descriptor constant: `Kind.ident` folds to an immediate.
         if (ctx.module_consts.ints.get(key)) |mv| return .{ .i64 = mv };
@@ -18461,6 +19098,164 @@ test "dnir_lower: a record parameter's fields ride the general-purpose argument 
     }
 }
 
+test "dnir_lower: inferred parameter crosses checked applications as the existing any carrier" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][]const u8{ "", ": any" }) |annotation| {
+        for ([_]i64{ 7, 13 }) |value| {
+            const source = try std.fmt.allocPrint(
+                alloc,
+                "identity = (value{s}) value\nmain = () identity({d})\n",
+                .{ annotation, value },
+            );
+            var graph = semantic_graph.SemanticGraph.init(alloc);
+            defer graph.deinit();
+            const module = try lowerTestSourceWithGraph(alloc, source, "parameter-carrier.id", &graph);
+            defer dnir.deinitModule(alloc, module);
+            const identity = for (module.functions) |function| {
+                if (std.mem.eql(u8, function.name, "idol_parameter_carrier__identity")) break function;
+            } else return error.TestUnexpectedResult;
+            try std.testing.expectEqual(@as(usize, 1), identity.params.len);
+            try std.testing.expect(identity.params[0].ty == .any);
+            var direct = false;
+            var folded = false;
+            var applications: usize = 0;
+            for (identity.blocks) |block| for (block.instrs) |instruction| {
+                if (instruction.op == .ret and instruction.lhs == .local and instruction.lhs.local == 0)
+                    direct = true;
+            };
+            for (graph.application_facts.items) |fact| {
+                const relation = graph.applicationRelation(fact.application) orelse continue;
+                if (relation != identity.id) continue;
+                const subject = graph.applicationSubject(fact.application) orelse return error.TestUnexpectedResult;
+                try std.testing.expectEqual(@as(?i64, value), graph.exactI64(subject));
+                applications += 1;
+            }
+            for (module.functions) |function| for (function.blocks) |block| for (block.instrs) |instruction| {
+                if (instruction.op == .ret and instruction.lhs == .i64 and instruction.lhs.i64 == value)
+                    folded = true;
+            };
+            try std.testing.expectEqual(@as(usize, 1), applications);
+            try std.testing.expect(direct and folded);
+        }
+    }
+}
+
+test "dnir_lower: inferred parameter keeps the shared carrier slot limit and unsupported annotations refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][]const u8{ "", ": any" }) |annotation| {
+        for ([_]usize{ 16, 17 }) |count| {
+            var parameters: std.ArrayList(u8) = .empty;
+            defer parameters.deinit(alloc);
+            for (0..count) |index| {
+                const parameter = try std.fmt.allocPrint(alloc, "{s}p{d}{s}", .{ if (index == 0) "" else ", ", index, annotation });
+                try parameters.appendSlice(alloc, parameter);
+            }
+            const source = try std.fmt.allocPrint(alloc, "take = ({s}) p0\n", .{parameters.items});
+            var lexer = @import("lexer.zig").Lexer.init(source, "parameter-budget.id");
+            var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+            parser.idol_mode = true;
+            const module = try parser.parse_module();
+            var graph = semantic_graph.SemanticGraph.init(alloc);
+            defer graph.deinit();
+            _ = try graph.liftModuleWithCalls(&module, "parameter-budget.id");
+            const declaration = &module.body.stmts[0].func_decl;
+            const reason = functionEligibleReason(declaration, &.{}, &graph, &module);
+            if (count == 16) {
+                try std.testing.expect(reason == null);
+            } else {
+                try std.testing.expectEqualStrings("more-than-16-gp-arguments", reason orelse return error.TestUnexpectedResult);
+            }
+        }
+    }
+    for ([_][]const u8{ "?i64", "[i64]" }) |annotation| {
+        const source = try std.fmt.allocPrint(alloc, "take = (value: {s}) value\n", .{annotation});
+        var lexer = @import("lexer.zig").Lexer.init(source, "parameter-refusal.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        const module = try parser.parse_module();
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCalls(&module, "parameter-refusal.id");
+        const declaration = &module.body.stmts[0].func_decl;
+        const reason = functionEligibleReason(declaration, &.{}, &graph, &module) orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqualStrings("parameter-type-unsupported", reason);
+    }
+}
+
+test "dnir_lower: inferred parameter and explicit any refuse floating or unknown operand descriptors" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][]const u8{ "", ": any" }) |annotation| {
+        const source = try std.fmt.allocPrint(
+            alloc,
+            "identity = (value{s}) value\nmain = () identity(7)\n" ++
+                "floating: f64 = (value: f64) value\nother: f64 = () floating(7.5)\n",
+            .{annotation},
+        );
+        var lexer = @import("lexer.zig").Lexer.init(source, "parameter-descriptor.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "parameter-descriptor.id");
+        const target = graph.relationForDeclaration(&module.body.stmts[0].func_decl).?;
+        const application = for (graph.application_facts.items) |fact| {
+            if (graph.applicationTarget(fact.application) == target) break fact.application;
+        } else return error.TestUnexpectedResult;
+        const subject = graph.applicationSubject(application).?;
+        const lowered = try lowerModuleWithGraph(alloc, &module, &graph);
+        defer dnir.deinitModule(alloc, lowered);
+        var element: RT = .i64;
+        const unsupported = [_]?RT{
+            .f32,
+            .f64,
+            .any,
+            null,
+            .v8i32,
+            .{ .table_type = .{ .fields = &.{} } },
+            .{ .option = &element },
+            .{ .array = .{ .elem = &element, .size = 2 } },
+        };
+        for (unsupported) |descriptor| {
+            graph.nodes.items[subject].descriptor = descriptor;
+            var diagnostic: Diagnostic = .{};
+            try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+            const expected = if (descriptor == null)
+                "missing-application-id"
+            else if (descriptor.? == .any)
+                "any-parameter-operand-unknown"
+            else if (descriptor.?.is_float())
+                "any-parameter-fp-operand"
+            else
+                "any-parameter-operand-abi";
+            try std.testing.expectEqualStrings(expected, diagnostic.note().?);
+        }
+        var declarations: std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.id) = .empty;
+        defer declarations.deinit(alloc);
+        try declarations.put(alloc, &module.body.stmts[0].func_decl, target);
+        graph.nodes.items[subject].descriptor = .i64;
+        var diagnostic: Diagnostic = .{};
+        try verifyAnyParameterCarriers(&graph, &declarations, &diagnostic);
+        graph.nodes.items[subject].descriptor = .{ .pointer = &element };
+        try verifyAnyParameterCarriers(&graph, &declarations, &diagnostic);
+        graph.nodes.items[subject].descriptor = .f64;
+        const linkage = graph.callable_linkage_rows.get(target).?;
+        graph.callable_linkages.items[linkage].origin = .c;
+        graph.callable_linkages.items[linkage].exposure = .c_import;
+        try verifyAnyParameterCarriers(&graph, &declarations, &diagnostic);
+    }
+}
+
 test "dnir_lower: runtime floor divisor preserves the integer zero trap" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -19740,4 +20535,561 @@ test "dnir_lower: GAP-204 module lowering carries a positional text read into th
     try std.testing.expectEqualStrings("alpha", selected.items[0]);
     try std.testing.expectEqualStrings("beta", selected.items[1]);
     try std.testing.expectEqualStrings("gamma", selected.items[2]);
+}
+
+test "dnir_lower: record parameters refuse unproved carriers" {
+    const sources = [_][]const u8{
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 7}\n    copy, item.code = item, \"changed\"\n    read(copy)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 7}\n    peer = item\n    copy, peer.code = item, \"changed\"\n    read(copy)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = () read(7)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = \"changed\"}\n    read(item)\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        try std.testing.expectError(error.GraphFactsInvalid, lowerTestSourceWithGraph(alloc, source, "record-carrier.id", &graph));
+    }
+}
+
+test "dnir_lower: record aliases retain the published field carrier" {
+    const source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    read(copy)\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try lowerTestSourceWithGraph(alloc, source, "record-alias-carrier.id", &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+}
+
+test "dnir_lower: record carriers preserve declared and scalar calls" {
+    const sources = [_][]const u8{
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 7}\n    read(item)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item: record = {code = 13}\n    read(item)\n",
+        "record: {a: i64, b: i64}\nread = (value: record): i64 value.a * 10 + value.b\nmain: i64 = ()\n    item = {a = 7, b = 3}\n    read(item)\n",
+        "record: {label: str, code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {label = \"ok\", code = 13}\n    read(item)\n",
+        "identity = (value: i64): i64 value\nmain: i64 = () identity(13)\n",
+        "record: {a: i64, b: i64}\nread = (value: record): i64 value.a * 10 + value.b\nmain: i64 = ()\n    item = {b = 3, a = 7}\n    read(item)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 7, extra = 13}\n    read(item)\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        const lowered = lowerTestSourceWithGraph(alloc, source, "record-carrier-positive.id", &graph) catch |err| {
+            std.debug.print("{s}\n", .{source});
+            return err;
+        };
+        defer dnir.deinitModule(alloc, lowered);
+        try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+    }
+}
+
+test "dnir_lower: record carriers require the exact operand shape edge" {
+    const source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    state: record = {code = 1}\n    state.code = 13\n    item = {code = 7}\n    read(item)\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    var lexer = @import("lexer.zig").Lexer.init(source, "record-carrier-edge.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-carrier-edge.id");
+    var diagnostic: Diagnostic = .{};
+    const lowered = lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic) catch |err| {
+        std.debug.print("record edge positive: {s}\n", .{diagnostic.note() orelse "no diagnostic"});
+        return err;
+    };
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+    var calls: usize = 0;
+    for (lowered.functions) |function| {
+        for (function.blocks) |body| {
+            for (body.instrs) |instruction| {
+                if (instruction.op == .call_direct) calls += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), calls);
+    const application = graph.applications()[0].application;
+    const operand = graph.applicationSubject(application).?;
+    const shape = graph.descriptorShape(operand, 0).?;
+    try std.testing.expect(graph.get(shape).?.name == null);
+    var projected: usize = 0;
+    for (lowered.records) |record| {
+        if (record.semantic_shape != shape) continue;
+        try std.testing.expectEqual(@as(usize, 1), record.fields.len);
+        try std.testing.expectEqualStrings("code", record.fields[0]);
+        projected += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), projected);
+    var removed = false;
+    for (graph.edges.items) |*edge| {
+        if (edge.from == operand and edge.kind == .descriptor) {
+            edge.kind = .provenance;
+            removed = true;
+        }
+    }
+    try std.testing.expect(removed);
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-parameter-operand-shape", diagnostic.note().?);
+}
+
+test "dnir_lower: record writes refuse wrong carriers and disconnected slots" {
+    const sources = [_][]const u8{
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item: record = {code = 7}\n    item.code = \"changed\"\n    read(item)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item: record = {code = 7}\n    peer = item\n    peer.code = 13\n    read(item)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item: record = {code = 7}\n    peer = item\n    peer.code = \"changed\"\n    read(item)\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        try std.testing.expectError(error.GraphFactsInvalid, lowerTestSourceWithGraph(alloc, source, "record-write-refusal.id", &graph));
+    }
+}
+
+test "dnir_lower: record writes preserve a compatible resident field" {
+    const source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item: record = {code = 7}\n    item.code = 13\n    read(item)\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try lowerTestSourceWithGraph(alloc, source, "record-write-positive.id", &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+}
+
+test "dnir_lower: record writes require the exact value origin" {
+    const source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item: record = {code = 7}\n    item.code = 13\n    read(item)\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    var lexer = @import("lexer.zig").Lexer.init(source, "record-write-origin.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-write-origin.id");
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    var removed: usize = 0;
+    for (graph.exact_i64_facts.items) |fact| {
+        if (fact.content != 13) continue;
+        const value = graph.valueExpression(fact.value).?;
+        try std.testing.expectEqual(fact.value, graph.valueByAst(value).?);
+        try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(value)));
+        removed += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), removed);
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-write-value", diagnostic.note().?);
+}
+
+test "dnir_lower: record arguments follow the target field order" {
+    const cases = [_]struct { source: []const u8, slots: []const dnir.Value }{
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n", .slots = &.{ .{ .i64 = 2 }, .{ .local = 0 }, .{ .i64 = 5 } } },
+        .{ .source = "record: {code: i64}\nfull: {extra: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item: full = {code = code, extra = 91}\n    read(2, item, 5) + item.extra\nos.exit(probe(13))\n", .slots = &.{ .{ .i64 = 2 }, .{ .local = 0 }, .{ .i64 = 5 } } },
+        .{ .source = "record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {code = code, other = 91}\n    read(2, item, 5)\nos.exit(probe(7))\n", .slots = &.{ .{ .i64 = 2 }, .{ .i64 = 91 }, .{ .local = 0 }, .{ .i64 = 5 } } },
+        .{ .source = "record: {label: str, code: i64}\nread = (value: record): i64 #value.label + value.code\nprobe = (code: i64): i64\n    item = {code = code, label = \"ok\"}\n    read(item)\nos.exit(probe(7))\n", .slots = &.{ .{ .str = "ok" }, .{ .local = 0 } } },
+        .{ .source = "record: {other: i64, code: i64}\nread = (a: record, b: record): i64 a.code * 3 + b.code\nprobe = (code: i64): i64\n    a = {code = code, other = 91}\n    b = {other = 83, code = 13}\n    read(a, b)\nos.exit(probe(7))\n", .slots = &.{ .{ .i64 = 91 }, .{ .local = 0 }, .{ .i64 = 83 }, .{ .i64 = 13 } } },
+        .{ .source = "record: {a: i64, b: i64}\nread = (value: record): i64 value.a * 10 + value.b\nprobe = (code: i64): i64\n    item = {b = 3, a = code}\n    read(item)\nos.exit(probe(7))\n", .slots = &.{ .{ .local = 0 }, .{ .i64 = 3 } } },
+    };
+    for (cases) |case| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        const lowered = try lowerTestSourceWithGraph(alloc, case.source, "record-target-order.id", &graph);
+        defer dnir.deinitModule(alloc, lowered);
+        const target = graph.findByNameOfKind("read", .func).?;
+        var calls: usize = 0;
+        for (lowered.functions) |function| {
+            for (function.blocks) |body| {
+                for (body.instrs, 0..) |instruction, index| {
+                    if (instruction.op != .call_direct or instruction.target != target) continue;
+                    const start = instruction.realization_start.?;
+                    try std.testing.expectEqual(case.slots.len, index - start);
+                    for (body.instrs[start..index], case.slots, 0..) |staged, expected, slot| {
+                        try std.testing.expectEqual(dnir.Op.mov_arg, staged.op);
+                        try std.testing.expectEqual(@as(u32, @intCast(slot)), staged.result.?);
+                        var value = staged.lhs;
+                        var before: usize = start;
+                        while (value == .local) {
+                            var found = false;
+                            var cursor = before;
+                            while (cursor > 0) {
+                                cursor -= 1;
+                                const store = body.instrs[cursor];
+                                if (store.op != .store_local or store.result != value.local) continue;
+                                value = store.lhs;
+                                before = cursor;
+                                found = true;
+                                break;
+                            }
+                            if (!found) break;
+                        }
+                        std.testing.expectEqualDeep(expected, value) catch |err| {
+                            std.debug.print("record staging slot {d}: expected {any}, found {any}\n{s}\n", .{ slot, expected, value, case.source });
+                            for (body.instrs) |item| std.debug.print("{s} result={any} lhs={any} field={s}\n", .{ @tagName(item.op), item.result, item.lhs, item.field });
+                            return err;
+                        };
+                    }
+                    calls += 1;
+                }
+            }
+        }
+        try std.testing.expectEqual(@as(usize, 1), calls);
+    }
+}
+
+test "dnir_lower: scalar record initializers require exact value origin" {
+    const source = "record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {code = code, other = 91}\n    read(2, item, 5)\nos.exit(probe(7))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    var lexer = @import("lexer.zig").Lexer.init(source, "record-initializer-origin.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-initializer-origin.id");
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    var initializer: ?semantic_graph.id = null;
+    for (graph.nodes.items, 0..) |node, index| {
+        if (node.kind != .value) continue;
+        const value = graph.valueExpression(@intCast(index)) orelse continue;
+        if (value.* != .name or value.loc().line != 4) continue;
+        try std.testing.expect(initializer == null);
+        try std.testing.expect(node.descriptor.? == .i64);
+        initializer = @intCast(index);
+    }
+    const value = initializer orelse return error.TestExpectedEqual;
+    const expression = graph.valueExpression(value).?;
+    const binding = switch (graph.valueOrigin(value)) {
+        .one => |exact| exact,
+        .none, .unknown => return error.TestExpectedEqual,
+    };
+    try std.testing.expectEqual(value, graph.valueByAst(expression).?);
+    try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(expression)));
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-initializer-value", diagnostic.note().?);
+    try graph.value_by_ast.put(alloc, @intFromPtr(expression), value);
+    var origin: ?usize = null;
+    for (graph.edges.items, 0..) |edge, index| {
+        if (edge.from != value or edge.kind != .binding) continue;
+        try std.testing.expect(origin == null);
+        origin = index;
+    }
+    const position = origin orelse return error.TestExpectedEqual;
+    graph.edges.items[position].kind = .provenance;
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-initializer-origin", diagnostic.note().?);
+    graph.edges.items[position].kind = .binding;
+    graph.edges.items[position].to = graph.module_root.?;
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-initializer-origin", diagnostic.note().?);
+    graph.edges.items[position].to = binding;
+    try graph.addEdge(.{ .from = value, .to = binding, .kind = .binding });
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-initializer-origin", diagnostic.note().?);
+}
+
+test "dnir_lower: projected record arguments retain exact member proof" {
+    const source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    var lexer = @import("lexer.zig").Lexer.init(source, "record-projection-proof.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-projection-proof.id");
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    const target = graph.findByNameOfKind("read", .func).?;
+    var application: ?semantic_graph.id = null;
+    for (graph.applications()) |fact| {
+        if (graph.applicationTarget(fact.application) != target) continue;
+        try std.testing.expect(application == null);
+        application = fact.application;
+    }
+    const operand = graph.applicationArguments(application.?).?[0];
+    const shape = graph.descriptorShape(operand, 0).?;
+    const members = try graph.membersOf(shape, alloc);
+    defer alloc.free(members);
+    try std.testing.expectEqual(@as(usize, 2), members.len);
+    var code: ?semantic_graph.id = null;
+    var extra: ?semantic_graph.id = null;
+    for (members) |member| {
+        if (std.mem.eql(u8, graph.get(member).?.name.?, "code")) code = member;
+        if (std.mem.eql(u8, graph.get(member).?.name.?, "extra")) extra = member;
+    }
+    const original = .{ .code = graph.nodes.items[code.?], .extra = graph.nodes.items[extra.?] };
+    for (0..4) |damage| {
+        switch (damage) {
+            0 => graph.nodes.items[code.?].name = "absent",
+            1 => graph.nodes.items[code.?].descriptor = .str,
+            2 => graph.nodes.items[code.?].descriptor = .i32,
+            3 => graph.nodes.items[extra.?].name = "code",
+            else => unreachable,
+        }
+        diagnostic.reset();
+        try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+        try std.testing.expectEqualStrings("record-parameter-carrier-mismatch", diagnostic.note().?);
+        graph.nodes.items[code.?] = original.code;
+        graph.nodes.items[extra.?] = original.extra;
+    }
+}
+
+test "dnir_lower: record parameter writes use shared residency" {
+    const sources = [_][]const u8{
+        "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
+        "record: {code: i64}\nfull: {extra: i64, code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: full = {extra = 91, code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        var lexer = @import("lexer.zig").Lexer.init(source, "record-parameter-mutation.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-parameter-mutation.id");
+        const probe = graph.findFunc("probe").?;
+        const item = graph.bindingNamedIn(probe, "item").?;
+        const initialization = switch (graph.bindingInitialization(item)) {
+            .known => |fact| fact,
+            .invalid => return error.TestRecordInitializationInvalid,
+            .unvisited => return error.TestRecordInitializationUnvisited,
+        };
+        try std.testing.expect(graph.valueExpression(initialization.value) == graph.initializationPlace(item, initialization.place).?.init);
+        var diagnostic: Diagnostic = .{};
+        const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        defer dnir.deinitModule(alloc, lowered);
+        const alter = for (lowered.functions) |function| {
+            if (function.id == graph.findFunc("alter")) break function;
+        } else return error.TestExpectedEqual;
+        try std.testing.expectEqual(@as(usize, 1), alter.params.len);
+        try std.testing.expect(alter.params[0].ty.eql(physical_pointer));
+        try std.testing.expect(alter.params[0].record == null);
+    }
+}
+
+test "dnir_lower: mutating record operands retain shared cells and readonly operands retain values" {
+    const source = "record: {code: i64}\nalter = (left: record, right: record): i64\n    left.code = 13\n    right.code\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code + suffix\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item, item) + read(2, item, 5)\nos.exit(probe(7))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try lowerTestSourceWithGraph(alloc, source, "shared.id", &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    const alter = for (lowered.functions) |function| {
+        if (function.id == graph.findFunc("alter")) break function;
+    } else return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), alter.params.len);
+    for (alter.params) |parameter| {
+        try std.testing.expect(parameter.ty.eql(physical_pointer));
+        try std.testing.expect(parameter.record == null);
+    }
+    const read = for (lowered.functions) |function| {
+        if (function.id == graph.findFunc("read")) break function;
+    } else return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 3), read.params.len);
+    try std.testing.expect(!read.params[1].ty.eql(physical_pointer));
+    try std.testing.expect(read.params[1].record != null);
+}
+
+test "dnir_lower: fresh record aliases refuse invalidated sharing" {
+    const prefix = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n";
+    const sources = [_][]const u8{
+        prefix ++ "    item = {code = 7}\n    read(copy)\n",
+        prefix ++ "    copy = {code = 7}\n    read(copy)\n",
+        prefix ++ "    item.code = 7\n    read(copy)\n",
+        prefix ++ "    copy.code = 7\n    read(copy)\n",
+        prefix ++ "    if true\n        item = {code = 7}\n    read(copy)\n",
+        prefix ++ "    other = {nested = copy}\n    read(copy)\n",
+        prefix ++ "    stdout:write(\"effect\")\n    read(copy)\n",
+        prefix ++ "    item: record = {code = 7}\n    read(copy)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    item: record = {code = 7}\n    copy = item\n    read(copy)\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = @import("lexer.zig").Lexer.init(source, "record-alias-invalidation.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-alias-invalidation.id");
+        var diagnostic: Diagnostic = .{};
+        const result = lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        std.testing.expectError(error.GraphFactsInvalid, result) catch |err| {
+            std.debug.print("{s}\n", .{source});
+            return err;
+        };
+    }
+}
+
+test "dnir_lower: fresh record aliases require exact initialization edges" {
+    const sources = [_][]const u8{
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    read(copy)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    next = copy\n    read(next)\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = @import("lexer.zig").Lexer.init(source, "record-alias-proof.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-alias-proof.id");
+        var diagnostic: Diagnostic = .{};
+        const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        defer dnir.deinitModule(alloc, lowered);
+        const relation = graph.findByNameOfKind("main", .func).?;
+        const item = graph.resolveBindingInScope(relation, "item").?;
+        const copy = graph.resolveBindingInScope(relation, "copy").?;
+        const next = graph.resolveBindingInScope(relation, "next");
+        const original = graph.bindingInitialization(item).known;
+        const alias = graph.bindingInitialization(copy).known;
+        var position: ?usize = null;
+        for (graph.edges.items, 0..) |edge, index| {
+            if (edge.from == alias.value and edge.kind == .binding) position = index;
+        }
+        const index = position orelse return error.TestExpectedEqual;
+        const saved = graph.edges.items[index];
+        const row = graph.binding_initialization_rows.get(copy).?;
+        const expression = graph.valueExpression(alias.value).?;
+        for (0..7) |damage| {
+            switch (damage) {
+                0 => graph.edges.items[index].kind = .provenance,
+                1 => graph.edges.items[index].to = copy,
+                2 => graph.binding_initializations.items[row].place = std.math.maxInt(u32),
+                3 => graph.binding_initializations.items[row].value = original.value,
+                4 => graph.nodes.items[alias.value].scope = item,
+                5 => if (next) |target| {
+                    graph.edges.items[index].to = target;
+                } else continue,
+                6 => try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(expression))),
+                else => unreachable,
+            }
+            diagnostic.reset();
+            try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+            graph.edges.items[index] = saved;
+            graph.binding_initializations.items[row] = alias;
+            graph.nodes.items[alias.value].scope = copy;
+            if (damage == 6) try graph.value_by_ast.put(alloc, @intFromPtr(expression), alias.value);
+        }
+    }
+}
+
+test "dnir_lower: fresh record aliases share exact physical field slots" {
+    const source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    copy = item\n    next = copy\n    read(2, next, 5)\nos.exit(probe(7))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try lowerTestSourceWithGraph(alloc, source, "record-alias-residency.id", &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    const target = graph.findByNameOfKind("read", .func).?;
+    const caller = graph.findByNameOfKind("probe", .func).?;
+    var calls: usize = 0;
+    var markers: usize = 0;
+    for (lowered.functions) |function| {
+        if (function.id != caller) continue;
+        for (function.blocks) |body| {
+            var field: ?u32 = null;
+            for (body.instrs, 0..) |instruction, index| {
+                if (instruction.op == .init_record) markers += 1;
+                if (instruction.op == .store_local and instruction.lhs == .local and instruction.lhs.local == 0) {
+                    try std.testing.expect(field == null);
+                    field = instruction.result.?;
+                }
+                if (instruction.op != .call_direct or instruction.target != target) continue;
+                const start = instruction.realization_start.?;
+                try std.testing.expectEqual(@as(usize, 3), index - start);
+                const staged = body.instrs[start + 1];
+                try std.testing.expectEqual(dnir.Op.mov_arg, staged.op);
+                try std.testing.expectEqualDeep(dnir.Value{ .local = field.? }, staged.lhs);
+                calls += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), calls);
+    try std.testing.expectEqual(@as(usize, 1), markers);
 }

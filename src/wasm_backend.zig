@@ -1107,9 +1107,6 @@ fn emitFunctionBody(e: *Emitter, f: dnir.Function) Error![]u8 {
     e.cur_ret = f.ret;
     const sig = e.func_sig.get(f.name) orelse return e.refuse("missing-signature");
     e.cur_results = sig.results;
-    for (f.params) |p| {
-        if (p.record != null) return e.refuse("record-param");
-    }
 
     const instrs = try flatten(e, f);
     defer e.alloc.free(instrs);
@@ -1547,9 +1544,7 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
                     // answers it with `allocReg()` — an UNDEFINED register whose
                     // contents cannot be read, because the path is dead. Zero is
                     // the same nothing, said deterministically.
-                    if (want == .f64) try b.f64c(0)
-                    else if (want == .f32) try b.f32c(0)
-                    else try b.i64c(0);
+                    if (want == .f64) try b.f64c(0) else if (want == .f32) try b.f32c(0) else try b.i64c(0);
                 } else if (want == .i64) {
                     try pushValue(e, b, ins.lhs, .i64);
                     try emitNarrowFit(b, e.cur_ret);
@@ -4311,6 +4306,58 @@ test "the argument vector reaches the wasm guest, and an absent index stays unkn
     try std.testing.expectEqual(@as(u8, 0), try runTestSourceWasmArgs(source, &.{}));
 }
 
+test "wasm backend consumes declared record parameter slots" {
+    const rows = [_]struct {
+        source: []const u8,
+        want: u8,
+    }{
+        .{
+            .source =
+            \\record: {code: i64}
+            \\read = (value: record): i64 value.code
+            \\main: i64 = ()
+            \\    item: record = {code = 7}
+            \\    read(item)
+            ,
+            .want = 7,
+        },
+        .{
+            .source =
+            \\record: {code: i64}
+            \\read = (value: record): i64 value.code
+            \\main: i64 = ()
+            \\    item: record = {code = 13}
+            \\    read(item)
+            ,
+            .want = 13,
+        },
+        .{
+            .source =
+            \\record: {other: i64, code: i64}
+            \\read = (prefix: i64, a: record, b: record, suffix: i64): i64 prefix + a.code * 3 + b.code - suffix
+            \\main: i64 = ()
+            \\    a: record = {code = 7, other = 91}
+            \\    b: record = {other = 83, code = 13}
+            \\    read(5, a, b, 5)
+            ,
+            .want = 34,
+        },
+        .{
+            .source =
+            \\record: {code: i64, name: str, value: i64}
+            \\read = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code - value.value + suffix
+            \\main: i64 = ()
+            \\    item: record = {code = 11, name = "x", value = 3}
+            \\    read(4, item, 0)
+            ,
+            .want = 12,
+        },
+    };
+    for (rows) |row| {
+        try std.testing.expectEqual(row.want, try runTestSourceWasm(row.source));
+    }
+}
+
 test "wasm backend preserves values from multi-statement conditional arms" {
     const rows = [_]struct {
         source: []const u8,
@@ -4944,4 +4991,60 @@ test "wasm backend validates exact flat projection lineage without dense storage
     );
     try std.testing.expectEqualStrings("aggregate-access-facts", diagnostic.note().?);
     graph.application_presence.set(application);
+}
+
+test "wasm backend lowers graph-connected record parameter writes" {
+    const cases = [_]struct { source: []const u8, want: u8 }{
+        .{ .source = "record: {code: i64}\nalter = (left: record, right: record): i64\n    left.code = 13\n    right.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item, item) + item.code\nos.exit(probe(7))\n", .want = 26 },
+        .{ .source = "record: {code: i64}\nalter = (left: record, right: record): i64\n    left.code = 13\n    right.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    peer: record = {code = 17}\n    alter(item, peer) + item.code\nos.exit(probe(7))\n", .want = 30 },
+        .{
+            .source = "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
+            .want = 26,
+        },
+        .{
+            .source = "record: {code: i64}\nfull: {extra: i64, code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: full = {extra = 91, code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
+            .want = 26,
+        },
+        .{
+            .source = "record: {code: i64}\nfull: {extra: i64, code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\ntotal = (value: full): i64 value.extra + value.code\nprobe = (code: i64): i64\n    item: full = {extra = 91, code = code}\n    alter(item)\n    total(item)\nos.exit(probe(7))\n",
+            .want = 104,
+        },
+    };
+    for (cases) |case| {
+        try std.testing.expectEqual(case.want, try runTestSourceWasm(case.source));
+    }
+}
+
+test "wasm backend projects demanded record fields and preserves fresh writes" {
+    const cases = [_]struct { source: []const u8, want: u8 }{
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n", .want = 28 },
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(13))\n", .want = 46 },
+        .{ .source = "record: {code: i64}\nfull: {extra: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item: full = {code = code, extra = 19}\n    read(2, item, 5) + item.extra\nos.exit(probe(13))\n", .want = 65 },
+        .{ .source = "record: {code: i64}\nalter = (value: record): i64\n    value = {code = 13}\n    value.code = 17\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n", .want = 24 },
+    };
+    for (cases) |case| {
+        const actual = runTestSourceWasm(case.source) catch |err| {
+            std.debug.print("{s}\n", .{case.source});
+            return err;
+        };
+        std.testing.expectEqual(case.want, actual) catch |err| {
+            std.debug.print("{s}\n", .{case.source});
+            return err;
+        };
+    }
+}
+
+test "wasm backend fresh record aliases share resident fields" {
+    const cases = [_]struct { source: []const u8, want: u8 }{
+        .{ .source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    read(copy)\n", .want = 13 },
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    copy = item\n    next = copy\n    read(2, next, 5)\nos.exit(probe(7))\n", .want = 28 },
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    copy = item\n    next = copy\n    read(2, next, 5)\nos.exit(probe(13))\n", .want = 46 },
+    };
+    for (cases) |case| {
+        const actual = runTestSourceWasm(case.source) catch |err| {
+            std.debug.print("{s}\n", .{case.source});
+            return err;
+        };
+        try std.testing.expectEqual(case.want, actual);
+    }
 }
