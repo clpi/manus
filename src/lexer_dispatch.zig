@@ -69,6 +69,7 @@ pub const DispatchError = error{
     InvalidTokenLocation,
     OutOfMemory,
     SourceTooLarge,
+    UnmappedRejection,
 } || lexer.LexError;
 
 /// Line of a source rejection. An invalid diagnostic record is an ABI failure,
@@ -87,6 +88,51 @@ fn rejectionNameToError(name: [*:0]const u8) ?lexer.LexError {
     if (std.mem.eql(u8, name_slice, "UnexpectedChar")) return error.UnexpectedChar;
     if (std.mem.eql(u8, name_slice, "InsufficientIndent")) return error.InsufficientIndent;
     return null;
+}
+
+/// The producer's published refusal census, as the host consumes it. Production
+/// binds the real externs and the controls bind planted ones through this same
+/// shape, so the walk they exercise is the walk the compile path binds.
+const RejectionCensus = struct {
+    count: i64,
+    code: @TypeOf(&rejectioncode),
+    name: @TypeOf(&rejectionname),
+};
+
+/// A census with more entries than the host has refusal identities cannot map
+/// onto distinct ones, so `lexer.LexError` is the bound — not a chosen number.
+const rejection_capacity = @typeInfo(lexer.LexError).error_set.error_names.?.len;
+
+/// Census walks completed. `bindRecordSchema` is the only production caller, so
+/// this separates a bind that walked the census from one that skipped it.
+var rejection_walks: usize = 0;
+
+/// Prove the host can name every refusal the producer publishes, before
+/// anything tokenizes through it. Returns the number of entries walked, which
+/// is how a caller separates a total census from a prefix of one.
+fn bindRejectionCensus(census: RejectionCensus) DispatchError!usize {
+    // An empty census is the absence of the fact this check consumes, not
+    // evidence that the mapping is total.
+    if (census.count <= 0) return DispatchError.InvalidRejectionCode;
+    const count = std.math.cast(usize, census.count) orelse
+        return DispatchError.InvalidRejectionCode;
+    if (count > rejection_capacity) return DispatchError.InvalidRejectionCode;
+    var seen: [rejection_capacity]i64 = undefined;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const ordinal = std.math.cast(i64, i + 1) orelse
+            return DispatchError.InvalidRejectionCode;
+        const code = census.code(ordinal);
+        if (code >= 0) return DispatchError.InvalidRejectionCode;
+        for (seen[0..i]) |prior| {
+            if (prior == code) return DispatchError.InvalidRejectionCode;
+        }
+        seen[i] = code;
+        if (rejectionNameToError(census.name(code)) == null)
+            return DispatchError.UnmappedRejection;
+    }
+    rejection_walks += 1;
+    return count;
 }
 
 fn slot(pos: i64, slots: usize) DispatchError!usize {
@@ -121,6 +167,11 @@ fn bindRecordSchema() DispatchError!void {
     const len = try slot(fieldlen(), slots);
     const flt = try slot(fieldfloat(), slots);
     const int_class = try slot(_fieldintclass(), slots);
+    _ = try bindRejectionCensus(.{
+        .count = rejectioncount(),
+        .code = &rejectioncode,
+        .name = &rejectionname,
+    });
     at_kind = kind;
     at_line = line;
     at_col = col;
@@ -484,6 +535,114 @@ test "lexer_dispatch: record fields are producer positions" {
     try std.testing.expectEqualStrings("InsufficientIndent", std.mem.span(rejectionname(last)));
     try std.testing.expectEqual(lexer.LexError.InsufficientIndent, rejectionNameToError(rejectionname(last)).?);
     try std.testing.expect(rejectionNameToError(rejectionname(-199)) == null);
+}
+
+// Each planted census below differs from the producer's real one in exactly one
+// respect and must fail closed with its own identity.
+
+/// Entry two is not a refusal code at all.
+fn positiveRejectionCode(i: i64) callconv(.c) i64 {
+    if (i == 2) return 0;
+    return rejectioncode(i);
+}
+
+/// Every entry is the same code, so proving "all five map" would prove one
+/// maps five times.
+fn duplicateRejectionCode(i: i64) callconv(.c) i64 {
+    _ = i;
+    return rejectioncode(1);
+}
+
+/// The producer renamed its last refusal; only a walk that reaches the end of
+/// the census sees it.
+fn renamedRejectionName(code: i64) callconv(.c) [*:0]const u8 {
+    if (code == rejectioncode(rejectioncount())) return "IndentTooShallow";
+    return rejectionname(code);
+}
+
+/// The producer renamed its first refusal.
+fn firstRenamedRejectionName(code: i64) callconv(.c) [*:0]const u8 {
+    if (code == rejectioncode(1)) return "StringNeverClosed";
+    return rejectionname(code);
+}
+
+test "lexer_dispatch: the producer's refusal census governs the bind" {
+    const real: RejectionCensus = .{
+        .count = rejectioncount(),
+        .code = &rejectioncode,
+        .name = &rejectionname,
+    };
+
+    // The bound census is total, and the walk covers all of it rather than a
+    // prefix: without this the refusals below admit a walk that visited nothing.
+    try std.testing.expect(real.count > 0);
+    const walked = try bindRejectionCensus(real);
+    try std.testing.expectEqual(@as(usize, @intCast(real.count)), walked);
+
+    // Missing: the producer publishes one more refusal than the host names.
+    try std.testing.expectError(DispatchError.UnmappedRejection, bindRejectionCensus(.{
+        .count = real.count + 1,
+        .code = real.code,
+        .name = real.name,
+    }));
+
+    // Renamed at both ends, so neither a walk that stops after the first entry
+    // nor one that checks only the last can pass.
+    try std.testing.expectError(DispatchError.UnmappedRejection, bindRejectionCensus(.{
+        .count = real.count,
+        .code = real.code,
+        .name = &renamedRejectionName,
+    }));
+    try std.testing.expectError(DispatchError.UnmappedRejection, bindRejectionCensus(.{
+        .count = real.count,
+        .code = real.code,
+        .name = &firstRenamedRejectionName,
+    }));
+
+    // Malformed evidence, not a refusal the host failed to name: both report
+    // InvalidRejectionCode, so a walk answering UnmappedRejection always moves.
+    try std.testing.expectError(DispatchError.InvalidRejectionCode, bindRejectionCensus(.{
+        .count = real.count,
+        .code = &positiveRejectionCode,
+        .name = real.name,
+    }));
+    try std.testing.expectError(DispatchError.InvalidRejectionCode, bindRejectionCensus(.{
+        .count = real.count,
+        .code = &duplicateRejectionCode,
+        .name = real.name,
+    }));
+
+    // A census that publishes nothing would otherwise pass against a producer
+    // that had stopped answering.
+    try std.testing.expectError(DispatchError.InvalidRejectionCode, bindRejectionCensus(.{
+        .count = 0,
+        .code = real.code,
+        .name = real.name,
+    }));
+
+    // A census larger than the host's refusal vocabulary cannot map onto
+    // distinct identities, whatever the names say.
+    try std.testing.expectError(DispatchError.InvalidRejectionCode, bindRejectionCensus(.{
+        .count = @as(i64, @intCast(rejection_capacity)) + 1,
+        .code = real.code,
+        .name = real.name,
+    }));
+}
+
+test "lexer_dispatch: production binds through the governed census" {
+    // bindRecordSchema is the one place the host binds producer schema and is on
+    // the path of every production tokenize. Binding must ADVANCE the walk
+    // count; asserting only that both succeed stays green with the census call
+    // deleted. An earlier test may have bound the schema already, so unbind.
+    record_bound = false;
+    const before = rejection_walks;
+    try bindRecordSchema();
+    try std.testing.expect(record_bound);
+    try std.testing.expectEqual(before + 1, rejection_walks);
+
+    // Bound schema binds once, so a second call walks nothing further.
+    try bindRecordSchema();
+    try std.testing.expectEqual(before + 1, rejection_walks);
 }
 
 test "lexer_dispatch: malformed generated records fail closed" {
