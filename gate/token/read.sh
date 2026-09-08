@@ -27,7 +27,7 @@ TYPES="$ROOT/src/types.zig"
 SEMA="$ROOT/src/sema.zig"
 CODEGEN="$ROOT/src/codegen.zig"
 AST="$ROOT/src/ast.zig"
-DNIR="$ROOT/src/dnir_lower.zig"
+DNIR="$ROOT/src/graph/lower.zig"
 PARSER=${GAP145_PARSER:-"$ROOT/src/parser.zig"}
 DISPATCH="$ROOT/src/lexer_dispatch.zig"
 LEXER_BRIDGE="$ROOT/src/lexer_bridge.zig"
@@ -115,14 +115,14 @@ has "$SEMA" 'types.quotedLiteralType(lit.quote)' \
 has "$CODEGEN" 'types.quotedLiteralType(lit.quote)' \
     'codegen.zig must recover quoted literal types via quotedLiteralType'
 has "$DNIR" 'types.quotedLiteralType(lit.quote)' \
-    'dnir_lower.zig must type quoted globals via quotedLiteralType'
+    'graph/lower.zig must type quoted globals via quotedLiteralType'
 
 forbid "$SEMA" '.quoted => .str,' \
     'sema.zig reintroduced bare `.quoted => .str` collapse'
 forbid "$CODEGEN" '.quoted => .str,' \
     'codegen.zig reintroduced bare `.quoted => .str` collapse'
 forbid "$DNIR" '.quoted => .str,' \
-    'dnir_lower.zig reintroduced bare `.quoted => .str` collapse'
+    'graph/lower.zig reintroduced bare `.quoted => .str` collapse'
 
 # ── 2. one producer of lexical identity ─────────────────────────────────────
 #
@@ -2677,13 +2677,67 @@ QUOTE_BLIND_CEILING=13
 # follows comptime.zig:451. Lower the ceiling as the remaining face-neutral
 # arms (span, truthy, emit, inert, carrier, test, name) are adjudicated away.
 
+corpus() (
+    root=$1
+    out=$2
+    if ! (cd "$root" && sh "$ROOT/gate/subject.sh" 'src/*.zig') >"$out.list"; then
+        printf '%s\n' 'gap-145 consumer gate: cannot enumerate quoted source' >&2
+        exit 2
+    fi
+    : >"$out" || exit 2
+    while IFS= read -r path; do
+        case "$path" in
+            src/*.zig) ;;
+            *) printf '%s\n' 'gap-145 consumer gate: invalid quoted source path' >&2; exit 2 ;;
+        esac
+        if [ ! -f "$root/$path" ] || [ ! -r "$root/$path" ] ||
+            ! cat "$root/$path" >>"$out" || ! printf '\n' >>"$out"; then
+            printf 'gap-145 consumer gate: cannot read quoted source %s\n' "$path" >&2
+            exit 2
+        fi
+    done <"$out.list"
+)
+
+quote=$(mktemp -d) || exit 2
+trap 'rm -rf -- "$quote"' 0
+corpus "$ROOT" "$quote/source" || exit 2
+printf '  quoted source subjects: %s\n' "$(wc -l <"$quote/source.list" | tr -d ' ')"
+
+mkdir -p "$quote/tree/src/branch" || exit 2
+printf '%s' '    .quoted => |s| graphTextConst(ctx.graph, expr),' >"$quote/tree/src/probe.zig" || exit 2
+printf '%s' '    .quoted => |s| blk: { _ = s.quote; break :blk .{ .str = s.val }; },' >"$quote/tree/src/branch/probe.zig" || exit 2
+(cd "$quote/tree" && git init -q && git add src) || exit 2
+printf '%s\n' \
+    '    .quoted => |s| blk: { _ = s.quote; break :blk .{ .str = s.val }; },' \
+    '    .quoted => |s| graphTextConst(ctx.graph, expr),' >"$quote/want" || exit 2
+corpus "$quote/tree" "$quote/found" 2>"$quote/error"
+status=$?
+examined=$((examined + 1))
+if [ "$status" -ne 0 ] || ! cmp -s "$quote/want" "$quote/found"; then
+    bad 'quoted source corpus lost a tracked root or nested subject'
+fi
+rm "$quote/tree/src/branch/probe.zig" || exit 2
+corpus "$quote/tree" "$quote/found" 2>"$quote/error"
+status=$?
+examined=$((examined + 1))
+if [ "$status" -ne 2 ] || ! grep -Fxq 'gap-145 consumer gate: cannot read quoted source src/branch/probe.zig' "$quote/error"; then
+    bad 'quoted source corpus accepted a missing tracked subject'
+fi
+(cd "$quote/tree" && git rm -q --cached -r src) || exit 2
+corpus "$quote/tree" "$quote/found" 2>"$quote/error"
+status=$?
+examined=$((examined + 1))
+if [ "$status" -ne 2 ] || ! grep -Fxq 'gap-145 consumer gate: cannot enumerate quoted source' "$quote/error"; then
+    bad 'quoted source corpus accepted an empty subject set'
+fi
+
 armregex='^[[:space:]]*(\.[a-z_, .]*)?\.quoted =>'
-arms=$(grep -hE "$armregex" "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+arms=$(grep -hE "$armregex" "$quote/source" | wc -l | tr -d ' ')
 # `.quoted` CONTAINS `.quote`, so a naive `grep -c '\.quote'` matches every arm
 # and reports 0 blind ones. It did, on the first run of this check. `[^d]` is
 # what separates reading the fact from naming the node. Discards `_ = x.quote`
 # are STRIPPED before this count — see the block comment above.
-observing=$(grep -hE "$armregex" "$ROOT"/src/*.zig \
+observing=$(grep -hE "$armregex" "$quote/source" \
     | grep -vE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' \
     | grep -cE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst')
 blind=$((arms - observing))
@@ -2731,7 +2785,7 @@ fi
 # face-neutral and should not mention the field at all. The only use of the
 # shape ever measured in this tree was census bait. Zero tolerance, positive
 # control below.
-baits=$(grep -hE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+baits=$(grep -hE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' "$quote/source" | wc -l | tr -d ' ')
 examined=$((examined + 1))
 if [ "$baits" -ne 0 ]; then
     bad "$baits .quoted arm(s) DISCARD the quote field ('_ = x.quote;') — a discard observes nothing; read the face or drop the mention"
@@ -2764,7 +2818,7 @@ fi
 #   test        inside a unit test, not a consumer decision
 DIVERGENT_QUOTE_ARMS=0
 
-divergent=$(grep -hE "$armregex" "$ROOT"/src/*.zig \
+divergent=$(grep -hE "$armregex" "$quote/source" \
     | grep -vE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' \
     | grep -vE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst' \
     | grep -vE '=> \|(\*?x\| x\.loc,|s\| s\.val,|x\| x\.val,|lit\| lit\.val,)|=> return true,|=> true,|=> \{\},|=> null,|\.str = s\.val \}, // both faces share this carrier|=> \|lit\| \.\{ \.named = lit\.val \},|=> non_numeric_out\.\* = true,|=> \|v\| \{$|=> \{$|=> \|s\| \.\{ \.string = s\.val \},|=> try self\.emit_c_string_literal\(expr\.quoted\.val\),|=> \|\*x\| if \(d\.kind == \.text\) \{$')
@@ -2881,7 +2935,7 @@ printf '  load-time image folds: 2, each observing the producer quote, 0 face-bl
 # that carried no face; the refusal that replaced it carries no text/byte claim.
 QUOTE_TAGTEST_CEILING=88
 
-tagtests=$(grep -h '== \.quoted\b' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+tagtests=$(grep -h '== \.quoted\b' "$quote/source" | wc -l | tr -d ' ')
 examined=$((examined + 1))
 
 # POSITIVE CONTROL ON THE COUNTER. The counter is the instrument; a ceiling
