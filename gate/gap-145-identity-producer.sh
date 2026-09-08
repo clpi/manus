@@ -39,13 +39,25 @@ CLASSIFIER="src/token_classify_gen.zig"
 
 violations=0
 examined=0
+controlled=0
 
 bad() {
     violations=$((violations + 1))
     printf 'gap-145 identity-producer gate: FAIL %s\n' "$*"
 }
 
+# A control that could not be BUILT proves nothing, so the step it stands in
+# for is unknown rather than clean. Leaving early is therefore a violation and
+# never a shortcut to the verdict.
+cannot() {
+    bad "$*"
+    report
+}
+
 report() {
+    if [ "$violations" -eq 0 ] && [ "$controlled" -ne 1 ]; then
+        bad "a verdict was reached before section 6 ran — an uncontrolled run is not a clean tree"
+    fi
     if [ "$violations" -eq 0 ]; then
         printf 'gap-145 identity-producer gate: PASS (%d check(s))\n' "$examined"
         exit 0
@@ -308,7 +320,7 @@ esac
 # which carries the two it copied.
 
 plant="$scratch/planted/src"
-mkdir -p "$plant/deep" || report
+mkdir -p "$plant/deep" || cannot "the planted control tree could not be built at $plant — section 6 did not run"
 
 # split: the row spans lines, so a line-anchored match never sees both halves.
 cat >"$plant/splitrow.zig" <<'PROBE'
@@ -422,7 +434,7 @@ done
 
 # The empty tree, which is exactly the state section 3's unit and owner
 # predicates reject. Without this they are satisfied by a walk that never ran.
-mkdir -p "$scratch/emptytree/src" || report
+mkdir -p "$scratch/emptytree/src" || cannot "the empty-tree control could not be built — the unit and owner predicates went unexercised"
 walk "$scratch/emptytree" "$scratch/emptyout"
 read erows eseen eowner <"$scratch/emptyout"
 examined=$((examined + 1))
@@ -432,8 +444,8 @@ fi
 
 # A unit the scanner cannot read, and a unit whose braces do not balance, are
 # both unknown rather than clean.
-mkdir -p "$scratch/unreadable/src" || report
-ln -s "$scratch/unreadable/src/absent" "$scratch/unreadable/src/dangling.zig" || report
+mkdir -p "$scratch/unreadable/src" || cannot "the unreadable-unit control could not be built — the unknown-not-clean predicate went unexercised"
+ln -s "$scratch/unreadable/src/absent" "$scratch/unreadable/src/dangling.zig" || cannot "the unreadable-unit control could not plant a unit the scanner cannot read"
 printf 'pub const keywords = .{ .{ .text = "while", .kind = .kw_while }\n' \
     >"$scratch/unreadable/src/unbalanced.zig"
 walk "$scratch/unreadable" "$scratch/unreadout"
@@ -476,5 +488,26 @@ examined=$((examined + 1))
 if census "$scratch/spanless.id" >/dev/null 2>&1; then
     bad "the staleness control is broken: an owner declaring no keyword span still produced a census"
 fi
+
+# ── 7. the verdict path refuses an uncontrolled clean run ───────────────────
+#
+# The shape detectors are controlled by planting. This one cannot be planted:
+# it fires on a run that reached a verdict without section 6, which is a fact
+# about the run rather than about the tree. So drive the real `report` in a
+# subshell — the same implementation the verdict comes from — from each side.
+
+examined=$((examined + 1))
+if (trap - EXIT; violations=0; controlled=0; report) >/dev/null 2>&1; then
+    bad "the verdict control is broken: a clean count reached before section 6 still reported PASS"
+fi
+
+examined=$((examined + 1))
+if (trap - EXIT; violations=0; controlled=1; report) >/dev/null 2>&1; then
+    :
+else
+    bad "the verdict control is broken: a controlled run with no violation cannot report PASS"
+fi
+
+controlled=1
 
 report
