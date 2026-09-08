@@ -2903,7 +2903,6 @@ fn lowerModuleFromGraph(
     defer {
         var it = physical_params.valueIterator();
         while (it.next()) |layout| {
-            if (layout.transferred) continue;
             for (layout.params) |parameter| deinitParam(alloc, parameter);
             alloc.free(layout.params);
         }
@@ -3022,9 +3021,6 @@ fn lowerModuleFromGraph(
             &relation_edges,
             &physical_params,
         );
-        if (function) |entity| if (physical_params.getPtr(entity)) |layout| {
-            layout.transferred = true;
-        };
         functions.append(alloc, f) catch |err| {
             deinitFunction(alloc, f);
             return err;
@@ -3151,6 +3147,8 @@ fn lowerModuleFromGraph(
         .dense_tables = owned_dense_tables,
         .externs = owned_externs,
     };
+    if (require_graph_facts and !graph.gateTransportModule())
+        try verifyRecordParameterCarriers(graph, &result, &physical_params, diagnostic);
     return .{
         .graph = graph,
         .functions = result.functions,
@@ -3282,46 +3280,43 @@ fn checkedRecordParameter(
 }
 
 fn verifyRecordParameterCarriers(
-    alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
     module: *const dnir.Module,
+    physical_params: *const PhysicalParams,
     diagnostic: *Diagnostic,
 ) Error!void {
-    var functions: std.AutoHashMapUnmanaged(semantic_graph.id, usize) = .empty;
-    defer functions.deinit(alloc);
-    for (module.functions, 0..) |function, index| {
-        var has_record = false;
-        for (function.params) |parameter| {
-            if (parameter.record != null) has_record = true;
-        }
-        if (!has_record) continue;
-        const function_id = function.id orelse
-            return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
-        const slot = try functions.getOrPut(alloc, function_id);
-        if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "duplicate-function-id");
-        slot.value_ptr.* = index;
-    }
     for (module.functions) |caller| {
         for (caller.blocks) |body| {
             for (body.instrs) |instruction| {
                 if (instruction.op != .call_direct) continue;
                 const target = instruction.target orelse continue;
-                const function_index = functions.get(target) orelse continue;
+                const layout = physical_params.get(target) orelse continue;
+                var has_record = false;
+                for (layout.params) |parameter| if (parameter.record != null) {
+                    has_record = true;
+                };
+                if (!has_record) continue;
+                const function = for (module.functions) |candidate| {
+                    if (candidate.id == target) break candidate;
+                } else return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
                 const application = instruction.application orelse
                     return invalidGraphFacts(diagnostic, @src(), "missing-application-id");
                 if (graph.applicationTarget(application) != target)
                     return invalidGraphFacts(diagnostic, @src(), "application-target");
-                const parameters = module.functions[function_index].params;
+                if (function.params.len != layout.params.len)
+                    return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
                 bindOccurrence(diagnostic, graph, application);
                 const subject = graph.applicationSubject(application);
                 const arguments = graph.applicationArguments(application) orelse
                     return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
                 const subject_count: usize = if (subject != null) 1 else 0;
-                if (subject_count + arguments.len != parameters.len)
+                if (subject_count + arguments.len != layout.params.len)
                     return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
-                for (parameters, 0..) |parameter, index| {
-                    const record_name = parameter.record orelse continue;
-                    const required = findRecordName(module.records, .{ .named = record_name }) orelse
+                for (layout.params, 0..) |parameter, index| {
+                    const name = parameter.record orelse continue;
+                    const required = findRecordName(module.records, .{ .named = name }) orelse
+                        return invalidGraphFacts(diagnostic, @src(), "record-parameter-carrier");
+                    if (!function.params[index].ty.eql(physical_pointer) or function.params[index].record != null)
                         return invalidGraphFacts(diagnostic, @src(), "record-parameter-carrier");
                     const operand = if (index == 0 and subject != null) subject.? else arguments[index - subject_count];
                     try checkedRecordParameter(graph, module.records, diagnostic, operand, required);
@@ -3338,7 +3333,6 @@ fn applyGraphToModule(
     diagnostic: *Diagnostic,
 ) Error!void {
     if (graph.gateTransportModule()) return;
-    try verifyRecordParameterCarriers(alloc, graph, m, diagnostic);
     try reorderFunctionsByGraphFacts(alloc, graph, m, diagnostic);
 }
 
@@ -3561,8 +3555,6 @@ fn recordKindsMixed(record: dnir.RecordDesc) bool {
 /// `functionEligible` today, so this is correct by construction rather than by
 /// an invariant that has to hold somewhere else.
 ///
-/// Caller owns the returned slice. Null when a record parameter is not one this
-/// pass can explode, which is the same refusal the eligibility check makes.
 fn paramSlotIsFp(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
@@ -3573,10 +3565,8 @@ fn paramSlotIsFp(
     for (fd.func.params) |p| {
         if (isFloatType(p.typ)) {
             try list.append(alloc, true);
-        } else if (isF64Record(recs, p.typ)) |r| {
-            try list.appendNTimes(alloc, true, r.fields.len);
-        } else if (findRecordName(recs, p.typ)) |r| {
-            try list.appendNTimes(alloc, false, r.fields.len);
+        } else if (findRecordName(recs, p.typ) != null) {
+            try list.append(alloc, false);
         } else {
             try list.append(alloc, false);
         }
@@ -3585,20 +3575,16 @@ fn paramSlotIsFp(
 }
 
 fn f64AbiParamSlots(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) ?usize {
+    _ = recs;
     var slots: usize = 0;
     for (fd.func.params) |p| {
         if (isFloatType(p.typ)) {
             slots += 1;
-        } else if (isF64Record(recs, p.typ)) |r| {
-            slots += r.fields.len;
         } else return null;
     }
     return slots;
 }
 
-/// A record crossing a function boundary is exploded into one field per
-/// argument register, and there are eight of them (x0..x7). Eight is therefore
-/// the register file, not a conservative cap.
 pub const max_reg_record_fields = 8;
 
 /// Past `max_reg_record_fields` a record return uses the AAPCS64 indirect-result
@@ -3750,24 +3736,7 @@ fn functionEligibleReason(
                 return "f64-record-return-wider-than-8-registers";
         }
         for (fd.func.params) |p| {
-            // A record PARAMETER is still one field per argument register —
-            // only the RETURN gained an indirect form. Admitting a wide record
-            // here would explode past x7 and read caller garbage.
-            if (recordForTypeExpr(recs, p.typ, graph)) |r| {
-                var all_f64 = r.fields.len > 0;
-                for (r.kinds) |k| {
-                    if (k != .f64) {
-                        all_f64 = false;
-                        break;
-                    }
-                }
-                if (all_f64) {
-                    if (r.fields.len > max_reg_record_fields)
-                        return "f64-record-parameter-wider-than-8-registers";
-                    continue;
-                }
-                continue;
-            }
+            if (recordForTypeExpr(recs, p.typ, graph) != null) continue;
             if (isFloatType(p.typ)) continue;
             if (p.typ == .named) continue;
             if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ) and
@@ -3798,57 +3767,10 @@ fn functionEligibleReason(
     var gp_slots: usize = 0;
     for (fd.func.params) |p| {
         if (isFloatType(p.typ)) return "f64-parameter-mixed-with-gp";
-        if (recordForTypeExpr(recs, p.typ, graph)) |r| {
-            var all_f64 = r.fields.len > 0;
-            for (r.kinds) |k| {
-                if (k != .f64) {
-                    all_f64 = false;
-                    break;
-                }
-            }
-            if (all_f64) return "all-f64-record-parameter-mixed-with-gp";
-        }
-        if (recordForTypeExpr(recs, p.typ, graph)) |r| {
-            // Wide module tables (`lexer`, …) cross calls as one opaque handle,
-            // matching `checkedScalarOperand`'s `.table_type` local path.
-            //
-            // THE THRESHOLD IS THE RECORD CEILING, NOT THE REGISTER COUNT. With
-            // `max_reg_record_fields` here, a DECLARED nine-field record param
-            // counted as one slot, so the `gp_slots > max_reg_record_fields`
-            // refusal three lines down could never fire for it — this `if` and
-            // that comment contradicted each other, and the nine-field param
-            // was accepted into a frame that cannot hold it. Only a module
-            // table, which is wider than any explodable record, is opaque.
-            if (r.fields.len > max_record_fields) {
-                gp_slots += 1;
-            } else {
-                gp_slots += r.fields.len;
-            }
-            // A RECORD FIELD IS A GENERAL-PURPOSE WORD AND ITS BUDGET IS THE
-            // GENERAL-PURPOSE BUDGET. This read `max_reg_record_fields` and
-            // said "its fields are never stacked" — but nothing about a record
-            // field makes it unstackable. It is exploded into one word per
-            // slot, exactly like a scalar operand, and the slot index is the
-            // only thing either end consults: the caller's `mov_arg` already
-            // routes slot >= 8 into the outgoing argument block, and the
-            // callee prologue's `slot_cursor` — which counts record fields,
-            // not parameters — already homes slot >= 8 from the incoming
-            // frame. Both ends were slot-generic before this line was; the
-            // eight was the refusal, not the mechanism.
-            //
-            // MEASURED: `lexer.peek_char(self: lexer)` and
-            // `parser.parse_factor_tok(lx: lexer)` — the two relations between
-            // the direct backend and compiler B — take one fourteen-field
-            // record each and were refused here, taking both modules with
-            // them.
-            //
-            // `max_direct_scalar_args` is the same sixteen a scalar operand
-            // gets (eight registers plus the eight stack slots the backend's
-            // outgoing block can carry) and for the same physical reason, so
-            // the two budgets are now one budget rather than two numbers that
-            // can drift apart.
+        if (recordForTypeExpr(recs, p.typ, graph)) |_| {
+            gp_slots += 1;
             if (gp_slots > max_direct_scalar_args)
-                return "record-parameter-overflows-16-gp-slots";
+                return "more-than-16-gp-arguments";
             continue;
         }
         // A SCALAR IS A SCALAR WHATEVER ITS SPELLING. `i64`, `bool`, `str`,
@@ -4725,7 +4647,6 @@ fn scanReturnPackArities(block: *const ast.Block, arity: *?usize) bool {
 
 const PhysicalParams = std.AutoHashMapUnmanaged(semantic_graph.id, struct {
     params: []const dnir.Param,
-    transferred: bool = false,
 });
 
 fn lowerParams(alloc: std.mem.Allocator, fd: *const ast.FuncDecl, records: []const dnir.RecordDesc) Error![]const dnir.Param {
@@ -4755,7 +4676,7 @@ fn lowerParams(alloc: std.mem.Allocator, fd: *const ast.FuncDecl, records: []con
         };
         params.append(alloc, .{
             .name = param_name,
-            .ty = resolveType(par.typ),
+            .ty = if (rec_name != null) physical_pointer else resolveType(par.typ),
             .record = rec_name,
         }) catch |err| {
             alloc.free(param_name);
@@ -4765,6 +4686,26 @@ fn lowerParams(alloc: std.mem.Allocator, fd: *const ast.FuncDecl, records: []con
     }
 
     return try params.toOwnedSlice(alloc);
+}
+
+fn backendParams(alloc: std.mem.Allocator, physical: []const dnir.Param) Error![]const dnir.Param {
+    const out = try alloc.alloc(dnir.Param, physical.len);
+    var initialized: usize = 0;
+    errdefer {
+        for (out[0..initialized]) |parameter| deinitParam(alloc, parameter);
+        alloc.free(out);
+    }
+    for (physical, 0..) |parameter, index| {
+        const name = try alloc.dupe(u8, parameter.name);
+        errdefer alloc.free(name);
+        const record = if (parameter.ty.eql(physical_pointer) or parameter.record == null)
+            null
+        else
+            try alloc.dupe(u8, parameter.record.?);
+        out[index] = .{ .name = name, .ty = parameter.ty, .record = record };
+        initialized += 1;
+    }
+    return out;
 }
 
 fn lowerFunction(
@@ -4786,11 +4727,16 @@ fn lowerFunction(
     physical_params: *const PhysicalParams,
 ) Error!dnir.Function {
     const borrowed_params = if (id) |entity| if (physical_params.get(entity)) |layout| layout.params else null else null;
-    const owned_params = borrowed_params orelse try lowerParams(alloc, fd, records);
-    errdefer if (borrowed_params == null) {
+    const physical = borrowed_params orelse try lowerParams(alloc, fd, records);
+    defer if (borrowed_params == null) {
+        for (physical) |parameter| deinitParam(alloc, parameter);
+        alloc.free(physical);
+    };
+    const owned_params = try backendParams(alloc, physical);
+    errdefer {
         for (owned_params) |parameter| deinitParam(alloc, parameter);
         alloc.free(owned_params);
-    };
+    }
     var ret_pack = try resultPackTypes(alloc, fd.func.ret_type);
     errdefer if (ret_pack.len > 0) alloc.free(ret_pack);
     if (ret_pack.len == 0 and fd.func.ret_type != .tuple) {
@@ -4834,9 +4780,6 @@ fn lowerFunction(
     };
     defer ctx.deinit();
 
-    // A record parameter arrives as its exploded fields in consecutive argument
-    // registers — the same shape records already have as locals — so it consumes
-    // one slot per field and shifts the slots of every later parameter.
     var param_slot_cursor: u32 = 0;
     // A relation-edge / projection variant (`subject(tail) = (code)`, mangled to
     // `subject__tail`) receives the projection level (`tail`) as an implicit
@@ -4875,29 +4818,14 @@ fn lowerFunction(
         }) |rec| {
             const param_key = try alloc.dupe(u8, par.name);
             try ctx.param_record_types.put(alloc, param_key, rec.name);
-            var all_scalar = rec.fields.len > 0;
-            for (rec.kinds) |k| {
-                if (k == .f64) all_scalar = false;
-            }
-            if (all_scalar) {
-                for (rec.fields, 0..) |fname, fi| {
-                    const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ par.name, fname });
-                    ctx.locals.put(alloc, key, param_slot_cursor) catch |err| {
-                        alloc.free(key);
-                        return err;
-                    };
-                    if (fi < rec.kinds.len) switch (rec.kinds[fi]) {
-                        .str => try ctx.str_slots.put(alloc, param_slot_cursor, {}),
-                        .f64 => try ctx.f64_slots.put(alloc, param_slot_cursor, {}),
-                        .i64 => {},
-                    };
-                    if (fi < rec.widths.len) if (rec.widths[fi]) |width| {
-                        try ctx.narrow_slots.put(alloc, param_slot_cursor, width);
-                    };
-                    param_slot_cursor += 1;
-                }
-                continue;
-            }
+            const owned = try alloc.dupe(u8, par.name);
+            ctx.locals.put(alloc, owned, param_slot_cursor) catch |err| {
+                alloc.free(owned);
+                return err;
+            };
+            try ctx.ptr_slots.put(alloc, param_slot_cursor, {});
+            param_slot_cursor += 1;
+            continue;
         }
         const owned = try alloc.dupe(u8, par.name);
         ctx.locals.put(alloc, owned, param_slot_cursor) catch |err| {
@@ -5704,6 +5632,39 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
     defer ctx.alloc.free(fk);
     const v = try lowerExprCons(ctx, value, .single);
+    if (physicalRecordBase(ctx, obj.name.ident)) |base| {
+        const rec = recordLocalDesc(ctx, obj.name.ident) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-carrier");
+        const projected = physicalRecordField(rec, field_name) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-projection");
+        if (ctx.require_graph_facts) {
+            const origin = ctx.graph.valueByAst(value) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-value");
+            const node = ctx.graph.get(origin) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-value");
+            const descriptor = node.descriptor orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-descriptor");
+            const incoming = types.scalarFieldCell(descriptor) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-carrier");
+            const resident: types.ScalarFieldCell = if (projected.ty == .f64)
+                .f64
+            else if (projected.ty == .str)
+                .str
+            else
+                .i64;
+            if (incoming != resident)
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-carrier");
+        }
+        try ctx.emit(.{
+            .op = .store_index,
+            .ty = projected.ty,
+            .lhs = .{ .local = base },
+            .rhs = .{ .i64 = projected.index },
+            .third = v,
+        });
+        subsumeProducerRefit(ctx);
+        return;
+    }
     if (ctx.locals.get(fk)) |slot| {
         if (ctx.require_graph_facts and !ctx.graph.gateTransportModule() and slot < ctx.param_slots)
             return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-parameter-place-unproved");
@@ -8603,6 +8564,12 @@ fn lowerRecordAlias(ctx: *LowerCtx, name: []const u8, expression: *const ast.Exp
         }
     }
     if (remaining == 0 or current == binding) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+    const source_name = ctx.graph.get(current).?.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+    if (physicalRecordBase(ctx, source_name)) |base| {
+        if (ctx.locals.contains(name)) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        try bindPhysicalRecordName(ctx, name, record, base);
+        return true;
+    }
     const storage = ctx.graph.initializationPlace(current, fact.place) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
     if (storage.shape != .record or storage.region != .function or storage.facts.mutation != .no or storage.facts.escape != .no or storage.facts.determinacy != .exact)
         return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
@@ -8612,7 +8579,6 @@ fn lowerRecordAlias(ctx: *LowerCtx, name: []const u8, expression: *const ast.Exp
     }
     if (storage.init == null or ctx.graph.valueExpression(fact.value) != storage.init)
         return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
-    const source_name = ctx.graph.get(current).?.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
     const marker_slot = ctx.locals.get(source_name) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
     if (ctx.locals.contains(name)) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
     for (record.fields) |field| {
@@ -10536,6 +10502,135 @@ fn recordLocalDesc(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
     return null;
 }
 
+const PhysicalRecordField = struct {
+    index: i64,
+    ty: RT,
+};
+
+fn physicalRecordField(rec: dnir.RecordDesc, field: []const u8) ?PhysicalRecordField {
+    for (rec.fields, 0..) |candidate, index| {
+        if (!std.mem.eql(u8, candidate, field)) continue;
+        const kind = if (index < rec.kinds.len) rec.kinds[index] else .i64;
+        const ty: RT = switch (kind) {
+            .str => .str,
+            .f64 => .f64,
+            .i64 => if (index < rec.widths.len) rec.widths[index] orelse .i64 else .i64,
+        };
+        return .{ .index = @intCast(index + 1), .ty = ty };
+    }
+    return null;
+}
+
+fn bindPhysicalRecordName(ctx: *LowerCtx, name: []const u8, rec: dnir.RecordDesc, base: u32) Error!void {
+    if (ctx.locals.getPtr(name)) |slot| {
+        slot.* = base;
+    } else {
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), base);
+    }
+    if (!ctx.param_record_types.contains(name))
+        try ctx.param_record_types.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec.name);
+    try ctx.ptr_slots.put(ctx.alloc, base, {});
+}
+
+fn recordValueForName(ctx: *const LowerCtx, name: []const u8) ?semantic_graph.id {
+    const relation = ctx.function orelse return null;
+    var binding = ctx.graph.bindingNamedIn(relation, name) orelse return null;
+    const node = ctx.graph.get(binding) orelse return null;
+    if (node.kind == .param) return binding;
+    if (node.kind != .local or node.scope != relation) return null;
+    var initialization = switch (ctx.graph.bindingInitialization(binding)) {
+        .known => |fact| fact,
+        .invalid, .unvisited => return null,
+    };
+    var remaining = ctx.graph.nodes.items.len;
+    while (remaining > 0) : (remaining -= 1) {
+        const storage = ctx.graph.initializationPlace(binding, initialization.place) orelse return null;
+        if (storage.shape != .record or storage.region != .function) return null;
+        switch (ctx.graph.valueOrigin(initialization.value)) {
+            .none => {
+                if (ctx.graph.valueExpression(initialization.value) != storage.init) return null;
+                return initialization.value;
+            },
+            .unknown => return null,
+            .one => |source| {
+                const origin = ctx.graph.get(source) orelse return null;
+                if (origin.kind != .local or origin.scope != relation or source == binding) return null;
+                const next = switch (ctx.graph.bindingInitialization(source)) {
+                    .known => |fact| fact,
+                    .invalid, .unvisited => return null,
+                };
+                if (next.place != initialization.place) return null;
+                binding = source;
+                initialization = next;
+            },
+        }
+    }
+    return null;
+}
+
+fn physicalRecordBase(ctx: *const LowerCtx, name: []const u8) ?u32 {
+    if (ctx.locals.get(name)) |slot| if (ctx.ptr_slots.contains(slot)) return slot;
+    const aggregate = recordValueForName(ctx, name) orelse return null;
+    return ctx.aggregate_bases.get(aggregate);
+}
+
+fn loadPhysicalRecordField(ctx: *LowerCtx, name: []const u8, field: []const u8) Error!?dnir.Value {
+    const base = physicalRecordBase(ctx, name) orelse return null;
+    const rec = recordLocalDesc(ctx, name) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-carrier");
+    const projected = physicalRecordField(rec, field) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-projection");
+    const result = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .load_index,
+        .ty = projected.ty,
+        .result = result,
+        .lhs = .{ .local = base },
+        .rhs = .{ .i64 = projected.index },
+    });
+    if (projected.ty == .f64) try ctx.f64_slots.put(ctx.alloc, result, {});
+    if (projected.ty == .str) try ctx.str_slots.put(ctx.alloc, result, {});
+    return .{ .temp = result };
+}
+
+fn materializeProvenRecordBase(
+    ctx: *LowerCtx,
+    operand: *const CheckedScalarOperand,
+    rec: dnir.RecordDesc,
+) Error!u32 {
+    const name = try checkedOperandName(ctx, operand);
+    if (physicalRecordBase(ctx, name)) |base| return base;
+    const aggregate = recordValueForName(ctx, name) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
+    if (ctx.aggregate_bases.get(aggregate)) |base| {
+        try bindPhysicalRecordName(ctx, name, rec, base);
+        return base;
+    }
+    const base = ctx.freshTemp();
+    try ctx.emit(.{ .op = .alloc_slots, .result = base, .lhs = .{ .i64 = @intCast(rec.fields.len) } });
+    for (rec.fields, rec.kinds, 0..) |field, kind, index| {
+        const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, field });
+        defer ctx.alloc.free(key);
+        const slot = ctx.locals.get(key) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
+        const ty: RT = switch (kind) {
+            .str => .str,
+            .f64 => .f64,
+            .i64 => if (index < rec.widths.len) rec.widths[index] orelse .i64 else .i64,
+        };
+        try ctx.emit(.{
+            .op = .store_index,
+            .ty = ty,
+            .lhs = .{ .temp = base },
+            .rhs = .{ .i64 = @intCast(index + 1) },
+            .third = .{ .local = slot },
+        });
+    }
+    try ctx.aggregate_bases.put(ctx.alloc, aggregate, base);
+    try bindPhysicalRecordName(ctx, name, rec, base);
+    return base;
+}
+
 fn materializeRecordBase(ctx: *LowerCtx, name: []const u8) Error!u32 {
     if (ctx.locals.get(name)) |s| {
         if (ctx.ptr_slots.contains(s)) return s;
@@ -10615,6 +10710,10 @@ fn isRecordLocalName(ctx: *LowerCtx, e: *const ast.Expr) bool {
     const rec_name = ctx.ret_record orelse return false;
     const rec = findRecordName(ctx.records, .{ .named = rec_name }) orelse return false;
     if (rec.fields.len == 0) return false;
+    if (physicalRecordBase(ctx, e.name.ident) != null) {
+        const actual = recordLocalDesc(ctx, e.name.ident) orelse return false;
+        return std.mem.eql(u8, actual.name, rec.name);
+    }
     var buf: [256]u8 = undefined;
     const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ e.name.ident, rec.fields[0] }) catch return false;
     return ctx.locals.get(key) != null;
@@ -10636,7 +10735,21 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
         const base = table.name.ident;
         const nvals = try ctx.alloc.alloc(dnir.Value, count);
         errdefer ctx.alloc.free(nvals);
-        for (rec.fields, 0..) |fname, i| {
+        if (physicalRecordBase(ctx, base)) |record_base| {
+            for (rec.fields, 0..) |fname, i| {
+                const projected = physicalRecordField(rec, fname) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-projection");
+                const slot = ctx.freshTemp();
+                try ctx.emit(.{
+                    .op = .load_index,
+                    .ty = projected.ty,
+                    .result = slot,
+                    .lhs = .{ .local = record_base },
+                    .rhs = .{ .i64 = projected.index },
+                });
+                nvals[i] = .{ .temp = slot };
+            }
+        } else for (rec.fields, 0..) |fname, i| {
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base, fname });
             defer ctx.alloc.free(key);
             const slot = ctx.locals.get(key) orelse return bailNamed(ctx.diagnostic, @src(), "local-slot-missing", fname);
@@ -12079,6 +12192,7 @@ fn evaluateCheckedScalarOperands(
     var fp_count: usize = 0;
     var count: usize = 0;
     for (operands, 0..) |*operand, operand_index| {
+        const required_parameter: ?dnir.Param = if (parameters) |params| params[operand_index] else null;
         const required = blk: {
             const params = parameters orelse break :blk null;
             const name = params[operand_index].record orelse break :blk null;
@@ -12100,6 +12214,25 @@ fn evaluateCheckedScalarOperands(
                 return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier-mismatch");
             break :blk record;
         };
+        if (required_parameter) |parameter| {
+            if (parameter.record != null and parameter.ty.eql(physical_pointer)) {
+                if (count >= storage.len)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                const rec = required orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier");
+                if (operand.expression.* != .name)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-place-unproved");
+                const base = try materializeProvenRecordBase(ctx, operand, rec);
+                storage[count] = .{
+                    .operand = operand,
+                    .projection = "",
+                    .descriptor = physical_pointer,
+                    .value = .{ .local = base },
+                };
+                count += 1;
+                continue;
+            }
+        }
         // ONE SEMANTIC VALUE, A CONSUMER-DIRECTED REALIZATION. A record operand
         // is not materialized into an aggregate and it is not given an address:
         // this consumer wants scalar fields in registers, so the fields are what
@@ -15387,6 +15520,7 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         // covering another. Measured with the scan repaired and this order
         // unchanged: `M = { x = 1 }` at module scope, `M: cell = { x = 5 }` and
         // `M.x = 99` in a relation, and the relation's own `M.x` answered 1.
+        if (try loadPhysicalRecordField(ctx, fld.obj.name.ident, fld.field)) |value| return value;
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
         // Module-level descriptor constant: `Kind.ident` folds to an immediate.
         if (ctx.module_consts.ints.get(key)) |mv| return .{ .i64 = mv };
@@ -20834,7 +20968,7 @@ test "dnir_lower: projected record arguments retain exact member proof" {
     }
 }
 
-test "dnir_lower: record parameter writes require shared residency" {
+test "dnir_lower: record parameter writes use shared residency" {
     const sources = [_][]const u8{
         "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
         "record: {code: i64}\nfull: {extra: i64, code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: full = {extra = 91, code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
@@ -20856,9 +20990,23 @@ test "dnir_lower: record parameter writes require shared residency" {
         try std.testing.expectEqual(@as(u32, 0), checked.errors);
         @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
         _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-parameter-mutation.id");
+        const probe_id = graph.findFunc("probe").?;
+        const item_id = graph.bindingNamedIn(probe_id, "item").?;
+        const initialization = switch (graph.bindingInitialization(item_id)) {
+            .known => |fact| fact,
+            .invalid => return error.TestRecordInitializationInvalid,
+            .unvisited => return error.TestRecordInitializationUnvisited,
+        };
+        try std.testing.expect(graph.valueExpression(initialization.value) == graph.initializationPlace(item_id, initialization.place).?.init);
         var diagnostic: Diagnostic = .{};
-        try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
-        try std.testing.expectEqualStrings("record-field-parameter-place-unproved", diagnostic.note().?);
+        const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        defer dnir.deinitModule(alloc, lowered);
+        const alter = for (lowered.functions) |function| {
+            if (function.id == graph.findFunc("alter")) break function;
+        } else return error.TestExpectedEqual;
+        try std.testing.expectEqual(@as(usize, 1), alter.params.len);
+        try std.testing.expect(alter.params[0].ty.eql(physical_pointer));
+        try std.testing.expect(alter.params[0].record == null);
     }
 }
 

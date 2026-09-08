@@ -2152,7 +2152,9 @@ pub const SemanticGraph = struct {
         }
         const storage = self.initializationPlace(binding, fact.place) orelse return .invalid;
         if (binding_node.scope != self.module_root and
-            (value_node.descriptor == null or value_node.descriptor.? != .table_type or storage.shape != .record or storage.region != .function)) return .invalid;
+            (value_node.descriptor == null or
+                (value_node.descriptor.? != .table_type and value_node.descriptor.? != .@"struct") or
+                storage.shape != .record or storage.region != .function)) return .invalid;
         return .{ .known = fact };
     }
 
@@ -2177,7 +2179,9 @@ pub const SemanticGraph = struct {
         }
         const storage = self.initializationPlace(binding, site) orelse return error.InvalidBindingInitialization;
         if (binding_node.scope != self.module_root and
-            (value_node.descriptor == null or value_node.descriptor.? != .table_type or storage.shape != .record or storage.region != .function)) return error.InvalidBindingInitialization;
+            (value_node.descriptor == null or
+                (value_node.descriptor.? != .table_type and value_node.descriptor.? != .@"struct") or
+                storage.shape != .record or storage.region != .function)) return error.InvalidBindingInitialization;
         if (self.binding_initialization_candidates.bit_length < self.nodes.items.len) {
             try self.binding_initialization_candidates.resize(self.alloc, self.nodes.items.len, false);
         }
@@ -3745,12 +3749,9 @@ pub const SemanticGraph = struct {
                 rt = types.resolve(te, null, self.alloc) catch return;
             },
             .named => |alias| {
-                const local_id = try self.addChild(func_id, .{
-                    .kind = .local,
-                    .span = .{ .file = file, .start = loc.line, .end = loc.col },
-                    .name = binding_name,
-                    .ast_ref = @ptrCast(@constCast(lname)),
-                });
+                rt = types.resolve(te, null, self.alloc) catch return;
+                try self.noteLocalBinding(file, func_id, binding_name, loc, rt, @ptrCast(@constCast(lname)));
+                const local_id = self.bindingNamedIn(func_id, binding_name) orelse return;
                 if (self.resolveInHome(func_id, alias, .table_shape)) |shape_id| {
                     try self.addEdge(.{ .from = local_id, .to = shape_id, .kind = .descriptor });
                 }
@@ -3781,12 +3782,8 @@ pub const SemanticGraph = struct {
             .start = loc.line,
             .end = loc.col,
         }, rt, sid);
-        const local_id = try self.addChild(func_id, .{
-            .kind = .local,
-            .span = .{ .file = file, .start = loc.line, .end = loc.col },
-            .name = binding_name,
-            .ast_ref = @ptrCast(@constCast(lname)),
-        });
+        try self.noteLocalBinding(file, func_id, binding_name, loc, rt, @ptrCast(@constCast(lname)));
+        const local_id = self.bindingNamedIn(func_id, binding_name) orelse return;
         try self.addEdge(.{ .from = local_id, .to = shape_node_id, .kind = .descriptor });
     }
 
@@ -5931,9 +5928,14 @@ pub const SemanticGraph = struct {
             try self.refuseInitialization(binding);
             return;
         }
-        const descriptor = context.descriptor(initializer) orelse return;
-        if (descriptor != .table_type) return;
-        if (node.descriptor) |declared| if (!declared.eql(descriptor)) return;
+        var descriptor = context.descriptor(initializer) orelse return;
+        if (descriptor != .table_type and descriptor != .@"struct") return;
+        if (node.descriptor) |declared| {
+            if (!declared.eql(descriptor)) {
+                if (initializer.* != .table or descriptor != .table_type or declared != .@"struct") return;
+                descriptor = declared;
+            }
+        }
         const site = switch (initializer.*) {
             .table => table: {
                 const body = self.bodyOf(scope) orelse return;
