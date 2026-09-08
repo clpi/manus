@@ -71,10 +71,24 @@ jobs:
           fi
           test -z "$(git -C "$basework" status --porcelain=v1 --untracked-files=all)"
           test -z "$(git -C "$headwork" status --porcelain=v1 --untracked-files=all)"
+          python3 - "$basework" "$GITHUB_EVENT_PATH" "$CANDIDATE_BASE" "$CANDIDATE_HEAD" <<'PY'
+          import runpy
+          import sys
+          from types import SimpleNamespace
+          verifier = runpy.run_path(sys.argv[1] + "/tools/node/dev/candidate")
+          try:
+              value, _, _, _ = verifier["contract"](SimpleNamespace(event=sys.argv[2], contractfile=None))
+              if (value["base"], value["head"]) != tuple(sys.argv[3:5]):
+                  sys.exit(1)
+          except verifier["Refusal"] as error:
+              print(f"candidate.refused code={error.code} reason={error.message}", file=sys.stderr)
+              sys.exit(error.code)
+          PY
           bundle="$RUNNER_TEMP/idol-protected-base.bundle"
           git -C "$basework" bundle create "$bundle" HEAD
           git -C "$headwork" fetch --no-tags "$bundle" HEAD
           git -C "$headwork" cat-file -e "$CANDIDATE_BASE^{commit}"
+          git -C "$headwork" merge-base --is-ancestor "$CANDIDATE_BASE" "$CANDIDATE_HEAD"
           test "$(git -C "$headwork" rev-parse HEAD)" = "$CANDIDATE_HEAD"
           test -z "$(git -C "$headwork" status --porcelain=v1 --untracked-files=all)"
 
