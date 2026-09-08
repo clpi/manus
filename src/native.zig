@@ -1281,6 +1281,13 @@ const Arm64Compiler = struct {
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
     stack_frame_bytes: u16 = 0,
+    /// Bytes `sp` currently sits below the frame base `stack_frame_bytes` measures from.
+    sp_temp_bytes: u16 = 0,
+    /// True once the prologue has finished laying the frame out and body
+    /// emission owns it. The prologue rebases what its own growth displaces;
+    /// after this there is no rebasing owner, so `frameGrow` over a resident
+    /// would rename that resident's address and refuses instead.
+    frame_sealed: bool = false,
     /// x19–x28 belong to the caller. Saved under the locals/spill frame so
     /// `[sp,#off]` homes stay zero-based. Without this, `strip`'s `i += 1`
     /// left x19–x21 in the caller's registers and `callfirstrel` SIGSEGV'd.
@@ -3037,12 +3044,12 @@ const Arm64Compiler = struct {
         const reg = try self.allocReg();
         // GP spill slots live in the prologue's bottom `sub sp` region; offsets
         // are assigned from sp upward (0, 8, 16, …), not from the frame top.
-        try self.emitLdrSp(reg, off);
+        try self.emitLdrFrame(reg, off);
         return reg;
     }
 
     fn storeGpStackLocal(self: *Arm64Compiler, off: u16, src: u5) Error!void {
-        try self.emitStrSp(src, off);
+        try self.emitStrFrame(src, off);
     }
 
     /// Free every GP temp register whose owner has no read left after `idx`.
@@ -3151,6 +3158,8 @@ const Arm64Compiler = struct {
         self.returned = false;
         self.fp_stack_slots.clearRetainingCapacity();
         self.stack_frame_bytes = 0;
+        self.sp_temp_bytes = 0;
+        self.frame_sealed = false;
         self.callee_save_bytes = 0;
         // `callee_save_plan` is set by the CALLER from the probe and must
         // survive this reset; what it measures must not.
@@ -3356,8 +3365,7 @@ const Arm64Compiler = struct {
                 }
             }
             if (record_frame > 0) {
-                try self.emitSubSp(record_frame);
-                self.stack_frame_bytes += record_frame;
+                try self.frameGrow(record_frame);
             }
         }
 
@@ -3438,8 +3446,7 @@ const Arm64Compiler = struct {
                 // covered, and nothing covered BOTH IN ONE RELATION. Below 33
                 // elements the table is a select chain — registers, not frame —
                 // so the corpus's tables never met the spill area.
-                try self.emitSubSp(slots_frame);
-                self.stack_frame_bytes += slots_frame;
+                try self.frameGrow(slots_frame);
                 // Every region reserved EARLIER is now that much further from
                 // `sp`. The record region is the only one, and it is rebased
                 // here for the same reason the table region is rebased below.
@@ -3527,8 +3534,7 @@ const Arm64Compiler = struct {
                 if (@as(u32, self.stack_frame_bytes) + frame > self.spill_frame_budget) {
                     return error.RegisterExhausted;
                 }
-                try self.emitSubSp(frame);
-                self.stack_frame_bytes += frame;
+                try self.frameGrow(frame);
                 // REBASE the memory-backed table regions.
                 //
                 // `slot_bases` was measured against the `sp` that existed before
@@ -3608,7 +3614,7 @@ const Arm64Compiler = struct {
                             try self.allocReg()
                         else
                             try self.allocHomeReg();
-                        try self.emitLdrSp(home, @intCast(off));
+                        try self.emitLdrFrame(home, @intCast(off));
                         _ = try self.emitNarrowFit(home, home, param_fit);
                         if (self.gpSlotUsesStack(slot)) {
                             const soff = try self.reserveGpStackLocal(slot);
@@ -3668,6 +3674,8 @@ const Arm64Compiler = struct {
                 }
             }
         }
+
+        self.frame_sealed = true;
 
         var code_offsets: std.ArrayList(u32) = .empty;
         defer code_offsets.deinit(self.alloc);
@@ -4606,7 +4614,7 @@ const Arm64Compiler = struct {
                     // save area. `add x8, sp, #off` computed inside that window
                     // would name a slot in the save area instead of the buffer.
                     const indirect = try self.indirectResultBuffer(ins);
-                    if (indirect) |off| try self.emitAddSpImm(8, off);
+                    if (indirect) |off| try self.emitAddFrameImm(8, off);
                     if ((ins.pack_results.len > 0 and ins.op != .call_direct) or
                         ins.pack_results.len > dnir_lower.max_reg_record_fields or
                         (ins.pack_results.len > 0 and
@@ -4617,7 +4625,7 @@ const Arm64Compiler = struct {
                     const preserve_x0 = self.extern_preserve_x0 and ins.op == .call_extern and
                         std.mem.eql(u8, ins.callee, "snprintf");
                     if (preserve_x0) {
-                        try self.emitSubSp(16);
+                        try self.emitSubSpTemp(16);
                         try self.emitStrSp(0, 0);
                     }
                     // A SPILLED REGISTER IS NOT FREE HERE EITHER (GAP-148).
@@ -4680,7 +4688,16 @@ const Arm64Compiler = struct {
                         @intCast(std.mem.alignForward(usize, ins.pack_results.len * 8, 16))
                     else
                         0;
-                    if (pack_bytes > 0) try self.emitSubSp(pack_bytes);
+                    // The park's reservation, read before the save window
+                    // opens so the slot exists whenever the arm below takes it
+                    // (GAP-148, `parkCallResult`). Mutually exclusive with
+                    // `pack_bytes`, which that arm requires to be zero.
+                    const park_bytes: u16 = if (pack_bytes == 0)
+                        self.parkReserve(ins.result != null)
+                    else
+                        0;
+                    if (pack_bytes > 0) try self.emitSubSpTemp(pack_bytes);
+                    if (park_bytes > 0) try self.emitSubSpTemp(park_bytes);
                     const save = try self.emitSaveCallerRegs();
                     const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
@@ -4691,7 +4708,6 @@ const Arm64Compiler = struct {
                         }
                     }
                     var call_result: ?u5 = null;
-                    var call_result_on_stack = false;
                     if (ins.result != null and pack_bytes == 0) {
                         // A SPILLED REGISTER IS NOT FREE HERE EITHER (GAP-148).
                         //
@@ -4746,14 +4762,27 @@ const Arm64Compiler = struct {
                             call_result = dst;
                         } else |_| {
                             // Every allocatable register was live at save time.
-                            // Park the return just above the save block; after
-                            // restore that slot sits at [sp, #0].
-                            try self.emitStrSp(0, save.stack_bytes);
-                            call_result_on_stack = true;
+                            // Park the return in the slot reserved above the
+                            // save block; after restore it sits at [sp, #0].
+                            try self.parkCallResult(save, park_bytes);
                         }
                     }
                     try self.emitRestoreCallerRegs(save);
-                    if (pack_bytes > 0) try self.emitAddSp(pack_bytes);
+                    if (pack_bytes > 0) try self.emitAddSpTemp(pack_bytes);
+                    if (park_bytes > 0) {
+                        // The slot stands at [sp, #0] now the save window has
+                        // closed, and the reservation is the only thing keeping
+                        // the byte this function's, so the read precedes the
+                        // close. A reservation exists only for a demanded
+                        // result and both register arms publish one, so an
+                        // unset `call_result` here is the parked one.
+                        if (call_result == null) {
+                            const dst = try self.allocReg();
+                            try self.emitLdrSp(dst, 0);
+                            call_result = dst;
+                        }
+                        try self.emitAddSpTemp(park_bytes);
+                    }
                     try self.syncGateLocalTempsAfterCall(temps, pinned);
                     if (pack_bytes > 0) {
                         for (ins.pack_results, 0..) |result, i| {
@@ -4777,7 +4806,7 @@ const Arm64Compiler = struct {
                             try self.emitLdrSp(reg, 0);
                             try temps.put(self.alloc, t, reg);
                         }
-                        try self.emitAddSp(16);
+                        try self.emitAddSpTemp(16);
                         self.extern_preserve_x0 = false;
                         self.extern_preserve_x0_temp = null;
                     }
@@ -4794,11 +4823,6 @@ const Arm64Compiler = struct {
                         } else return self.refuse(@src());
                     }
                     if (ins.result) |result| {
-                        if (call_result_on_stack) {
-                            const dst = try self.allocReg();
-                            try self.emitLdrSp(dst, 0);
-                            call_result = dst;
-                        }
                         if (call_result) |dst| {
                             try temps.put(self.alloc, result, dst);
                         }
@@ -5102,7 +5126,7 @@ const Arm64Compiler = struct {
                 if (self.fp_stack_slots.get(key)) |slot| {
                     if (slot.float) {
                         const d = try self.allocFpReg();
-                        try self.emitLdrSpFp(d, slot.off);
+                        try self.emitLdrFrameFp(d, slot.off);
                         if (ins.result) |t| try temps.put(self.alloc, t, d);
                         try self.markFpTemp(ins.result);
                     } else {
@@ -5290,7 +5314,7 @@ const Arm64Compiler = struct {
                 if (stack_arg) {
                     // Reserve a 16-byte slot so sp stays 16-byte aligned at the
                     // call; the vararg goes at [sp,#0], [sp,#8] is padding.
-                    try self.emitSubSp(16);
+                    try self.emitSubSpTemp(16);
                     try self.emitStrSp(2, 0);
                 }
                 try self.ensureExternalSymbol(if (use_puts) "puts" else "printf");
@@ -5310,7 +5334,7 @@ const Arm64Compiler = struct {
                     try self.ensureExternalSymbol("fflush");
                     try self.emitBl("fflush");
                 }
-                if (stack_arg) try self.emitAddSp(16);
+                if (stack_arg) try self.emitAddSpTemp(16);
                 try self.emitRestoreCallerRegs(save);
                 if (skip) |off| try self.patchCondBranch(off, @intCast(self.code.items.len));
                 try self.syncGateLocalTempsAfterCall(temps, pinned);
@@ -5356,7 +5380,7 @@ const Arm64Compiler = struct {
                 }
                 const off = self.slot_bases.get(t) orelse return self.refuse(@src());
                 const dst = try self.allocReg();
-                try self.emitAddSpImm(dst, off);
+                try self.emitAddFrameImm(dst, off);
                 try temps.put(self.alloc, t, dst);
             },
             .load_index, .store_index => |op| switch (ins.ty) {
@@ -6941,8 +6965,7 @@ const Arm64Compiler = struct {
     /// assignment before emission, per that gap's record.
     fn ensureRegLive(self: *Arm64Compiler, reg: u5) Error!void {
         if (self.spilled_regs.get(reg)) |off| {
-            const reload_off = self.stack_frame_bytes - off - 8;
-            try self.emitLdrSp(reg, reload_off);
+            try self.emitLdrFrame(reg, try self.frameSlotOff(off));
             _ = self.spilled_regs.remove(reg);
             try self.free_spill_slots.append(self.alloc, off);
             self.claimReg(reg);
@@ -7100,7 +7123,7 @@ const Arm64Compiler = struct {
             try self.ensureRegLive(reg);
             return reg;
         }
-        const reload_off = self.stack_frame_bytes - off - 8;
+        const reload_off = try self.frameSlotOff(off);
         const fresh = self.allocRegExcluding(null) catch |e| blk: {
             if (e != error.RegisterExhausted or !self.gate_transport) return e;
             // THE VALUE'S OWN REGISTER IS THE DESTINATION THAT COSTS NOTHING.
@@ -7142,7 +7165,7 @@ const Arm64Compiler = struct {
             self.claimReg(reg);
             break :blk reg;
         };
-        try self.emitLdrSp(fresh, reload_off);
+        try self.emitLdrFrame(fresh, reload_off);
         // THE SLOT IS RELEASED BY WHOEVER REMOVES THE ENTRY, AND ONLY THEN.
         //
         // The removal is idempotent; a release is not. An unconditional append
@@ -7294,18 +7317,14 @@ const Arm64Compiler = struct {
             // above the caller-save homes, which now reserves a spill area in
             // the prologue (see `wants_spill`) and takes the branch above.
             if (self.gate_transport) return error.RegisterExhausted;
-            if (self.gp_stack_locals.count() > 0 or
-                self.slot_bases.count() > 0 or
-                self.fp_stack_slots.count() > 0) return error.RegisterExhausted;
+            if (self.frameResidents() > 0) return error.RegisterExhausted;
             if (self.stack_frame_bytes + 16 > self.spill_frame_budget) return error.RegisterExhausted;
             const slot = self.stack_frame_bytes;
-            self.stack_frame_bytes += 16;
-            try self.emitSubSp(16);
+            try self.frameGrow(16);
             break :blk slot;
         };
         try self.ensureRegLive(victim);
-        const store_off = self.stack_frame_bytes - off - 8;
-        try self.emitStrSp(victim, store_off);
+        try self.emitStrFrame(victim, try self.frameSlotOff(off));
         try self.spilled_regs.put(self.alloc, victim, off);
         self.used_regs[victim] = false;
     }
@@ -7750,6 +7769,7 @@ const Arm64Compiler = struct {
     }
 
     fn restoreStackFrame(self: *Arm64Compiler) Error!void {
+        if (self.sp_temp_bytes != 0) return self.refuse(@src());
         if (self.stack_frame_bytes > 0) {
             try self.emitAddSp(self.stack_frame_bytes);
         }
@@ -7819,11 +7839,13 @@ const Arm64Compiler = struct {
     }
 
     fn emitStrSpFp(self: *Arm64Compiler, dreg: u5, offset: u16) Error!void {
-        try self.emitFmt(0xfd0003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, dreg), "str d{d}, [sp, #{d}]", .{ dreg, offset });
+        const imm = try self.spScaledDisp(offset);
+        try self.emitFmt(0xfd0003e0 | (imm << 10) | @as(u32, dreg), "str d{d}, [sp, #{d}]", .{ dreg, offset });
     }
 
     fn emitLdrSpFp(self: *Arm64Compiler, dreg: u5, offset: u16) Error!void {
-        try self.emitFmt(0xfd4003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, dreg), "ldr d{d}, [sp, #{d}]", .{ dreg, offset });
+        const imm = try self.spScaledDisp(offset);
+        try self.emitFmt(0xfd4003e0 | (imm << 10) | @as(u32, dreg), "ldr d{d}, [sp, #{d}]", .{ dreg, offset });
     }
 
     /// A GENERAL REGISTER READ INTO THE FLOAT FILE IS STILL A GENERAL REGISTER
@@ -7886,7 +7908,7 @@ const Arm64Compiler = struct {
     fn loadStackField(self: *Arm64Compiler, key: []const u8) Error!u5 {
         const slot = self.fp_stack_slots.get(key) orelse return self.undefinedKey(@src(), "fp stack slot", key);
         const reg = try self.allocReg();
-        try self.emitLdrSp(reg, slot.off);
+        try self.emitLdrFrame(reg, slot.off);
         return reg;
     }
 
@@ -8168,15 +8190,14 @@ const Arm64Compiler = struct {
         } else {
             const raw_frame: u16 = @intCast(n * 8);
             const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
-            try self.emitSubSp(frame);
-            self.stack_frame_bytes += frame;
+            try self.frameGrow(frame);
         }
 
         var i: usize = 0;
         while (i < n) : (i += 1) {
             const off: u16 = base_off + @as(u16, @intCast(i * 8));
             const abi_reg: u5 = @intCast(i);
-            try self.emitStrSp(abi_reg, off);
+            try self.emitStrFrame(abi_reg, off);
             if (already_reserved) continue;
             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[i] });
             try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = desc.field_kinds[i] == .f64 });
@@ -8186,16 +8207,26 @@ const Arm64Compiler = struct {
     fn assignF64RecordFromFpAbiRegs(self: *Arm64Compiler, base: []const u8, desc: F64RecordDesc) Error!void {
         const n = desc.field_names.len;
         if (n == 0 or n > 8) return self.refuse(@src());
-        const raw_frame: u16 = @intCast(n * 8);
-        const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
-        try self.emitSubSp(frame);
-        self.stack_frame_bytes += frame;
+
+        // Reserved once per record local, not once per execution — the same
+        // reuse the scalar arm above carries. Growing again on the next loop
+        // iteration walks `sp` down by a frame per iteration.
+        const first_key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[0] });
+        defer self.alloc.free(first_key);
+        var base_off: u16 = 0;
+        if (self.fp_stack_slots.get(first_key)) |slot| {
+            base_off = slot.off;
+        } else {
+            const raw_frame: u16 = @intCast(n * 8);
+            const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
+            try self.frameGrow(frame);
+        }
         var i: usize = 0;
         while (i < n) : (i += 1) {
-            const off: u16 = @intCast(i * 8);
+            const off: u16 = base_off + @as(u16, @intCast(i * 8));
             const abi_d: u5 = @intCast(i);
             self.used_fp_regs[abi_d] = true;
-            try self.emitStrSpFp(abi_d, off);
+            try self.emitStrFrameFp(abi_d, off);
             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[i] });
             try self.fp_locals.put(self.alloc, key, abi_d);
             try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = true });
@@ -8920,30 +8951,64 @@ const Arm64Compiler = struct {
         return false;
     }
 
-    /// Pick a GP register that `emitRestoreCallerRegs` will not reload. A return
-    /// value parked in a register that was live at save time is overwritten by
-    /// restore even when the mov ran after `bl`.
-    fn allocRegOutsideSaveSet(self: *Arm64Compiler, save: SaveSet) Error!u5 {
+    fn resultRegFree(self: *const Arm64Compiler, save: ?SaveSet, reg: u5) bool {
+        if (save) |s| {
+            if (saveSetContains(s, reg)) return false;
+        }
+        if (self.spilled_regs.contains(reg)) return false;
+        return !self.used_regs[reg];
+    }
+
+    /// A GP register `emitRestoreCallerRegs` will not reload: a return value
+    /// parked in a register that was live at save time is overwritten by
+    /// restore even when the mov ran after `bl`. x8 and x18 are not candidates
+    /// and are not scanned.
+    ///
+    /// ONE PRODUCER, READ TWICE. `save` is null before the save window opens,
+    /// where the set that window will contain is exactly the `used_regs`
+    /// registers and nothing between the two points claims or releases one, so
+    /// the null answer here is the answer `allocRegOutsideSaveSet` gives after
+    /// it. That is what the frame park's reservation is decided from.
+    fn resultReg(self: *const Arm64Compiler, save: ?SaveSet) ?u5 {
         var reg: u5 = 9;
         while (reg < 29) : (reg += 1) {
             if (reg == platform_reserved_reg) continue;
-            if (saveSetContains(save, reg)) continue;
-            if (self.spilled_regs.contains(reg)) continue;
-            if (!self.used_regs[reg]) {
-                self.claimReg(reg);
-                return reg;
-            }
+            if (self.resultRegFree(save, reg)) return reg;
         }
         reg = 0;
         while (reg < 8) : (reg += 1) {
-            if (saveSetContains(save, reg)) continue;
-            if (self.spilled_regs.contains(reg)) continue;
-            if (!self.used_regs[reg]) {
-                self.claimReg(reg);
-                return reg;
-            }
+            if (self.resultRegFree(save, reg)) return reg;
         }
-        return error.RegisterExhausted;
+        return null;
+    }
+
+    fn allocRegOutsideSaveSet(self: *Arm64Compiler, save: SaveSet) Error!u5 {
+        const reg = self.resultReg(save) orelse return error.RegisterExhausted;
+        self.claimReg(reg);
+        return reg;
+    }
+
+    /// The park's reservation, read before the save window opens: sixteen bytes
+    /// exactly when the answer will have no register to go to, and nothing
+    /// otherwise.
+    fn parkReserve(self: *const Arm64Compiler, wants_result: bool) u16 {
+        if (!wants_result) return 0;
+        return if (self.resultReg(null) == null) 16 else 0;
+    }
+
+    /// Store the call's answer in the slot `parkReserve` claimed for it.
+    ///
+    /// `park_bytes` is that claim. Without it there is no byte of this
+    /// function's to write and the store lands at `[sp, #save.stack_bytes]` —
+    /// the byte `sp` stood on before the save window opened, a FRAME coordinate
+    /// reached outside `frameDisp` and owned by whatever the prologue put
+    /// there: the GP stack local at frame offset 0, or with an empty frame the
+    /// callee-save slot for x19, or with neither the caller's own outgoing
+    /// word. Unknown ownership is not permission; `RegisterExhausted` is the
+    /// capacity answer `probeFunctionPlan` already steps its ladder down on.
+    fn parkCallResult(self: *Arm64Compiler, save: SaveSet, park_bytes: u16) Error!void {
+        if (park_bytes == 0) return error.RegisterExhausted;
+        try self.emitStrSp(0, save.stack_bytes);
     }
 
     fn emitSaveCallerRegs(self: *Arm64Compiler) Error!SaveSet {
@@ -8972,7 +9037,7 @@ const Arm64Compiler = struct {
         var slots: u16 = @as(u16, save_set.count) + 1 + @as(u16, save_set.fp_count);
         if ((slots % 2) != 0) slots += 1;
         save_set.stack_bytes = slots * 8;
-        try self.emitSubSp(save_set.stack_bytes);
+        try self.emitSubSpTemp(save_set.stack_bytes);
         var offset: u16 = 0;
         var i: u5 = 0;
         while (i < save_set.count) : ({
@@ -9039,7 +9104,7 @@ const Arm64Compiler = struct {
         if (self.pending_vararg_count == 0) return 0;
         var bytes: u16 = @as(u16, self.pending_vararg_count) * 8;
         if ((bytes % 16) != 0) bytes += 8;
-        try self.emitSubSp(bytes);
+        try self.emitSubSpTemp(bytes);
         var i: u5 = 0;
         while (i < self.pending_vararg_count) : (i += 1) {
             const slot = self.pending_varargs[i];
@@ -9053,7 +9118,7 @@ const Arm64Compiler = struct {
     /// solely to carry a tail argument go back to the pool here; a `.temp` or
     /// `.local` register belongs to the slot map and is left alone.
     fn emitPopVarargs(self: *Arm64Compiler, bytes: u16) Error!void {
-        if (bytes > 0) try self.emitAddSp(bytes);
+        if (bytes > 0) try self.emitAddSpTemp(bytes);
         var i: u5 = 0;
         while (i < self.pending_vararg_count) : (i += 1) {
             if (self.pending_varargs[i].scratch) self.releaseReg(self.pending_varargs[i].reg);
@@ -9080,13 +9145,17 @@ const Arm64Compiler = struct {
         }) {
             try self.emitLdrSpFp(save_set.fp_regs[j], fo);
         }
-        try self.emitAddSp(save_set.stack_bytes);
+        try self.emitAddSpTemp(save_set.stack_bytes);
     }
 
     /// Largest 16-byte-aligned `sub/add sp` immediate on AArch64 (imm12 max 4095).
     const sp_imm_max: u16 = 4080;
 
+    /// `sp` is the base every frame and window displacement is measured from,
+    /// and AAPCS64 requires it sixteen-aligned at every instruction that uses
+    /// it. `sp_imm_max` is a multiple of sixteen so each chunk keeps the grid.
     fn emitSubSp(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (bytes % 16 != 0) return self.refuse(@src());
         var rem: u32 = bytes;
         while (rem > 0) {
             const chunk: u16 = if (rem > sp_imm_max) sp_imm_max else @intCast(rem);
@@ -9096,6 +9165,7 @@ const Arm64Compiler = struct {
     }
 
     fn emitAddSp(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (bytes % 16 != 0) return self.refuse(@src());
         var rem: u32 = bytes;
         while (rem > 0) {
             const chunk: u16 = if (rem > sp_imm_max) sp_imm_max else @intCast(rem);
@@ -9104,12 +9174,100 @@ const Arm64Compiler = struct {
         }
     }
 
+    /// `sp` moves for a window that closes before the frame does; `frameGrow`
+    /// is the other kind and moves the frame base with it.
+    fn emitSubSpTemp(self: *Arm64Compiler, bytes: u16) Error!void {
+        try self.emitSubSp(bytes);
+        self.sp_temp_bytes += bytes;
+    }
+
+    fn emitAddSpTemp(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (bytes > self.sp_temp_bytes) return self.refuse(@src());
+        try self.emitAddSp(bytes);
+        self.sp_temp_bytes -= bytes;
+    }
+
+    /// Frame residents named from the BOTTOM — a distance UP from `sp` — so a
+    /// move of `sp` renames every one of them. `frameSlotOff`'s spill
+    /// coordinate counts down from the top instead and rides growth unchanged;
+    /// these do not, and only their owner knows the rebase.
+    fn frameResidents(self: *const Arm64Compiler) usize {
+        return self.gp_stack_locals.count() +
+            self.slot_bases.count() +
+            self.fp_stack_slots.count();
+    }
+
+    fn frameGrow(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (self.sp_temp_bytes != 0) return self.refuse(@src());
+        if (self.frame_sealed and self.frameResidents() > 0) return self.refuse(@src());
+        try self.emitSubSp(bytes);
+        self.stack_frame_bytes += bytes;
+    }
+
+    /// The frame-base offset of the spill slot `off` names; `off` counts down
+    /// from the top of the frame, per `gateSpillBand`.
+    fn frameSlotOff(self: *const Arm64Compiler, off: u16) Error!u16 {
+        if (@as(u32, off) + 8 > @as(u32, self.stack_frame_bytes)) return error.RegisterExhausted;
+        return self.stack_frame_bytes - off - 8;
+    }
+
+    /// The sole reader of `sp_temp_bytes`: a frame-base offset as a `[sp,#imm]`
+    /// displacement from wherever `sp` is standing now.
+    fn frameDisp(self: *const Arm64Compiler, frame_off: u16) Error!u16 {
+        const disp: u32 = @as(u32, frame_off) + @as(u32, self.sp_temp_bytes);
+        if (disp > 65535) return error.RegisterExhausted;
+        return @intCast(disp);
+    }
+
+    /// `emitStrSp`/`emitLdrSp` place `disp / 8` in a 12-bit unsigned field, so
+    /// 32760 is the last addressable byte and above it a displacement wraps into
+    /// a different slot; refuse instead.
+    fn frameScaledDisp(self: *const Arm64Compiler, frame_off: u16) Error!u16 {
+        const disp = try self.frameDisp(frame_off);
+        if (disp > 32760) return error.RegisterExhausted;
+        return disp;
+    }
+
+    fn emitStrFrame(self: *Arm64Compiler, reg: u5, frame_off: u16) Error!void {
+        try self.emitStrSp(reg, try self.frameScaledDisp(frame_off));
+    }
+
+    fn emitLdrFrame(self: *Arm64Compiler, reg: u5, frame_off: u16) Error!void {
+        try self.emitLdrSp(reg, try self.frameScaledDisp(frame_off));
+    }
+
+    fn emitStrFrameFp(self: *Arm64Compiler, dreg: u5, frame_off: u16) Error!void {
+        try self.emitStrSpFp(dreg, try self.frameScaledDisp(frame_off));
+    }
+
+    fn emitLdrFrameFp(self: *Arm64Compiler, dreg: u5, frame_off: u16) Error!void {
+        try self.emitLdrSpFp(dreg, try self.frameScaledDisp(frame_off));
+    }
+
+    /// `add` chains past its imm12, so this carries no scaled-encoding limit.
+    fn emitAddFrameImm(self: *Arm64Compiler, dst: u5, frame_off: u16) Error!void {
+        try self.emitAddSpImm(dst, try self.frameDisp(frame_off));
+    }
+
+    /// The scaled `[sp,#imm]` field carries `offset / 8`. A displacement with a
+    /// low bit set addressed `offset & ~7` in the OBJECT while `asm_text`
+    /// printed `offset`, and one past 32760 left the field for the base
+    /// register. Both were held by construction at ten producers and asked at
+    /// none of them.
+    fn spScaledDisp(self: *Arm64Compiler, offset: u16) Error!u32 {
+        if (offset % 8 != 0) return self.refuse(@src());
+        if (offset > 32760) return self.refuse(@src());
+        return @as(u32, offset) / 8;
+    }
+
     fn emitStrSp(self: *Arm64Compiler, reg: u5, offset: u16) Error!void {
-        try self.emitFmt(0xf90003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, reg), "str x{d}, [sp, #{d}]", .{ reg, offset });
+        const imm = try self.spScaledDisp(offset);
+        try self.emitFmt(0xf90003e0 | (imm << 10) | @as(u32, reg), "str x{d}, [sp, #{d}]", .{ reg, offset });
     }
 
     fn emitLdrSp(self: *Arm64Compiler, reg: u5, offset: u16) Error!void {
-        try self.emitFmt(0xf94003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, reg), "ldr x{d}, [sp, #{d}]", .{ reg, offset });
+        const imm = try self.spScaledDisp(offset);
+        try self.emitFmt(0xf94003e0 | (imm << 10) | @as(u32, reg), "ldr x{d}, [sp, #{d}]", .{ reg, offset });
     }
 
     /// Reload a just-returned pack member after restoring the ordinary stack
@@ -20790,6 +20948,428 @@ test "the gate spill band stays inside the area the prologue reserved" {
     // The area is full, and the refusal at the end of it is the one the reserve's
     // own sizing relies on: a bound that is too tight costs a named refusal.
     try std.testing.expectError(error.RegisterExhausted, compiler.spillReg(26));
+}
+
+fn spDisp(word: [4]u8) u16 {
+    return @intCast(((std.mem.readInt(u32, &word, .little) >> 10) & 0xfff) * 8);
+}
+
+test "a spill and its reload name one byte across a temporary sp window" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.gate_transport = true;
+    const gp_stack_bytes: u16 = 80;
+    const spill_reserve: u16 = 256;
+    compiler.stack_frame_bytes = gp_stack_bytes + spill_reserve;
+    const band = Arm64Compiler.gateSpillBand(compiler.stack_frame_bytes, gp_stack_bytes, spill_reserve);
+    compiler.gate_spill_base = band.base;
+    compiler.gate_spill_end = band.end;
+    compiler.gate_spill_cursor = band.base;
+    try compiler.gp_stack_locals.put(alloc, 3, 24);
+
+    // CONTROL, `sp` at the frame: the displacement is the expression every
+    // consumer wrote before the correction, so no program that stays out of a
+    // window changes a byte.
+    const control_at = compiler.code.items.len;
+    try compiler.spillReg(9);
+    try std.testing.expectEqual(control_at + 4, compiler.code.items.len);
+    const control_addr = spDisp(compiler.code.items[control_at..][0..4].*);
+    const control_off = compiler.spilled_regs.get(9).?;
+    try std.testing.expectEqual(compiler.stack_frame_bytes - control_off - 8, control_addr);
+
+    const local_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(24, 11);
+    const local_addr = spDisp(compiler.code.items[local_at..][0..4].*);
+    try std.testing.expectEqual(@as(u16, 24), local_addr);
+
+    // The window: `emitSaveCallerRegs`, `emitPushVarargs`, the pack park,
+    // `snprintf`'s x0 save and `printf`'s stack argument all move `sp` and leave
+    // `stack_frame_bytes` alone, because each is undone before the frame ends.
+    const window: u16 = 32;
+    try compiler.emitSubSpTemp(window);
+
+    const store_at = compiler.code.items.len;
+    try compiler.spillReg(10);
+    try std.testing.expectEqual(store_at + 4, compiler.code.items.len);
+    const store_word = std.mem.readInt(u32, compiler.code.items[store_at..][0..4], .little);
+    try std.testing.expectEqual(@as(u32, 10), store_word & 0x1f);
+    const store_addr = spDisp(compiler.code.items[store_at..][0..4].*);
+    const slot_off = compiler.spilled_regs.get(10).?;
+
+    // The same frame byte, named from the window's `sp`: a GP stack local and a
+    // spill slot are one coordinate family and move together.
+    const local_in_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(24, 11);
+    try std.testing.expectEqual(local_addr + window, spDisp(compiler.code.items[local_in_at..][0..4].*));
+
+    try compiler.emitAddSpTemp(window);
+
+    const reload_at = compiler.code.items.len;
+    try compiler.ensureRegLive(10);
+    try std.testing.expectEqual(reload_at + 4, compiler.code.items.len);
+    const reload_word = std.mem.readInt(u32, compiler.code.items[reload_at..][0..4], .little);
+    try std.testing.expectEqual(@as(u32, 10), reload_word & 0x1f);
+    const reload_addr = spDisp(compiler.code.items[reload_at..][0..4].*);
+
+    // ONE BYTE, NAMED FROM TWO STACK POINTERS. `sp` was `window` lower at the
+    // store, so the byte is `window` further from it there; a displacement that
+    // ignores the window makes these two differ by exactly `window` and the
+    // reload answers with the slot's previous contents.
+    try std.testing.expectEqual(reload_addr, store_addr - window);
+    try std.testing.expectEqual(compiler.stack_frame_bytes - slot_off - 8, reload_addr);
+    try std.testing.expect(reload_addr >= gp_stack_bytes);
+    try std.testing.expect(reload_addr + 8 <= gp_stack_bytes + spill_reserve);
+    try std.testing.expect(reload_addr != control_addr);
+
+    // FAIL CLOSED, four ways. A displacement past the scaled `[sp,#imm]` field
+    // wraps into a different slot, so it refuses instead.
+    compiler.sp_temp_bytes = 32760;
+    try std.testing.expectError(error.RegisterExhausted, compiler.frameScaledDisp(reload_addr));
+    // `add` chains past its imm12 and carries no such limit.
+    _ = try compiler.frameDisp(reload_addr);
+    compiler.sp_temp_bytes = 0;
+    _ = try compiler.frameScaledDisp(reload_addr);
+
+    // A close wider than the open would leave `sp` above the frame base with a
+    // wrapped residual describing it.
+    try compiler.emitSubSpTemp(16);
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitAddSpTemp(32));
+    try std.testing.expectEqual(@as(u16, 16), compiler.sp_temp_bytes);
+
+    // Permanent growth inside a window: the window's `add sp` restores the OLD
+    // base, so the reservation `stack_frame_bytes` then claims does not exist.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(16));
+
+    // And the frame may not be torn down from inside one.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.restoreStackFrame());
+    try compiler.emitAddSpTemp(16);
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+}
+
+// GROWTH RENAMES A BOTTOM-ANCHORED RESIDENT, AND ONLY THE PROLOGUE REBASES ONE
+// (GAP-148).
+//
+// `frameSlotOff` counts DOWN FROM THE TOP, so a spill slot's displacement grows
+// with the frame and names one byte across any growth. GP stack locals, table
+// slot bases and record field slots count UP FROM `sp`: growth leaves their
+// displacement alone, so the same `[sp,#imm]` reaches a byte `bytes` further
+// from the top than the one it means, and the growth's own reservation reaches
+// it too. One address, two owners — this gap's shape at the frame.
+//
+// The prologue rebases what its own growth displaces (the record region under
+// the table region, both under the locals/spill region). Three sites grow during
+// BODY emission, where no rebasing owner exists: `spillReg`'s last resort, which
+// stated the rule by hand for itself, and `assignRecordFromAbiRegs` /
+// `assignF64RecordFromFpAbiRegs`, which stated nothing. `frame_sealed` is the
+// boundary between the two, and `frameResidents` is the one fact both refusals
+// read.
+//
+// Not the closure. Closure remains authoritative `register`/`frame` assignment
+// before emission, per this gap's record, under which the frame is laid out once
+// from the assignment and no emission-time growth exists to rename anything.
+test "a sealed frame refuses growth that would rename a bottom-anchored resident" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.stack_frame_bytes = 64;
+    const local_off: u16 = 24;
+    try compiler.gp_stack_locals.put(alloc, 3, local_off);
+
+    const spill_off: u16 = 16;
+    const store_at = compiler.code.items.len;
+    try compiler.emitStrFrame(9, try compiler.frameSlotOff(spill_off));
+    const store_addr = spDisp(compiler.code.items[store_at..][0..4].*);
+
+    const local_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(local_off, 11);
+    const local_addr = spDisp(compiler.code.items[local_at..][0..4].*);
+    try std.testing.expectEqual(local_off, local_addr);
+    const local_from_top: u16 = compiler.stack_frame_bytes - local_addr - 8;
+
+    // Prologue staging: growth is admitted, and the caller owes the rebase.
+    const grow: u16 = 16;
+    try compiler.frameGrow(grow);
+
+    // Top-anchored: `sp` is `grow` lower and the displacement is `grow` larger,
+    // so the reload names the byte the store wrote.
+    const reload_at = compiler.code.items.len;
+    try compiler.emitLdrFrame(9, try compiler.frameSlotOff(spill_off));
+    try std.testing.expectEqual(store_addr + grow, spDisp(compiler.code.items[reload_at..][0..4].*));
+
+    // Bottom-anchored: the same displacement, `grow` further from the top.
+    const after_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(local_off, 11);
+    try std.testing.expectEqual(local_addr, spDisp(compiler.code.items[after_at..][0..4].*));
+    try std.testing.expectEqual(local_from_top + grow, compiler.stack_frame_bytes - local_addr - 8);
+
+    // FAIL CLOSED once the frame is the body's: no rebasing owner, so growth
+    // over a resident refuses and emits nothing.
+    compiler.frame_sealed = true;
+    try std.testing.expectEqual(@as(usize, 1), compiler.frameResidents());
+    const sealed_len = compiler.code.items.len;
+    const sealed_frame = compiler.stack_frame_bytes;
+    try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(grow));
+    try std.testing.expectEqual(sealed_len, compiler.code.items.len);
+    try std.testing.expectEqual(sealed_frame, compiler.stack_frame_bytes);
+
+    // `spillReg`'s last resort reads the same fact under its own refusal, which
+    // is the capacity answer its callers already handle.
+    try std.testing.expectError(error.RegisterExhausted, compiler.spillReg(9));
+
+    // An empty frame has nothing to rename, so that last resort survives the
+    // seal.
+    compiler.gp_stack_locals.clearRetainingCapacity();
+    try std.testing.expectEqual(@as(usize, 0), compiler.frameResidents());
+    try compiler.frameGrow(grow);
+    try std.testing.expectEqual(sealed_frame + grow, compiler.stack_frame_bytes);
+
+    // A window is still the other refusal, and it holds after the seal.
+    try compiler.emitSubSpTemp(16);
+    try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(grow));
+    try compiler.emitAddSpTemp(16);
+}
+
+test "a displacement the scaled field cannot carry exactly refuses before it encodes" {
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // ALIGNMENT: 12 encodes as 8 and prints as 12 — object and assembly
+    // disagree and both report success.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitStrSp(9, 12));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitLdrSp(9, 12));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitStrSpFp(1, 12));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitLdrSpFp(1, 12));
+    // BOUND: 32768 scales to 4096, which leaves the imm12 for the base field.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitStrSp(9, 32768));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitLdrSpFp(1, 32768));
+    // A refusal that had already encoded would have sent the wrong bytes.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+    try std.testing.expectEqual(@as(usize, 0), compiler.asm_text.items.len);
+
+    // BOUND-IS-NOT-ALIGNMENT: the last addressable slot encodes.
+    try compiler.emitStrSp(9, 32760);
+    // ALIGNMENT-IS-NOT-THE-BOUND: an aligned displacement inside it encodes.
+    try compiler.emitLdrSp(9, 8);
+    try std.testing.expectEqual(@as(usize, 8), compiler.code.items.len);
+    const top = std.mem.readInt(u32, compiler.code.items[0..4], .little);
+    try std.testing.expectEqual(@as(u32, 4095), (top >> 10) & 0xfff);
+    const near = std.mem.readInt(u32, compiler.code.items[4..8], .little);
+    try std.testing.expectEqual(@as(u32, 1), (near >> 10) & 0xfff);
+}
+
+test "an sp move off the sixteen-byte grid refuses before it moves the frame base" {
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitSubSp(24));
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitAddSp(8));
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+
+    // The window and the frame reach the same predicate through their own
+    // producers, and neither leaves the displacement they carry behind.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitSubSpTemp(8));
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+    try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(8));
+    try std.testing.expectEqual(@as(u16, 0), compiler.stack_frame_bytes);
+
+    // GRID-IS-NOT-THE-CHUNK: a move past `sp_imm_max` splits, and every chunk
+    // is on the grid.
+    try compiler.emitSubSp(4096);
+    try std.testing.expectEqual(@as(usize, 8), compiler.code.items.len);
+    const first = std.mem.readInt(u32, compiler.code.items[0..4], .little);
+    try std.testing.expectEqual(@as(u32, 4080), (first >> 10) & 0xfff);
+    const rest = std.mem.readInt(u32, compiler.code.items[4..8], .little);
+    try std.testing.expectEqual(@as(u32, 16), (rest >> 10) & 0xfff);
+}
+
+// THE PARK WROTE A FRAME BYTE IT NEVER RESERVED (GAP-148).
+//
+// `[sp, #save.stack_bytes]` is the byte `sp` stood on before the save window
+// opened. That is a FRAME coordinate — reached outside `frameDisp`, which the
+// frame/window transfer made the sole reader of every one of them — and it is
+// owned: the GP stack local at frame offset 0, or with an empty frame the
+// callee-save slot for x19, or with neither the caller's own outgoing word.
+// The store reported success and the byte's owner reported nothing.
+//
+// The sibling pack arm never had this defect: it reserves `pack_bytes` BEFORE
+// the save and stores into that window, so its displacement is window-relative
+// by construction like every other raw `emitStrSp` the transfer left standing.
+// The scalar arm took the same addressing without the reservation.
+test "a parked call result names the slot it reserved and not the frame's" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // A frame with a resident on the byte the unreserved store named.
+    compiler.stack_frame_bytes = 96;
+    try compiler.gp_stack_locals.put(alloc, 0, 0);
+
+    // The state the arm is reached in: every candidate live, nothing left for
+    // the answer.
+    var reg: u5 = 0;
+    while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
+    const park_bytes = compiler.parkReserve(true);
+    try std.testing.expectEqual(@as(u16, 16), park_bytes);
+
+    try compiler.emitSubSpTemp(park_bytes);
+    const save = try compiler.emitSaveCallerRegs();
+    // The reservation answered before the save window existed what the
+    // allocation answers after it.
+    try std.testing.expectError(error.RegisterExhausted, compiler.allocRegOutsideSaveSet(save));
+
+    // AN UNRESERVED PARK REFUSES, and a refusal that had already encoded would
+    // have shipped the store.
+    const at = compiler.code.items.len;
+    const asm_at = compiler.asm_text.items.len;
+    try std.testing.expectError(error.RegisterExhausted, compiler.parkCallResult(save, 0));
+    try std.testing.expectEqual(at, compiler.code.items.len);
+    try std.testing.expectEqual(asm_at, compiler.asm_text.items.len);
+
+    // A RESERVED PARK stores once, at the reservation.
+    try compiler.parkCallResult(save, park_bytes);
+    try std.testing.expectEqual(at + 4, compiler.code.items.len);
+    const park_addr = spDisp(compiler.code.items[at..][0..4].*);
+    try std.testing.expectEqual(save.stack_bytes, park_addr);
+
+    // AND IT IS NOT THE FRAME'S. The resident at frame offset 0, addressed from
+    // the same `sp` through `frameDisp`, is the byte the unreserved store named
+    // and it is a different byte — exactly `park_bytes` above this one.
+    const local_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(0, 9);
+    const local_addr = spDisp(compiler.code.items[local_at..][0..4].*);
+    try std.testing.expectEqual(park_addr + park_bytes, local_addr);
+
+    // THE READ IS THE SAME BYTE FROM A DIFFERENT `sp`. Once the save window
+    // closes the slot stands at [sp, #0], and the reservation is the only thing
+    // that still makes it this function's.
+    const store_sp_temp = compiler.sp_temp_bytes;
+    try compiler.emitRestoreCallerRegs(save);
+    const reload_sp_temp = compiler.sp_temp_bytes;
+    try std.testing.expectEqual(park_bytes, reload_sp_temp);
+    try std.testing.expectEqual(
+        @as(i32, park_addr) - @as(i32, store_sp_temp),
+        @as(i32, 0) - @as(i32, reload_sp_temp),
+    );
+    // The resident moved with `sp` and the parked byte did not.
+    const after_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(0, 9);
+    try std.testing.expectEqual(park_bytes, spDisp(compiler.code.items[after_at..][0..4].*));
+
+    // The close returns the frame to itself.
+    try compiler.emitAddSpTemp(park_bytes);
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+    try std.testing.expectEqual(@as(u16, 0), try compiler.frameDisp(0));
+}
+
+test "the park reservation is the answer the save set will give" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var reg: u5 = 0;
+    while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
+
+    // NO RESULT DEMANDED: nothing to park whatever the pool holds.
+    try std.testing.expectEqual(@as(u16, 0), compiler.parkReserve(false));
+
+    // x8 IS NOT A CANDIDATE and neither is x18: leaving either clear must not
+    // withdraw the reservation, because the allocation will not hand it out.
+    compiler.used_regs[8] = false;
+    compiler.used_regs[Arm64Compiler.platform_reserved_reg] = false;
+    try std.testing.expectEqual(@as(u16, 16), compiler.parkReserve(true));
+    compiler.used_regs[8] = true;
+    compiler.used_regs[Arm64Compiler.platform_reserved_reg] = true;
+
+    // A SPILLED REGISTER IS NOT FREE: `spillReg` clears `used_regs`, and both
+    // readers skip the map that still describes it.
+    compiler.used_regs[11] = false;
+    try compiler.spilled_regs.put(alloc, 11, 0);
+    try std.testing.expectEqual(@as(u16, 16), compiler.parkReserve(true));
+
+    // ONE FREE CANDIDATE withdraws the reservation, and the allocation takes
+    // exactly that register once the save set exists.
+    _ = compiler.spilled_regs.remove(11);
+    try std.testing.expectEqual(@as(u16, 0), compiler.parkReserve(true));
+    const save = try compiler.emitSaveCallerRegs();
+    try std.testing.expectEqual(@as(u5, 11), try compiler.allocRegOutsideSaveSet(save));
+
+    // AND `save` IS NOT `used_regs`, WHICH IS WHY THE RESERVATION IS READ
+    // BEFORE THE WINDOW OPENS. A register released after the save is free in
+    // the pool and still reloaded by restore, so the two readers diverge from
+    // that moment on: x12 was live at save, so restore will overwrite it, and
+    // only the set remembers that.
+    compiler.used_regs[12] = false;
+    try std.testing.expectEqual(@as(u16, 0), compiler.parkReserve(true));
+    try std.testing.expectError(error.RegisterExhausted, compiler.allocRegOutsideSaveSet(save));
 }
 
 // THE CALL'S ANSWER TOOK THE ONE REGISTER THE SPILL MAP WAS STILL DESCRIBING
