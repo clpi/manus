@@ -2485,11 +2485,16 @@ test "wasm backend refuses byte-sequence print without an extent carrier" {
 // `_start`
 // ---------------------------------------------------------------------------
 
+/// The first exit code WASI `proc_exit` refuses.
+const wasi_exit_ceiling: i64 = 126;
+
 fn emitStart(e: *Emitter, entry_index: u32, entry_result: ?SlotType) Error![]u8 {
     e.cur_name = "_start";
     var b = Buf{ .alloc = e.alloc };
     errdefer b.deinit();
-    try b.u32v(0); // no locals
+    try b.u32v(1);
+    try b.u32v(1);
+    try b.byte(vt_i64);
     try b.call(entry_index);
     if (entry_result) |r| {
         // The exit code IS the answer for this subset — every gate on the
@@ -2513,6 +2518,22 @@ fn emitStart(e: *Emitter, entry_index: u32, entry_result: ?SlotType) Error![]u8 
         // 104) failed to produce an answer at all.
         try b.i64c(0xff);
         try b.op(op_i64_and);
+        // ...AND THE OTHER HALF OF THAT BAND HAS NO REALIZATION HERE. WASI
+        // takes [0,126), so a program whose masked code is 126 or above — the
+        // ordinary result of returning -1 — reaches wasmtime as a REJECTED
+        // `proc_exit` and the process exits 1. Exit 1 is a code programs also
+        // ask for on purpose, so answering it here would report a wrong
+        // outcome that no consumer could tell from a real one. The realization
+        // says so instead.
+        try b.tee(0);
+        try b.i64c(wasi_exit_ceiling);
+        try b.op(op_i64_ge_s);
+        try b.byte(op_if);
+        try b.byte(bt_void);
+        try b.i64c(@intCast(try e.strings.intern("exit: code outside WASI [0,126) has no realization in this module")));
+        try b.call(helperIndex(.die));
+        try b.byte(op_end);
+        try b.get(0);
         try b.op(op_i32_wrap_i64);
     } else {
         try b.i32c(0);

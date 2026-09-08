@@ -231,4 +231,34 @@ if named carry RUN; then
 fi
 
 printf 'outcome gate: arm 6 status 1 attributed by the artifact question, not passed through\n'
+
+# ========= ARM 7: AN EXIT CODE THIS REALIZATION CANNOT CARRY IS NOT 1 =======
+#
+# WASI proc_exit takes [0,126). 125 crosses; 200 — and every negative result,
+# which the POSIX mask turns into 130..255 — does not. The rejected call exits
+# the runner 1, a code programs also ask for on purpose, so the guest refuses
+# by name instead of letting a wrong exit be indistinguishable from a right one.
+
+cat >edge.id <<'ID'
+main: i64 = ()
+    125
+ID
+cat >over.id <<'ID'
+main: i64 = ()
+    200
+ID
+
+got=$(outcome edge "$work/edge.id")
+answers "$got" 125 || fail "arm 7: the last code WASI carries reported $got, not 125"
+got=$(outcome over "$work/over.id")
+if answers "$got" 1; then
+    fail "arm 7: an exit code WASI cannot carry was reported as the guest's own exit 1"
+fi
+answers "$got" 134 || fail "arm 7: an uncarryable exit code reported $got, not a refusal"
+named over RUN110 || fail "arm 7: the uncarryable exit code was not named RUN110"
+grep -q 'outside WASI' over.out ||
+    grep -q 'outside WASI' over.err ||
+    fail "arm 7: the guest refused without saying which code it could not carry"
+
+printf 'outcome gate: arm 7 exit 125 carried, exit 200 refused rather than answered as 1\n'
 printf 'outcome gate: PASS\n'
