@@ -2168,6 +2168,8 @@ fn wasmTailCallFusible(e: *const Emitter, ins: dnir.Instr, next: dnir.Instr) boo
     // see the difference and `emitNarrowFit` — which `.ret` emits and a
     // `return_call` cannot — is exactly what the difference costs.
     const g = wasmModuleFunction(e.module, ins.callee) orelse return false;
+    const pack = realization_validate.resultPackOf(e.module, g) orelse return false;
+    if (pack.record != null) return false;
     if (!std.meta.eql(g.ret, e.cur_ret)) return false;
     return true;
 }
@@ -2202,6 +2204,11 @@ fn emitWasmTailCall(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
 fn emitCallDirect(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
     const idx = e.func_index.get(ins.callee) orelse return e.refuse("call-target-unknown");
     const sig = e.func_sig.get(ins.callee) orelse return e.refuse("call-signature-unknown");
+    const function = wasmModuleFunction(e.module, ins.callee) orelse return e.refuse("call-target-unknown");
+    const pack = realization_validate.resultPackOf(e.module, function) orelse return e.refuse("result-pack-record-unknown");
+    if (pack.record) |record| {
+        if (!std.mem.eql(u8, ins.record, record.name)) return e.refuse("result-pack-call-record");
+    }
     try pushStagedArgs(e, b, ins, sig.params);
     clearStaged(e);
     try b.call(idx);
@@ -2209,11 +2216,7 @@ fn emitCallDirect(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
 }
 
 fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const SlotType) Error!void {
-    // A RECORD RESULT lands as several values, and they come off the stack in
-    // REVERSE declaration order — the last field is on top. Storing them
-    // forwards would transpose the record, which is the same defect the AArch64
-    // arm calls "a parallel move, not a sequential one".
-    if (results.len > 1) {
+    if (ins.record.len != 0) {
         const base = if (ins.field.len > 0) ins.field else "rec";
         // The call's record name and its member count are checked against the
         // CALLEE's declared pack by `realization_validate.resultPackShape`.
@@ -2225,6 +2228,10 @@ fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const Slot
         // `emitCallExtern` refuses a record-returning extern before it can
         // reach here at all.
         const rec = dnir.findRecord(e.module, ins.record) orelse return e.refuse("call-record-unknown");
+        if (ins.field.len == 0 and ins.result == null) {
+            for (results) |_| try b.op(op_drop);
+            return;
+        }
         var i: usize = rec.fields.len;
         while (i > 0) {
             i -= 1;
@@ -2241,6 +2248,7 @@ fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const Slot
         }
         return;
     }
+    if (results.len > 1) return e.refuse("call-record-unknown");
     if (ins.result) |t| {
         if (results.len == 0) return e.refuse("call-result-from-void");
         const want = slotTypeOf(e, t);
@@ -5185,5 +5193,115 @@ test "wasm backend shared cells retain byte indexing and refuse invalid descript
         }
         try std.testing.expectError(error.UnsupportedProgram, emitter.cell(instruction));
         instruction = original;
+    }
+}
+
+test "wasm backend returns one record field to its caller" {
+    try std.testing.expectEqual(@as(u8, 41), try runTestSourceWasm(
+        \\record: {code: i64}
+        \\make: record = (text: str)
+        \\    item = text:byte(1)
+        \\    {code = item}
+        \\os.exit(make(")").code)
+    ));
+    try std.testing.expectEqual(@as(u8, 16), try runTestSourceWasm(
+        \\record: {code: i64}
+        \\make: record = (text: str)
+        \\    item = 7
+        \\    if text:byte(1) == 41
+        \\        return {code = item}
+        \\    {code = 9}
+        \\os.exit(make(")").code + make("x").code)
+    ));
+}
+
+test "wasm backend keeps scalar record and discarded results distinct" {
+    const row = [_]struct { source: []const u8, expected: u8 }{
+        .{ .source = "read: i64 = (value: i64) value\nos.exit(read(41))\n", .expected = 41 },
+        .{ .source = "record: {code: i64, other: i64}\nmake: record = (value: i64) {other = value + 3, code = value}\nprobe: i64 = (value: i64)\n    item: record = make(value)\n    item.code * 3 + item.other\nos.exit(probe(7))\n", .expected = 31 },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64)\n    os.exit(value)\n    {code = value}\nmake(37)\n", .expected = 37 },
+        .{ .source = "read: i64 = (value: i64)\n    os.exit(value)\n    value\nread(43)\n", .expected = 43 },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64) {code = value}\nmake(37)\nos.exit(43)\n", .expected = 43 },
+        .{ .source = "read: i64 = (value: i64) value\nread(37)\nos.exit(43)\n", .expected = 43 },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64) {code = value}\nprobe: i64 = (value: i64)\n    rec: record = make(value)\n    make(37)\n    rec.code\nos.exit(probe(7))\n", .expected = 7 },
+    };
+    for (row) |entry| try std.testing.expectEqual(entry.expected, try runTestSourceWasm(entry.source));
+}
+
+test "wasm backend refuses a changed record result identity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try dnir_lower.lowerTestSourceWithGraph(
+        alloc,
+        "record: {code: i64}\nmake: record = (value: i64) {code = value}\nread: i64 = (value: i64) value\nos.exit(make(read(41)).code)\n",
+        "record.id",
+        &graph,
+    );
+    defer dnir.deinitModule(alloc, lowered);
+    var diagnostic: Diagnostic = .{};
+    const bytes = try emitFromDnir(alloc, lowered, "main", &diagnostic);
+    alloc.free(bytes);
+    var selected: ?*dnir.Instr = null;
+    var scalar: ?[]const u8 = null;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (@constCast(block.instrs)) |*instruction| {
+                if (instruction.op != .call_direct) continue;
+                if (instruction.record.len == 0) {
+                    const callee = wasmModuleFunction(lowered, instruction.callee) orelse return error.TestExpectedEqual;
+                    const pack = realization_validate.resultPackOf(lowered, callee) orelse return error.TestExpectedEqual;
+                    try std.testing.expect(pack.record == null and callee.ret == .i64);
+                    try std.testing.expect(scalar == null);
+                    scalar = instruction.callee;
+                    continue;
+                }
+                try std.testing.expect(selected == null);
+                selected = instruction;
+            }
+        }
+    }
+    const instruction = selected orelse return error.TestExpectedEqual;
+    const original = instruction.*;
+    defer instruction.* = original;
+    for ([_]struct { name: []const u8, expected: []const u8 }{
+        .{ .name = "absent", .expected = "result-pack-call-record" },
+        .{ .name = "", .expected = "call_direct/result-pack-call-record" },
+    }) |entry| {
+        instruction.record = entry.name;
+        diagnostic = .{};
+        try std.testing.expectError(error.UnsupportedProgram, emitFromDnir(alloc, lowered, "main", &diagnostic));
+        try std.testing.expectEqualStrings(entry.expected, diagnostic.note().?);
+    }
+    var emitter = Emitter{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .module = lowered,
+        .types = .{ .alloc = alloc },
+        .strings = .{ .alloc = alloc },
+        .cur_results = &.{.i64},
+        .wasm_tailcall = true,
+    };
+    defer emitter.deinit();
+    var call = original;
+    call.record = "";
+    call.field = "";
+    call.result = 0;
+    const tail = dnir.Instr{ .op = .ret, .lhs = .{ .temp = 0 } };
+    const row = [_]struct { name: []const u8, expected: bool }{
+        .{ .name = original.callee, .expected = false },
+        .{ .name = scalar orelse return error.TestExpectedEqual, .expected = true },
+    };
+    for (row) |entry| {
+        const function = wasmModuleFunction(lowered, entry.name) orelse return error.TestExpectedEqual;
+        try emitter.func_sig.put(alloc, entry.name, .{
+            .params = try paramSlotTypes(&emitter, function),
+            .results = try returnSlotTypes(&emitter, function),
+        });
+        emitter.cur_ret = function.ret;
+        call.callee = entry.name;
+        try std.testing.expectEqual(entry.expected, wasmTailCallFusible(&emitter, call, tail));
     }
 }
