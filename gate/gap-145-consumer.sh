@@ -3913,11 +3913,11 @@ examined=$((examined + 1))
 if [ "$sweep_bit" -ne 1 ]; then
     bad "the group-opening equivalence sweep does not execute the reader: count=$sweep_bit"
 fi
-sweep_refusal=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
+refusal=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
     grep -cF 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserCall());' || true)
 examined=$((examined + 1))
-if [ "$sweep_refusal" -ne 1 ]; then
-    bad "the group-opening equivalence sweep does not assert the reader's trivia refusal: count=$sweep_refusal"
+if [ "$refusal" -ne 1 ]; then
+    bad "the group-opening equivalence sweep does not assert the reader's trivia refusal: count=$refusal"
 fi
 for predicate in 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
     examined=$((examined + 1))
@@ -5241,7 +5241,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     rm -rf -- "$branch_probe"
 fi
 
-blind_oracle() {
+blind() {
     awk '
         /^test "/ { block = $0 "\n"; inside = 1; next }
         inside { block = block $0 "\n" }
@@ -5262,10 +5262,10 @@ blind_oracle() {
         END { print hits + 0 }
     ' "$1"
 }
-blind_count=$(blind_oracle "$PARSER")
+count=$(blind "$PARSER")
 examined=$((examined + 1))
-if [ "$blind_count" -ne 0 ]; then
-    bad "a parser identity oracle answers without executing the reader it names: count=$blind_count"
+if [ "$count" -ne 0 ]; then
+    bad "a parser identity oracle answers without executing the reader it names: count=$count"
 fi
 
 for reader in currentParserCall currentParserAnchor currentParserField currentParserMember currentParserName; do
@@ -5281,8 +5281,8 @@ has "$PARSER" '        try testing.expect(try consumer.currentParserName());' \
 has "$PARSER" '    consumer.pack_index = 1;' \
     'the header-paren discriminator no longer positions the reader at the `(` coordinate'
 
-blind_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate blind-oracle scratch' >&2; exit 2; }
-cat >"$blind_probe/old.zig" <<'PROBE'
+probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate blind-oracle scratch' >&2; exit 2; }
+cat >"$probe/old.zig" <<'PROBE'
 test "parse: retired blind identity oracle" {
     for (grammar_roles.rows, 0..) |row, index| {
         const event = try parserEventForTest(@intCast(index), true);
@@ -5291,7 +5291,7 @@ test "parse: retired blind identity oracle" {
     }
 }
 PROBE
-cat >"$blind_probe/new.zig" <<'PROBE'
+cat >"$probe/new.zig" <<'PROBE'
 test "parse: canonical executed identity oracle" {
     for (grammar_roles.rows, 0..) |row, index| {
         const kind = row.kind orelse continue;
@@ -5301,7 +5301,7 @@ test "parse: canonical executed identity oracle" {
     }
 }
 PROBE
-cat >"$blind_probe/property.zig" <<'PROBE'
+cat >"$probe/property.zig" <<'PROBE'
 test "parse: production prefix decision executes through whole-pack event" {
     for (grammar_roles.rows, 0..) |row, index| {
         const event = try parserEventForTest(@intCast(index), true);
@@ -5309,25 +5309,25 @@ test "parse: production prefix decision executes through whole-pack event" {
     }
 }
 PROBE
-blind_old=$(blind_oracle "$blind_probe/old.zig")
-blind_new=$(blind_oracle "$blind_probe/new.zig")
-blind_property=$(blind_oracle "$blind_probe/property.zig")
-rm -rf -- "$blind_probe"
+retired=$(blind "$probe/old.zig")
+executed=$(blind "$probe/new.zig")
+property=$(blind "$probe/property.zig")
+rm -rf -- "$probe"
 examined=$((examined + 1))
-if [ "$blind_old" -ne 1 ]; then
-    bad "the blind-oracle detector does not see the retired shape: count=$blind_old"
+if [ "$retired" -ne 1 ]; then
+    bad "the blind-oracle detector does not see the retired shape: count=$retired"
 fi
 examined=$((examined + 1))
-if [ "$blind_new" -ne 0 ]; then
-    bad "the blind-oracle detector misreads the canonical shape: count=$blind_new"
+if [ "$executed" -ne 0 ]; then
+    bad "the blind-oracle detector misreads the canonical shape: count=$executed"
 fi
 examined=$((examined + 1))
-if [ "$blind_property" -ne 0 ]; then
-    bad "the blind-oracle detector claims a producer-property test: count=$blind_property"
+if [ "$property" -ne 0 ]; then
+    bad "the blind-oracle detector claims a producer-property test: count=$property"
 fi
 
 if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
-    blind_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate blind perturbation scratch' >&2; exit 2; }
+    probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate blind perturbation scratch' >&2; exit 2; }
 
     {
         cat "$PARSER"
@@ -5341,41 +5341,41 @@ test "parse: planted blind identity oracle" {
     }
 }
 PLANT
-    } >"$blind_probe/plant.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$blind_probe/plant.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$blind_probe/plant.result" 2>&1
-    blind_status=$?
+    } >"$probe/plant.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/plant.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$probe/plant.result" 2>&1
+    status=$?
     examined=$((examined + 1))
-    if [ "$blind_status" -ne 1 ] || [ ! -s "$blind_probe/plant.result" ] ||
-        ! grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names: count=1' "$blind_probe/plant.result" ||
-        grep -Fq 'gap-145 consumer gate: PASS' "$blind_probe/plant.result"; then
-        bad "blind-oracle plant control did not fail closed: status=$blind_status"
+    if [ "$status" -ne 1 ] || [ ! -s "$probe/plant.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names: count=1' "$probe/plant.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$probe/plant.result"; then
+        bad "blind-oracle plant control did not fail closed: status=$status"
     fi
 
     sed 's/        try testing.expectEqual(expected, try consumer.currentParserAnchor());/        const face: i64 = if (((events[0] >> 63) \& 1) != 0) 0 else events[1] >> 13;\n        try testing.expectEqual(expected, face == 17);/;
-         s/            try testing.expectError(error.InvalidRecordCount, consumer.currentParserAnchor());/            refused = true;/' "$PARSER" >"$blind_probe/mirror.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$blind_probe/mirror.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$blind_probe/mirror.result" 2>&1
-    blind_status=$?
+         s/            try testing.expectError(error.InvalidRecordCount, consumer.currentParserAnchor());/            refused = true;/' "$PARSER" >"$probe/mirror.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/mirror.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$probe/mirror.result" 2>&1
+    status=$?
     examined=$((examined + 1))
-    if [ "$blind_status" -ne 1 ] || [ ! -s "$blind_probe/mirror.result" ] ||
-        ! grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names: count=1' "$blind_probe/mirror.result" ||
-        ! grep -Fq 'gap-145 consumer gate: FAIL the anchor equivalence sweep does not execute the reader: count=0' "$blind_probe/mirror.result" ||
-        grep -Fq 'gap-145 consumer gate: FAIL the projection equivalence sweep does not execute the reader' "$blind_probe/mirror.result" ||
-        grep -Fq 'gap-145 consumer gate: PASS' "$blind_probe/mirror.result"; then
-        bad "blind-oracle mirror control did not fail closed: status=$blind_status"
+    if [ "$status" -ne 1 ] || [ ! -s "$probe/mirror.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names: count=1' "$probe/mirror.result" ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the anchor equivalence sweep does not execute the reader: count=0' "$probe/mirror.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the projection equivalence sweep does not execute the reader' "$probe/mirror.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$probe/mirror.result"; then
+        bad "blind-oracle mirror control did not fail closed: status=$status"
     fi
 
-    sed 's/        return (try self.currentParserFace()) == 17;/        return (try self.currentParserFace()) == 17 or (try self.currentParserFace()) == 18;/' "$PARSER" >"$blind_probe/widen.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$blind_probe/widen.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$blind_probe/widen.result" 2>&1
-    blind_status=$?
+    sed 's/        return (try self.currentParserFace()) == 17;/        return (try self.currentParserFace()) == 17 or (try self.currentParserFace()) == 18;/' "$PARSER" >"$probe/widen.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/widen.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$probe/widen.result" 2>&1
+    status=$?
     examined=$((examined + 1))
-    if [ "$blind_status" -ne 1 ] || [ ! -s "$blind_probe/widen.result" ] ||
-        ! grep -Fq 'gap-145 consumer gate: FAIL the anchor consumer no longer reads the settled anchor face' "$blind_probe/widen.result" ||
-        grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names' "$blind_probe/widen.result" ||
-        grep -Fq 'gap-145 consumer gate: PASS' "$blind_probe/widen.result"; then
-        bad "blind-oracle reader-widening control did not fail closed: status=$blind_status"
+    if [ "$status" -ne 1 ] || [ ! -s "$probe/widen.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the anchor consumer no longer reads the settled anchor face' "$probe/widen.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names' "$probe/widen.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$probe/widen.result"; then
+        bad "blind-oracle reader-widening control did not fail closed: status=$status"
     fi
 
-    rm -rf -- "$blind_probe"
+    rm -rf -- "$probe"
 fi
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
