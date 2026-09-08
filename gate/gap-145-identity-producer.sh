@@ -134,12 +134,45 @@ BEGIN {
 }
 ROWAWK
 
+# ── reading a walk's answer ─────────────────────────────────────────────────
+#
+# Every count predicate in this gate tests a number a walk produced, and
+# `[ "" -lt 0 ]` is not false — it is an ERROR, which `if` spends as false and
+# a gate spends as CLEAN. A walk that answered with nothing would therefore
+# retire twelve predicates at once and still reach PASS. An absent answer is
+# worse: the read leaves the variables holding the PREVIOUS walk's numbers, so
+# a later walk gets measured by an earlier one.
+#
+# So the numbers cross from the walk into the predicates here and nowhere else.
+# Empty, short, non-numeric or over-long is a walk that measured nothing, and
+# unknown stops the run rather than counting as zero.
+
+counted() {
+    case ${1:-} in
+        '' | *[!0-9]*) return 1 ;;
+    esac
+    return 0
+}
+
+# rows carries the walk's own unknown as -1, so it alone may lead with a sign.
+answered() {
+    rows=''
+    seen=''
+    ownerseen=''
+    hits=''
+    read -r rows seen ownerseen <"$1" 2>/dev/null
+    hits=$(sed -n '2p' -- "$1" 2>/dev/null)
+    counted "${rows#-}" && counted "$seen" && counted "$ownerseen" ||
+        cannot "the walk of $2 answered '$rows $seen $ownerseen' — a walk that did not answer in three numbers measured nothing"
+}
+
 # ── the walk ────────────────────────────────────────────────────────────────
 #
 # One implementation, used on the candidate tree and on every planted control,
 # so a control exercises the code the verdict comes from. Writes
-# `rows units owner` then the hit list. rows = -1 means the scanner did not
-# establish a count for some unit: unknown, never clean.
+# `rows units owner` then the hit list, and reads its own answer back through
+# `answered` into `rows seen ownerseen hits`. rows = -1 means the scanner did
+# not establish a count for some unit: unknown, never clean.
 
 walk() {
     walkroot=$1
@@ -190,6 +223,7 @@ walk() {
     exec 7<&- 8<&-
 
     printf '%s %s %s\n%s\n' "$walkrows" "$walkseen" "$walkowner" "$walkhits" >"$walkout"
+    answered "$walkout" "$walkroot"
 }
 
 # Keyword census the owner DECLARES: the closed slot span kindand..kindlet that
@@ -249,8 +283,6 @@ done
 # ── 3. no host unit reconstructs token identity from source spelling ────────
 
 walk "$ROOT" "$scratch/real"
-read rows seen ownerseen <"$scratch/real"
-hits=$(sed -n '2p' "$scratch/real")
 
 examined=$((examined + 1))
 if [ "$rows" -lt 0 ]; then
@@ -406,17 +438,15 @@ test "lexes a keyword" {
 PROBE
 
 walk "$scratch/planted" "$scratch/plantedout"
-read prows pseen powner <"$scratch/plantedout"
-phits=$(sed -n '2p' "$scratch/plantedout")
 
 examined=$((examined + 1))
-if [ "$prows" -ne 9 ] || [ "$pseen" -ne 10 ] || [ "$powner" -ne 1 ]; then
-    bad "the row scanner is broken: rows=$prows (want 9) units=$pseen (want 10) owner=$powner (want 1) hits:$phits"
+if [ "$rows" -ne 9 ] || [ "$seen" -ne 10 ] || [ "$ownerseen" -ne 1 ]; then
+    bad "the row scanner is broken: rows=$rows (want 9) units=$seen (want 10) owner=$ownerseen (want 1) hits:$hits"
 fi
 
 for variant in splitrow reorder renamefield tuple deep/nested inner typed ownercopy; do
     examined=$((examined + 1))
-    case $phits in
+    case $hits in
         *"src/$variant.zig("*) ;;
         *) bad "src/$variant.zig is accepted by the row scanner" ;;
     esac
@@ -424,7 +454,7 @@ done
 
 for admitted in grammar_role_table clean; do
     examined=$((examined + 1))
-    case $phits in
+    case $hits in
         *"src/$admitted.zig("*)
             bad "src/$admitted.zig is reported by the row scanner, which refuses the admitted shape"
             ;;
@@ -436,10 +466,9 @@ done
 # predicates reject. Without this they are satisfied by a walk that never ran.
 mkdir -p "$scratch/emptytree/src" || cannot "the empty-tree control could not be built — the unit and owner predicates went unexercised"
 walk "$scratch/emptytree" "$scratch/emptyout"
-read erows eseen eowner <"$scratch/emptyout"
 examined=$((examined + 1))
-if [ "$eseen" -ne 0 ] || [ "$erows" -ne 0 ] || [ "$eowner" -ne 0 ]; then
-    bad "the empty-scan control is broken: units=$eseen rows=$erows owner=$eowner"
+if [ "$seen" -ne 0 ] || [ "$rows" -ne 0 ] || [ "$ownerseen" -ne 0 ]; then
+    bad "the empty-scan control is broken: units=$seen rows=$rows owner=$ownerseen"
 fi
 
 # A unit the scanner cannot read, and a unit whose braces do not balance, are
@@ -449,17 +478,15 @@ ln -s "$scratch/unreadable/src/absent" "$scratch/unreadable/src/dangling.zig" ||
 printf 'pub const keywords = .{ .{ .text = "while", .kind = .kw_while }\n' \
     >"$scratch/unreadable/src/unbalanced.zig"
 walk "$scratch/unreadable" "$scratch/unreadout"
-read urows useen uowner <"$scratch/unreadout"
-uhits=$(sed -n '2p' "$scratch/unreadout")
 examined=$((examined + 1))
-if [ "$urows" -ne -1 ] || [ "$useen" -ne 2 ]; then
-    bad "a unit the scanner cannot establish is counted clean: rows=$urows units=$useen hits:$uhits"
+if [ "$rows" -ne -1 ] || [ "$seen" -ne 2 ]; then
+    bad "a unit the scanner cannot establish is counted clean: rows=$rows units=$seen hits:$hits"
 fi
 
 examined=$((examined + 1))
-case $uhits in
+case $hits in
     *"src/unbalanced.zig(nocount)"*) ;;
-    *) bad "an unbalanced unit did not reach the scanner as unknown: hits:$uhits" ;;
+    *) bad "an unbalanced unit did not reach the scanner as unknown: hits:$hits" ;;
 esac
 
 # Section 5's census must follow the owner file it is handed, and refuse a file
@@ -487,6 +514,44 @@ fi
 examined=$((examined + 1))
 if census "$scratch/spanless.id" >/dev/null 2>&1; then
     bad "the staleness control is broken: an owner declaring no keyword span still produced a census"
+fi
+
+# The walk-answer reader. Its refusals are facts about the ANSWER rather than
+# about a tree, so no `src/` plant can reach them — drive the real reader in a
+# subshell over each malformed shape instead, the way section 7 drives the real
+# `report`. Every count predicate above is downstream of this reader, so a
+# reader that returned instead of stopping would hand them empty numbers and
+# they would all go on reporting clean.
+
+for shape in 'nothing:' 'short:0 10' 'wordy:0 ten 1' 'overlong:0 10 1 junk' 'signed:0 -10 1'; do
+    examined=$((examined + 1))
+    printf '%s\n%s\n' "${shape#*:}" ' src/x.zig(1)' >"$scratch/answer"
+    if (trap - EXIT; answered "$scratch/answer" "control") >/dev/null 2>&1; then
+        bad "the walk-answer control is broken: a ${shape%%:*} answer '${shape#*:}' was read as a measurement"
+    fi
+done
+
+# An answer that is not there must not be read as the PREVIOUS walk's numbers,
+# which is what the variables still hold when the redirection fails.
+examined=$((examined + 1))
+rm -f -- "$scratch/answer"
+if (trap - EXIT; rows=9; seen=10; ownerseen=1; answered "$scratch/answer" "control") \
+    >/dev/null 2>&1; then
+    bad "the walk-answer control is broken: an absent answer was read as the previous walk's numbers"
+fi
+
+# ...and a well-formed answer reaches the predicates unchanged, including the
+# walk's own -1 unknown. Without this arm a reader that refused everything, or
+# one that zeroed what it read, would satisfy every arm above.
+examined=$((examined + 1))
+printf '%s\n%s\n' '-1 10 1' ' src/x.zig(1)' >"$scratch/answer"
+if (trap - EXIT
+    answered "$scratch/answer" "control"
+    [ "$rows" -eq -1 ] && [ "$seen" -eq 10 ] && [ "$ownerseen" -eq 1 ] &&
+        [ "$hits" = " src/x.zig(1)" ]) >/dev/null 2>&1; then
+    :
+else
+    bad "the walk-answer control is broken: a three-number answer was refused or misread"
 fi
 
 # ── 7. the verdict path refuses an uncontrolled clean run ───────────────────
