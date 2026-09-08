@@ -464,6 +464,8 @@ const DiagnosticEvidence = enum {
 pub const Sema = struct {
     generation: u64 = 0,
     frame: ?usize = null,
+    owner: ?*const ast.FuncBody = null,
+    transfer: u64 = 0,
     constructor: std.ArrayListUnmanaged([]types.FieldType) = .empty,
     alloc: Allocator,
     scope: Scope,
@@ -2692,7 +2694,7 @@ pub const Sema = struct {
             }
         }
         try self.registerForeignScopeNames();
-        try self.check_block(&mod.body);
+        _ = try self.check_block(&mod.body);
         if (self.idol_mode) try self.snapshotModuleBindings();
         self.scope.pop();
     }
@@ -3073,8 +3075,25 @@ pub const Sema = struct {
         }
     }
 
-    fn check_block(self: *Sema, blk: *ast.Block) SemaError!void {
-        try self.check_block_with_implicit_return(blk, false);
+    const Flow = union(enum) {
+        next,
+        unknown,
+        answer: *const ast.FuncBody,
+
+        fn follow(first: Flow, second: Flow) Flow {
+            if (first == .unknown or second == .unknown) return .unknown;
+            return if (first == .answer) first else second;
+        }
+
+        fn join(first: Flow, second: Flow) Flow {
+            if (first == .unknown or second == .unknown) return .unknown;
+            if (first == .answer and second == .answer and first.answer == second.answer) return first;
+            return .next;
+        }
+    };
+
+    fn check_block(self: *Sema, blk: *ast.Block) SemaError!Flow {
+        return self.check_block_with_implicit_return(blk, false);
     }
 
     /// The block-nesting twin of `max_expr_depth`, and the same argument: the
@@ -3085,20 +3104,24 @@ pub const Sema = struct {
     /// expression limit rather than equal to it.
     const max_block_depth: u32 = 64;
 
-    fn check_block_with_implicit_return(self: *Sema, blk: *ast.Block, validate_implicit_return: bool) SemaError!void {
+    fn check_block_with_implicit_return(self: *Sema, blk: *ast.Block, validate_implicit_return: bool) SemaError!Flow {
         if (self.block_depth >= max_block_depth) {
             if (!self.block_depth_refused) {
                 self.block_depth_refused = true;
                 self.err(blk.loc, "blocks nest deeper than {d} levels, which is this checker's limit", .{max_block_depth});
                 term.locHint(blk.loc, "lift the inner block into a relation and call it", .{});
             }
-            return;
+            return .unknown;
         }
         self.block_depth += 1;
         defer self.block_depth -= 1;
 
+        const fault = self.errors;
+        const transfer = self.transfer;
+        var flow: Flow = .next;
         try self.scope.push();
-        for (blk.stmts) |*stmt| try self.check_stmt(stmt);
+        defer self.scope.pop();
+        for (blk.stmts) |*stmt| flow = flow.follow(try self.check_stmt(stmt));
         if (validate_implicit_return) {
             if (block_implicit_return_expr(blk)) |e| {
                 const actual = try self.check_expr(e);
@@ -3132,7 +3155,7 @@ pub const Sema = struct {
             // function-body path, which is the only place a return is demanded.
             _ = try self.check_expr(e);
         }
-        self.scope.pop();
+        return if (self.errors != fault or self.transfer != transfer) .unknown else flow;
     }
 
     /// §5.1 — tail-demand propagation (not backward local search).
@@ -3249,16 +3272,20 @@ pub const Sema = struct {
         }
     }
 
-    fn check_stmt(self: *Sema, stmt: *ast.Stmt) SemaError!void {
+    fn check_stmt(self: *Sema, stmt: *ast.Stmt) SemaError!Flow {
+        const fault = self.errors;
+        const transfer = self.transfer;
+        var flow: Flow = .next;
+        var preserve = false;
         const boundary = switch (stmt.*) {
-            .if_stmt, .while_loop, .repeat_loop, .num_for, .gen_for, .func_decl, .try_stmt, .match_stmt => true,
+            .if_stmt, .while_loop, .repeat_loop, .num_for, .gen_for, .func_decl, .try_stmt, .match_stmt, .brk, .cont, .goto_stmt, .label_stmt => true,
             else => false,
         };
         if (boundary) {
             if (stmt.* == .if_stmt) self.retain() else self.generation += 1;
         }
         defer if (boundary) {
-            self.generation += 1;
+            if (preserve) self.retain() else self.generation += 1;
         };
         switch (stmt.*) {
             .local_decl => |*ld| {
@@ -3393,7 +3420,7 @@ pub const Sema = struct {
             .global_decl => |*gd| {
                 if (gd.star) {
                     self.scope.set_require_global(true);
-                    return;
+                    return .unknown;
                 }
                 var init_types: std.ArrayList(RT) = .empty;
                 defer init_types.deinit(self.alloc);
@@ -3600,6 +3627,7 @@ pub const Sema = struct {
                     self.check_return_value(r.loc, actual, r.vals[0]);
                     for (r.vals[1..]) |v| _ = try self.check_expr(v);
                 }
+                flow = if (self.owner) |owner| .{ .answer = owner } else .unknown;
             },
             .if_stmt => |*is| {
                 if (is.binding) |b| {
@@ -3609,21 +3637,55 @@ pub const Sema = struct {
                     try self.scope.define(b.name, .{ .typ = .any, .is_const = false });
                 }
                 _ = try self.check_expr(is.cond);
-                try self.check_block(&is.then);
+                const owner = self.owner;
+                const depth = self.scope.maps.items.len;
+                var saved: std.ArrayList(struct { scope: usize, name: []const u8, typ: RT }) = .empty;
+                defer saved.deinit(self.alloc);
+                if (is.else_body == null and is.elseifs.len == 0) {
+                    if (self.frame) |frame| {
+                        for (self.scope.maps.items[frame..], frame..) |*map, index| {
+                            var iter = map.iterator();
+                            while (iter.next()) |entry| {
+                                const symbol = entry.value_ptr;
+                                if (symbol.is_global or symbol.inferred != self.generation) continue;
+                                if (symbol.typ.is_numeric() or symbol.typ == .bool or symbol.typ == .str)
+                                    try saved.append(self.alloc, .{ .scope = index, .name = entry.key_ptr.*, .typ = symbol.typ });
+                            }
+                        }
+                    }
+                }
+                const then = try self.check_block(&is.then);
                 self.generation += 1;
+                flow = then;
                 for (is.elseifs) |*ei| {
                     _ = try self.check_expr(ei.cond);
-                    try self.check_block(&ei.body);
+                    flow = flow.join(try self.check_block(&ei.body));
                     self.generation += 1;
                 }
-                if (is.else_body) |*eb| try self.check_block(eb);
+                if (is.else_body) |*eb| {
+                    flow = flow.join(try self.check_block(eb));
+                } else {
+                    flow = flow.join(.next);
+                    if (is.elseifs.len == 0 and then == .answer and owner == then.answer and
+                        self.owner == owner and self.errors == fault and self.transfer == transfer and
+                        self.scope.maps.items.len == depth)
+                    {
+                        for (saved.items) |entry| {
+                            const symbol = self.scope.maps.items[entry.scope].getPtr(entry.name) orelse continue;
+                            if (symbol.is_global) continue;
+                            symbol.typ = entry.typ;
+                            symbol.inferred = self.generation;
+                        }
+                        preserve = true;
+                    }
+                }
             },
             .while_loop => |*wl| {
                 _ = try self.check_expr(wl.cond);
-                try self.check_block(&wl.body);
+                _ = try self.check_block(&wl.body);
             },
             .repeat_loop => |*rl| {
-                try self.check_block(&rl.body);
+                _ = try self.check_block(&rl.body);
                 _ = try self.check_expr(rl.cond);
             },
             .num_for => |*nf| {
@@ -3639,7 +3701,7 @@ pub const Sema = struct {
                 _ = try self.check_expr(nf.start);
                 _ = try self.check_expr(nf.stop);
                 if (nf.step) |s| _ = try self.check_expr(s);
-                try self.check_block(&nf.body);
+                _ = try self.check_block(&nf.body);
                 self.scope.pop();
             },
             .gen_for => |*gf| {
@@ -3653,13 +3715,13 @@ pub const Sema = struct {
                         .is_for_control = is_key,
                     });
                 }
-                try self.check_block(&gf.body);
+                _ = try self.check_block(&gf.body);
                 self.scope.pop();
             },
             .func_decl => |*fd| {
                 try self.check_func_decl(fd);
             },
-            .do_block => |*db| try self.check_block(&db.body),
+            .do_block => |*db| flow = try self.check_block(&db.body),
             // NOTE: there is no `.struct_def` case. Records are declared via
             // record-type annotations on bindings; their type-checking and
             // `@implements` concept satisfaction is done in the `local_decl`
@@ -3669,7 +3731,7 @@ pub const Sema = struct {
             .enum_def => |*ed| try self.check_enum_def(ed),
             .try_stmt => |*ts| {
                 // Type-check the try body
-                try self.check_block(&ts.body);
+                _ = try self.check_block(&ts.body);
                 // Type-check each catch clause
                 // NOTE: catch clauses are untyped in Duo. There is no
                 // `error_type` on `CatchClause` — the binding (if any) is
@@ -3680,17 +3742,17 @@ pub const Sema = struct {
                     if (cc.binding) |name| {
                         try self.scope.define(name, .{ .typ = .any, .is_const = true });
                     }
-                    try self.check_block(&cc.body);
+                    _ = try self.check_block(&cc.body);
                     self.scope.pop();
                 }
                 // Type-check defers within the try statement
                 for (ts.defers) |*d| {
-                    try self.check_block(&d.body);
+                    _ = try self.check_block(&d.body);
                 }
             },
             .defer_stmt => |*ds| {
                 // Type-check the deferred body
-                try self.check_block(&ds.body);
+                _ = try self.check_block(&ds.body);
             },
             .concept_def => |*cd| {
                 try self.check_concept_def(cd);
@@ -3727,12 +3789,12 @@ pub const Sema = struct {
                 const meta_module = @import("meta_module.zig");
                 if (directives.isBoundaryMigrationAttribute(dir.attr.name)) {
                     self.err(dir.loc, "invalid migration boundary attribute '@{s}': must attach to one declaration", .{dir.attr.name});
-                    return;
+                    return .unknown;
                 }
-                if (!self.check_boundary_declaration(dir.loc, &.{dir.attr}, null)) return;
+                if (!self.check_boundary_declaration(dir.loc, &.{dir.attr}, null)) return .unknown;
                 if (directives.isCInterfaceDirective(dir.attr.name) or
                     meta_module.isCEmitDirective(dir.attr.name) or
-                    meta_module.isCHeaderImportDirective(dir.attr.name)) return;
+                    meta_module.isCHeaderImportDirective(dir.attr.name)) return .unknown;
                 if (directives.validateModuleDirective(dir.attr)) |bad| {
                     self.err(dir.loc, "unknown module directive '@{s}'", .{bad});
                 } else if (std.mem.eql(u8, dir.attr.name, "specialize")) {
@@ -3748,6 +3810,14 @@ pub const Sema = struct {
                 }
             },
         }
+        switch (stmt.*) {
+            .while_loop, .repeat_loop, .num_for, .gen_for, .try_stmt, .defer_stmt, .match_stmt, .brk, .cont, .goto_stmt, .label_stmt => {
+                self.transfer += 1;
+                flow = .unknown;
+            },
+            else => {},
+        }
+        return if (self.errors != fault or self.transfer != transfer) .unknown else flow;
     }
 
     fn check_func_body(self: *Sema, fb: *ast.FuncBody) SemaError!RT {
@@ -3790,13 +3860,20 @@ pub const Sema = struct {
             if (p.default_val) |default_val| _ = try self.check_expr(default_val);
         }
         const frame = self.frame;
+        const owner = self.owner;
+        const transfer = self.transfer;
         self.frame = self.scope.maps.items.len;
-        defer self.frame = frame;
+        self.owner = fb;
+        defer {
+            self.frame = frame;
+            self.owner = owner;
+            self.transfer = transfer;
+        }
         try self.scope.push();
         for (fb.params, 0..) |*p, i|
             try self.scope.define(p.name, .{ .typ = param_types[i], .is_const = false });
         try self.define_vararg_rest(fb);
-        try self.check_block_with_implicit_return(&fb.body, true);
+        _ = try self.check_block_with_implicit_return(&fb.body, true);
         self.scope.pop();
         self.current_ret = prev_ret;
         self.current_ret_fallible = prev_fallible;
@@ -5670,6 +5747,7 @@ pub const Sema = struct {
                 return .any;
             },
             .match_expr => |me| {
+                self.transfer += 1;
                 return try self.check_match_expr(me);
             },
             .await_expr => |ae| {
@@ -6446,13 +6524,20 @@ pub const Sema = struct {
             if (p.default_val) |default_val| _ = try self.check_expr(default_val);
         }
         const frame = self.frame;
+        const owner = self.owner;
+        const transfer = self.transfer;
         self.frame = self.scope.maps.items.len;
-        defer self.frame = frame;
+        self.owner = fb;
+        defer {
+            self.frame = frame;
+            self.owner = owner;
+            self.transfer = transfer;
+        }
         try self.scope.push();
         for (fb.params, param_types) |*p, pt|
             try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
         try self.define_vararg_rest(fb);
-        try self.check_block_with_implicit_return(&fb.body, true);
+        _ = try self.check_block_with_implicit_return(&fb.body, true);
         self.scope.pop();
 
         // infer native signatures for scalar functions that are plain
@@ -6791,7 +6876,7 @@ pub const Sema = struct {
             for (fb.params, param_types) |*p, pt|
                 try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
             try self.define_vararg_rest(fb);
-            try self.check_block_with_implicit_return(&fb.body, true);
+            _ = try self.check_block_with_implicit_return(&fb.body, true);
             self.scope.pop();
         }
     }
@@ -6840,7 +6925,7 @@ pub const Sema = struct {
             try self.check_pattern(&arm.pattern, scrutinee_type);
             if (arm.pattern == .wildcard) has_wildcard = true;
             if (arm.guard) |guard| _ = try self.check_expr(guard);
-            try self.check_block(&arm.body);
+            _ = try self.check_block(&arm.body);
             self.scope.pop();
         }
 
@@ -17803,5 +17888,91 @@ test "sema: scalar constructor evidence rejects foreign string ambiguity" {
         }
         try checked.check_module(&module);
         try testing.expectEqual(entry.valid, checked.errors == 0);
+    }
+}
+
+test "sema: continuation retains only checked false edges" {
+    const sample = [_]struct { name: []const u8, source: []const u8, valid: bool, after: bool = false, input: ?[]const u8 = null }{
+        .{ .name = "false edge", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        return {code = 9}\n    {code = item}\n", .valid = true },
+        .{ .name = "returning mutation", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        item = \"changed\"\n        return {code = 9}\n    {code = item}\n", .valid = true },
+        .{ .name = "nested return", .source = "record: {code: i64}\nmake: record = (choice: bool, other: bool)\n    item = 7\n    if choice\n        if other\n            return {code = 9}\n        else\n            return {code = 11}\n    {code = item}\n", .valid = true },
+        .{ .name = "conditional then return", .source = "record: {code: i64}\nmake: record = (choice: bool, other: bool)\n    item = 7\n    if choice\n        if other\n            return {code = 9}\n        return {code = 11}\n    {code = item}\n", .valid = true },
+        .{ .name = "shadow", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        local item = \"changed\"\n        return {code = 9}\n    {code = item}\n", .valid = true },
+        .{ .name = "return operand callback", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    touch: i64 = ()\n        item = \"changed\"\n        9\n    item = 7\n    if choice\n        return {code = touch()}\n    {code = item}\n", .valid = true },
+        .{ .name = "unreachable ordinary suffix", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        item = \"changed\"\n        return {code = 9}\n    {code = item}\n", .valid = true, .after = true },
+        .{ .name = "return pack effects", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    touch: i64 = ()\n        item = \"changed\"\n        9\n    item = 7\n    if choice\n        return {code = 9}, touch()\n    {code = item}\n", .valid = true },
+        .{ .name = "nested callable taint isolation", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        helper: i64 = ()\n            while false\n                break\n            9\n        return {code = 9}\n    {code = item}\n", .valid = true },
+        .{ .name = "continuing arm", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        item = \"changed\"\n    {code = item}\n", .valid = false },
+        .{ .name = "two continuing arms", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        item = 13\n    else\n        item = \"changed\"\n    {code = item}\n", .valid = false },
+        .{ .name = "continuing else", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        return {code = 9}\n    else\n        item = \"changed\"\n    {code = item}\n", .valid = false },
+        .{ .name = "continuing elseif", .source = "record: {code: i64}\nmake: record = (choice: bool, other: bool)\n    item = 7\n    if choice\n        return {code = 9}\n    elseif other\n        item = \"changed\"\n    {code = item}\n", .valid = false },
+        .{ .name = "conditional return", .source = "record: {code: i64}\nmake: record = (choice: bool, other: bool)\n    item = 7\n    if choice\n        if other\n            return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "nested callable return", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        helper: record = ()\n            return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "condition callback", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    touch: bool = ()\n        item = \"changed\"\n        true\n    item = 7\n    if touch()\n        return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "invalidated input", .source = "record: {code: i64}\ntouch: i64 = () 0\nmake: record = (choice: bool)\n    item = 7\n    touch()\n    if choice\n        return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "global", .source = "record: {code: i64}\nglobal item: any = nil\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "capture", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    inner: record = ()\n        if choice\n            return {code = 9}\n        {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .name = "unreachable checked error", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        result: record = {code = \"changed\"}\n        return {code = 9}\n    {code = item}\n", .valid = false, .after = true },
+        .{ .name = "unknown loop", .source = "record: {code: i64}\nmake: record = (choice: bool, other: bool)\n    item = 7\n    if choice\n        while other\n            break\n        return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "break before return", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        break\n        return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "continue before return", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        continue\n        return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "break after return", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        break\n        return {code = 9}\n    {code = item}\n", .valid = false, .after = true },
+        .{ .name = "label after return", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        ::later::\n        item = \"changed\"\n        return {code = 9}\n    {code = item}\n", .valid = false, .after = true },
+        .{ .name = "goto before return", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        break\n        ::later::\n        return {code = 9}\n    {code = item}\n", .valid = false, .input = "goto later" },
+        .{ .name = "label after branch", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        return {code = 9}\n    ::later::\n    {code = item}\n", .valid = false },
+        .{ .name = "deferred mutation", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        break\n        return {code = 9}\n    {code = item}\n", .valid = false, .input = "defer\n  item = \"changed\"\nend" },
+        .{ .name = "division", .source = "record: {code: i64}\nmake: record = (choice: bool, value: i64)\n    item = value / 2\n    if choice\n        return {code = 9}\n    {code = item}\n", .valid = false },
+        .{ .name = "scalar kinds", .source = "record: {text: str, flag: bool}\nmake: record = (choice: bool)\n    text = \"kept\"\n    flag = choice\n    if choice\n        return {text = \"other\", flag = false}\n    {text = text, flag = flag}\n", .valid = true },
+        .{ .name = "parser continuation", .source = "Res: {val: i64, pos: i64}\nskip: i64 = (text: str, pos: i64) pos\nmake: Res = (text: str, inner: Res, n: i64)\n    j = skip(text, inner.pos)\n    if j <= n and text:byte(j) == 41\n        return {val = inner.val, pos = j + 1}\n    return {val = inner.val, pos = j}\n", .valid = true },
+        .{ .name = "hidden match transfer", .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        hidden = match 1\n            1 =>\n                ::later::\n                9\n            _ => 11\n        return {code = 9}\n    {code = item}\n", .valid = false },
+    };
+    for (sample) |row| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        var checked = if (row.after or row.input != null) checked: {
+            const alloc = arena.allocator();
+            var lexer = Lexer.init(row.source, "test.id");
+            var parser = Parser.init(&lexer, alloc);
+            parser.idol_mode = true;
+            var module = try parser.parse_module();
+            var moved = false;
+            for (module.body.stmts) |*statement| {
+                if (statement.* != .func_decl) continue;
+                for (statement.func_decl.func.body.stmts) |*child| {
+                    if (child.* != .if_stmt) continue;
+                    const block = child.if_stmt.then.stmts;
+                    try testing.expect(block.len > 1);
+                    const last = block[block.len - 1];
+                    try testing.expect(last == .ret);
+                    if (row.after) {
+                        std.mem.copyBackwards(ast.Stmt, block[1..], block[0 .. block.len - 1]);
+                        block[0] = last;
+                    } else {
+                        var input = Lexer.init(row.input.?, "test.lua");
+                        var reader = Parser.init(&input, alloc);
+                        const parsed = try reader.parse_module();
+                        try testing.expect(block[0] == .brk);
+                        try testing.expect(parsed.body.stmts.len == 1);
+                        try testing.expect(parsed.body.stmts[0] == .goto_stmt or parsed.body.stmts[0] == .defer_stmt);
+                        block[0] = parsed.body.stmts[0];
+                    }
+                    moved = true;
+                }
+            }
+            try testing.expect(moved);
+            var result = Sema.init(alloc);
+            result.idol_mode = true;
+            try result.check_module(&module);
+            break :checked result;
+        } else runIdolSema(row.source, &arena) catch |err| {
+            std.debug.print("continuation parse failed: {s}\n", .{row.name});
+            return err;
+        };
+        defer checked.deinit();
+        if (row.valid != (checked.errors == 0))
+            std.debug.print("continuation mismatch: {s}\n", .{row.name});
+        try testing.expectEqual(row.valid, checked.errors == 0);
+        try testing.expect(checked.owner == null);
+        try testing.expect(checked.frame == null);
     }
 }
