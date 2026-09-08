@@ -1732,7 +1732,7 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                 if (isClockName(m.method)) ctx.prog.world = ctx.prog.world.with(.clock_read);
                 markEffect(ctx);
                 arg_pos = .effect_arg;
-            } else if (true) {
+            } else if (ctx.walked.contains(m.method)) {
                 // ONE RELATION, TWO FACES. `n:step()` and `step(n)` apply the
                 // same declaration — `call.face` — and the graph resolves them
                 // to the same relation entity, so a boundary reading that holds
