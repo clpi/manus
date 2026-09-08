@@ -1,6 +1,109 @@
 #!/bin/sh
 set -eu
 
+if [ "${1-}" = --mcp ]; then
+    case ${IDOL_MODE-} in
+        '')
+            case ${2-} in
+                head) result=$(git rev-parse HEAD 2>&1) ;;
+                status) result=$(git status --short --branch 2>&1) ;;
+                orient) result=$("$0" 2>&1) ;;
+                *) result='unknown tool' ;;
+            esac
+            jq -cjn --arg text "$result" '{content:[{type:"text",text:$text}]}'
+            exit 0
+            ;;
+        *) set -- --read "${2-}" ;;
+    esac
+fi
+
+if [ "${1-}" = --read ]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+        printf '%s' '{"isError":true,"content":[{"type":"text","text":"orientation runtime unavailable"}]}'
+        exit 0
+    fi
+    exec python3 - "${2-}" <<'PY'
+import hashlib, json, os, pathlib, re, signal, subprocess, sys, time
+
+facts = {'repo': None, 'root': os.environ.get('IDOL_ROOT'), 'mode': os.environ.get('IDOL_MODE'), 'head': None,
+         'branch': None, 'dirty': None, 'remote': {'head': None},
+         'artifact': {'path': os.environ.get('IDOL_BIN'), 'digest': None, 'source': None},
+         'state': 'unavailable'}
+
+def emit(state, reason=None, text=None):
+    facts['state'] = state
+    if reason:
+        facts['reason'] = reason
+    print(json.dumps({'isError': state != 'current', 'content': [{'type': 'text',
+          'text': text if text is not None else json.dumps(facts, sort_keys=True)}]}), end='')
+    raise SystemExit()
+
+def run(argv, seconds=3):
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0',
+               GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=3')
+    with subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, env=env, start_new_session=True) as child:
+        try:
+            out, err = child.communicate(timeout=seconds)
+        except subprocess.TimeoutExpired:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.communicate()
+            raise ValueError()
+        if child.returncode or len(out) > 65536 or len(err) > 65536:
+            raise ValueError()
+        return out.decode('utf-8').rstrip('\n')
+
+if facts['mode'] != 'read':
+    emit('invalid', 'mode')
+if sys.argv[1:] not in (['head'], ['status'], ['orient']):
+    emit('invalid', 'action')
+try:
+    root = pathlib.Path(facts['root'])
+    if not root.is_absolute() or root.resolve(strict=True) != root or not root.is_dir():
+        emit('invalid', 'root')
+    git = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-C', str(root)]
+    if run(git + ['rev-parse', '--show-toplevel']) != str(root):
+        emit('invalid', 'root')
+    facts['head'] = run(git + ['rev-parse', 'HEAD'])
+    facts['branch'] = run(git + ['rev-parse', '--abbrev-ref', 'HEAD'])
+    status = run(git + ['status', '--porcelain=v1', '--untracked-files=all'])
+    facts['dirty'] = len(status.splitlines())
+    origin = run(git + ['remote', 'get-url', 'origin'])
+    if origin not in ('git@github.com:clpi/idol.git', 'https://github.com/clpi/idol.git',
+                       'ssh://git@github.com/clpi/idol.git'):
+        emit('foreign', 'origin')
+    facts['repo'] = 'clpi/idol'
+    facts['remote']['url'] = origin
+    try:
+        remote = run(git + ['ls-remote', '--refs', 'origin', 'refs/heads/main'], 8)
+        match = re.fullmatch(r'([a-f0-9]{40})\trefs/heads/main', remote)
+        if not match:
+            raise ValueError()
+        facts['remote']['head'] = match[1]
+        facts['remote']['time'] = time.time()
+    except (OSError, ValueError):
+        emit('unavailable', 'remote')
+    artifact = facts['artifact']['path']
+    if artifact:
+        binary = pathlib.Path(artifact)
+        if binary.is_file() and os.access(binary, os.X_OK) and binary.stat().st_size <= 268435456:
+            facts['artifact']['digest'] = hashlib.sha256(binary.read_bytes()).hexdigest()
+    if facts['head'] != run(git + ['rev-parse', 'HEAD']) or status != run(git + ['status', '--porcelain=v1', '--untracked-files=all']):
+        emit('changed', 'source')
+    if facts['head'] != facts['remote']['head']:
+        emit('stale', 'head')
+    if facts['dirty']:
+        emit('dirty', 'source')
+    if sys.argv[1] == 'head':
+        emit('current', text=facts['head'])
+    if sys.argv[1] == 'status':
+        emit('current', text=run(git + ['status', '--short', '--branch']))
+    emit('current')
+except (OSError, TypeError, ValueError):
+    emit('unavailable', 'source')
+PY
+fi
+
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$repo"
 

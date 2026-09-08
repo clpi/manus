@@ -82,26 +82,19 @@ while true
     else
         "'" .. fval .. "'"
 
-    # The non-concept cmd cascade stays exactly as it was — `git status`,
-    # `git rev-parse`, `./tools/node/dev/orient` — and `concept_arg` is
-    # its own slot only consulted when the request names `concept`. The
-    # branch lives in `if/else` rather than chained into `cmd` so that the
-    # existing `tools/call` path for status/head/orient never visits
-    # `doc.sh`. A notification (no `"id":`) routes concept_arm to
-    # `notifications/message` below; the same `idstr` already gates it.
     cmd: str = if line:has('"name":"status"')
-        "git status --short --branch"
+        "./tools/node/dev/orient --mcp status"
     else
         if line:has('"name":"head"')
-            "git rev-parse HEAD"
+            "./tools/node/dev/orient --mcp head"
         else
             if line:has('"name":"orient"')
-                "./tools/node/dev/orient"
+                "./tools/node/dev/orient --mcp orient"
             else
-                "echo unknown tool"
+                "./tools/node/dev/orient --mcp unknown"
 
     concept_arg: str = if line:has('"name":"concept"')
-        './tools/concept/doc.sh ' .. fesc
+        'if test -n "${IDOL_MODE-}"; then printf "%s" "doc: FAIL connection mode forbids execution"; else ./tools/concept/doc.sh ' .. fesc .. '; fi'
     else
         "true"
 
@@ -147,7 +140,7 @@ while true
             '{"jsonrpc":"2.0","id":' .. idstr .. ',"error":{"code":-32602,"message":"tool: invalid params: arguments.file is required"}}'
         else
             if line:has('"method":"tools/call"') and line:has('"id":')
-                '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"content":[{"type":"text","text":' .. gatecap('printf %s "$( ( ' .. cmd .. ' ) 2>&1 | jq -Rs . )"') .. '}]}}'
+                '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":' .. gatecap(cmd) .. '}'
             else
                 if line:has('"method":"tools/list"')
                     '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"tools":[{"name":"status","description":"git status --short --branch","inputSchema":{"type":"object","properties":{}}},{"name":"head","description":"current HEAD commit id","inputSchema":{"type":"object","properties":{}}},{"name":"orient","description":"Idol orientation snapshot","inputSchema":{"type":"object","properties":{}}},{"name":"concept","description":"render the produced concept verdict (REFUSED or HELD) for a subject .id file","inputSchema":{"type":"object","properties":{"file":{"type":"string"}}}}]}}'
