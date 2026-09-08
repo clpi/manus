@@ -55,7 +55,7 @@ jobs:
           path: candidate-head
 
       - name: Bind exact repositories and ancestry
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           test -d "$RUNNER_TEMP"
@@ -98,7 +98,7 @@ jobs:
           version: 0.17.0-dev.1567+f0354179a
 
       - name: Build exact protected-base compiler
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
@@ -124,7 +124,7 @@ jobs:
           printf 'candidate.compiler sha256=%s\n' "$idolsha"
 
       - name: Exercise protected-base verifier controls
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
@@ -136,7 +136,7 @@ jobs:
 
       - name: Structurally admit exact untrusted candidate
         id: structural
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
@@ -157,7 +157,7 @@ jobs:
       - name: Full semantic admission audit — non-admitting and currently unavailable
         id: full
         continue-on-error: true
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
@@ -176,7 +176,7 @@ jobs:
 
       - name: Record full semantic audit disposition
         if: ${{ always() && steps.structural.conclusion == 'success' }}
-        shell: bash
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
         run: |
           set -euo pipefail
           if test '${{ steps.full.outcome }}' = success; then
