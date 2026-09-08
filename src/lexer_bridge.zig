@@ -189,6 +189,101 @@ pub fn sourceForms() SourceFormIterator {
     return .{ .count = establishedSourceForms() catch 0 };
 }
 
+pub const SourceEntryError = error{
+    /// The census answered with no walkable number of entries, or counted an
+    /// ordinal it publishes no role or no pattern at.
+    UnestablishedSourceEntries,
+    /// The census counts fewer entries than the producer publishes, so the
+    /// role walk covers a prefix and reports it as the whole census.
+    PartialSourceEntryCensus,
+    /// Two published entries share a pattern, so one path would carry two
+    /// corpus roles and iteration order would pick between them.
+    AmbiguousSourceEntry,
+};
+
+/// The producer's published corpus-entry census, as the host consumes it.
+/// Ingress binds the real externs and the controls bind planted ones through
+/// this same shape, so a control exercises the walk ingress binds.
+const SourceEntryCensus = struct {
+    count: i64,
+    role: @TypeOf(&sourceentryrole),
+    pattern: @TypeOf(&sourceentrypattern),
+};
+
+/// The host holds the published patterns while it proves them distinct, so the
+/// census it can establish is bounded by that table. A fact about the host's
+/// scratch, not a roster of admitted homes.
+const source_entry_capacity = 128;
+
+/// Census walks completed. `establishedSourceEntries` is the only caller, so
+/// this separates an ingress that walked the census from one that skipped it.
+var source_entry_walks: usize = 0;
+var source_entry_count: i64 = 0;
+var source_entry_refusal: ?SourceEntryError = null;
+
+/// Prove the producer publishes a role and a distinct pattern at every ordinal
+/// its corpus-entry census counts, and that the census covers all of them,
+/// before any path selects a law. Returns the number of entries walked.
+///
+/// `sourcepathrole` walks THIS census inside the producer and answers with the
+/// role of the longest matching pattern, or `""` when none matches. A census
+/// that counts nothing, counts something that is not a number of entries, or
+/// stops short makes that walk answer `""` for every path — byte-for-byte the
+/// answer a path carrying no corpus role gives. `sourcefactlaw(path, "")` then
+/// selects on physical form alone, which silently substitutes canonical Idol
+/// for the Lua compatibility home and canonical provenance for foreign. The
+/// host establishes the census first so unknown stops law selection instead of
+/// arriving as an ordinary "this path has no role".
+fn bindSourceEntryCensus(census: SourceEntryCensus) SourceEntryError!i64 {
+    if (census.count <= 0) return SourceEntryError.UnestablishedSourceEntries;
+    if (census.count > source_entry_capacity) return SourceEntryError.UnestablishedSourceEntries;
+    const count: usize = @intCast(census.count);
+
+    var seen: [source_entry_capacity][]const u8 = undefined;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const ordinal: i64 = @intCast(i + 1);
+        // An entry that publishes no role is the census carrying an ordinal
+        // whose answer is the same bytes as "no entry matched", so the role
+        // walk returns it as a clean negative from a pattern that DID match.
+        if (std.mem.span(census.role(ordinal)).len == 0)
+            return SourceEntryError.UnestablishedSourceEntries;
+        const pattern = std.mem.span(census.pattern(ordinal));
+        // An empty pattern is not a home that matches nothing: the producer's
+        // prefix comparison admits it against any path, so a hole in the table
+        // hands its role to paths that carry no such home.
+        if (pattern.len == 0) return SourceEntryError.UnestablishedSourceEntries;
+        for (seen[0..i]) |prior| {
+            if (std.mem.eql(u8, prior, pattern)) return SourceEntryError.AmbiguousSourceEntry;
+        }
+        seen[i] = pattern;
+    }
+
+    const past: i64 = @intCast(count + 1);
+    if (std.mem.span(census.role(past)).len != 0 or std.mem.span(census.pattern(past)).len != 0)
+        return SourceEntryError.PartialSourceEntryCensus;
+
+    source_entry_walks += 1;
+    return census.count;
+}
+
+/// The established census, bound once. A refusal is held rather than retried,
+/// exactly as for the physical form census.
+fn establishedSourceEntries() SourceEntryError!i64 {
+    if (source_entry_refusal) |refusal| return refusal;
+    if (source_entry_count > 0) return source_entry_count;
+    const count = bindSourceEntryCensus(.{
+        .count = sourceentrycount(),
+        .role = &sourceentryrole,
+        .pattern = &sourceentrypattern,
+    }) catch |refusal| {
+        source_entry_refusal = refusal;
+        return refusal;
+    };
+    source_entry_count = count;
+    return count;
+}
+
 /// Physical anchor for the repo-relative provenance spelling consumed by the
 /// executed source producer. This file contains no admission roster; it merely
 /// identifies the source tree, like a filesystem witness. Law/provenance come
@@ -269,6 +364,12 @@ pub fn sourceFacts(path: []const u8) SourceFacts {
     // the host has established it, no path names a source law: nothing
     // tokenizes through a producer whose form census the host could not read.
     _ = establishedSourceForms() catch return .{ .law = .unknown, .provenance = .unknown };
+    // The corpus role below is what qualifies that form law into the exact
+    // law/provenance pair, and `sourcepathrole` walks a SECOND published census
+    // inside the producer to find it. A census the host could not establish
+    // makes that walk answer `""` for every path, which the fact relations read
+    // as "carries no corpus role" and answer on physical form alone.
+    _ = establishedSourceEntries() catch return .{ .law = .unknown, .provenance = .unknown };
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const producer_path = corpusRelative(path, &path_buf) orelse
@@ -634,4 +735,172 @@ test "lexer bridge: ingress binds through the governed census" {
     while (past.next()) |_| walked += 1;
     try std.testing.expectEqual(@as(usize, @intCast(sourceformcount())), walked);
     try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.id").law);
+}
+
+// Each planted census below differs from the producer's real corpus-entry
+// census in exactly one respect and must fail closed with its own identity.
+
+/// The producer counts a first entry it publishes no role at.
+fn absentSourceEntryRole(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == 1) return "";
+    return sourceentryrole(i);
+}
+
+/// The same, at the last entry: only a walk that reaches the end sees it.
+fn lastAbsentSourceEntryRole(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == sourceentrycount()) return "";
+    return sourceentryrole(i);
+}
+
+/// An ordinal the census counts but publishes no pattern at. The producer's
+/// prefix comparison admits an empty pattern against a path, so this hands the
+/// ordinal's role to paths that carry no such home.
+fn absentSourceEntryPattern(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == sourceentrycount()) return "";
+    return sourceentrypattern(i);
+}
+
+/// The last entry repeats the first entry's pattern, so one path would carry
+/// two corpus roles and the producer's `n >= bestlen` walk picks the later one.
+fn repeatedSourceEntryPattern(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == sourceentrycount()) return sourceentrypattern(1);
+    return sourceentrypattern(i);
+}
+
+test "lexer bridge: the producer's corpus-entry census governs role selection" {
+    const real: SourceEntryCensus = .{
+        .count = sourceentrycount(),
+        .role = &sourceentryrole,
+        .pattern = &sourceentrypattern,
+    };
+    // Both ends of the walk have to be reachable, and the short-census control
+    // needs an ordinal to drop.
+    try std.testing.expect(real.count >= 2);
+
+    // The bound census is total, and the walk covers all of it rather than a
+    // prefix: without this the refusals below are satisfied by a walk that
+    // visited nothing.
+    const before = source_entry_walks;
+    try std.testing.expectEqual(real.count, try bindSourceEntryCensus(real));
+    try std.testing.expectEqual(before + 1, source_entry_walks);
+
+    // THE FALSE ACCEPT this census closes. An unestablished census makes the
+    // producer's role walk answer `""` for every path. Asked without a role,
+    // the same compatibility-home path selects a DIFFERENT law and a DIFFERENT
+    // provenance from the ones ingress answers with — so the substitution is
+    // silent and total, not a boundary the owner reports.
+    const home = "examples/lua/host.id";
+    try std.testing.expectEqual(SourceLaw.lua, sourceLawFromName(sourcefactlaw(home, sourcepathrole(home))).?);
+    try std.testing.expectEqual(SourceLaw.idol, sourceLawFromName(sourcefactlaw(home, "")).?);
+    const vendored = "vendor/opaque.id";
+    try std.testing.expectEqual(SourceProvenance.foreign, sourceProvenanceFromName(sourcefactprovenance(vendored, sourcepathrole(vendored))).?);
+    try std.testing.expectEqual(SourceProvenance.canonical, sourceProvenanceFromName(sourcefactprovenance(vendored, "")).?);
+
+    // empty: a census that counts nothing leaves the producer's role walk
+    // answering `""`, which reads exactly like a path carrying no corpus role.
+    try std.testing.expectError(SourceEntryError.UnestablishedSourceEntries, bindSourceEntryCensus(.{
+        .count = 0,
+        .role = real.role,
+        .pattern = real.pattern,
+    }));
+
+    // not a count: a census answering with something that is not a number of
+    // entries is unknown, never zero.
+    try std.testing.expectError(SourceEntryError.UnestablishedSourceEntries, bindSourceEntryCensus(.{
+        .count = -1,
+        .role = real.role,
+        .pattern = real.pattern,
+    }));
+
+    // over-long: a census the host cannot hold cannot be proved distinct.
+    try std.testing.expectError(SourceEntryError.UnestablishedSourceEntries, bindSourceEntryCensus(.{
+        .count = source_entry_capacity + 1,
+        .role = real.role,
+        .pattern = real.pattern,
+    }));
+
+    // short: the census counts fewer entries than the producer publishes, so
+    // the role walk answers cleanly about homes it never saw.
+    try std.testing.expectError(SourceEntryError.PartialSourceEntryCensus, bindSourceEntryCensus(.{
+        .count = real.count - 1,
+        .role = real.role,
+        .pattern = real.pattern,
+    }));
+
+    // Roleless at both ends, so neither a walk that stops after the first entry
+    // nor one that checks only the last can pass.
+    try std.testing.expectError(SourceEntryError.UnestablishedSourceEntries, bindSourceEntryCensus(.{
+        .count = real.count,
+        .role = &absentSourceEntryRole,
+        .pattern = real.pattern,
+    }));
+    try std.testing.expectError(SourceEntryError.UnestablishedSourceEntries, bindSourceEntryCensus(.{
+        .count = real.count,
+        .role = &lastAbsentSourceEntryRole,
+        .pattern = real.pattern,
+    }));
+
+    // Malformed evidence rather than a missing role, and the two are separable:
+    // an ordinal that publishes no pattern, and two entries sharing one.
+    try std.testing.expectError(SourceEntryError.UnestablishedSourceEntries, bindSourceEntryCensus(.{
+        .count = real.count,
+        .role = real.role,
+        .pattern = &absentSourceEntryPattern,
+    }));
+    try std.testing.expectError(SourceEntryError.AmbiguousSourceEntry, bindSourceEntryCensus(.{
+        .count = real.count,
+        .role = real.role,
+        .pattern = &repeatedSourceEntryPattern,
+    }));
+
+    // A refused census is not a walk. Without this a bind that counted its own
+    // refusals would satisfy the separability the ingress control below rests on.
+    try std.testing.expectEqual(before + 1, source_entry_walks);
+}
+
+test "lexer bridge: ingress binds through the governed corpus-entry census" {
+    const held_forms = source_form_count;
+    const held_form_refusal = source_form_refusal;
+    const held_entries = source_entry_count;
+    const held_entry_refusal = source_entry_refusal;
+    defer {
+        source_form_count = held_forms;
+        source_form_refusal = held_form_refusal;
+        source_entry_count = held_entries;
+        source_entry_refusal = held_entry_refusal;
+    }
+
+    // Selecting a law must ADVANCE the entry walk; asserting only that ingress
+    // answers stays green with the census call deleted, which is the shape that
+    // makes a transfer decorative. An earlier test may have bound it, so unbind.
+    source_form_count = 0;
+    source_form_refusal = null;
+    source_entry_count = 0;
+    source_entry_refusal = null;
+    const before = source_entry_walks;
+    try std.testing.expectEqual(SourceLaw.lua, sourceFacts("examples/lua/host.id").law);
+    try std.testing.expectEqual(before + 1, source_entry_walks);
+
+    // Bound once, so a second ingress walks nothing further.
+    try std.testing.expectEqual(SourceLaw.idol, sourceFacts("examples/json/pack.id").law);
+    try std.testing.expectEqual(before + 1, source_entry_walks);
+
+    // A census the host could not establish is not a clean one. The path whose
+    // law the role decides answers unknown rather than the physical-form law it
+    // would otherwise be silently given, and so does one whose role only
+    // decides provenance.
+    source_entry_count = 0;
+    source_entry_refusal = SourceEntryError.UnestablishedSourceEntries;
+    const refused_home = sourceFacts("examples/lua/host.id");
+    try std.testing.expectEqual(SourceLaw.unknown, refused_home.law);
+    try std.testing.expectEqual(SourceProvenance.unknown, refused_home.provenance);
+    try std.testing.expectEqual(SourceProvenance.unknown, sourceFacts("vendor/opaque.id").provenance);
+
+    // The two censuses are separate facts: an establishable entry census does
+    // not answer for an unestablishable form census, or the other way round.
+    source_entry_count = 0;
+    source_entry_refusal = null;
+    source_form_count = 0;
+    source_form_refusal = SourceFormError.UnestablishedSourceForms;
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("examples/lua/host.id").law);
 }
