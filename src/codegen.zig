@@ -17090,7 +17090,7 @@ pub const CodeGen = struct {
                 if (self.comptime_bindings().get(expr.name.ident)) |cv| {
                     const wrap: ?[]const u8 = switch (cv) {
                         .int => "lua_val_from_int",
-                        .float => "lua_val_from_num",
+                        .float, .decimal => "lua_val_from_num",
                         .bool => "lua_val_from_bool",
                         else => null,
                     };
@@ -17444,6 +17444,10 @@ pub const CodeGen = struct {
                                 },
                                 .float => |v| {
                                     self.p("{d}", .{v});
+                                    return;
+                                },
+                                .decimal => |v| {
+                                    self.p("{d}", .{v.toFloat()});
                                     return;
                                 },
                                 .bool => |v| {
@@ -20261,6 +20265,11 @@ pub const CodeGen = struct {
                 .float => |v| {
                     var buf: [32]u8 = undefined;
                     const written = std.fmt.bufPrint(&buf, "{d}", .{v}) catch return null;
+                    try out.appendSlice(self.alloc, written);
+                },
+                .decimal => |v| {
+                    var buf: [32]u8 = undefined;
+                    const written = std.fmt.bufPrint(&buf, "{d}", .{v.toFloat()}) catch return null;
                     try out.appendSlice(self.alloc, written);
                 },
                 .bool => |v| try out.appendSlice(self.alloc, if (v) "true" else "false"),
