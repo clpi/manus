@@ -366,8 +366,12 @@ peel: str = (line: str)
       else
         out = "{out}{c}"
     else
-      if c == quote
-        quote = ""
+      if quote == "\"" and c == "\\" and i < n
+        i += 1
+        out = "{out} "
+      else
+        if c == quote
+          quote = ""
       out = "{out} "
     i = i + 1
   out
@@ -394,8 +398,11 @@ dash: bool = (code: str)
             if before == "" or before == " " or before == "\t"
               return true
     else
-      if c == quote
-        quote = ""
+      if quote == "\"" and c == "\\" and i < n
+        i += 1
+      else
+        if c == quote
+          quote = ""
     i = i + 1
   false
 
@@ -639,6 +646,36 @@ feed: i64 = (body: str)
 
 control: bool = ()
   ok = true
+  if peel("value = \"\\\"inputSchema\\\"\"") != "value =                  "
+    print("control FAIL: quote text boundary")
+    ok = false
+  if peel("value = \"\\\\\\\"inputSchema\"") != "value =                  "
+    print("control FAIL: slash text boundary")
+    ok = false
+  if peel("value = \"\\\\\"; bad_name = 1") != "value =     ; bad_name = 1"
+    print("control FAIL: closing text boundary")
+    ok = false
+  if peel("value = \"\\\" # text\"; bad_name = 1") != "value =            ; bad_name = 1"
+    print("control FAIL: comment text boundary")
+    ok = false
+  if peel("value = \"\\\"text\\\"\" # bad_name") != "value =            "
+    print("control FAIL: hash text boundary")
+    ok = false
+  if peel("value = '\\'; bad_name = 1") != "value =    ; bad_name = 1"
+    print("control FAIL: byte text boundary")
+    ok = false
+  if dash("value = \"\\\" -- text\"")
+    print("control FAIL: quote comment boundary")
+    ok = false
+  if !dash("value = \"\\\\\" -- old")
+    print("control FAIL: closing comment boundary")
+    ok = false
+  if !dash("value = \"\\\" # text\" -- old")
+    print("control FAIL: hash comment boundary")
+    ok = false
+  if dash("value = \"\\\"text\" # -- old")
+    print("control FAIL: comment comment boundary")
+    ok = false
   if verdict("graph.id", "graph") != 0
     print("control FAIL: graph.id rejected")
     ok = false
