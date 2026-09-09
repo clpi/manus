@@ -495,7 +495,7 @@ pub fn build(b: *std.Build) void {
     // and the added-line firewall examined nothing.
     source_zero_cmd.step.dependOn(b.getInstallStep());
 
-    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/assert_no_ansi_reports.id" });
+    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "scripts/assert_no_ansi_reports.id" });
     no_ansi_reports_cmd.setCwd(b.path("."));
     no_ansi_reports_cmd.step.dependOn(b.getInstallStep());
     const no_ansi_reports_step = b.step("no-ansi-reports", "Assert report ANSI/no-color styling contract");
