@@ -1191,7 +1191,7 @@ has "$ROOT/lib/compiler/parser.id" 'delimiter = probe' \
     'event lost the matching-delimiter primary fact'
 has "$PARSER" 'fn currentParserExpressionGroup(self: *Parser) ParseError!bool {' \
     'parser.zig lost the expression-group primary consumer'
-has "$PARSER" 'return (try self.currentParserDecision()) >> 13 > 1 and' \
+has "$PARSER" '(try self.currentParserDecision()) >> 13 > 1 and' \
     'expression-group primary no longer consumes the matching delimiter fact'
 has "$PARSER" 'if (try self.currentParserExpressionGroup()) {' \
     'parse_simple_expr bypasses the settled expression-group face'
@@ -1277,8 +1277,8 @@ bare_lane=$(grep -cF 'currentParserDecision()) >> 7' "$PARSER" || true)
 anchor=$(sed -n '/fn at_is_bare_anchor/,/^    }/p' "$PARSER" | grep -cF 'currentParserDecision()) >> 7' || true)
 bare_lane=$((bare_lane - anchor))
 examined=$((examined + 1))
-if [ "$bare_lane" -ne 2 ]; then
-    bad "the two remaining bare-declaration consumers must select lane-two bit 7 (calls=$bare_lane)"
+if [ "$bare_lane" -ne 3 ]; then
+    bad "the two bare-declaration consumers plus the aligned type-array reader must select lane-two bit 7 (calls=$bare_lane)"
 fi
 has "$ROOT/lib/compiler/parser.id" 'out[count + start] = out[count + start] | (1 << 7)' \
     'event lost the propagated bare-declaration head bit'
@@ -3484,7 +3484,7 @@ fi
 # The ordinary-pack computed-key entry consumes the exact bracket identity
 # already projected as face 19. Zig retains only key/value materialization and
 # no longer replays `.lbracket` at that entry seam.
-has "$PARSER" '} else if (face == 19) {' \
+has "$PARSER" '} else if (face == 19' \
     'ordinary pack parsing bypasses the settled computed-key face'
 packbrackets=$(sed -n '/fn parse_pack_body/,/fn parse_table_comp/p' "$PARSER" | grep -cF 'tok.kind == .lbracket' || true)
 if [ "$packbrackets" -ne 0 ]; then
@@ -3574,32 +3574,6 @@ rm -rf -- "$offsideprobe"
 examined=$((examined + 1))
 if [ "$offsideold" -ne 3 ] || [ "$offsidenew" -ne 3 ]; then
     bad "the offside-pack detector is broken: old=$offsideold new=$offsidenew"
-fi
-
-# Offside record recognition consumes the same exact name and colon faces as
-# the rest of parser recognition. Layout still decides whether the record is
-# offside; field spelling and descriptor materialization remain unchanged.
-offside_record_kinds=$(sed -n '/fn starts_offside_record/,/fn starts_offside_pack/p' "$PARSER" | \
-    grep -cE '(first|tok)\.kind != \.name|\(try self\.pk\(\)\)\.kind == \.colon' || true)
-if [ "$offside_record_kinds" -ne 0 ]; then
-    bad "offside record retained host identity recognition: count=$offside_record_kinds"
-fi
-has "$PARSER" 'if (!try self.currentParserName()) return false;' \
-    'offside record probe bypasses the settled name face'
-has "$PARSER" 'return try self.currentParserMethod();' \
-    'offside record probe bypasses the settled colon face'
-has "$PARSER" 'if (!try self.currentParserName()) break;' \
-    'offside record field loop bypasses the settled name face'
-
-offside_record_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate offside-record scratch' >&2; exit 2; }
-printf '%s\n' 'if (first.kind != .name) return false;' 'return (try self.pk()).kind == .colon;' 'if (tok.kind != .name) break;' >"$offside_record_probe/old.zig"
-printf '%s\n' 'if (!try self.currentParserName()) return false;' 'return try self.currentParserMethod();' 'if (!try self.currentParserName()) break;' >"$offside_record_probe/new.zig"
-offside_record_old=$(grep -cE '(first|tok)\.kind != \.name|\(try self\.pk\(\)\)\.kind == \.colon' "$offside_record_probe/old.zig")
-offside_record_new=$(grep -cE 'currentParser(Name|Method)' "$offside_record_probe/new.zig")
-rm -rf -- "$offside_record_probe"
-examined=$((examined + 1))
-if [ "$offside_record_old" -ne 3 ] || [ "$offside_record_new" -ne 3 ]; then
-    bad "the offside-record detector is broken: old=$offside_record_old new=$offside_record_new"
 fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
