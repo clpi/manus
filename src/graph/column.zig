@@ -34,8 +34,8 @@ pub fn countOfKind(column: *const KindColumn, nodes: []const graph.Node, kind: g
     try fresh(column, nodes);
     var total: usize = 0;
     for (column.kinds, 0..) |column_kind, i| {
-        if (column_kind != kind) continue;
         if (nodes[i].kind != column_kind) return ColumnError.StaleColumn;
+        if (column_kind != kind) continue;
         total += 1;
     }
     return total;
@@ -50,8 +50,8 @@ pub fn findUnique(
     try fresh(column, nodes);
     var match: ?usize = null;
     for (column.kinds, 0..) |column_kind, i| {
-        if (column_kind != kind) continue;
         if (nodes[i].kind != column_kind) return ColumnError.StaleColumn;
+        if (column_kind != kind) continue;
         const node_name = nodes[i].name orelse continue;
         if (!std.mem.eql(u8, node_name, name)) continue;
         if (match != null) return null;
@@ -87,6 +87,16 @@ fn authorityFind(nodes: []const graph.Node, name: []const u8, kind: graph.NodeKi
     return match;
 }
 
+fn authorityCountStale(kinds: []const graph.NodeKind, nodes: []const graph.Node, kind: graph.NodeKind) usize {
+    var total: usize = 0;
+    for (kinds, 0..) |column_kind, i| {
+        if (column_kind != kind) continue;
+        if (nodes[i].kind != column_kind) continue;
+        total += 1;
+    }
+    return total;
+}
+
 fn makeCorpus(alloc: std.mem.Allocator, n: usize) ![]graph.Node {
     const nodes = try alloc.alloc(graph.Node, n);
     for (nodes, 0..) |*node, i| {
@@ -108,6 +118,24 @@ fn makeCorpus(alloc: std.mem.Allocator, n: usize) ![]graph.Node {
     nodes[31000].name = "alpha";
     nodes[31000].kind = .call;
     return nodes;
+}
+
+test "kindcolumn stale negative: refuse when an authority kind mutates INTO the requested kind" {
+    const alloc = std.testing.allocator;
+    const nodes = try makeCorpus(alloc, 40000);
+    defer alloc.free(nodes);
+    var column = try build(alloc, nodes);
+    defer column.deinit(alloc);
+
+    nodes[9001].kind = .func;
+    try std.testing.expectError(ColumnError.StaleColumn, countOfKind(&column, nodes, .func));
+    try std.testing.expectError(ColumnError.StaleColumn, findUnique(&column, nodes, "beta", .func));
+    try std.testing.expect(authorityCountStale(column.kinds, nodes, .func) < authorityCount(nodes, .func));
+    nodes[9001].kind = .call;
+    nodes[6].kind = .call;
+    try std.testing.expectError(ColumnError.StaleColumn, countOfKind(&column, nodes, .call));
+    try std.testing.expectError(ColumnError.StaleColumn, findUnique(&column, nodes, "beta", .call));
+    try std.testing.expect(authorityCountStale(column.kinds, nodes, .call) < authorityCount(nodes, .call));
 }
 
 test "kindcolumn: column agrees with authority and refuses a perturbed entry" {
