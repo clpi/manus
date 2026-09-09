@@ -4593,7 +4593,37 @@ const Arm64Compiler = struct {
                         if (arg_reg != 0) {
                             try self.preserveArgReg(temps, pinned, 0, at);
                             try self.emitMovReg(0, arg_reg);
+                            // The argument's value now travels in x0 for the
+                            // callee. When this call is the temp's last read,
+                            // its register is dead: free it now, before
+                            // `emitSaveCallerRegs`, so the caller-save does not
+                            // preserve a value no later instruction can
+                            // observe. This is the same decision `sweepGpLive`
+                            // makes after the instruction — same owner record,
+                            // same `value_free_at` test — only earlier, while
+                            // the save set is still open.
+                            switch (ins.lhs) {
+                                .temp => |t| {
+                                    const last = self.value_free_at.get(t) orelse std.math.maxInt(u32);
+                                    if (last <= at and self.gp_reg_owner[arg_reg] == t and
+                                        arg_reg != platform_reserved_reg and
+                                        !Arm64Compiler.regIsPinned(pinned, arg_reg) and
+                                        !(arg_reg >= 9 and self.gp_home_regs[arg_reg]))
+                                    {
+                                        self.gp_reg_owner[arg_reg] = null;
+                                        self.used_regs[arg_reg] = false;
+                                        if (self.spilled_regs.fetchRemove(arg_reg)) |entry| {
+                                            try self.free_spill_slots.append(self.alloc, entry.value);
+                                        }
+                                    }
+                                },
+                                else => {},
+                            }
                         }
+                        // Slot 0 now holds the staged argument; say so the way
+                        // `mov_arg` does, so the allocator keeps out of it
+                        // until the call consumes it.
+                        self.markStagedArgReg(0);
                         // Passing a local as an argument must not free the local:
                         // `t = g(a)` released a's home register, so the following
                         // emitSaveCallerRegs skipped it AND allocReg handed the
@@ -11197,10 +11227,24 @@ const Arm64Compiler = struct {
         branch_patches: *std.ArrayList(DnirBranchPatch),
     ) Error!void {
         const lhs = try self.evalDnirValue(temps, ins.lhs);
-        const rhs = try self.evalDnirValue(temps, ins.rhs);
-        try self.emitCmpReg(lhs, rhs);
-        if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
-        if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
+        // A small constant on the right folds into the compare itself —
+        // `cmp xn, #imm` instead of a `mov` that materializes the constant
+        // into a register and a register-to-register `cmp`. One fewer
+        // instruction and one fewer live register on the comparison, which
+        // is the whole hot path of a recursive base case.
+        const rhs_imm: ?u12 = switch (ins.rhs) {
+            .i64 => |k| if (k >= 0 and k <= 4095) @intCast(k) else null,
+            else => null,
+        };
+        if (rhs_imm) |imm| {
+            try self.emitCmpImm(lhs, imm);
+            if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+        } else {
+            const rhs = try self.evalDnirValue(temps, ins.rhs);
+            try self.emitCmpReg(lhs, rhs);
+            if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+            if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
+        }
         const cond = comparisonCondition(ins.binop).?;
         const arm: Condition = if (nx.branch_condition == .when_true) cond else invertCondition(cond);
         const patch_off = try self.emitBCond(arm, 0);
