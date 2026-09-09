@@ -14259,6 +14259,10 @@ pub const CodeGen = struct {
                         }
                         if (i < ld.inits.len) {
                             const init_rt = self.expr_type(ld.inits[i]);
+                            // An inferred anonymous record from a table literal
+                            // stays dynamic. Native duo_rec would erase the
+                            // mixed native/boxed unbox seam (sum += boxed.x).
+                            if (init_rt == .table_type and ld.inits[i].* == .table) break :blk .any;
                             if (init_rt != .any and init_rt != .nil) break :blk init_rt;
                             if (self.infer_req_module_call_return_type(ld.inits[i])) |call_rt| break :blk call_rt;
                             break :blk init_rt;
@@ -16271,6 +16275,15 @@ pub const CodeGen = struct {
             return;
         }
         if (try self.try_emit_table_projection_unbox(e, want)) return;
+        // string.byte into an integer place must use the native i64 helper.
+        // emit_expr types the call as .any, so the stdlib fallback would emit
+        // lua_to_num(lua_str_byte(...)) and miss lua_str_byte_i64.
+        if (want.is_integer() and e.* == .call and e.call.func.* == .field) {
+            const f = e.call.func.field;
+            if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string")) {
+                if (try self.try_emit_native_string_call(f.field, e.call.args, want)) return;
+            }
+        }
         // A call into a req-module lowers to a direct C call returning a native
         // value. If sema typed the call `.any` we would wrap it in lua_to_num(),
         // which does not accept an int64_t — so consult the callee's real return
