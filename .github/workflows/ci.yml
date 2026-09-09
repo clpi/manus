@@ -18,6 +18,9 @@ env:
 jobs:
   hygiene:
     runs-on: [self-hosted, macOS, ARM64, mac-mini, idol]
+    defaults:
+      run:
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,6 +51,9 @@ jobs:
 
   build:
     runs-on: [self-hosted, macOS, ARM64, mac-mini, idol]
+    defaults:
+      run:
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
     needs: [hygiene]
     steps:
       - uses: actions/checkout@v4
