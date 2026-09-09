@@ -779,14 +779,6 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 8) & 1) != 0;
     }
 
-    /// Whether the colon just consumed by the parser opened an OFFSIDE RECORD
-    /// rather than an inline type annotation. The producer settles the entire
-    /// discrimination at the post-colon name coordinate and emits delimiter 32;
-    /// this reader merely unpacks the fact. The original host
-    /// `starts_offside_record` Zig function replayed four producer identities
-    /// (`kindcolon` + `kindname` + `kindcolon` + line delta) inside save/restore
-    /// state to make the same one selection — the whole-pack event now carries
-    /// the answer.
     fn currentParserOffsideRecord(self: *Parser) ParseError!bool {
         return ((try self.currentParserDecision()) >> 13) == 32;
     }

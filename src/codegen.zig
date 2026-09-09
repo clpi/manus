@@ -4230,28 +4230,6 @@ pub const CodeGen = struct {
                         // The refusal stands because it is TRUE, not because it
                         if (!self.type_expr_is_native_scalar(param.typ)) {
                             const measured_rt = self.resolve_type(param.typ);
-                            // REOPENED 2026-09-05 (t_9571b66e). The earlier
-                            // unconditional refusal at 31808eb9 pre-empted
-                            // the body-shape discriminator, and the closed
-                            // identity-forwarder shape that
-                            // `examples/hash/agreement.id`'s `box: any = (x:
-                            // any) x` exemplifies was bailed with a name
-                            // that did not describe its actual reason for
-                            // not lowering. With the FNV-1a hash runtime
-                            // + `lowerIndexAssignTarget`/`load` routing in
-                            // `dnir_lower.zig` (db7d30cd) and the
-                            // any-returning-identity `.call`-arm in
-                            // `exprIsStr` in place, the call site already
-                            // owns the boxing through
-                            // `callArgUsesNativeLowering` (`param_type ==
-                            // .any` -> false -> boxed). Admitting ONLY
-                            // the single-param, single-tail-identity
-                            // forwarder is the safe sub-claim; every
-                            // other body shape stays refused at its real
-                            // refusal name (assign-target, method-
-                            // unresolved:*, gen-for-dynamic-iter, etc.)
-                            // and the 60-program corpus measurement at
-                            // 31808eb9 does not move.
                             const is_pure_identity_forwarder = blk: {
                                 if (fd.func.params.len != 1) break :blk false;
                                 const only = &fd.func.params[0];
