@@ -210,6 +210,25 @@ static int verify_delimiter(const char *source, int64_t expected) {
     return 0;
 }
 
+static int verify_face(const char *source, int64_t expected) {
+    int64_t facts[256] = {0};
+    int64_t events[256] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, true);
+    int64_t found = -1;
+    for (int64_t index = 0; index < count; index += 1) {
+        if ((facts[index * 2 + 1] & 255) == 60) {
+            found = events[count + index] >> 13;
+            break;
+        }
+    }
+    if (written != count || found != expected) {
+        fprintf(stderr, "%s bracket-face=%lld written=%lld expected=%lld\n", source, (long long)found, (long long)written, (long long)expected);
+        return 1;
+    }
+    return 0;
+}
+
 static int verify_statement(const char *source, bool expected) {
     int64_t facts[256] = {0};
     int64_t events[256] = {0};
@@ -707,6 +726,10 @@ int main(void) {
     failed += verify_delimiter("do", 31);
     failed += verify_delimiter("=>", 31);
     failed += verify_delimiter("catch", 32);
+    failed += verify_face("xs: []i64 = {1, 2}", 19);
+    failed += verify_face("t = {[1] = 2}", 33);
+    failed += verify_face("t = {7, [2] = 3}", 19);
+    failed += verify_face("return [1, 2]", 19);
     failed += verify_event();
     failed += verify_event_lead_trivia();
     failed += verify_event_boundary();
@@ -717,7 +740,7 @@ int main(void) {
     failed += verify_boundary_closure();
     failed += verify_layout_faces();
     failed += verify_boundary_opening();
-    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 declaration-lane-cases=14 delimiter-lane-cases=25 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
+    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 array-face-cases=4 layout-type-cases=8 declaration-lane-cases=14 delimiter-lane-cases=25 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
     return failed != 0;
 }
 EOF
@@ -756,7 +779,7 @@ compile_and_run() {
     require_result "$label" "$cursor_result"
 }
 
-expected_cursor_result='typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 declaration-lane-cases=14 delimiter-lane-cases=25 lead-slots=114 prefix-slots=114 relation-slots=114 statement-slots=114 event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=114 boundary-slots=114 boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=114 empty-terminators=114 failed=0'
+expected_cursor_result='typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 array-face-cases=4 layout-type-cases=8 declaration-lane-cases=14 delimiter-lane-cases=25 lead-slots=114 prefix-slots=114 relation-slots=114 statement-slots=114 event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=114 boundary-slots=114 boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=114 empty-terminators=114 failed=0'
 
 result() {
     [ -s "$1" ] || return 1
