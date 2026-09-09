@@ -2921,10 +2921,7 @@ const Arm64Compiler = struct {
                     // way, so the only question a home answers for it is where
                     // the copy lands — and a parameter that is never reassigned
                     // gains nothing per iteration to repay the prologue
-                    // save/restore its home would cost. A parameter READ in a
-                    // hot loop is a real second win and is not this change's:
-                    // taking it needs the read side of the same liveness fact,
-                    // not the write side.
+                    // save/restore its home would cost.
                     try planSlot(
                         self,
                         slot_cursor,
@@ -3633,16 +3630,19 @@ const Arm64Compiler = struct {
                         // A frame-bound param only needs a scratch register to
                         // reach its slot; a register-homed one needs a home the
                         // call cannot reach.
-                        const home = if (self.gpSlotUsesStack(slot))
-                            try self.allocReg()
-                        else
-                            try self.allocHomeReg();
-                        try self.emitMovRegFit(home, arg_reg, param_fit);
                         if (self.gpSlotUsesStack(slot)) {
                             const off = try self.reserveGpStackLocal(slot);
-                            try self.storeGpStackLocal(off, home);
-                            if (!Arm64Compiler.regIsPinned(&pinned, home)) self.releaseReg(home);
+                            // Store directly from the incoming arg register.
+                            // narrowedFrameSource refits the value if the type
+                            // needs narrowing, returning arg_reg itself when
+                            // no refit is needed. This avoids the temp-register
+                            // mov that the old path emitted.
+                            const src = try self.narrowedFrameSource(arg_reg, param_fit);
+                            try self.storeGpStackLocal(off, src);
+                            if (src != arg_reg) self.releaseReg(src);
                         } else {
+                            const home = try self.allocHomeReg();
+                            try self.emitMovRegFit(home, arg_reg, param_fit);
                             self.markGpHome(home);
                             try temps.put(self.alloc, slot, home);
                             try pinned.put(self.alloc, slot, home);
@@ -4944,6 +4944,14 @@ const Arm64Compiler = struct {
                     // backend produces (every folded recognizer result returns this
                     // way), so it is worth the special case.
                     try self.emitMovImm(0, n);
+                } else if (ins.lhs == .local and self.gp_stack_locals.contains(ins.lhs.local)) {
+                    // A stack-homed local return loads DIRECTLY into x0.
+                    // Routing it through evalDnirValue allocates a scratch
+                    // register first, emitting ldr x9,[sp,#off] ; mov x0,x9
+                    // where ldr x0,[sp,#off] suffices. One wasted instruction
+                    // on the function-return path.
+                    const off2 = self.gp_stack_locals.get(ins.lhs.local).?; try self.emitLdrFrame(0, off2);
+                    _ = try self.emitNarrowFit(0, 0, self.cur_func_ret);
                 } else {
                     const reg = try self.evalDnirValue(temps, ins.lhs);
                     try self.emitMovRegFit(0, reg, self.cur_func_ret);
@@ -8888,8 +8896,13 @@ const Arm64Compiler = struct {
     /// — `sp` is never zero — and behaves exactly as it does now.
     fn emitDepthCheck(self: *Arm64Compiler) Error!void {
         const sym = try self.depthLimitSymbol();
-        try self.emitAdrpAdd(16, sym);
-        try self.emitFmt(0xf9400000 | (@as(u32, 16) << 5) | 16, "ldr x{d}, [x{d}]", .{ 16, 16 });
+        const sname = self.symbols.items[sym].name;
+        const page_off: u32 = @intCast(self.code.items.len);
+        try self.emitFmt(0x90000000 | @as(u32, 16), "adrp x{d}, {s}@PAGE", .{ 16, sname });
+        try self.relocations.append(self.alloc, .{ .offset = page_off, .symbol_index = sym, .kind = .page21 });
+        const ldr_off: u32 = @intCast(self.code.items.len);
+        try self.emitFmt(0xf9400000 | (@as(u32, 16) << 5) | 16, "ldr x{d}, [x{d}, {s}@PAGEOFF]", .{ 16, 16, sname });
+        try self.relocations.append(self.alloc, .{ .offset = ldr_off, .symbol_index = sym, .kind = .pageoff12 });
         try self.emit(0xeb3063ff, "cmp sp, x16");
         const cond: u32 = @intFromEnum(Condition.hi);
         const branch_off: u32 = @intCast(self.code.items.len);
@@ -9107,18 +9120,23 @@ const Arm64Compiler = struct {
         var save_set = SaveSet{};
         var reg: u5 = 0;
         while (reg < 8) : (reg += 1) {
-            if (self.used_regs[reg]) {
+            // Staged argument registers (x0-x7 holding call args) are dead
+            // after the call consumes them; do not preserve them.
+            const is_staged_arg = (self.pending_arg_regs & (@as(u8, 1) << @as(u3, @intCast(reg)))) != 0;
+            if (self.used_regs[reg] and !is_staged_arg) {
                 save_set.regs[save_set.count] = reg;
                 save_set.count += 1;
             }
         }
         reg = 9;
-        while (reg <= 28) : (reg += 1) {
+        while (reg <= 18) : (reg += 1) {
             if (self.used_regs[reg]) {
                 save_set.regs[save_set.count] = reg;
                 save_set.count += 1;
             }
         }
+        // x19-x28 are callee-saved (AAPCS64): the callee preserves them, so
+        // the caller never spills them around a call. Homes live there.
         var fpr: u5 = fp_value_reg_base;
         while (fpr < fp_value_reg_base + fp_value_reg_count) : (fpr += 1) {
             if (self.used_fp_regs[fpr]) {
