@@ -24,4 +24,4 @@ if direct_native_absent; then
 fi
 
 cd "$root" || exit 2
-exec "$idol" run scripts/public_safety_scan.id
+exec "$idol" run --backend=direct scripts/public_safety_scan.id
