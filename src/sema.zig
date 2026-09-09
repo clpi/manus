@@ -4605,26 +4605,12 @@ pub const Sema = struct {
         if (self.subjectHome(obj, method, ot)) |owner| {
             // A WORLD'S RELATIONS RESOLVE ONLY WHERE THE WORLD REACHES. The
             // answer is uniform for every world and comes from the launcher's
-            // exact grant set, never from source provenance.
+            // exact grant set, never from source provenance. This is the only
+            // admission face: a name the subject's own roster does not carry
+            // falls through to foreign declarations and refuses — never to a
+            // second list keyed on the relation's name alone, which is the
+            // rewire false-accept this gap closes.
             return self.inhabitsWorld(owner);
-        }
-        if (ot == .str or ot == .any) {
-            if (std.mem.eql(u8, method, "len") and args.len == 0) return true;
-            if (std.mem.eql(u8, method, "has") and args.len == 1) return true;
-            if (std.mem.eql(u8, method, "find") and args.len == 3) return true;
-            if (std.mem.eql(u8, method, "tail") and args.len == 0) return true;
-            // `read` / `write` / `close` USED TO BE HERE, admitted for any `str`
-            // or unnarrowed subject. They are stream relations and now live in
-            // the rosters keyed by what the subject IS (`subject_home.zig`):
-            // `read` under `text` because A STRING IS A PATH and `path:read()`
-            // lowers, `write` and `close` under `stream` only. Listed here they
-            // made `"hi":write(x)` and `"hi":close()` type-check clean and die
-            // at emit with `DNB001 method-unresolved` — the exact shape this
-            // convergence exists to remove.
-            if (std.mem.eql(u8, method, "match") and args.len == 1) return true;
-            if (std.mem.eql(u8, method, "sub") and (args.len == 1 or args.len == 2)) return true;
-            if (std.mem.eql(u8, method, "byte") and args.len == 1) return true;
-            if (std.mem.eql(u8, method, "gsub") and args.len == 2) return true;
         }
         return false;
     }
@@ -14435,6 +14421,76 @@ test "sema: gap236 case2 — undeclared relation on an untyped param fails close
         "'mass' is neither a descriptor nor a callable",
     ) != null);
 }
+
+test "sema: GAP-226 producer fact governs — the subject's roster alone admits" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const admitted = try runIdolSema(
+        \\main: i64 = ()
+        \\    n = 5
+        \\    _ = n:floor()
+        \\    0
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), admitted.errors);
+}
+
+test "sema: GAP-226 a relation another roster declares is refused for this subject" {
+    // `floor` is a real relation name — the numeric roster carries it — but a
+    // text subject's producer does not, so the application must fail closed
+    // rather than admit on the name. This is the rewired-roster control: the
+    // consumer asks the subject's own producer, never a name list.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const refused = try runIdolSema(
+        \\main: i64 = ()
+        \\    s = "hi"
+        \\    _ = s:floor()
+        \\    0
+    , &arena);
+    try testing.expectEqual(@as(u32, 1), refused.errors);
+    try testing.expect(std.mem.indexOf(
+        u8,
+        refused.diagnostics.items[0].message,
+        "'floor' is neither a descriptor nor a callable",
+    ) != null);
+}
+
+test "sema: GAP-226 unnarrowed stream subject keeps the bridge the corpus measured" {
+    // `f` is `io.open`'s result: no descriptor, `.unknown` conformance. The
+    // stream roster answers through the bridge, exactly as the 212 measured
+    // corpus sites require — a guard that asks the roster of `.unknown` itself
+    // reads an empty list and refuses this program.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\main: i64 = ()
+        \\    f = io.open("x", "r")
+        \\    _ = f:read("a")
+        \\    f:close()
+        \\    0
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: GAP-226 a world the launcher did not grant fails closed at the edge" {
+    // `test` is a witnessed world and no grant was supplied, so `test:assert`
+    // has no producer this launch reaches — the refusal is the fail-closed
+    // grant face of the same consumer.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\main: i64 = ()
+        \\    test:assert(true)
+        \\    0
+    , &arena);
+    try testing.expectEqual(@as(u32, 1), s.errors);
+    try testing.expect(std.mem.indexOf(
+        u8,
+        s.diagnostics.items[0].message,
+        "'assert' is neither a descriptor nor a callable",
+    ) != null);
+}
+
 
 test "sema: gap236 case3 — subject-specialized declaration mints a Lua method, publishes nothing" {
     // RESIDUE vs the ruling: `body:weight = (factor)` should be relation
