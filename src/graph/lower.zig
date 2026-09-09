@@ -1827,11 +1827,6 @@ fn fieldWriteExists(alloc: std.mem.Allocator, writes: []const fieldindex.Write, 
     return fieldindex.hasWrite(&index, writes, 0, name, fld) catch return error.GraphFactsInvalid;
 }
 
-/// Fold every `name.field = value` that still reaches this binding into
-/// `fields`, and answer false the moment two writes disagree about what the
-/// word holds. Two stores that disagree is the failure this whole change exists
-/// to make impossible, so disagreement declines the binding rather than picking
-/// a winner.
 fn collectFieldWriteTypes(
     alloc: std.mem.Allocator,
     block: *const ast.Block,
@@ -1839,33 +1834,68 @@ fn collectFieldWriteTypes(
     name: []const u8,
     fields: *std.StringArrayHashMapUnmanaged(RT),
 ) Error!bool {
-    var scan = FieldTypeScan{ .alloc = alloc, .name = name, .fields = fields };
-    try walkBindingAssigns(block, owner, name, &scan);
-    return scan.agreed;
+    var writes: std.ArrayListUnmanaged(fieldindex.Write) = .empty;
+    defer writes.deinit(alloc);
+    var collect = FieldTypeCollector{ .name = name, .writes = &writes, .alloc = alloc };
+    try walkBindingAssigns(block, owner, name, &collect);
+    if (collect.missing) return false;
+    if (writes.items.len == 0) return true;
+    var index = try fieldindex.build(alloc, writes.items);
+    defer index.deinit(alloc);
+    var done: usize = 0;
+    while (done < writes.items.len) {
+        const fld = writes.items[done].field;
+        var seen = false;
+        var j: usize = 0;
+        while (j < done) {
+            if (std.mem.eql(u8, writes.items[j].field, fld)) seen = true;
+            j += 1;
+        }
+        done += 1;
+        if (seen) continue;
+        const agreed = fieldindex.writeKind(&index, writes.items, 0, name, fld) catch return error.GraphFactsInvalid;
+        const kind = agreed orelse return false;
+        const gop = try fields.getOrPut(alloc, fld);
+        if (gop.found_existing) {
+            if (fieldTypeKind(gop.value_ptr.*) != kind) return false;
+        } else {
+            gop.value_ptr.* = switch (kind) {
+                1 => .i64,
+                2 => .f64,
+                else => .str,
+            };
+        }
+    }
+    return true;
 }
 
-const FieldTypeScan = struct {
-    alloc: std.mem.Allocator,
-    name: []const u8,
-    fields: *std.StringArrayHashMapUnmanaged(RT),
-    agreed: bool = true,
+fn fieldTypeKind(ty: RT) u8 {
+    return switch (ty) {
+        .i64 => 1,
+        .f64 => 2,
+        .str => 3,
+        .array => 4,
+        else => 0,
+    };
+}
 
-    fn assign(self: *FieldTypeScan, a: anytype) Error!void {
+const FieldTypeCollector = struct {
+    name: []const u8,
+    writes: *std.ArrayListUnmanaged(fieldindex.Write),
+    alloc: std.mem.Allocator,
+    missing: bool = false,
+
+    fn assign(self: *FieldTypeCollector, a: anytype) Error!void {
         for (a.targets, 0..) |t, i| {
             if (t.* != .field) continue;
             if (t.field.obj.* != .name) continue;
             if (!std.mem.eql(u8, t.field.obj.name.ident, self.name)) continue;
             if (i >= a.values.len) {
-                self.agreed = false;
+                self.missing = true;
                 continue;
             }
             const ty = typeOfGlobal(.inferred, a.values[i]);
-            const gop = try self.fields.getOrPut(self.alloc, t.field.field);
-            if (gop.found_existing) {
-                if (!gop.value_ptr.*.eql(ty)) self.agreed = false;
-            } else {
-                gop.value_ptr.* = ty;
-            }
+            try self.writes.append(self.alloc, .{ .owner = 0, .name = self.name, .field = t.field.field, .kind = fieldTypeKind(ty), .shadowed = false });
         }
     }
 };
