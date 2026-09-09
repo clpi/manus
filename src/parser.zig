@@ -709,7 +709,7 @@ pub const Parser = struct {
 
     fn currentParserTableEntry(self: *Parser) ParseError!bool {
         const face = try self.currentParserFace();
-        return face == 22 or face == 23;
+        return face == 22 or face == 23 or face == 33;
     }
 
     fn currentParserPackName(self: *Parser) ParseError!u2 {
@@ -762,8 +762,8 @@ pub const Parser = struct {
     }
 
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
-        if (try self.check(.lbracket)) return true;
-        return (((try self.currentParserDecision()) >> 7) & 1) != 0;
+        if (try self.currentParserCall()) return false;
+        return (try self.currentParserDecision()) >> 13 == 19;
     }
 
     fn currentParserTypeNumber(self: *Parser) ParseError!bool {
@@ -8373,7 +8373,7 @@ pub const Parser = struct {
                 _ = try self.adv();
                 const spread_expr = try self.parse_expr();
                 try fields.append(self.alloc, .{ .spread = spread_expr });
-            } else if (face == 19 or (face == 23 and try self.currentParserTypeArray())) {
+            } else if (face == 19 or face == 33) {
                 _ = try self.adv();
                 const key = try self.parse_expr();
                 _ = try self.expect(.rbracket);

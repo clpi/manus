@@ -333,7 +333,7 @@ has "$ROOT/lib/compiler/parser.id" 'This is the complete return-value-entry answ
     'parser.id lost the complete match-arm return-entry contract'
 forbid "$PARSER" 'switch (nxt.kind) {' \
     'match-arm return parsing retained the dead host token-kind switch'
-has "$PARSER" 'if (try self.returnStartsValue(ret_loc, nxt)) {' \
+has "$PARSER" 'const hasvalue = nxt.loc.line == ret_loc.line and try self.returnStartsValue(ret_loc, nxt);' \
     'match-arm return parsing bypasses the settled return face'
 
 returnmatchprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate match-return scratch' >&2; exit 2; }
@@ -477,19 +477,26 @@ if [ "$type_old" -ne 4 ] || [ "$type_new" -ne 4 ] || [ "$type_clean" -ne 0 ]; th
     bad "the contextual-type detector is broken: old=$type_old new=$type_new clean=$type_clean"
 fi
 
-# The array type-primary decision shares lane-two bit 3 with the mutually
-# exclusive return face. Zig consumes that settled face before the residual
-# generic/record switch and no longer switches on `.lbracket` there.
-has "$ROOT/lib/compiler/parser.id" '(arrayface << 3)' \
-    'event lost the array type-primary face'
+has "$ROOT/lib/compiler/parser.id" '(33 << 13)' \
+    'event lost the brace-entry computed-key face 33'
+has "$ROOT/src/parser/projection.c" 'out[(count + index)] = ((int64_t)((((int64_t)((out[(count + index)]) & (8191)))) | (270336)))' \
+    'tracked projection lost the brace-entry computed-key face 33'
 has "$PARSER" 'fn currentParserTypeArray(self: *Parser) ParseError!bool {' \
     'parser.zig lost the array type-primary consumer'
+has "$PARSER" 'return (try self.currentParserDecision()) >> 13 == 19;' \
+    'parser.zig bypasses the settled bracket face'
 has "$PARSER" 'if (try self.currentParserTypeArray()) {' \
     'parse_type_primary bypasses the settled array face'
+has "$PARSER" 'face == 19 or face == 33' \
+    'the table-entry seam lost the settled computed-key face'
+arrayface_residue=$(grep -cF 'arrayface' "$ROOT/lib/compiler/parser.id" || true)
+typearray_body=$(sed -n '/fn currentParserTypeArray/,/^    }/p' "$PARSER")
+typearray_hostcheck=$(printf '%s' "$typearray_body" | grep -cF 'check(' || true)
+typearray_bit7=$(printf '%s' "$typearray_body" | grep -cF '>> 7' || true)
 array_arms=$(grep -cF '.lbracket => {' "$PARSER" || true)
 examined=$((examined + 1))
-if [ "$array_arms" -ne 0 ]; then
-    bad "the parser retained $array_arms .lbracket host arm(s) after suffix transfer"
+if [ "$arrayface_residue" -ne 0 ] || [ "$typearray_hostcheck" -ne 0 ] || [ "$typearray_bit7" -ne 0 ] || [ "$array_arms" -ne 0 ]; then
+    bad "the array face regressed to a host decision: arrayface=$arrayface_residue hostcheck=$typearray_hostcheck bit7=$typearray_bit7 arms=$array_arms"
 fi
 
 # ── 2e''. bare declaration path executes from whole-pack lane two ────────────
@@ -1277,8 +1284,8 @@ bare_lane=$(grep -cF 'currentParserDecision()) >> 7' "$PARSER" || true)
 anchor=$(sed -n '/fn at_is_bare_anchor/,/^    }/p' "$PARSER" | grep -cF 'currentParserDecision()) >> 7' || true)
 bare_lane=$((bare_lane - anchor))
 examined=$((examined + 1))
-if [ "$bare_lane" -ne 3 ]; then
-    bad "the two bare-declaration consumers plus the aligned type-array reader must select lane-two bit 7 (calls=$bare_lane)"
+if [ "$bare_lane" -ne 2 ]; then
+    bad "the two bare-declaration consumers must select lane-two bit 7 (calls=$bare_lane)"
 fi
 has "$ROOT/lib/compiler/parser.id" 'out[count + start] = out[count + start] | (1 << 7)' \
     'event lost the propagated bare-declaration head bit'
