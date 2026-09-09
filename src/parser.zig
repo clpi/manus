@@ -762,6 +762,7 @@ pub const Parser = struct {
     }
 
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
+        if (try self.check(.lbracket)) return true;
         return (((try self.currentParserDecision()) >> 7) & 1) != 0;
     }
 
