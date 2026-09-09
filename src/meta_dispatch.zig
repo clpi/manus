@@ -90,6 +90,7 @@ pub const combinators: []const DispatchEntry = &.{
     .{ .internal_name = "__metaschemeclauses", .min_args = 1, .max_args = 2, .first_arg_string = true, .last_arg_callback = false },
     .{ .internal_name = "__derivemap", .min_args = 2, .max_args = 2, .first_arg_string = true, .last_arg_callback = true },
     .{ .internal_name = "__derivepower", .min_args = 2, .max_args = 2, .first_arg_string = true, .last_arg_callback = true },
+    .{ .internal_name = "__deriveproduct", .min_args = 3, .max_args = 3, .first_arg_string = true, .last_arg_callback = true },
     .{ .internal_name = "__derivetensor", .min_args = 2, .max_args = 4, .first_arg_string = true, .last_arg_callback = true },
     .{ .internal_name = "__derivenfold", .min_args = 2, .max_args = 3, .first_arg_string = true, .last_arg_callback = true },
     .{ .internal_name = "__derivechoose", .min_args = 3, .max_args = 3, .first_arg_string = true, .last_arg_callback = true },
@@ -166,6 +167,7 @@ pub fn canDispatch(internal_name: []const u8) bool {
 
 test "meta_dispatch: canDispatch tier-1 wired hooks" {
     try std.testing.expect(canDispatch("__comptimemap"));
+    try std.testing.expect(canDispatch("__deriveproduct"));
     try std.testing.expect(canDispatch("__comptimefixpoint"));
     try std.testing.expect(!canDispatch("__metacatalog"));
     try std.testing.expect(!canDispatch("__nonexistent"));
@@ -219,6 +221,7 @@ test "meta_dispatch: arity covers every hook form" {
         .{ .name = "__comptimepermute", .arity = 2 },
         .{ .name = "__comptimenfold", .arity = 2 },
         .{ .name = "__comptimeproduct", .arity = 3 },
+        .{ .name = "__deriveproduct", .arity = 3 },
         .{ .name = "__comptimetensor", .arity = 3 },
         .{ .name = "__comptimetensor", .arity = 4 },
         .{ .name = "__comptimefanout", .arity = 3 },
@@ -233,7 +236,7 @@ test "meta_dispatch: arity covers every hook form" {
         .{ .name = "__metagrammar", .arity = 2 },
     };
     for (hook_forms) |f| {
-        if (!isCombinator(f.name)) continue;
+        if (!isCombinator(f.name)) return error.MissingDispatchRow;
         testing.expect(validArgCount(f.name, f.arity)) catch |e| {
             std.debug.print("combinator {s} implements arity {d}, table rejects it\n", .{ f.name, f.arity });
             return e;
