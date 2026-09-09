@@ -39,11 +39,11 @@ mkdir -p "$TMPDIR"
 "$idol" dump-c "$work/load.lua" >"$work/generated.c" \
     || fail 'compiler did not emit the compatibility runtime'
 
-begin=$(grep -c 'IDOL_PRIVATE_TEMP_BEGIN' "$work/generated.c" || true)
-end=$(grep -c 'IDOL_PRIVATE_TEMP_END' "$work/generated.c" || true)
+begin=$(grep -c 'IDOL_TEMP_SECTION_BEGIN' "$work/generated.c" || true)
+end=$(grep -c 'IDOL_TEMP_SECTION_END' "$work/generated.c" || true)
 [ "$begin" -eq 1 ] && [ "$end" -eq 1 ] \
     || fail "emitted helper boundary is not unique (begin=$begin end=$end)"
-sed -n '/IDOL_PRIVATE_TEMP_BEGIN/,/IDOL_PRIVATE_TEMP_END/p' \
+sed -n '/IDOL_TEMP_SECTION_BEGIN/,/IDOL_TEMP_SECTION_END/p' \
     "$work/generated.c" >"$work/helper.c"
 
 write_probe() {

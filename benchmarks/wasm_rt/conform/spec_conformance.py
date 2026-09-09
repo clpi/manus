@@ -96,7 +96,7 @@ def eq(a, b):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--suite", default="/Users/clp/x/wart/third_party/testsuite")
+    ap.add_argument("--suite", default="$HOME/x/wart/third_party/testsuite")
     ap.add_argument("--work", default="/tmp/idol_wasm_spec")
     ap.add_argument("--only", default="")
     ap.add_argument("--timeout", type=float, default=20.0)
