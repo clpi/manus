@@ -21,6 +21,7 @@ const home_resolve = @import("../home_resolve.zig");
 const tail_result_demand = @import("../tail_result_demand.zig");
 const table_facts = @import("../table_facts.zig");
 const collection_relation = @import("../collection_relation.zig");
+const fieldindex = @import("field.zig");
 const RT = types.ResolvedType;
 
 // DNIR only needs the machine class of a pointer. Its exact pointee descriptor
@@ -1639,7 +1640,7 @@ fn registerTableFieldGlobals(
     if (fields.count() == 0) return;
     // A field nothing writes after its literal is a constant `ModuleConsts`
     // already folds. Storage is owed only when a write exists.
-    if (!try moduleHasFieldWrite(&mod.body, owner, name)) return;
+    if (!try moduleHasFieldWrite(alloc, &mod.body, owner, name)) return;
 
     var it = fields.iterator();
     while (it.next()) |entry| {
@@ -1792,27 +1793,39 @@ const SubscriptWriteScan = struct {
 };
 
 fn moduleHasFieldWrite(
+    alloc: std.mem.Allocator,
     block: *const ast.Block,
     owner: *const ast.Stmt,
     name: []const u8,
 ) Error!bool {
-    var scan = FieldWriteScan{ .name = name };
-    try walkBindingAssigns(block, owner, name, &scan);
-    return scan.found;
+    var writes: std.ArrayListUnmanaged(fieldindex.Write) = .empty;
+    defer writes.deinit(alloc);
+    var collect = FieldWriteCollector{ .name = name, .writes = &writes, .alloc = alloc };
+    try walkBindingAssigns(block, owner, name, &collect);
+    if (writes.items.len == 0) return false;
+    return try fieldWriteExists(alloc, writes.items, name, writes.items[0].field);
 }
 
-const FieldWriteScan = struct {
+const FieldWriteCollector = struct {
     name: []const u8,
-    found: bool = false,
+    writes: *std.ArrayListUnmanaged(fieldindex.Write),
+    alloc: std.mem.Allocator,
 
-    fn assign(self: *FieldWriteScan, a: anytype) Error!void {
+    fn assign(self: *FieldWriteCollector, a: anytype) Error!void {
         for (a.targets) |t| {
             if (t.* != .field) continue;
             if (t.field.obj.* != .name) continue;
-            if (std.mem.eql(u8, t.field.obj.name.ident, self.name)) self.found = true;
+            if (!std.mem.eql(u8, t.field.obj.name.ident, self.name)) continue;
+            try self.writes.append(self.alloc, .{ .owner = 0, .name = self.name, .field = t.field.field, .kind = 0, .shadowed = false });
         }
     }
 };
+
+fn fieldWriteExists(alloc: std.mem.Allocator, writes: []const fieldindex.Write, name: []const u8, fld: []const u8) Error!bool {
+    var index = try fieldindex.build(alloc, writes);
+    defer index.deinit(alloc);
+    return fieldindex.hasWrite(&index, writes, 0, name, fld) catch return error.GraphFactsInvalid;
+}
 
 /// Fold every `name.field = value` that still reaches this binding into
 /// `fields`, and answer false the moment two writes disagree about what the
@@ -2285,7 +2298,7 @@ fn collectModuleConsts(
         // Declining to record it is the fail-closed half: where storage exists
         // the read resolves through the word, and where it does not the read
         // has no fact to answer from and refuses.
-        if (try moduleHasFieldWrite(&mod.body, stmt, n)) continue;
+        if (try moduleHasFieldWrite(alloc, &mod.body, stmt, n)) continue;
         for (tbl.table.fields) |fld| {
             const nf = switch (fld) {
                 .named => |x| x,
@@ -19613,6 +19626,87 @@ test "dnir_lower: a module write below a closed shadow block reaches the module 
     // published; a leaked shadow slot swallowing it is the recorded defect.
     try std.testing.expect(deep_writes_module_word);
     try std.testing.expect(saw_main_global_read);
+}
+
+test "fieldindex: module field write reaches the index consumer" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\M = { x = 1 }
+        \\bump: i64 = ()
+        \\    M.x = 2
+        \\    0
+        \\main: i64 = ()
+        \\    bump()
+        \\    M.x
+    ;
+    var lex = @import("../lexer.zig").Lexer.init(src, "gap219-index-hit.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var owner: ?*const ast.Stmt = null;
+    for (module.body.stmts) |*st| {
+        if (st.* != .assign) continue;
+        if (st.assign.targets.len != 1) continue;
+        if (st.assign.targets[0].* != .name) continue;
+        if (!std.mem.eql(u8, st.assign.targets[0].name.ident, "M")) continue;
+        owner = st;
+    }
+    const o = owner orelse return error.TestUnexpectedResult;
+    try std.testing.expect(try moduleHasFieldWrite(alloc, &module.body, o, "M"));
+}
+
+test "fieldindex: shadow-only field write stays absent from the index consumer" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\cell: { x: i64 }
+        \\M = { x = 1 }
+        \\bump: i64 = ()
+        \\    M: cell = { x = 5 }
+        \\    M.x = 99
+        \\    M.x
+        \\read: i64 = ()
+        \\    M.x
+    ;
+    var lex = @import("../lexer.zig").Lexer.init(src, "gap219-index-miss.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var owner: ?*const ast.Stmt = null;
+    for (module.body.stmts) |*st| {
+        if (st.* != .assign) continue;
+        if (st.assign.targets.len != 1) continue;
+        if (st.assign.targets[0].* != .name) continue;
+        if (!std.mem.eql(u8, st.assign.targets[0].name.ident, "M")) continue;
+        owner = st;
+    }
+    const o = owner orelse return error.TestUnexpectedResult;
+    try std.testing.expect(!try moduleHasFieldWrite(alloc, &module.body, o, "M"));
+}
+
+test "fieldindex: production existence refuses a drifted authority set" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const first = [_]fieldindex.Write{
+        .{ .owner = 0, .name = "M", .field = "x", .kind = 0, .shadowed = false },
+    };
+    const second = [_]fieldindex.Write{
+        .{ .owner = 0, .name = "M", .field = "y", .kind = 0, .shadowed = false },
+    };
+    try std.testing.expect(try fieldWriteExists(alloc, &first, "M", "x"));
+    try std.testing.expect(!try fieldWriteExists(alloc, &second, "M", "x"));
+    try std.testing.expect(!try fieldWriteExists(alloc, &[_]fieldindex.Write{}, "M", "x"));
+    var index = try fieldindex.build(alloc, &first);
+    defer index.deinit(alloc);
+    if (fieldindex.hasWrite(&index, &second, 0, "M", "x")) |_| {
+        return error.TestUnexpectedResult;
+    } else |e| {
+        try std.testing.expectEqual(fieldindex.FieldError.StaleIndex, e);
+    }
 }
 
 /// One module, lifted the way `lowerModuleFromGraph`'s callers lift it, so a
