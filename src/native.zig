@@ -9120,10 +9120,13 @@ const Arm64Compiler = struct {
         var save_set = SaveSet{};
         var reg: u5 = 0;
         while (reg < 8) : (reg += 1) {
-            // Staged argument registers (x0-x7 holding call args) are dead
-            // after the call consumes them; do not preserve them.
-            const is_staged_arg = (self.pending_arg_regs & (@as(u8, 1) << @as(u3, @intCast(reg)))) != 0;
-            if (self.used_regs[reg] and !is_staged_arg) {
+            // A staged argument register still joins the save set. The operand
+            // can already occupy the ABI slot (so no copy is made), and when
+            // that operand stays live past the call the slot holds its only
+            // copy: excluding it from the save loses the value across the
+            // call. A dead staged copy costs one save/restore pair; a lost
+            // live value is a miscompile.
+            if (self.used_regs[reg]) {
                 save_set.regs[save_set.count] = reg;
                 save_set.count += 1;
             }
