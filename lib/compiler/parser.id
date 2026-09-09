@@ -93,19 +93,19 @@ parse_factor: Res = (src: str, pos: i64)
         if j <= n and src:byte(j) == 41
             return { val = inner.val, pos = j + 1 }
         return { val = inner.val, pos = j }
-    acc = 0
-    j = i
-    while j <= n and is_digit(src:byte(j)) == 1
-        acc = acc * 10 + src:byte(j) - 48
-        j += 1
-    { val = acc, pos = j }
+    acc: i64 = 0
+    k: i64 = i
+    while k <= n and is_digit(src:byte(k)) == 1
+        acc = acc * 10 + src:byte(k) - 48
+        k += 1
+    { val = acc, pos = k }
 
 # term := factor (('*' | '/') factor)*
 parse_term: Res = (src: str, pos: i64)
     n = src:len()
     left: Res = parse_factor(src, pos)
-    acc = left.val
-    i = skip_spaces(src, left.pos)
+    acc: i64 = left.val
+    i: i64 = skip_spaces(src, left.pos)
     while i <= n
         op = src:byte(i)
         if op == 42
@@ -124,8 +124,8 @@ parse_term: Res = (src: str, pos: i64)
 parse_expr: Res = (src: str, pos: i64)
     n = src:len()
     left: Res = parse_term(src, pos)
-    acc = left.val
-    i = skip_spaces(src, left.pos)
+    acc: i64 = left.val
+    i: i64 = skip_spaces(src, left.pos)
     while i <= n
         op = src:byte(i)
         if op == 43

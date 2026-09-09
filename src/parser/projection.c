@@ -2377,10 +2377,9 @@ __attribute__((visibility("default"))) duo_rec_36d5599b2b144b84 parse_factor(con
         };
     }
     int64_t c = ((int64_t)(unsigned char)(src[i - 1]));
-        int64_t j = 0;
     if ((c == 40)) {
         duo_rec_36d5599b2b144b84 inner = parse_expr(src, (i + 1));
-                j = skip_spaces(src, inner.pos);
+        int64_t j = skip_spaces(src, inner.pos);
         if (((j <= n) && (((int64_t)(unsigned char)(src[j - 1])) == 41))) {
             return (duo_rec_36d5599b2b144b84){
                 .val = inner.val,
@@ -2393,14 +2392,14 @@ __attribute__((visibility("default"))) duo_rec_36d5599b2b144b84 parse_factor(con
         };
     }
     int64_t acc = 0;
-        j = i;
-    while (((j <= n) && (is_digit(((int64_t)(unsigned char)(src[j - 1]))) == 1))) {
-                acc = (((acc * 10) + ((int64_t)(unsigned char)(src[j - 1]))) - 48);
-                j = (j + 1);
+    int64_t k = i;
+    while (((k <= n) && (is_digit(((int64_t)(unsigned char)(src[k - 1]))) == 1))) {
+                acc = (((acc * 10) + ((int64_t)(unsigned char)(src[k - 1]))) - 48);
+                k = (k + 1);
     }
     return (duo_rec_36d5599b2b144b84){
         .val = acc,
-        .pos = j
+        .pos = k
     };
 }
 

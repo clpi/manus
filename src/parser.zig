@@ -4725,7 +4725,8 @@ pub const Parser = struct {
                 const ret_loc = (try self.adv()).loc;
                 var vals: std.ArrayList(*ast.Expr) = .empty;
                 const nxt = try self.pk();
-                if (try self.returnStartsValue(ret_loc, nxt)) {
+                const hasvalue = nxt.loc.line == ret_loc.line and try self.returnStartsValue(ret_loc, nxt);
+                if (hasvalue) {
                     try vals.append(self.alloc, try self.parse_match_scrutinee());
                     while (try self.eat(.comma) != null)
                         try vals.append(self.alloc, try self.parse_match_scrutinee());
