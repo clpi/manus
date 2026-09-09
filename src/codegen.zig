@@ -860,7 +860,7 @@ pub const CodeGen = struct {
             .string => |s| comptime_eval.Value{ .string = s },
             .int => |i| comptime_eval.Value{ .int = i },
             .boolean => |b| comptime_eval.Value{ .bool = b },
-            .not_applicable, .eval_failed => null,
+            .not_applicable, .arity_mismatch, .eval_failed => null,
         };
     }
 

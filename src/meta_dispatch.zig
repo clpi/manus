@@ -32,6 +32,7 @@ pub const Result = union(enum) {
     boolean: bool,
     /// Combinator is not recognized or args don't match.
     not_applicable,
+    arity_mismatch,
     /// Combinator is recognized but evaluation failed.
     eval_failed,
 };
@@ -139,7 +140,7 @@ pub fn dispatchAtSite(
     site: ?transform_engine.SiteKind,
 ) Result {
     if (!isCombinator(internal_name)) return .not_applicable;
-    if (!validArgCount(internal_name, args.len)) return .not_applicable;
+    if (!validArgCount(internal_name, args.len)) return .arity_mismatch;
     if (!meta_codegen.canApplyMetaCombinatorHook(internal_name)) return .not_applicable;
     const value = meta_codegen.applyMetaCombinatorHook(host, internal_name, args, alloc) orelse return .eval_failed;
     const result: Result = switch (value) {
@@ -255,4 +256,34 @@ test "meta_dispatch: wired combinators registered in transform_engine" {
             return error.MissingTransformRegistryEntry;
         try testing.expect(transform_engine.isRegisteredTransform(public_name));
     }
+}
+
+test "meta_dispatch: known combinator wrong arity refuses distinctly" {
+    const testing = std.testing;
+    const ast = @import("ast.zig");
+    const types = @import("types.zig");
+    const record_aliases: std.StringHashMapUnmanaged(types.ResolvedType) = .empty;
+    const alias_defs: std.StringHashMapUnmanaged(*const ast.AliasDef) = .empty;
+    const host: meta_codegen.Host = .{
+        .alloc = testing.allocator,
+        .mod = null,
+        .record_aliases = &record_aliases,
+        .alias_defs = &alias_defs,
+        .concepts = null,
+        .bindings = .{ .scopes = &.{} },
+        .options = .{ .alloc = testing.allocator },
+    };
+    const alloc = testing.allocator;
+    const two = [_]comptime_eval.Value{
+        .{ .string = "a" },
+        .{ .string = "b" },
+    };
+    try testing.expect(dispatchAtSite(host, "__nonexistent", two[0..], alloc, null) == .not_applicable);
+    try testing.expect(dispatchAtSite(host, "__deriveproduct", two[0..], alloc, null) == .arity_mismatch);
+    const badshape = [_]comptime_eval.Value{
+        .{ .string = "a" },
+        .{ .string = "b" },
+        .{ .int = 1 },
+    };
+    try testing.expect(dispatchAtSite(host, "__deriveproduct", badshape[0..], alloc, null) == .eval_failed);
 }
