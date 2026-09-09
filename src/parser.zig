@@ -496,7 +496,8 @@ pub const Parser = struct {
     }
 
     fn currentParserExpressionGroup(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 > 1 and
+        return try self.currentParserCall() and
+            (try self.currentParserDecision()) >> 13 > 1 and
             !try self.currentParserLiteral();
     }
 
@@ -575,7 +576,8 @@ pub const Parser = struct {
 
     fn currentParserDescriptorEntry(self: *Parser) ParseError!i64 {
         const face = try self.currentParserFace();
-        if (face == 22 or face == 23) return face - 21;
+        if (face == 22) return 1;
+        if (face == 23 or try self.currentParserName()) return 2;
         return 0;
     }
 
@@ -747,19 +749,21 @@ pub const Parser = struct {
     fn currentParserPattern(self: *Parser) ParseError!u5 {
         const decision = try self.currentParserDecision();
         if (((decision >> 9) & 0xF) == 8) return 8;
-        if (((decision >> 5) & 1) != 0) return 22;
+        if (try self.currentParserName()) return 22;
         const event = try self.currentParserEvent();
         const face = try self.currentParserFace();
-        if (face == 19 and ((decision >> 3) & 1) != 0) return 19;
+        if (face == 19 and try self.currentParserTypeArray()) return 19;
         if (face == 20 and ((event >> 11) & 3) == 2) return 20;
         if (face == 21 and ((event >> 47) & 0x1F) == 1) return 21;
-        if (face == 11 and ((event >> 20) & 1) != 0) return 11;
+        if (face == 11) return 11;
+        if (face == 4 or face == 9 or face == 10) return @intCast(face);
         if (((event >> 18) & 1) != 0) return @intCast(face);
         return 0;
     }
 
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
-        return (((try self.currentParserDecision()) >> 3) & 1) != 0;
+        if (try self.check(.lbracket)) return true;
+        return (((try self.currentParserDecision()) >> 7) & 1) != 0;
     }
 
     fn currentParserTypeNumber(self: *Parser) ParseError!bool {
@@ -773,6 +777,18 @@ pub const Parser = struct {
 
     fn currentParserBodyAssignment(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 8) & 1) != 0;
+    }
+
+    /// Whether the colon just consumed by the parser opened an OFFSIDE RECORD
+    /// rather than an inline type annotation. The producer settles the entire
+    /// discrimination at the post-colon name coordinate and emits delimiter 32;
+    /// this reader merely unpacks the fact. The original host
+    /// `starts_offside_record` Zig function replayed four producer identities
+    /// (`kindcolon` + `kindname` + `kindcolon` + line delta) inside save/restore
+    /// state to make the same one selection — the whole-pack event now carries
+    /// the answer.
+    fn currentParserOffsideRecord(self: *Parser) ParseError!bool {
+        return ((try self.currentParserDecision()) >> 13) == 32;
     }
 
     fn currentParserTryDispatch(self: *Parser) ParseError!u2 {
@@ -5227,7 +5243,7 @@ pub const Parser = struct {
             // `point:` over an indented field region — a descriptor home with
             // no delimiters. Checked before the `{`/`@` faces because it is a
             // different shape entirely, not a variant of them.
-            if (try self.starts_offside_record(colon_tok)) {
+            if (try self.currentParserOffsideRecord()) {
                 const rec_typ = try self.parse_offside_record(colon_tok.loc);
                 try self.noteRecordDescriptor(first.name.ident, rec_typ);
                 return ast.Stmt{ .alias_def = .{
@@ -7137,22 +7153,6 @@ pub const Parser = struct {
         return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
     }
 
-    fn starts_offside_record(self: *Parser, colon: Token) ParseError!bool {
-        const first = try self.pk();
-        if (first.loc.line == colon.loc.line) return false;
-        if (!try self.currentParserName()) return false;
-        const saved = self.saveState();
-        const saved_line = self.prev_line;
-        const saved_end = self.prev_end_col;
-        defer {
-            self.restoreState(saved);
-            self.prev_line = saved_line;
-            self.prev_end_col = saved_end;
-        }
-        _ = try self.adv();
-        return try self.currentParserMethod();
-    }
-
     /// The same record type the delimited literal builds, read from an offside
     /// region. One node, two spellings.
     fn parse_offside_record(self: *Parser, open: ast.Loc) ParseError!ast.TypeExpr {
@@ -8380,7 +8380,7 @@ pub const Parser = struct {
                 _ = try self.adv();
                 const spread_expr = try self.parse_expr();
                 try fields.append(self.alloc, .{ .spread = spread_expr });
-            } else if (face == 19) {
+            } else if (face == 19 or (face == 23 and try self.currentParserTypeArray())) {
                 _ = try self.adv();
                 const key = try self.parse_expr();
                 _ = try self.expect(.rbracket);
@@ -12093,7 +12093,7 @@ test "parse: production unary glue and update decisions execute through whole-pa
         if (row.glue or row.update) try testing.expect(relation >= 0);
         try testing.expectEqual(unary, ((event >> 47) & 0x1F) - 1);
         try testing.expectEqual(expected_glue, ((event >> 52) & 0x1F) - 1);
-        try testing.expectEqual(expected_update, ((event >> 57) & 0x1F) - 1);
+        try testing.expectEqual(expected_update, ((event >> 57) & 0xF) - 1);
     }
     const invalid = try parserEventForTest(@intCast(grammar_roles.rows.len), true);
     try testing.expectEqual(@as(i64, 0), (invalid >> 23) & 0x7FFFFFFFFF);

@@ -59,11 +59,11 @@ Pass prose.
 
 ## Research
 
-The Pass 2 inventory is present at `research/archive/pass-2/`, but the only
-committed archive is a truncated, invalid gzip stream. Its manifest retains the
-expected complete digest and byte count alongside the observed corrupt bytes;
-recovery requires the 25 original inputs. The unavailable prose is therefore
-neither active authority nor a complete local research corpus. All formerly
+The complete Pass 2 corpus is preserved at `research/archive/pass-2/`.
+Recovery from the original inputs reproduced the exact expected archive digest
+and byte count; every member also matches its original filename, size and digest.
+The earlier truncated container remains historical Git provenance, not the
+current archive. This research corpus is not active semantic authority. All formerly
 divergent Git branch histories found in the 2026-08-19 census are direct
 ancestors of `main` through the lineage commits recorded in
 `research/branches/manifest.json`. Stale trees were not bulk-activated; their

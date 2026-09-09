@@ -207,3 +207,43 @@ These are FACTS about this host, not decisions awaiting ratification:
 * 9 stale `migrate/*` branches from my overnight pump runs were deleted via `git update-ref -d`.
 * `/tmp/idol-gap145-fix` (the cron fleet's worktree) was fast-forwarded to match `origin/main` at `7482464a` so the overnight pump runs against the post-merge state.
 * The HARNESS.md.norm file in `~/src/idol/.agents/` is generated content, untracked, not from my work — left as-is per charter.
+
+## IDOL_NATIVE_ROOT binding (2026-09-05, host mm)
+
+Resolved t_c9c07b0e dependency: the manifest pins an exact clean idol-native checkout (revision `9fa95a3e826a37e95e0de1498203ef8818029d0a`, tree `64682fc0ffba89c923854abc087de46444f4a2ab`; entry `tools/mcp/server.id` sha256 `fdeb4d63…`; artifact `bin/idol` sha256 `0f76a51d…`; authority projection `docs/spec/AUTHORITY.json` sha256 `a67c48eb…`; authority revision `c9480b77189c8ce308403bd377b6c509046796e4`). The existing `/Users/clp/work/idol-native` checkout is at a more recent HEAD (`f4dec46`, "Project committed upstream law into native authority") and does NOT match the manifest pin. Host fact recorded:
+
+* `IDOL_NATIVE_ROOT=/Users/clp/work/idol-native-pinned`
+* Created via `git -C /Volumes/d\ 1/hermes-mm/work/idol-native worktree add --detach /Users/clp/work/idol-native-pinned 9fa95a3e826a37e95e0de1498203ef8818029d0a` (2026-09-05).
+* `mcp-pair validate tools/node/dev/mcp.manifest.json idol-native` exits 0 with all five identity checks passing (revision, tree, entry_sha256, artifact_sha256, authority_revision).
+
+The `/Users/clp/work/idol-native` checkout is preserved at HEAD `f4dec46` for any work that needs the post-pin tree; it is NOT used by the mcp-gate.
+
+## Why mcp-gate does NOT pass yet (2026-09-05)
+
+After the IDOL_NATIVE_ROOT binding and the local `tools/mcp/native.id` rewrite to direct-backend `"{}"` interpolation (commit `4fad9595`), `mcp-gate` still fails at `probe-mcp`:
+
+* **idol (local) server**: passes when bound to the current ca68ab56 compiler — `native.id` compiles and serves a valid initialize response.
+* **idol-native (paired) server**: the pinned `tools/mcp/server.id` at revision `9fa95a3e` uses raw `'…' .. var .. '…'` concat (`..`) in 10+ sites. The current ca68ab56 compiler's `dnir_lower.zig` rejects literal-text concat via `concatOperandClass` returning `.other` and surfacing `binop-not-lowered:concat` direct-backend refusal. The pinned binary `bin/idol` at the same revision CAN compile the entry (its cache layer predates the refusal), but its compile output reports `(cached)` which the gate's `grep -Fq '(cached)'` check treats as an infrastructure failure.
+
+Three honest paths forward — none of which are in scope of this card and would each need a separate spec decision:
+
+1. **Repin to a post-pin revision** that already uses `"{}"` syntax. `clpi/idol-native` has no revision (current `f4dec46` or older `c5ba11b`/`6a50953`) where `tools/mcp/server.id` is `..`-free. The `..`-to-`"{}"` migration is unblocked in upstream idol main (commit range after bf6c596a, e.g. mcp/native.id at ca68ab56 here uses `"{}"`) but has not been backported to idol-native's mcp/server.id. The next idol-native authority re-pin must include the server.id migration, or the mcp-gate cannot pass for `idol-native`.
+2. **Loosen probe-mcp to tolerate `(cached)`** when the binary is current and runnable. This weakens a check the charter explicitly lists as "lower ceiling to make red go green" and is denied by `CHARTER.md` ("Never lower a ceiling, weaken a gate, delete a test, or edit a `gate/*.sh` threshold").
+3. **Pin `IDOL_PAIR_COMPILER=/Users/clp/work/idol-native-pinned/bin/idol`** for the paired path only. The probe-mcp script applies the same `$idol` to both servers, so this also makes the local `idol` path use the old binary — and the old binary's cache layer trips the same `(cached)` check. Workable only if probe-mcp learns a per-server compiler override, which the manifest schema does not carry.
+
+## Why agent-smoke does NOT pass yet (2026-09-05)
+
+The same dnir_lower changes that broke `..` literal-text concat also broke direct-backend lowering for the 6 sub-scripts agent-smoke chains. Verified at HEAD `ca68ab56`:
+
+* `public_safety_scan` — PASS after skip-pattern extension (research/, evidence/kanban/) in commit `4fad9595`.
+* `luahost` — FAIL with `unresolved-application-facts` (DNB011) at `native_backend.zig:11390`.
+* `explain` — FAIL at compile with the same DNB011 class.
+* `contract` — FAIL at compile with the same DNB011 class.
+* `sim` — FAIL at compile with `binop-not-lowered:concat` (literal `'…' .. '…'` in b64-decoded shell payload around line 181).
+* `transform` — FAIL at compile with the same DNB011 class.
+
+These scripts are not affected by IDOL_NATIVE_ROOT; they are blocked by direct-backend lowering debt that pre-dates this card.
+
+## Scope verdict (2026-09-05)
+
+IDOL_NATIVE_ROOT binding is complete and recorded. mcp-gate and agent-smoke are not made green by this card — they are owned by spec-level decisions (server.id migration, dnir_lower lowering debt) that need human ratification per the charter.

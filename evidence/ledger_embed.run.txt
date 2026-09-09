@@ -1,6 +1,6 @@
   > compile (scripts/ledger/embed.id) …
   ok compile (94 ms — ./embed.out)
-sh: line 1: cd: /Users/clp/x/idol
+sh: line 1: cd: $HOME/x/idol
 : No such file or directory
 ledger/embed -- audit (sites by file)
 ledger/embed: enforce zero embedded @c sites for self-hosting

@@ -273,7 +273,7 @@
       "path": "research/archive/pass-2",
       "archive_sha256": "e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78",
       "files": 25,
-      "archive_integrity": "corrupt; recovery requires the 25 original inputs",
+      "archive_integrity": "complete; exact archive and all original inputs verified",
       "duplicate_inputs_preserved": true,
       "superseded_identity_recommendations_preserved_as_history": true
     },

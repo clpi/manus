@@ -6267,6 +6267,21 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             if (ctx.loop_heads.items.len == 0) return bail(ctx.diagnostic, @src());
             try ctx.emit(.{ .op = .br, .branch_target = ctx.loop_heads.items[ctx.loop_heads.items.len - 1] });
         },
+        .directive => |d| {
+            if (std.mem.eql(u8, d.attr.name, "comp.hint.fence") or
+                std.mem.eql(u8, d.attr.name, "fence") or
+                std.mem.eql(u8, d.attr.name, "__fence"))
+            {
+                _ = try lowerHwIntrinsic(ctx, .fence, &.{});
+            } else if (std.mem.eql(u8, d.attr.name, "comp.hint.spin_wait") or
+                std.mem.eql(u8, d.attr.name, "spin_wait") or
+                std.mem.eql(u8, d.attr.name, "__spin_wait"))
+            {
+                _ = try lowerHwIntrinsic(ctx, .spin_wait, &.{});
+            } else {
+                return bailNamed(ctx.diagnostic, @src(), "directive-not-lowered", d.attr.name);
+            }
+        },
         else => return bailNamed(ctx.diagnostic, @src(), "statement-not-lowered", @tagName(stmt.*)),
     }
 }
@@ -9989,15 +10004,17 @@ fn lowerIndexAssignTarget(
 /// A genuinely dynamic, growable table still needs base-pointer addressing;
 /// this handles the fixed-length case, which is what fits in registers.
 fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr) Error!dnir.Value {
+    const table_slot = ctx.locals.get(table_name);
+
     // HASH-TABLE LOAD. `t = {}` lookup, mirroring `lowerIndexAssignTarget`'s
     // store branch: register `duo_hash_load(t, key_str)` and read its i64
     // return. Missing keys return 0, which `.nil` also lowers to, so the
     // `t[k] != nil` check shape used by the agreement test stays honest.
-    if (ctx.locals.get(table_name)) |table_slot| if (ctx.hash_slots.contains(table_slot)) {
+    if (table_slot) |slot| if (ctx.hash_slots.contains(slot)) {
         try ensureExtern(ctx, "table", "load", "duo_hash_load");
         const key_val = try lowerExpr(ctx, key_expr);
         const out_slot = ctx.freshTemp();
-        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .local = table_slot } });
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .local = slot } });
         try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = key_val });
         try ctx.emit(.{ .op = .call_extern, .result = out_slot, .callee = "duo_hash_load", .ty = .any });
         return .{ .local = out_slot };
