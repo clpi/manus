@@ -2853,7 +2853,10 @@ fn lowerModuleFromGraph(
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
         if (!shouldIncludeFuncDecl(fd, graph)) continue;
-        if (!functionEligible(fd, records.items, graph, mod)) continue;
+        if (functionEligibleReason(fd, records.items, graph, mod)) |reason| {
+            if (std.mem.eql(u8, reason, "record-parameter-overflows-16-gp-slots")) return error.UnsupportedConstruct;
+            continue;
+        }
         const slots = f64AbiParamSlots(fd, records.items) orelse continue;
         if (slots == 0 or slots > 8) continue;
         const entity = declarations.get(fd) orelse
@@ -2920,7 +2923,10 @@ fn lowerModuleFromGraph(
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
         if (!shouldIncludeFuncDecl(fd, graph)) continue;
-        if (!functionEligible(fd, records.items, graph, mod)) continue;
+        if (functionEligibleReason(fd, records.items, graph, mod)) |reason| {
+            if (std.mem.eql(u8, reason, "record-parameter-overflows-16-gp-slots")) return error.UnsupportedConstruct;
+            continue;
+        }
         if (require_graph_facts and !graph.gateTransportModule()) {
             const entity = declarations.get(fd) orelse
                 return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
@@ -3473,11 +3479,12 @@ fn paramSlotIsFp(
 }
 
 fn f64AbiParamSlots(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) ?usize {
-    _ = recs;
     var slots: usize = 0;
     for (fd.func.params) |p| {
         if (isFloatType(p.typ)) {
             slots += 1;
+        } else if (isF64Record(recs, p.typ)) |r| {
+            slots += r.fields.len;
         } else return null;
     }
     return slots;
@@ -3665,10 +3672,10 @@ fn functionEligibleReason(
     var gp_slots: usize = 0;
     for (fd.func.params) |p| {
         if (isFloatType(p.typ)) return "f64-parameter-mixed-with-gp";
-        if (recordForTypeExpr(recs, p.typ, graph)) |_| {
-            gp_slots += 1;
+        if (recordForTypeExpr(recs, p.typ, graph)) |rec| {
+            gp_slots += rec.fields.len;
             if (gp_slots > max_direct_scalar_args)
-                return "more-than-16-gp-arguments";
+                return "record-parameter-overflows-16-gp-slots";
             continue;
         }
         // A SCALAR IS A SCALAR WHATEVER ITS SPELLING. `i64`, `bool`, `str`,
