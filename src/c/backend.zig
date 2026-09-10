@@ -351,6 +351,9 @@ fn emitComparison(e: *Emitter, op: []const u8, lhs: dnir.Value, rhs: dnir.Value)
 }
 
 fn emitNarrowFit(e: *Emitter, ty: RT) Error!bool {
+    _ = e;
+    _ = ty;
+    return false;
     const fit = dnir_lower.narrowFit(ty) orelse return false;
     const w = e.writer();
     if (fit.signed) {
