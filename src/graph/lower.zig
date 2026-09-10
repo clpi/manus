@@ -2066,6 +2066,37 @@ pub fn compileStageValueInModule(
     };
 }
 
+fn compileStageAbsentWorld(ctx: *const LowerCtx, operand: *const Expr) ?[]const u8 {
+    const scoped: struct { member: []const u8, scope: []const u8 } = switch (operand.*) {
+        .call => |c| switch (c.func.*) {
+            .field => |f| switch (f.obj.*) {
+                .name => |o| .{ .member = f.field, .scope = o.ident },
+                else => return null,
+            },
+            else => return null,
+        },
+        .index => |ix| switch (ix.obj.*) {
+            .field => |f| switch (f.obj.*) {
+                .name => |o| .{ .member = f.field, .scope = o.ident },
+                else => return null,
+            },
+            else => return null,
+        },
+        .field => |f| switch (f.obj.*) {
+            .name => |o| .{ .member = f.field, .scope = o.ident },
+            else => return null,
+        },
+        else => return null,
+    };
+    if (ctx.graph.findFunc(scoped.scope) != null) return null;
+    for (ctx.graph.worlds.items) |fact| {
+        if (!std.mem.eql(u8, subject_home.homeName(fact.home), scoped.scope)) continue;
+        if (!subject_home.homeProvides(fact.home, scoped.member)) continue;
+        return subject_home.homeName(fact.home);
+    }
+    return null;
+}
+
 /// THE ONE FACT BOTH PASSES READ.
 ///
 /// `codegen`'s native-scalar precheck decides ADMISSION and this file decides
@@ -3270,9 +3301,6 @@ pub fn lowerTestSourceWithGraph(
     };
 }
 
-
-
-
 fn applyGraphToModule(
     alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
@@ -3766,7 +3794,6 @@ fn functionEligible(
 ) bool {
     return functionEligibleReason(fd, recs, graph, mod) == null;
 }
-
 
 const GraphFieldFact = struct {
     kind: dnir.FieldKind,
@@ -4591,7 +4618,6 @@ fn scanReturnPackArities(block: *const ast.Block, arity: *?usize) bool {
     return seen;
 }
 
-
 fn residency(graph: *const semantic_graph.SemanticGraph, signature: *Parameter.Map, diagnostic: *Diagnostic) Error!void {
     var changed = true;
     while (changed) {
@@ -4651,9 +4677,6 @@ fn residency(graph: *const semantic_graph.SemanticGraph, signature: *Parameter.M
         }
     }
 }
-
-
-
 
 fn lowerFunction(
     alloc: std.mem.Allocator,
@@ -8511,7 +8534,6 @@ fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) 
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
 
-
 fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!void {
     if (applicationNeedsGraphOccurrence(ctx, value) and !recordExportMapAssignable(ctx, value)) {
         return refuseMissingApplication(ctx, @src(), value);
@@ -10440,15 +10462,6 @@ fn recordLocalDesc(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
     return null;
 }
 
-
-
-
-
-
-
-
-
-
 fn materializeRecordBase(ctx: *LowerCtx, name: []const u8) Error!u32 {
     if (ctx.locals.get(name)) |s| {
         if (ctx.ptr_slots.contains(s)) return s;
@@ -11357,6 +11370,7 @@ fn lowerExprCons(
             // "compile-nontable" told the author about the compiler's precheck
             // and nothing about their program.
             if (u.op == .compile) {
+                if (compileStageAbsentWorld(ctx, u.operand)) |drawn| return bailNamed(ctx.diagnostic, @src(), "compile-stage-absent", drawn);
                 if (compileStageValue(u.operand)) |v| break :blk v;
                 // The module-scoped fold: `@(tri(100))` where `tri` is a
                 // sibling relation. See `compileStageValueInModule` for the
@@ -20946,7 +20960,6 @@ test "dnir_lower: fresh record aliases share exact physical field slots" {
     try std.testing.expectEqual(@as(usize, 1), markers);
 }
 
-
 test "dnir_lower: relay aliases require exact parameter initializer facts" {
     const source = "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    copy = value\n    alter(copy)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -21000,7 +21013,6 @@ test "dnir_lower: relay aliases require exact parameter initializer facts" {
     diagnostic.reset();
     try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
     graph.nodes.items[parameter].descriptor = declared;
-
 }
 
 test "dnir_lower: relay rebinding requires the checked constructor value" {
@@ -21045,7 +21057,6 @@ test "dnir_lower: relay rebinding requires the checked constructor value" {
     try std.testing.expectEqualStrings("record-initializer-shape", diagnostic.note().?);
 }
 
-
 test "dnir_lower: relay aliases refuse target effects and conditional rebinding" {
     const bodies = [_][]const u8{
         "    copy, value.code = value, 13\n    alter(copy)\n",
@@ -21083,7 +21094,6 @@ test "dnir_lower: relay aliases refuse target effects and conditional rebinding"
 }
 
 const Record = struct {
-
     const Field = struct {
         index: i64,
         ty: RT,
@@ -21385,7 +21395,6 @@ const Record = struct {
     }
 };
 const Parameter = struct {
-
     const Map = std.AutoHashMapUnmanaged(semantic_graph.id, struct {
         params: []const dnir.Param,
     });
@@ -21593,3 +21602,56 @@ const Parameter = struct {
         return out;
     }
 };
+
+fn stageWorldMember(name: []const u8) bool {
+    return switch (subject_home.bareReach(name)) {
+        .one => true,
+        .none, .ambiguous => false,
+    };
+}
+
+fn stageProbeLower(alloc: std.mem.Allocator, source: []const u8, file: []const u8) !struct { err: ?Error, note: []const u8 } {
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
+    const table_apply = @import("../table_apply.zig");
+    const MacroExpand = @import("../macro_expand.zig");
+    var lexer = Lexer.init(source, file);
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var expander = MacroExpand.Expander.init(alloc);
+    defer expander.deinit();
+    expander.world_member = stageWorldMember;
+    try expander.expandModule(&module);
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    table_apply.normalizeModule(alloc, &module, &checked.type_map);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, file);
+    var diagnostic: Diagnostic = .{};
+    if (lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic)) |lowered| {
+        dnir.deinitModule(alloc, lowered);
+        return .{ .err = null, .note = try alloc.dupe(u8, diagnostic.note() orelse "") };
+    } else |e| {
+        return .{ .err = e, .note = try alloc.dupe(u8, diagnostic.note() orelse "") };
+    }
+}
+
+test "dnir_lower: compile-stage refusal names the drawn world" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const drawn = try stageProbeLower(alloc, "main: i64 = ()\n    os.exit(0)\n    print(@(os.cwd()))\n    0\n", "stage-drawn-world.id");
+    try std.testing.expectEqual(@as(?Error, error.UnsupportedConstruct), drawn.err);
+    try std.testing.expectEqualStrings("compile-stage-absent:os", drawn.note);
+    const solo = try stageProbeLower(alloc, "print(@(cwd()))\n", "stage-solo-world.id");
+    try std.testing.expectEqual(@as(?Error, error.UnsupportedConstruct), solo.err);
+    try std.testing.expectEqualStrings("compile-stage-absent", solo.note);
+    const folded = try stageProbeLower(alloc, "print(@(1 + 2))\n", "stage-scalar-control.id");
+    try std.testing.expectEqual(@as(?Error, null), folded.err);
+}
