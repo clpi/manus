@@ -701,7 +701,12 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
         },
         .ret => {
             try w.writeAll("  return ");
-            try emitValue(e, instruction.lhs);
+            if (try emitNarrowFit(e, instruction.ty)) {
+                try emitValue(e, instruction.lhs);
+                try emitFitClose(e);
+            } else {
+                try emitValue(e, instruction.lhs);
+            }
             try w.writeAll(";\n");
         },
         // The indexed-store family (GAP-101). `alloc_slots` reserves `lhs`
