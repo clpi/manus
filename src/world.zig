@@ -48,7 +48,7 @@
 const std = @import("std");
 const place = @import("place.zig");
 const observation = @import("observation.zig");
-const target_model = @import("target_model.zig");
+const target_model = @import("target/model.zig");
 
 /// Three-valued, and the third value is the point: shared with `place.zig`
 /// rather than redeclared. An `unknown` authority fact is never read as `no`.

@@ -68,7 +68,7 @@
 const std = @import("std");
 const observation = @import("observation.zig");
 const place = @import("place.zig");
-const target_model = @import("target_model.zig");
+const target_model = @import("target/model.zig");
 const world = @import("world.zig");
 
 const Mechanism = world.Mechanism;
