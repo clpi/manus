@@ -11834,13 +11834,24 @@ fn checkedBindingI64(
 ) Error!BindingI64Decision {
     if (operand.descriptor != .i64) return .unvisited;
     const binding = operand.binding orelse return .unvisited;
+    // The binding-initializer producer domain covers module-root bindings
+    // only (see the doc comment above): an initializer row is a statement
+    // about module place stability. A branch- or function-local binding is
+    // outside the domain no matter how the candidate census classified it --
+    // an assignment inside a branch deliberately marks the row refused -- so
+    // it answers unvisited and lowers through the normal local path.
+    // Refusing here was DNB011: a call argument resolving to a binding
+    // assigned inside an if/while body was rejected as damaged graph facts
+    // ("binding-initializer") when it was merely out of domain. A missing
+    // node falls through to the query below, preserving the old refusal.
+    if (ctx.graph.get(binding)) |binding_node| {
+        if (binding_node.scope != ctx.graph.module_root) return .unvisited;
+    }
     const initialization = switch (ctx.graph.bindingInitialization(binding)) {
         .unvisited => return .unvisited,
         .invalid => return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer"),
         .known => |fact| fact,
     };
-    if (ctx.graph.get(binding).?.scope != ctx.graph.module_root)
-        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
     const p = ctx.graph.modulePlace(initialization.place) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
     if (p.shape != .scalar or p.region != .module or p.init == null)
