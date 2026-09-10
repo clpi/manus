@@ -467,6 +467,13 @@ test "target_model: structured aarch64-macos obj maps to native-object" {
     try std.testing.expectEqualStrings("native-object", r.toLegacyTargetName().?);
 }
 
+test "target_model: unsupported structured direct tuples keep no legacy alias" {
+    const linux = parseStructuredTarget("aarch64-linux-gnu", .obj).?;
+    try std.testing.expect(linux.toLegacyTargetName() == null);
+    const x = parseStructuredTarget("x86_64-linux-gnu", .assembly).?;
+    try std.testing.expect(x.toLegacyTargetName() == null);
+}
+
 test "target_model: portable C output is independent of direct-native support" {
     try std.testing.expectEqual(EmitKind.c, EmitKind.parse("c").?);
     const target = parseStructuredTarget("x86_64-linux-gnu", .c).?;

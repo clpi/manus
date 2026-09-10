@@ -4096,6 +4096,33 @@ fn resolveCompileBackend(backend: []const u8, target_in: []const u8, emit: targe
         // what was actually requested.
         .direct => {
             if (native_backend.isNativeMachineTarget(target_in)) return target_in;
+            // START FROM THE TUPLE, NOT FROM THE CURRENT EMITTER'S NAME. The
+            // direct backend still has exactly one machine writer today:
+            // AArch64 + Mach-O. Recasting every structured direct target into
+            // `native-object`/`native-asm`/`native-dylib` erased the caller's
+            // tuple before the refusal site could read it, so
+            // `--target x86_64-linux-gnu --emit obj` on an AArch64-Mach-O host
+            // walked into the ARM64 Mach-O object path instead of refusing the
+            // Linux tuple by name.
+            //
+            // Keep the compatibility alias `native` behaving exactly as before:
+            // it is the format-neutral spelling and still needs an exact emit
+            // choice. Structured tuples are different — they already say which
+            // OS/arch/object family the caller asked for. Supported tuples may
+            // collapse to the current writer's legacy name; every other tuple
+            // must survive unchanged so DNB004 can refuse the right target.
+            if (std.mem.eql(u8, target_in, "native")) {
+                return switch (emit) {
+                    .obj => "native-object",
+                    .assembly => "native-asm",
+                    .dylib => "native-dylib",
+                    else => "native-exe",
+                };
+            }
+            if (target_model.parseStructuredTarget(target_in, emit)) |resolved| {
+                if (resolved.toLegacyTargetName()) |legacy| return legacy;
+                return target_in;
+            }
             return switch (emit) {
                 .obj => "native-object",
                 .assembly => "native-asm",
@@ -4143,6 +4170,13 @@ test "the direct backend carries the requested emit kind into its target" {
     // An explicit machine target still wins over the emit kind: it already names
     // its own format, and reinterpreting it is the defect this repairs.
     try std.testing.expectEqualStrings("native-asm", resolveCompileBackend("direct", "native-asm", .obj));
+    // Unsupported structured tuples must stay visible all the way to the
+    // refusal. Routing either of these into `native-object` would send Linux or
+    // x86_64 down the current AArch64 Mach-O emitter, which is exactly the
+    // wrong-format hole.
+    try std.testing.expectEqualStrings("aarch64-linux-gnu", resolveCompileBackend("direct", "aarch64-linux-gnu", .obj));
+    try std.testing.expectEqualStrings("x86_64-linux-gnu", resolveCompileBackend("direct", "x86_64-linux-gnu", .obj));
+    try std.testing.expectEqualStrings("x86_64-linux-gnu", resolveCompileBackend("direct", "x86_64-linux-gnu", .assembly));
 }
 
 fn wantsMachineLowering(backend_mode: []const u8, target: []const u8) bool {
