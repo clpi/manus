@@ -266,7 +266,7 @@ paramrow structured 'value: i64 = 4' structured-result
 paramrow multiple 'value: i64 = 4' multiple-result
 
 fieldrow scalar 'x: i64 = 3' unresolved-application-facts
-fieldrow string 'text: str = "ready"' method-unresolved:len
+fieldrow string 'text: str = "ready"' unresolved-application-facts
 fieldrow pointer 'address: *u8 = nil' unresolved-application-facts
 fieldrow fresh 'state: { value: i64 } = { value = 0 }' unresolved-application-facts
 fieldrow dependent 'right: i64 = left + 4' unresolved-application-facts
