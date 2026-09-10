@@ -350,6 +350,44 @@ fn emitComparison(e: *Emitter, op: []const u8, lhs: dnir.Value, rhs: dnir.Value)
     try w.writeAll("))");
 }
 
+/// THE DECLARED WIDTH OF A RESULT APPLIES WHERE THE RESULT IS BORN — the same
+/// law the direct backend realizes as `ubfx`/`sxtb` at the store and the wasm
+/// backend realizes as `emitNarrowFit` (mask for unsigned, sign-extend for
+/// signed). `src/wasm.zig`'s own `emitNarrowFit` header states it as "exactly
+/// as the C backend spells `x = ((uint32_t)(expr))` on every assignment to a
+/// narrow binding" — but this emitter never spelled it, so a declared `u32`
+/// ran at full 64-bit width here while both sibling realizers truncated. The
+/// measured consequence: the declared-`u32` hash `h = h*16777619 + 1` answered
+/// -4692792743815164015 under `--backend=c` where the u32 law answers
+/// 3965570961 (matrix-power oracle over Z/2^32), with exit 0 and no refusal —
+/// a silent wrong answer, not a rejected program.
+///
+/// The cast is UB-free by construction: the operand is an `int64_t` whose low
+/// `bits` bits are the narrowed value, conversion to the exact-width type is
+/// value-preserving on those bits, and widening back is implementation-defined
+/// (not undefined) C — one answer on every hosted toolchain this emitter
+/// targets, and the same answer the two sibling backends already publish.
+/// `.cmp` NEVER refits (a comparison answers 0 or 1), and `narrowFit` returns
+/// null at 64 bits, so `i64`/`u64` gain nothing.
+///
+/// Opens exactly two parens around the caller's expression; the caller closes
+/// them with `emitFitClose` when this returns true.
+fn emitNarrowFit(e: *Emitter, ty: RT) Error!bool {
+    const fit = dnir_lower.narrowFit(ty) orelse return false;
+    const w = e.writer();
+    if (fit.signed) {
+        try w.print("((int64_t)(int{d}_t)(", .{fit.bits});
+    } else {
+        try w.print("(int64_t)((uint{d}_t)(", .{fit.bits});
+    }
+    return true;
+}
+
+/// Close the two parens `emitNarrowFit` opened around the caller's expression.
+fn emitFitClose(e: *Emitter) Error!void {
+    try e.writer().writeAll("))");
+}
+
 fn emitBinop(e: *Emitter, instruction: dnir.Instr) Error!void {
     switch (instruction.binop) {
         .add => try emitWrappedBinary(e, "+", instruction.lhs, instruction.rhs),
@@ -482,13 +520,23 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
         .@"const", .store_local => {
             const result = instruction.result orelse return e.refuse("result-slot-missing");
             try w.print("  s{d} = ", .{result});
-            try emitValue(e, instruction.lhs);
+            if (try emitNarrowFit(e, instruction.ty)) {
+                try emitValue(e, instruction.lhs);
+                try emitFitClose(e);
+            } else {
+                try emitValue(e, instruction.lhs);
+            }
             try w.writeAll(";\n");
         },
         .binop => {
             const result = instruction.result orelse return e.refuse("result-slot-missing");
             try w.print("  s{d} = ", .{result});
-            try emitBinop(e, instruction);
+            if (try emitNarrowFit(e, instruction.ty)) {
+                try emitBinop(e, instruction);
+                try emitFitClose(e);
+            } else {
+                try emitBinop(e, instruction);
+            }
             try w.writeAll(";\n");
         },
         .cmp => {
