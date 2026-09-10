@@ -90,9 +90,9 @@ envemptypat = "(getenv|envor|env_or|std\\.script\\.getenv).*\"\"|\"\".*(getenv|e
 nilpat = "^[[:space:]]*if .*(!=|==) nil"
 notpat = "(^|[[:space:]])(if not |and not |or not |\\(not )"
 existpat = "^[[:space:]]*if .*exists\\("
-processpat = "(io\\.popen|io:popen|:popen\\(|popen\\(|std\\.proc\\.capture\\()"
+processpat = "(io\\.popen|io:popen|:popen[(]|popen[(]|std\\.proc\\.capture[(])"
 processadmitpat = "process[[:space:]]*=[[:space:]]*lib\\.process"
-processnspat = "process\\.(run|capture|exit|chomp)\\("
+processnspat = "process\\.(run|capture|exit|chomp)[(]"
 longbracketpat = "\\[\\["
 boxpat = "lua_Value|lua_invoke|lua_require"
 luanspat = "(^|[^a-z0-9.])(table|string|math|list|array)\\.[a-z]"
@@ -291,7 +291,7 @@ main: i64 = ()
   if tally(cmd) != 0
     print("(semanticgate, control, gate, admission adversarial controls broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}out = process.capture(echo){q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}out = std.script.capture(echo){q} | grep -q -E {q}std\\.script\\.capture\\({q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}out = process.capture(echo){q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}out = std.script.capture(echo){q} | grep -q -E {q}std\\.script\\.capture[(]{q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, admission, namespace-rename classifier broken)")
     code = 3
@@ -468,7 +468,7 @@ main: i64 = ()
     keywordnot = tally(cmd)
     cmd = "git grep --cached -h -E {q}{existpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '\{print $1\}'"
     existence = tally(cmd)
-    cmd = "git show :gate/architecture.id | grep -E {q}std[.]proc[.]capture\\({q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '\{print $1\}'"
+    cmd = "git show :gate/architecture.id | grep -E {q}std[.]proc[.]capture[(]{q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '\{print $1\}'"
     bootstrap = tally(cmd)
     cmd = "git grep --cached -h -E {q}{processadmitpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '\{print $1\}'"
     processadmit = tally(cmd)
