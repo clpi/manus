@@ -79,7 +79,7 @@ migration pressure only.
 
 ```text
 src/duo_lexer_dispatch.zig
-src/meta_dispatch.zig
+src/meta/dispatch.zig
 src/derive_registry.zig
 src/transform_engine.zig
 tools/wasm/src/engine.id

@@ -425,7 +425,7 @@ pub fn build(b: *std.Build) void {
     const unit_tests = b.addTest(.{
         .filters = if (filter) |text| &.{text} else &.{},
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/tests.zig"),
+            .root_source_file = b.path("src/test.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -1339,7 +1339,7 @@ pub fn build(b: *std.Build) void {
 
     // `zig build sovereign` — the graph-sovereignty census on its own, so the
     // per-vertical table can be read without the whole unit suite's output in
-    // front of it. The same tests also run inside `unit-test` (src/tests.zig
+    // front of it. The same tests also run inside `unit-test` (src/test.zig
     // imports the module), which is where the merge signal reads them; this
     // step exists for the census, not for coverage.
     //

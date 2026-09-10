@@ -79,8 +79,8 @@ BACKEND	meta_codegen.zig	SEMA	derive_eval.zig
 BACKEND	meta_codegen.zig	SEMA	derive_registry.zig
 BACKEND	meta_codegen.zig	SEMA	sema.zig
 BACKEND	meta_codegen.zig	SEMA	type_diff.zig
-BACKEND	meta_dispatch.zig	SEMA	comptime.zig
-BACKEND	meta_dispatch.zig	SEMA	transform_engine.zig
+BACKEND	meta/dispatch.zig	SEMA	comptime.zig
+BACKEND	meta/dispatch.zig	SEMA	transform_engine.zig
 BACKEND	native.zig	AST	ast.zig
 BACKEND	native.zig	AST	parser.zig
 BACKEND	native.zig	SEMA	const_table.zig

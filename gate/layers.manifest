@@ -111,7 +111,7 @@ BACKEND  pipeline_gen.zig
 BACKEND  schema_gen.zig
 BACKEND  ml_kernels.zig
 BACKEND  meta_codegen.zig
-BACKEND  meta_dispatch.zig
+BACKEND  meta/dispatch.zig
 BACKEND  lua_metamethod.zig
 BACKEND  native.zig
 BACKEND  realization_validate.zig
@@ -143,9 +143,9 @@ FOREIGN  foreign_adapter.zig
 FOREIGN  foreign_transpile.zig
 
 DRIVER   main.zig
-DRIVER   tests.zig
+DRIVER   test.zig
 # `run -> completion -> outcome`, and the outcome belongs to the DRIVER because
-# nothing below it reads one: `main.zig` and `tests.zig` are its only importers
+# nothing below it reads one: `main.zig` and `test.zig` are its only importers
 # and `scratch.zig` (RUNTIME) is its only import, so no edge here crosses a
 # layer in the forbidden direction. It arrived with the exit-discrimination
 # transfer and was never classified, which failed the whole gate closed —
