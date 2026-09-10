@@ -287,7 +287,7 @@ main: i64 = ()
   if tally(cmd) != 1
     print("(semanticgate, control, gate, admission empty-input fail-closed broken)")
     code = 3
-  cmd = "./zig-out/bin/idol run --backend=direct gate/admission.id 2>&1 | grep -c 'control A FAIL'"
+  cmd = "true | ./zig-out/bin/idol run --backend=direct gate/admission.id 2>&1 | grep -c 'control A FAIL'"
   if tally(cmd) != 0
     print("(semanticgate, control, gate, admission adversarial controls broken)")
     code = 3
