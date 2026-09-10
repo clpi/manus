@@ -4705,6 +4705,7 @@ const Arm64Compiler = struct {
                         .{};
                     const save = try self.emitSaveCallerRegs();
                     const vbytes = try self.emitPushVarargs();
+                    const staged_args = self.pending_arg_regs;
                     try self.emitBl(ins.callee);
                     try self.emitPopVarargs(vbytes);
                     if (pack_park.bytes > 0) {
@@ -4806,9 +4807,7 @@ const Arm64Compiler = struct {
                     }
                     if (preserve_x0) {
                         if (self.extern_preserve_x0_temp) |t| {
-                            const reg = try self.allocReg();
-                            try self.emitLdrSp(reg, 0);
-                            try temps.put(self.alloc, t, reg);
+                            try self.restorePreservedX0(temps, t);
                         }
                         try self.emitAddSpTemp(16);
                         self.extern_preserve_x0 = false;
@@ -4831,6 +4830,7 @@ const Arm64Compiler = struct {
                             try temps.put(self.alloc, result, dst);
                         }
                     }
+                    self.releaseStagedArgRegs(staged_args, call_result);
                 }
             },
             .init_record => {
@@ -8025,6 +8025,15 @@ const Arm64Compiler = struct {
         if (slot < 8) self.pending_arg_regs |= (@as(u8, 1) << @as(u3, @intCast(slot)));
     }
 
+    fn releaseStagedArgRegs(self: *Arm64Compiler, staged: u8, call_result: ?u5) void {
+        var r: u5 = 0;
+        while (r < 8) : (r += 1) {
+            if (staged & (@as(u8, 1) << @as(u3, @intCast(r))) == 0) continue;
+            if (call_result != r) self.used_regs[r] = false;
+        }
+        self.pending_arg_regs &= ~staged;
+    }
+
     /// The same question `pending_arg_regs` answers for x0..x7, asked for the
     /// VARIADIC TAIL — whose arguments are staged in ordinary allocatable
     /// registers and written to the callee's memory-argument area, not into a
@@ -8170,7 +8179,7 @@ const Arm64Compiler = struct {
         while (wit.next()) |entry| {
             if (entry.value_ptr.* == slot) entry.value_ptr.* = fresh;
         }
-        if (fresh >= 9 and fresh < 29 and fresh != platform_reserved_reg and !self.gp_home_regs[fresh]) {
+        if (fresh != platform_reserved_reg and !self.gp_home_regs[fresh]) {
             self.gp_reg_owner[fresh] = t;
         }
     }
@@ -8979,10 +8988,6 @@ const Arm64Compiler = struct {
             if (reg == platform_reserved_reg) continue;
             if (self.resultRegFree(save, reg)) return reg;
         }
-        reg = 0;
-        while (reg < 8) : (reg += 1) {
-            if (self.resultRegFree(save, reg)) return reg;
-        }
         return null;
     }
 
@@ -9121,6 +9126,19 @@ const Arm64Compiler = struct {
     /// callee's memory-argument area starts exactly at sp — which is what
     /// `va_arg` reads on Apple ARM64 — while the save area sits above it and
     /// stays addressable at its original offsets once sp is restored.
+    fn restorePreservedX0(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        t: u32,
+    ) Error!void {
+        const reg = try self.allocReg();
+        try self.emitLdrSp(reg, 0);
+        try temps.put(self.alloc, t, reg);
+        if (reg >= 9 and reg < 29 and reg != platform_reserved_reg and !self.gp_home_regs[reg]) {
+            self.gp_reg_owner[reg] = t;
+        }
+    }
+
     fn materializePendingVarargs(
         self: *Arm64Compiler,
         temps: *std.AutoHashMapUnmanaged(u32, u5),
@@ -9141,15 +9159,17 @@ const Arm64Compiler = struct {
                 .local => |home| !self.gp_stack_locals.contains(home),
                 else => false,
             };
+            var relocated = false;
             if (reg < 8) {
                 const fresh = try self.allocReg();
                 try self.emitMovReg(fresh, reg);
                 if (!owned and !Arm64Compiler.regIsPinned(pinned, reg)) self.releaseReg(reg);
                 reg = fresh;
+                relocated = true;
             }
             slot.reg = reg;
             slot.operand = null;
-            slot.scratch = !owned and !Arm64Compiler.regIsPinned(pinned, reg);
+            slot.scratch = relocated or (!owned and !Arm64Compiler.regIsPinned(pinned, reg));
             // From here to `emitPushVarargs` this register is the marshaling's,
             // exactly as `markStagedArgReg` says x_k is for a named argument.
             // The remaining slots of this same loop allocate underneath it.
@@ -24689,4 +24709,252 @@ test "native record cells refuse damaged descriptors before emission" {
         try std.testing.expectError(error.UnsupportedProgram, compiler.compileDnirInstr(&value, &pinned, instruction, &branch, null, 0));
         try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
     }
+}
+
+test "staged argument registers return to the pool after the call" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.used_regs[2] = true;
+    compiler.used_regs[3] = true;
+    compiler.used_regs[5] = true;
+    compiler.markStagedArgReg(2);
+    compiler.markStagedArgReg(3);
+    compiler.markStagedArgReg(5);
+
+    compiler.releaseStagedArgRegs(compiler.pending_arg_regs, null);
+    try std.testing.expect(!compiler.used_regs[2]);
+    try std.testing.expect(!compiler.used_regs[3]);
+    try std.testing.expect(!compiler.used_regs[5]);
+    try std.testing.expectEqual(@as(u8, 0), compiler.pending_arg_regs);
+
+    compiler.used_regs[2] = true;
+    compiler.used_regs[3] = true;
+    compiler.markStagedArgReg(2);
+    compiler.markStagedArgReg(3);
+    compiler.releaseStagedArgRegs(compiler.pending_arg_regs, 2);
+    try std.testing.expect(compiler.used_regs[2]);
+    try std.testing.expect(!compiler.used_regs[3]);
+    try std.testing.expectEqual(@as(u8, 0), compiler.pending_arg_regs);
+}
+
+test "preserveArgReg names an owner when the relocation lands below x9" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+
+    try temps.put(alloc, 100, 3);
+    try compiler.value_free_at.put(alloc, 100, std.math.maxInt(u32));
+    compiler.used_regs[3] = true;
+
+    var r: u5 = 9;
+    while (r < 29) : (r += 1) compiler.used_regs[r] = true;
+    compiler.used_regs[0] = true;
+    compiler.used_regs[1] = true;
+    compiler.used_regs[2] = true;
+    compiler.used_regs[5] = true;
+    compiler.used_regs[6] = true;
+    compiler.used_regs[7] = true;
+
+    try compiler.preserveArgReg(&temps, &pinned, 3, 0);
+    try std.testing.expectEqual(@as(u5, 4), temps.get(100).?);
+    try std.testing.expectEqual(@as(?u32, 100), compiler.gp_reg_owner[4]);
+    try std.testing.expect(compiler.used_regs[4]);
+}
+
+test "the call result refuses x0..x7 when the owned pool is exhausted" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var r: u5 = 9;
+    while (r < 29) : (r += 1) compiler.used_regs[r] = true;
+
+    try std.testing.expectEqual(@as(?u5, null), compiler.resultReg(null));
+    try std.testing.expectEqual(@as(u16, 16), compiler.parkReserve(true));
+    const save = try compiler.emitSaveCallerRegs();
+    try std.testing.expectError(error.RegisterExhausted, compiler.allocRegOutsideSaveSet(save));
+}
+
+test "the preserved x0 restore names an owner for its register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+
+    try temps.put(alloc, 77, 0);
+    compiler.used_regs[0] = true;
+    try compiler.value_free_at.put(alloc, 77, std.math.maxInt(u32));
+
+    try compiler.restorePreservedX0(&temps, 77);
+    const reg = temps.get(77).?;
+    try std.testing.expect(reg >= 9);
+    try std.testing.expect(compiler.used_regs[reg]);
+    try std.testing.expectEqual(@as(?u32, 77), compiler.gp_reg_owner[reg]);
+
+    try compiler.value_free_at.put(alloc, 77, 0);
+    compiler.sweepGpLive(1);
+    try std.testing.expect(!compiler.used_regs[reg]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[reg]);
+}
+
+test "the allocator drains after representative call sequences" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+
+    var iter: u32 = 0;
+    while (iter < 25) : (iter += 1) {
+        const base: u32 = 1000 + iter * 4;
+        var i: u5 = 0;
+        while (i < 3) : (i += 1) {
+            const r = try compiler.allocReg();
+            compiler.gp_reg_owner[r] = base + i;
+            try temps.put(alloc, base + i, r);
+            try compiler.value_free_at.put(alloc, base + i, std.math.maxInt(u32));
+        }
+        try compiler.value_free_at.put(alloc, base + 3, std.math.maxInt(u32));
+
+        compiler.used_regs[0] = true;
+        compiler.used_regs[1] = true;
+        compiler.markStagedArgReg(0);
+        compiler.markStagedArgReg(1);
+
+        try temps.put(alloc, base + 3, 0);
+        try compiler.restorePreservedX0(&temps, base + 3);
+
+        compiler.releaseStagedArgRegs(compiler.pending_arg_regs, null);
+
+        var k: u32 = 0;
+        while (k < 4) : (k += 1) {
+            try compiler.value_free_at.put(alloc, base + k, 0);
+        }
+        compiler.sweepGpLive(iter + 1);
+
+        var r: u5 = 9;
+        while (r < 29) : (r += 1) {
+            if (r == Arm64Compiler.platform_reserved_reg) continue;
+            try std.testing.expect(!compiler.used_regs[r]);
+        }
+        var a: u5 = 0;
+        while (a < 8) : (a += 1) {
+            try std.testing.expect(!compiler.used_regs[a]);
+        }
+        try std.testing.expectEqual(@as(u8, 0), compiler.pending_arg_regs);
+    }
+}
+
+test "a vararg relocated out of the ABI range returns its register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+
+    try temps.put(alloc, 1, 0);
+    compiler.used_regs[0] = true;
+    try compiler.value_free_at.put(alloc, 1, std.math.maxInt(u32));
+
+    compiler.pending_varargs[0] = .{ .operand = .{ .temp = 1 } };
+    compiler.pending_vararg_count = 1;
+    try compiler.materializePendingVarargs(&temps, &pinned);
+    const vbytes = try compiler.emitPushVarargs();
+    try compiler.emitPopVarargs(vbytes);
+
+    var r: u5 = 9;
+    while (r <= 28) : (r += 1) {
+        if (r == 18) continue;
+        if (compiler.gp_home_regs[r]) continue;
+        try std.testing.expect(!compiler.used_regs[r]);
+    }
+    try std.testing.expect(compiler.used_regs[0]);
+    try std.testing.expectEqual(@as(u5, 0), temps.get(1).?);
 }
