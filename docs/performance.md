@@ -702,6 +702,7 @@ that recomputes its own numbers — nothing here restates them:
 
     sh gate/ftcftw/wrap.sh     defined i64 wraparound vs C signed overflow
     sh gate/ftcftw/stage.sh    lawful nonexecution: the stage world vs runtime
+    sh gate/ftcftw/width.sh    declared-u32 width narrowing vs hand uint32_t
 
 `wrap` is the semantic-knowledge mechanism at parity's edge: Idol's i64 wraps
 by definition, C's signed overflow is undefined, so the emitted unsigned form
@@ -732,8 +733,17 @@ The frontier that remains, each axis with its measured blocker:
   when the slice admits aggregates (`gate/realize/census.sh` measures the
   slice's edge; `gaps/GAP-226.md` and `gaps/GAP-234.md` own the walls in
   front of it).
-- **Width narrowing** — `binopResultWidth` facts exist; no row measures what
-  they buy on a 64-bit host.
+- **Width narrowing** — MEASURED, `gate/ftcftw/width.sh`. The declared-u32
+  row: the C realizer carries `Instr.ty` into `(int64_t)((uint32_t)(…))` at
+  every write to a narrow binding, agreeing with the independent Z/2^32
+  oracle and with hand `uint32_t` C, where the pre-seam realizer answered in
+  the full 64-bit ring (silently, exit 0 — that wrong answer is the row's
+  negative control). The width-widened `uint64_t` control answers a different
+  value, proving the kernel exercises the seam. Nine-run end-to-end ranges
+  overlapped the strongest equivalent C arm on this 64-bit host, so the
+  outcome is `unknownbound`: the narrowing is CORRECTNESS-carried, not yet a
+  measured speed win; the instruction-selection axis (32-bit register pairs,
+  sub-register ALU) opens when a row on a host where it matters measures it.
 - **Closed-form realization** (§101 `law.algorithm.realization`) — a linear
   recurrence has an O(log n) matrix-power realization for runtime-bound n;
   no machinery proves or extracts it yet. This is the axis where dominance
