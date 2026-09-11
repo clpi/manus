@@ -18,9 +18,9 @@
 ///   Step 6: Centralize provenance in dispatchAtSite() → transform_engine (DONE)
 ///   Step 7: Full evaluation ownership in transform_engine Phase 2 (OPEN — execution stays in meta_codegen hooks)
 const std = @import("std");
-const meta_codegen = @import("meta_codegen.zig");
-const comptime_eval = @import("comptime.zig");
-const transform_engine = @import("transform_engine.zig");
+const meta_codegen = @import("../meta_codegen.zig");
+const comptime_eval = @import("../comptime.zig");
+const transform_engine = @import("../transform_engine.zig");
 
 /// Result of a combinator dispatch.
 pub const Result = union(enum) {
@@ -260,10 +260,10 @@ test "meta_dispatch: wired combinators registered in transform_engine" {
 
 test "meta_dispatch: known combinator wrong arity refuses distinctly" {
     const testing = std.testing;
-    const ast = @import("ast.zig");
-    const types = @import("types.zig");
+    const types = @import("../types.zig");
     const record_aliases: std.StringHashMapUnmanaged(types.ResolvedType) = .empty;
-    const alias_defs: std.StringHashMapUnmanaged(*const ast.AliasDef) = .empty;
+    const AliasDefs = @typeInfo(@FieldType(meta_codegen.Host, "alias_defs")).pointer.child;
+    const alias_defs: AliasDefs = .empty;
     const host: meta_codegen.Host = .{
         .alloc = testing.allocator,
         .mod = null,

@@ -29,7 +29,7 @@ test {
     _ = @import("pretty.zig");
     _ = @import("meta_module.zig");
     _ = @import("transform_engine.zig");
-    _ = @import("meta_dispatch.zig");
+    _ = @import("meta/dispatch.zig");
     _ = @import("graph.zig");
     // The range lattice and the result derivations it consumes. Its tests never
     // ran from here, so `derivationOf`'s admission table was unexercised by the
