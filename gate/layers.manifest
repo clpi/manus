@@ -101,7 +101,7 @@ IR       types.zig
 IR       native_ir.zig
 IR       representation_manifest.zig
 IR       backend_identity.zig
-IR       target_model.zig
+IR       target/model.zig
 
 BACKEND  codegen.zig
 BACKEND  c_backend.zig
