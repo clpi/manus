@@ -11,7 +11,7 @@ and deleting it would not make the graph authoritative.** Measured at idol
 
 ## §1 DNIR BARELY EXISTS AS AN IR
 
-    src/native_ir.zig      618 lines     the actual IR (Op enum, Instr struct)
+    src/native/ir.zig      618 lines     the actual IR (Op enum, Instr struct)
     src/dnir_lower.zig   9,946 lines     the lowering PASS
     src/dnir_hardware.zig  318 lines
 

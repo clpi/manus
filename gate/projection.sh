@@ -83,7 +83,7 @@
 #        same oracle line. `place.id` and `remove.id` DO emit C and the C DOES
 #        NOT COMPILE — `setenv((int64_t)a0, ...)` against no `<stdlib.h>` — which
 #        is why their headers' claim that "both backends must produce it" was
-#        false in both directions. `src/c_backend.zig` is another owner's.
+#        false in both directions. `src/c/backend.zig` is another owner's.
 
 set -eu
 

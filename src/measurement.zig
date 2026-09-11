@@ -1,6 +1,6 @@
 //! Benchmark evidence counters and compile-proof projection.
 const std = @import("std");
-const backend_identity = @import("backend_identity.zig");
+const backend_identity = @import("backend/identity.zig");
 const native_barrier_checks = @import("native_barrier_checks.zig");
 const representation_manifest = @import("representation_manifest.zig");
 

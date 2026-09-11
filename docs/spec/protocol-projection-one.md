@@ -304,7 +304,7 @@ three-valued cardinality is exact, with `null` forbidden as a stand-in:
    supplies requirement, witness proves satisfaction.
 
 2. **BOOTSTRAP APPLICATIONS EMIT MACHINE CODE WITH NO PUBLISHED FACT.**
-   `src/native_bootstrap.zig` is **651 lines recognizing 36 SOURCE SPELLINGS** —
+   `src/native/bootstrap.zig` is **651 lines recognizing 36 SOURCE SPELLINGS** —
    `len byte print read write match has to addr alloc free exit env line char
    sub tail zero observe execute stdin stdout math mem os string test gatecap
    read_byte remove sqrt sin cos fabs ceil floor` — that lower by SPELLING.

@@ -7,7 +7,7 @@
 //! from the target triple's object format via target_model.BackendTarget,
 //! never hardcoded to a single platform.
 const std = @import("std");
-const target_model = @import("target/model.zig");
+const target_model = @import("../target/model.zig");
 
 pub const SCHEMA_VERSION = "backend-identity-v0";
 

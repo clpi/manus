@@ -1,6 +1,6 @@
 const std = @import("std");
 const semantic_graph = @import("graph.zig");
-const dnir = @import("native_ir.zig");
+const dnir = @import("native/ir.zig");
 const lower = @import("graph/lower.zig");
 const subject_home = @import("subject_home.zig");
 

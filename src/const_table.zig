@@ -12,7 +12,7 @@
 
 const std = @import("std");
 const ast = @import("ast.zig");
-const dnir = @import("native_ir.zig");
+const dnir = @import("native/ir.zig");
 const table_facts = @import("table_facts.zig");
 
 const Error = std.mem.Allocator.Error;

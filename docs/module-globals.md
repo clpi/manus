@@ -13,7 +13,7 @@ guard is now the only thing refusing two programs that answer correctly.
 the `load_global` / `store_global` arms) and `src/dnir_lower.zig`
 (`collectModuleGlobals`, the `.name` read arm, the `lowerAssignTarget` write arm,
 and the entry's initializer prologue). `store_global` is new in
-`src/native_ir.zig`.
+`src/native/ir.zig`.
 
 The set `collectModuleGlobals` claims is deliberately **arm for arm** the set
 `module_top_level_written_binding` refuses — `.local_decl`, `.global_decl` and

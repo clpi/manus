@@ -85,7 +85,7 @@ application: i64 = ()
   debt += debtrow("subject lower", "fact.subject", lower)
   debt += debtrow("subject backend", "fact.subject", backend)
   debt += debtrow("subject query", "return fact.subject", query)
-  debt += debtrow("native_ir subject", "fact.subject", "src/native_ir.zig":read())
+  debt += debtrow("native_ir subject", "fact.subject", "src/native/ir.zig":read())
   # THE ROW THAT COULD NOT PASS. This grepped src/sema.zig for the string
   # "applicationFact" -- which is that file's OWN accessor definition, present
   # by construction -- so it reported open forever and was the sole reason the
@@ -111,7 +111,7 @@ application: i64 = ()
   # the module was lowered with graph facts required, and must refuse a
   # call_direct with no occurrence when it was. `moduleIsChecked` derives that
   # from the resident graph the module already carries; it is not a new field.
-  ir = "src/native_ir.zig":read()
+  ir = "src/native/ir.zig":read()
   fail += graphok("checked module derived from graph", "fn moduleIsChecked", ir)
   fail += graphok("identity-free call refused when checked", "if (checked) return false;", ir)
   fail += graphok("checked target continuity", "applicationTarget(application) != i.target", ir)

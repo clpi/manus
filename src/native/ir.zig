@@ -7,9 +7,9 @@
 //! never select or fall back to it. DNIR is SSA-ish: native scalars, records, and
 //! direct calls consumed by physical realizers without lua_Value.
 const std = @import("std");
-const semantic_graph = @import("graph.zig");
-const types = @import("types.zig");
-const dnir_hardware = @import("dnir_hardware.zig");
+const semantic_graph = @import("../graph.zig");
+const types = @import("../types.zig");
+const dnir_hardware = @import("../dnir_hardware.zig");
 const RT = types.ResolvedType;
 
 /// The semantic owner attached to checked DNIR. These aliases expose the exact

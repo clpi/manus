@@ -40,7 +40,7 @@ if grep -Eq 'lua_Value|lua_|CodeGen|codegen\.zig' "$scratch/graph.c"; then
     echo "generated C contains retired AST/Lua bridge residue" >&2
     exit 1
 fi
-if grep -Eq '@import\("codegen\.zig"\)' "$repo/src/c_backend.zig"; then
+if grep -Eq '@import\("codegen\.zig"\)' "$repo/src/c/backend.zig"; then
     echo "C physical realizer imports the retired emitter" >&2
     exit 1
 fi

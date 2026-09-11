@@ -1,7 +1,7 @@
 # gate/layers.manifest — which layer each compiler translation unit belongs to.
 #
 # gate/layering.sh enforces dependency DIRECTION from this file. Classification
-# is checked in, not inferred from filenames: `native_ir.zig` and
+# is checked in, not inferred from filenames: `native/ir.zig` and
 # `native_backend.zig` share a prefix and sit in different layers, and
 # `wasm_semantic.zig` is a backend opcode table while `semantic_graph.zig` is
 # sema. A prefix rule would get both wrong.
@@ -98,13 +98,13 @@ SEMA     world.zig
 SEMA     lower.zig
 
 IR       types.zig
-IR       native_ir.zig
+IR       native/ir.zig
 IR       representation_manifest.zig
-IR       backend_identity.zig
+IR       backend/identity.zig
 IR       target/model.zig
 
 BACKEND  codegen.zig
-BACKEND  c_backend.zig
+BACKEND  c/backend.zig
 BACKEND  c_signatures.zig
 BACKEND  sql_to_c.zig
 BACKEND  pipeline_gen.zig
@@ -117,7 +117,7 @@ BACKEND  native.zig
 BACKEND  realization_validate.zig
 BACKEND  graph/lower.zig
 BACKEND  dnir_hardware.zig
-BACKEND  native_bootstrap.zig
+BACKEND  native/bootstrap.zig
 BACKEND  native_barrier_checks.zig
 BACKEND  jit.zig
 BACKEND  c_layout_verify.zig
