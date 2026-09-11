@@ -66,6 +66,7 @@ test {
     _ = @import("region_graph.zig");
     _ = @import("native_ir.zig");
     _ = @import("graph/lower.zig");
+    _ = @import("stageprobe.zig");
     _ = @import("graph/column.zig");
     _ = @import("graph/field.zig");
     _ = @import("module_names.zig");
