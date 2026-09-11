@@ -13529,12 +13529,12 @@ fn planChunk(ctx: *LowerCtx, fmt: []const u8, fmt_pos: usize, hole_start: usize,
             if (seen == take) {
                 // Past this conversion: `%s` is 2 bytes, `%lld` is 4.
                 end = i + (if (fmt[i + 1] == 'l') @as(usize, 4) else 2);
+                if (hole_start + take == total_holes) end = fmt.len;
                 break;
             }
         }
         i += 1;
     }
-    _ = total_holes;
     return .{
         .fmt = try ctx.alloc.dupe(u8, fmt[fmt_pos..end]),
         .fmt_end = end,

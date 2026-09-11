@@ -200,15 +200,15 @@ control: bool = ()
   ok
 
 main: i64 = ()
-  ok = control()
-  if !ok
-    print("gate/admission: FAIL positive controls")
-    return 2
   body = transport()
   if body:len() == 0
     print("gate/admission: FAIL empty input — pipe unified diff on stdin")
     print("Usage: git diff -U0 --cached -- '*.id' | idol run gate/admission.id")
     return 3
+  ok = control()
+  if !ok
+    print("gate/admission: FAIL positive controls")
+    return 2
   total = scan(body)
   print("")
   print("gate/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")

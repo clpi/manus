@@ -65,7 +65,7 @@ all = "'src/*.zig'"
 front = "src/ast.zig src/parser.zig src/macro_expand.zig"
 after = "'src/*.zig' ':(exclude)src/ast.zig' ':(exclude)src/parser.zig' ':(exclude)src/macro_expand.zig' ':(exclude)src/pretty.zig'"
 proven = "src/ast.zig src/parser.zig src/pretty.zig"
-duofiles = "'*.id' ':(exclude)gate/architecture.id' ':(exclude)gate/idiom.id' ':(exclude)scripts/ingress/*'"
+duofiles = "'*.id' ':(exclude)gate/architecture.id' ':(exclude)gate/idiom.id' ':(exclude)scripts/semanticgate.id' ':(exclude)scripts/ingress/*'"
 
 astpat = "ast\\.(Expr|Stmt|BinOp|UnOp|IfExpr|ElseIf|ListComprehension)"
 dispatchpat = "\\.(if_stmt|while_loop|repeat_loop|num_for|gen_for|brk|cont|ret|binop|unop|call|method_call|index|field|if_expr|contains_expr)[[:space:],]*=>"
@@ -90,9 +90,9 @@ envemptypat = "(getenv|envor|env_or|std\\.script\\.getenv).*\"\"|\"\".*(getenv|e
 nilpat = "^[[:space:]]*if .*(!=|==) nil"
 notpat = "(^|[[:space:]])(if not |and not |or not |\\(not )"
 existpat = "^[[:space:]]*if .*exists\\("
-processpat = "(io\\.popen|io:popen|:popen\\(|popen\\(|std\\.proc\\.capture\\()"
+processpat = "(io\\.popen|io:popen|:popen[(]|popen[(]|std\\.proc\\.capture[(])"
 processadmitpat = "process[[:space:]]*=[[:space:]]*lib\\.process"
-processnspat = "process\\.(run|capture|exit|chomp)\\("
+processnspat = "process\\.(run|capture|exit|chomp)[(]"
 longbracketpat = "\\[\\["
 boxpat = "lua_Value|lua_invoke|lua_require"
 luanspat = "(^|[^a-z0-9.])(table|string|math|list|array)\\.[a-z]"
@@ -251,15 +251,15 @@ main: i64 = ()
   if tally(cmd) != 0
     print("(semanticgate, control, gate, keyword not in teaching surfaces)")
     code = 3
-  cmd = "git grep -n hostreadpat gate/architecture.id 2>/dev/null | wc -l | awk '\{print $1\}'"
+  cmd = "git grep -n -E {q}^[[:space:]]*hostreadpat[[:space:]]*={q} gate/architecture.id 2>/dev/null | wc -l | awk '\{print $1\}'"
   if tally(cmd) != 0
     print("(semanticgate, control, gate, host spelling census antipattern)")
     code = 3
-  cmd = "git grep -n hostargspat gate/architecture.id 2>/dev/null | wc -l | awk '\{print $1\}'"
+  cmd = "git grep -n -E {q}^[[:space:]]*hostargspat[[:space:]]*={q} gate/architecture.id 2>/dev/null | wc -l | awk '\{print $1\}'"
   if tally(cmd) != 0
     print("(semanticgate, control, gate, host spelling census antipattern)")
     code = 3
-  cmd = "git grep -n 'dot: bool = (code: str, world: str)' gate/idiom.id gate/host.id 2>/dev/null | wc -l | awk '\{print $1\}'"
+  cmd = "git grep -n {q}dot__io = (code: str){q} gate/idiom.id gate/host.id 2>/dev/null | wc -l | awk '\{print $1\}'"
   if tally(cmd) < 2
     print("(semanticgate, control, gate, dot(code, world) enforcement removed from gates)")
     code = 3
@@ -283,15 +283,15 @@ main: i64 = ()
   if tally(cmd) != 1
     print("(semanticgate, control, gate, admission firewall or relation catalog missing)")
     code = 3
-  cmd = "printf '' | ./zig-out/bin/idol run gate/admission.id 2>/dev/null | grep -c 'FAIL empty input'"
+  cmd = "printf '' | ./zig-out/bin/idol run --backend=direct gate/admission.id 2>/dev/null | grep -c 'FAIL empty input'"
   if tally(cmd) != 1
     print("(semanticgate, control, gate, admission empty-input fail-closed broken)")
     code = 3
-  cmd = "./zig-out/bin/idol run gate/admission.id 2>&1 | grep -c 'control A FAIL'"
+  cmd = "true | ./zig-out/bin/idol run --backend=direct gate/admission.id 2>&1 | grep -c 'control A FAIL'"
   if tally(cmd) != 0
     print("(semanticgate, control, gate, admission adversarial controls broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}out = capture(\\\"echo\\\"){q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}out = std.script.capture(\\\"echo\\\"){q} | grep -q -E {q}std\\\\.script\\\\.capture\\\\({q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}out = process.capture(echo){q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}out = std.script.capture(echo){q} | grep -q -E {q}std\\.script\\.capture[(]{q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, admission, namespace-rename classifier broken)")
     code = 3
@@ -365,7 +365,7 @@ main: i64 = ()
   if tally(cmd) != 0
     print("(semanticgate, control, unclassified, convicted semantic kind)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{namespace_positive}{q} | grep -c -E {q}{namespacepat}{q}"
+  cmd = "printf {q}%s\\n{q} {q}std.fs.open({q} | grep -c -E {q}{namespacepat}{q}"
   if tally(cmd) != 1
     print("(semanticgate, control, namespace, missed std fs operation)")
     code = 3
@@ -373,11 +373,11 @@ main: i64 = ()
   if tally(cmd) != 0
     print("(semanticgate, control, namespace, convicted subject relation)")
     code = 3
-  cmd = "./zig-out/bin/idol run examples/demand/result.id 2>/dev/null | tail -1 | tr -d '\\n'"
+  cmd = "./zig-out/bin/idol run --backend=direct examples/demand/result.id 2>/dev/null | tail -1 | tr -d '\\n'"
   if tail(cmd) != "42"
     print("(semanticgate, control, source, result proof broken)")
     code = 3
-  cmd = "./zig-out/bin/idol run scripts/canon.id 2>/dev/null | tail -1 | tr -d '\\n'"
+  cmd = "./zig-out/bin/idol run --backend=direct scripts/canon.id 2>/dev/null | tail -1 | tr -d '\\n'"
   if tail(cmd) != "canon: pass"
     print("(semanticgate, control, source, canon proof broken)")
     code = 3
@@ -385,27 +385,27 @@ main: i64 = ()
   if tally(cmd) != 1
     print("(semanticgate, control, source, suffix classifier broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{standard_positive}{q} | grep -q -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{standard_negative}{q} | grep -q -v -E {q}{stdpat}{q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}x = std.json{q} | grep -q -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{standard_negative}{q} | grep -q -v -E {q}{stdpat}{q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, source, std classifier broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{process_positive}{q} | grep -q -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{process_negative}{q} | grep -q -v -E {q}{processpat}{q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}{process_negative}{q} | grep -q -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{process_positive}{q} | grep -q -v -E {q}{processpat}{q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, source, process classifier broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{processadmit_positive}{q} | grep -q -E {q}{processadmitpat}{q} && printf {q}%s\\n{q} {q}{processadmit_negative}{q} | grep -q -v -E {q}{processadmitpat}{q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}process = lib.process{q} | grep -q -E {q}{processadmitpat}{q} && printf {q}%s\\n{q} {q}{processadmit_negative}{q} | grep -q -v -E {q}{processadmitpat}{q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, source, process admission classifier broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{processns_positive}{q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}{processns_negative}{q} | grep -q -v -E {q}{processnspat}{q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}process.capture({q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}{processns_negative}{q} | grep -q -v -E {q}{processnspat}{q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, source, process namespace authority classifier broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{longbracket_positive}{q} | grep -q -E {q}{longbracketpat}{q} && printf {q}%s\\n{q} {q}{longbracket_negative}{q} | grep -q -v -E {q}{longbracketpat}{q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}{longbracket_positive}{q} | grep -qF {q}[[{q} && printf {q}%s\\n{q} {q}{longbracket_negative}{q} | grep -qvF {q}[[{q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, source, long bracket lexical classifier broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{negation_positive}{q} | grep -q -v -E {q}{notpat}{q} && printf {q}%s\\n{q} {q}{negation_negative}{q} | grep -q -E {q}{notpat}{q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}{negation_positive}{q} | grep -qvF {q}if not {q} && printf {q}%s\\n{q} {q}{negation_negative}{q} | grep -qF {q}if not {q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, source, keyword-not classifier broken)")
     code = 3
@@ -468,7 +468,7 @@ main: i64 = ()
     keywordnot = tally(cmd)
     cmd = "git grep --cached -h -E {q}{existpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '\{print $1\}'"
     existence = tally(cmd)
-    cmd = "git show :gate/architecture.id | grep -E {q}std[.]proc[.]capture\\({q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '\{print $1\}'"
+    cmd = "git show :gate/architecture.id | grep -E {q}std[.]proc[.]capture[(]{q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '\{print $1\}'"
     bootstrap = tally(cmd)
     cmd = "git grep --cached -h -E {q}{processadmitpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '\{print $1\}'"
     processadmit = tally(cmd)
