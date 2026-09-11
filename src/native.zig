@@ -2921,10 +2921,7 @@ const Arm64Compiler = struct {
                     // way, so the only question a home answers for it is where
                     // the copy lands — and a parameter that is never reassigned
                     // gains nothing per iteration to repay the prologue
-                    // save/restore its home would cost. A parameter READ in a
-                    // hot loop is a real second win and is not this change's:
-                    // taking it needs the read side of the same liveness fact,
-                    // not the write side.
+                    // save/restore its home would cost.
                     try planSlot(
                         self,
                         slot_cursor,
@@ -3633,16 +3630,19 @@ const Arm64Compiler = struct {
                         // A frame-bound param only needs a scratch register to
                         // reach its slot; a register-homed one needs a home the
                         // call cannot reach.
-                        const home = if (self.gpSlotUsesStack(slot))
-                            try self.allocReg()
-                        else
-                            try self.allocHomeReg();
-                        try self.emitMovRegFit(home, arg_reg, param_fit);
                         if (self.gpSlotUsesStack(slot)) {
                             const off = try self.reserveGpStackLocal(slot);
-                            try self.storeGpStackLocal(off, home);
-                            if (!Arm64Compiler.regIsPinned(&pinned, home)) self.releaseReg(home);
+                            // Store directly from the incoming arg register.
+                            // narrowedFrameSource refits the value if the type
+                            // needs narrowing, returning arg_reg itself when
+                            // no refit is needed. This avoids the temp-register
+                            // mov that the old path emitted.
+                            const src = try self.narrowedFrameSource(arg_reg, param_fit);
+                            try self.storeGpStackLocal(off, src);
+                            if (src != arg_reg) self.releaseReg(src);
                         } else {
+                            const home = try self.allocHomeReg();
+                            try self.emitMovRegFit(home, arg_reg, param_fit);
                             self.markGpHome(home);
                             try temps.put(self.alloc, slot, home);
                             try pinned.put(self.alloc, slot, home);
@@ -4593,7 +4593,37 @@ const Arm64Compiler = struct {
                         if (arg_reg != 0) {
                             try self.preserveArgReg(temps, pinned, 0, at);
                             try self.emitMovReg(0, arg_reg);
+                            // The argument's value now travels in x0 for the
+                            // callee. When this call is the temp's last read,
+                            // its register is dead: free it now, before
+                            // `emitSaveCallerRegs`, so the caller-save does not
+                            // preserve a value no later instruction can
+                            // observe. This is the same decision `sweepGpLive`
+                            // makes after the instruction — same owner record,
+                            // same `value_free_at` test — only earlier, while
+                            // the save set is still open.
+                            switch (ins.lhs) {
+                                .temp => |t| {
+                                    const last = self.value_free_at.get(t) orelse std.math.maxInt(u32);
+                                    if (last <= at and self.gp_reg_owner[arg_reg] == t and
+                                        arg_reg != platform_reserved_reg and
+                                        !Arm64Compiler.regIsPinned(pinned, arg_reg) and
+                                        !(arg_reg >= 9 and self.gp_home_regs[arg_reg]))
+                                    {
+                                        self.gp_reg_owner[arg_reg] = null;
+                                        self.used_regs[arg_reg] = false;
+                                        if (self.spilled_regs.fetchRemove(arg_reg)) |entry| {
+                                            try self.free_spill_slots.append(self.alloc, entry.value);
+                                        }
+                                    }
+                                },
+                                else => {},
+                            }
                         }
+                        // Slot 0 now holds the staged argument; say so the way
+                        // `mov_arg` does, so the allocator keeps out of it
+                        // until the call consumes it.
+                        self.markStagedArgReg(0);
                         // Passing a local as an argument must not free the local:
                         // `t = g(a)` released a's home register, so the following
                         // emitSaveCallerRegs skipped it AND allocReg handed the
@@ -4914,6 +4944,14 @@ const Arm64Compiler = struct {
                     // backend produces (every folded recognizer result returns this
                     // way), so it is worth the special case.
                     try self.emitMovImm(0, n);
+                } else if (ins.lhs == .local and self.gp_stack_locals.contains(ins.lhs.local)) {
+                    // A stack-homed local return loads DIRECTLY into x0.
+                    // Routing it through evalDnirValue allocates a scratch
+                    // register first, emitting ldr x9,[sp,#off] ; mov x0,x9
+                    // where ldr x0,[sp,#off] suffices. One wasted instruction
+                    // on the function-return path.
+                    const off2 = self.gp_stack_locals.get(ins.lhs.local).?; try self.emitLdrFrame(0, off2);
+                    _ = try self.emitNarrowFit(0, 0, self.cur_func_ret);
                 } else {
                     const reg = try self.evalDnirValue(temps, ins.lhs);
                     try self.emitMovRegFit(0, reg, self.cur_func_ret);
@@ -8858,8 +8896,13 @@ const Arm64Compiler = struct {
     /// — `sp` is never zero — and behaves exactly as it does now.
     fn emitDepthCheck(self: *Arm64Compiler) Error!void {
         const sym = try self.depthLimitSymbol();
-        try self.emitAdrpAdd(16, sym);
-        try self.emitFmt(0xf9400000 | (@as(u32, 16) << 5) | 16, "ldr x{d}, [x{d}]", .{ 16, 16 });
+        const sname = self.symbols.items[sym].name;
+        const page_off: u32 = @intCast(self.code.items.len);
+        try self.emitFmt(0x90000000 | @as(u32, 16), "adrp x{d}, {s}@PAGE", .{ 16, sname });
+        try self.relocations.append(self.alloc, .{ .offset = page_off, .symbol_index = sym, .kind = .page21 });
+        const ldr_off: u32 = @intCast(self.code.items.len);
+        try self.emitFmt(0xf9400000 | (@as(u32, 16) << 5) | 16, "ldr x{d}, [x{d}, {s}@PAGEOFF]", .{ 16, 16, sname });
+        try self.relocations.append(self.alloc, .{ .offset = ldr_off, .symbol_index = sym, .kind = .pageoff12 });
         try self.emit(0xeb3063ff, "cmp sp, x16");
         const cond: u32 = @intFromEnum(Condition.hi);
         const branch_off: u32 = @intCast(self.code.items.len);
@@ -9077,18 +9120,26 @@ const Arm64Compiler = struct {
         var save_set = SaveSet{};
         var reg: u5 = 0;
         while (reg < 8) : (reg += 1) {
+            // A staged argument register still joins the save set. The operand
+            // can already occupy the ABI slot (so no copy is made), and when
+            // that operand stays live past the call the slot holds its only
+            // copy: excluding it from the save loses the value across the
+            // call. A dead staged copy costs one save/restore pair; a lost
+            // live value is a miscompile.
             if (self.used_regs[reg]) {
                 save_set.regs[save_set.count] = reg;
                 save_set.count += 1;
             }
         }
         reg = 9;
-        while (reg <= 28) : (reg += 1) {
+        while (reg <= 18) : (reg += 1) {
             if (self.used_regs[reg]) {
                 save_set.regs[save_set.count] = reg;
                 save_set.count += 1;
             }
         }
+        // x19-x28 are callee-saved (AAPCS64): the callee preserves them, so
+        // the caller never spills them around a call. Homes live there.
         var fpr: u5 = fp_value_reg_base;
         while (fpr < fp_value_reg_base + fp_value_reg_count) : (fpr += 1) {
             if (self.used_fp_regs[fpr]) {
@@ -11197,10 +11248,24 @@ const Arm64Compiler = struct {
         branch_patches: *std.ArrayList(DnirBranchPatch),
     ) Error!void {
         const lhs = try self.evalDnirValue(temps, ins.lhs);
-        const rhs = try self.evalDnirValue(temps, ins.rhs);
-        try self.emitCmpReg(lhs, rhs);
-        if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
-        if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
+        // A small constant on the right folds into the compare itself —
+        // `cmp xn, #imm` instead of a `mov` that materializes the constant
+        // into a register and a register-to-register `cmp`. One fewer
+        // instruction and one fewer live register on the comparison, which
+        // is the whole hot path of a recursive base case.
+        const rhs_imm: ?u12 = switch (ins.rhs) {
+            .i64 => |k| if (k >= 0 and k <= 4095) @intCast(k) else null,
+            else => null,
+        };
+        if (rhs_imm) |imm| {
+            try self.emitCmpImm(lhs, imm);
+            if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+        } else {
+            const rhs = try self.evalDnirValue(temps, ins.rhs);
+            try self.emitCmpReg(lhs, rhs);
+            if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+            if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
+        }
         const cond = comparisonCondition(ins.binop).?;
         const arm: Condition = if (nx.branch_condition == .when_true) cond else invertCondition(cond);
         const patch_off = try self.emitBCond(arm, 0);

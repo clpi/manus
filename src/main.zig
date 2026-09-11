@@ -926,6 +926,18 @@ fn mainInner(init: std.process.Init) !void {
     }
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
+    // Fast path: `idol authority` prints constant JSON and needs neither the
+    // compiler lib root nor any other init. Checking before
+    // `detectCompilerLibRoot` keeps the filesystem probes (realpath, stat,
+    // PATH search) off the hot path for this introspection command.
+    if (args.len == 2 and std.mem.eql(u8, args[1], "authority")) {
+        const stdout = std.Io.File.stdout();
+        var buf: [512]u8 = undefined;
+        var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+        try authority_projection.writeCurrentJson(&fw.interface);
+        try fw.interface.flush();
+        return;
+    }
     if (args.len > 0) {
         compiler_lib_root = try detectCompilerLibRoot(alloc, io, init.environ_map, args[0]);
     }
@@ -964,17 +976,12 @@ fn mainInner(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "-h"));
     const cmd: []const u8 = if (known_cmd) args[1] else "run";
     const start: usize = if (known_cmd) 2 else 1;
+    // The valid `idol authority` (exactly two args) returned on the fast path
+    // above; reaching here with the command means extra arguments, which is
+    // still an error.
     if (std.mem.eql(u8, cmd, "authority")) {
-        if (args.len != 2) {
-            term.err("idol authority takes no arguments or options", .{});
-            std.process.exit(2);
-        }
-        const stdout = std.Io.File.stdout();
-        var buf: [512]u8 = undefined;
-        var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-        try authority_projection.writeCurrentJson(&fw.interface);
-        try fw.interface.flush();
-        return;
+        term.err("idol authority takes no arguments or options", .{});
+        std.process.exit(2);
     }
     var input_file: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
