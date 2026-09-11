@@ -14295,6 +14295,31 @@ fn lowerMemType(ctx: *LowerCtx, type_expr: *const ast.Expr) ?RT {
 /// because the read and the write of the same buffer disagreeing about its
 /// origin is exactly the defect this helper was extracted to end.
 fn lowerScaledElementIndex(ctx: *LowerCtx, off_expr: *const ast.Expr) Error!dnir.Value {
+    if (off_expr.* == .binop) {
+        const b = off_expr.binop;
+        if (b.op == .mul) {
+            if (b.rhs.* == .int_lit and b.rhs.int_lit.val == 8) {
+                const base = try lowerExpr(ctx, b.lhs);
+                const idx = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                return .{ .temp = idx };
+            }
+            if (b.lhs.* == .int_lit and b.lhs.int_lit.val == 8) {
+                const base = try lowerExpr(ctx, b.rhs);
+                const idx = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                return .{ .temp = idx };
+            }
+        }
+        if (b.op == .lshift) {
+            if (b.rhs.* == .int_lit and b.rhs.int_lit.val == 3) {
+                const base = try lowerExpr(ctx, b.lhs);
+                const idx = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                return .{ .temp = idx };
+            }
+        }
+    }
     const off = try lowerExpr(ctx, off_expr);
     const scaled = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = scaled, .binop = .div, .lhs = off, .rhs = .{ .i64 = 8 } });
