@@ -5,7 +5,7 @@
 /// them can create or recover semantic identity.
 const std = @import("std");
 const ast = @import("ast.zig");
-const native_bootstrap = @import("native_bootstrap.zig");
+const native_bootstrap = @import("native/bootstrap.zig");
 const home_resolve_mod = @import("home_resolve.zig");
 const Expr = ast.Expr;
 const sema = @import("sema.zig");

@@ -1,6 +1,6 @@
 //! L6 — representation manifest schema (build artifact from @comp.why / emission scans).
 const std = @import("std");
-const backend_identity = @import("backend_identity.zig");
+const backend_identity = @import("backend/identity.zig");
 const native_barrier_checks = @import("native_barrier_checks.zig");
 
 /// L6 manifest schema version (embedded in `.proof.json` as `manifest_schema` and standalone `.manifest.json`).

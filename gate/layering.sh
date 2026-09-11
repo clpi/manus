@@ -19,7 +19,7 @@
 #       gate/relation-ownership.baseline.
 #
 # Every classification comes from a checked-in manifest. Nothing is inferred
-# from a filename: `native_ir.zig` (IR) and `native_backend.zig` (BACKEND)
+# from a filename: `native/ir.zig` (IR) and `native_backend.zig` (BACKEND)
 # share a prefix and sit in different layers, and a prefix rule gets both
 # wrong. Coverage of src/*.zig is MANDATORY -- an unclassified new file fails,
 # because routing a forbidden edge through an unclassified module is the

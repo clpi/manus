@@ -48,9 +48,9 @@
 //! `gateTransport` below) and the request is part of the bytes, so every
 //! spelling of a path that names the same file gets the same law.
 const std = @import("std");
-const ast = @import("ast.zig");
-const subject_home = @import("subject_home.zig");
-const collection_relation = @import("collection_relation.zig");
+const ast = @import("../ast.zig");
+const subject_home = @import("../subject_home.zig");
+const collection_relation = @import("../collection_relation.zig");
 const Expr = ast.Expr;
 
 pub fn receiverLooksStrish(obj: *const Expr) bool {
@@ -586,8 +586,8 @@ fn collectCallExprs(alloc: std.mem.Allocator, block: ast.Block, out: *std.ArrayL
 }
 
 test "native_bootstrap: ordinary calls are not bootstrap faces" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -647,8 +647,8 @@ test "native_bootstrap: ordinary calls are not bootstrap faces" {
 }
 
 test "native_bootstrap: print is host egress in every module, not just gate transport" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -683,8 +683,8 @@ test "native_bootstrap: print is host egress in every module, not just gate tran
 
 /// Parse `src` and hand back every call/method-call expression in `main`.
 fn facesOf(alloc: std.mem.Allocator, src: []const u8, file: []const u8) ![]const *const Expr {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
     var lex = Lexer.init(src, file);
     var parser = Parser.init(&lex, alloc);
     parser.idol_mode = true;
@@ -795,8 +795,8 @@ test "native_bootstrap: typed mem.load/store is a face, curried and flat" {
 /// typed-pointer face — which appears in binding position in the wasm runtime —
 /// needs its own walk.
 fn assignmentValuesOf(alloc: std.mem.Allocator, src: []const u8, file: []const u8) ![]const *const Expr {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
     var lex = Lexer.init(src, file);
     var parser = Parser.init(&lex, alloc);
     parser.idol_mode = true;

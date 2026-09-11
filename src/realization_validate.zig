@@ -5,7 +5,7 @@
 //! admission question both ask before emitting bytes; neither backend may
 //! reconstruct aggregate contents or accept a row the other rejects.
 const std = @import("std");
-const dnir = @import("native_ir.zig");
+const dnir = @import("native/ir.zig");
 
 pub const Failure = struct {
     note: []const u8,

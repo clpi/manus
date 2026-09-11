@@ -187,7 +187,7 @@ pub const TargetTriple = struct {
 /// not two spellings of the same thing.
 ///
 /// `backend` is the backend name string (e.g. "direct", "auto", "c", "wasm")
-/// rather than a Backend enum to avoid a circular import. backend_identity.zig,
+/// rather than a Backend enum to avoid a circular import. backend/identity.zig,
 /// which owns the Backend enum, imports this module and passes the name.
 pub const BackendTarget = struct {
     backend: []const u8,

@@ -208,8 +208,8 @@ pub fn catalogEntry(h: HwIntrinsic) ?CatalogEntry {
     return null;
 }
 
-pub fn intrinsicOfOp(op: @import("native_ir.zig").Op, hw: HwIntrinsic) ?HwIntrinsic {
-    const dnir = @import("native_ir.zig");
+pub fn intrinsicOfOp(op: @import("native/ir.zig").Op, hw: HwIntrinsic) ?HwIntrinsic {
+    const dnir = @import("native/ir.zig");
     return switch (op) {
         dnir.Op.hw_fence => .fence,
         dnir.Op.hw_spin => .spin_wait,
@@ -227,7 +227,7 @@ pub fn intrinsicOfOp(op: @import("native_ir.zig").Op, hw: HwIntrinsic) ?HwIntrin
 // the condition under which this comes back.
 
 /// Collect deduplicated hardware descriptors used in a DNIR module.
-pub fn collectModuleDescriptors(alloc: std.mem.Allocator, m: @import("native_ir.zig").Module) ![]Descriptor {
+pub fn collectModuleDescriptors(alloc: std.mem.Allocator, m: @import("native/ir.zig").Module) ![]Descriptor {
     var counts: std.AutoHashMapUnmanaged(HwIntrinsic, u32) = .{};
     defer counts.deinit(alloc);
 
@@ -297,7 +297,7 @@ test "dnir_hardware: the declared baseline is non-empty and sysctl-shaped" {
 }
 
 test "dnir_hardware: collectModuleDescriptors" {
-    const dnir = @import("native_ir.zig");
+    const dnir = @import("native/ir.zig");
     const m = dnir.Module{
         .functions = &.{
             .{

@@ -106,7 +106,7 @@ branch() {
     mkdir -p "$C/src/branch"
     printf 'pub const value = 0;\n' >"$C/src/probe.zig"
     printf 'pub const value = 0;\n' >"$C/src/branch/probe.zig"
-    printf 'const value = @import("probe.zig");\nconst parent = @import("../native_ir.zig");\n' >"$C/src/branch/read.zig"
+    printf 'const value = @import("probe.zig");\nconst parent = @import("../native/ir.zig");\n' >"$C/src/branch/read.zig"
     printf 'SEMA probe.zig\nIR branch/probe.zig\nBACKEND branch/read.zig\n' >>"$C/gate/layers.manifest"
     git -C "$C" add src/probe.zig src/branch/probe.zig src/branch/read.zig
 }
@@ -139,8 +139,8 @@ echo
 echo "-- L1: dependency direction --"
 
 C=$(mkclone)
-printf '\nconst sema = @import("sema.zig");\n' >>"$C/src/c_backend.zig"
-expect_fail "c_backend.zig (BACKEND) newly imports sema.zig -- backend recovering meaning" \
+printf '\nconst sema = @import("sema.zig");\n' >>"$C/src/c/backend.zig"
+expect_fail "c/backend.zig (BACKEND) newly imports sema.zig -- backend recovering meaning" \
     "$C/gate/layering.sh" --static-only
 rm -rf "$C"
 
@@ -151,8 +151,8 @@ expect_fail "wasm_semantic.zig (BACKEND) newly imports ast.zig" \
 rm -rf "$C"
 
 C=$(mkclone)
-printf '\nconst p = @import("parser.zig");\n' >>"$C/src/backend_identity.zig"
-expect_fail "backend_identity.zig (IR) newly imports parser.zig" \
+printf '\nconst p = @import("parser.zig");\n' >>"$C/src/backend/identity.zig"
+expect_fail "backend/identity.zig (IR) newly imports parser.zig" \
     "$C/gate/layering.sh" --static-only
 rm -rf "$C"
 
@@ -160,8 +160,8 @@ rm -rf "$C"
 # from the header block, where a reviewer skimming imports will not see it.
 C=$(mkclone)
 LC_ALL=C awk 'NR == 40 { print "fn hidden() void { const s = @import(\"sema.zig\").Sema; _ = s; }" } { print }' \
-    "$C/src/c_backend.zig" >"$C/src/c_backend.new"
-mv "$C/src/c_backend.new" "$C/src/c_backend.zig"
+    "$C/src/c/backend.zig" >"$C/src/c_backend.new"
+mv "$C/src/c_backend.new" "$C/src/c/backend.zig"
 expect_fail "sema reach buried mid-file, far from the import header a reviewer skims" \
     "$C/gate/layering.sh" --static-only
 rm -rf "$C"
@@ -173,8 +173,8 @@ expect_fail "a baselined edge was REMOVED -- must fail until the baseline is re-
 rm -rf "$C"
 
 C=$(mkclone)
-printf 'const std = @import("std");\nconst dnir = @import("native_ir.zig");\n' >>"$C/src/wasm_semantic.zig"
-expect_pass "lawful new edge: BACKEND -> IR (wasm_semantic.zig imports native_ir.zig)" \
+printf 'const std = @import("std");\nconst dnir = @import("native/ir.zig");\n' >>"$C/src/wasm_semantic.zig"
+expect_pass "lawful new edge: BACKEND -> IR (wasm_semantic.zig imports native/ir.zig)" \
     "$C/gate/layering.sh" --static-only
 rm -rf "$C"
 
@@ -183,7 +183,7 @@ C=$(mkclone)
 branch
 expect "nested sibling and parent imports retain distinct same-basename modules" 0 \
     "LAYERING OK" "L1 --" "$C/gate/layering.sh" --static-only
-printf '\nconst branch = @import("branch/probe.zig");\n' >>"$C/src/c_backend.zig"
+printf '\nconst branch = @import("branch/probe.zig");\n' >>"$C/src/c/backend.zig"
 expect "root module reaches a nested IR module by its full relative path" 0 \
     "LAYERING OK" "L1 --" "$C/gate/layering.sh" --static-only
 printf '\nconst local = @import("../branch/./probe.zig");\n' >>"$C/src/branch/read.zig"

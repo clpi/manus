@@ -280,14 +280,14 @@ done
 # silently, which is exactly what happened, while a switch makes the compiler
 # demand an answer. `tests.zig` line 97 records that the same tag split DID
 # break exhaustive switches and that those were reported.
-if ! subject src/native_ir.zig; then
+if ! subject src/native/ir.zig; then
   :
-elif ! grep -q "pub fn $predicate" src/native_ir.zig; then
-  bad "§6 src/native_ir.zig has no \`$predicate\` — the IR-side producer is gone"
-elif ! grep -q '\.band, \.bor, \.bxor, \.shl, \.shr => false' src/native_ir.zig; then
+elif ! grep -q "pub fn $predicate" src/native/ir.zig; then
+  bad "§6 src/native/ir.zig has no \`$predicate\` — the IR-side producer is gone"
+elif ! grep -q '\.band, \.bor, \.bxor, \.shl, \.shr => false' src/native/ir.zig; then
   bad "§6 $predicate is no longer an exhaustive switch; a tag added to BinOpTag can slip through without deciding whether it divides"
 else
-  note "§6 src/native_ir.zig: IR producer present, switch exhaustive"
+  note "§6 src/native/ir.zig: IR producer present, switch exhaustive"
 fi
 
 # THE SEMA PRODUCER, for `sema` and `demand`, over `ast.BinOp`.

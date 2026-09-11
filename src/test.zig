@@ -64,7 +64,7 @@ test {
     _ = @import("lua_metamethod.zig");
     _ = @import("graph_query.zig");
     _ = @import("region_graph.zig");
-    _ = @import("native_ir.zig");
+    _ = @import("native/ir.zig");
     _ = @import("graph/lower.zig");
     _ = @import("stageprobe.zig");
     _ = @import("graph/column.zig");
@@ -78,7 +78,7 @@ test {
     _ = @import("git_preservation.zig");
     _ = @import("proof_carrying.zig");
     _ = @import("token_classify_gen.zig");
-    _ = @import("backend_identity.zig");
+    _ = @import("backend/identity.zig");
     _ = @import("native_barrier_checks.zig");
     _ = @import("target/model.zig");
     _ = @import("sim_pipeline.zig");
@@ -89,7 +89,7 @@ test {
     _ = @import("build_framework.zig");
     _ = @import("ml_kernels.zig");
     _ = @import("jit.zig");
-    _ = @import("c_backend.zig");
+    _ = @import("c/backend.zig");
     _ = @import("native.zig");
     _ = @import("poison.zig");
     _ = @import("sovereign.zig");
@@ -154,7 +154,7 @@ test {
 // exhaustiveness check cannot give you, and it is what this asserts.
 test "divisor obligation: IR and relation law agree" {
     const ast = @import("ast.zig");
-    const dnir = @import("native_ir.zig");
+    const dnir = @import("native/ir.zig");
     const dnir_lower = @import("graph/lower.zig");
     const demand_projection = @import("demand_projection.zig");
 

@@ -1488,7 +1488,7 @@ test "loop_closure: a narrow file-scope declaration refuses" {
 // 5, which is what the "pre-existing rule" test below is for.
 
 const dnir_lower_probe = @import("graph/lower.zig");
-const native_ir_probe = @import("native_ir.zig");
+const native_ir_probe = @import("native/ir.zig");
 const tail_probe = @import("tail_result_demand.zig");
 
 /// What the module's entry answers, read off the emitted `ret`.

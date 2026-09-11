@@ -21,7 +21,7 @@
 #           is the control that 134 is the ABSENT TRANSFORM and not a broken
 #           program.
 #   C99     SIGSEGV, exit 139, EMPTY stdout — the signal the old header said
-#           does not happen. `c_backend.zig` holds no tail transform at all: it
+#           does not happen. `c/backend.zig` holds no tail transform at all: it
 #           emits `s5 = idol_tailcall__tail(a0, a1); return s5;` and the HOST
 #           `cc` decides — `-O0` and `-O1` die, `-O2` and `-O3` answer.
 #

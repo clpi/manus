@@ -707,7 +707,7 @@ pub fn trieDescriptorName(repr: ResolvedType) ?[]const u8 {
 /// a natively-lowered record, table row, or parameter — one of the three the
 /// native IR carries (`native_ir.FieldKind = { i64, str, f64 }`). This owner
 /// names the class as its own three-variant enum rather than the IR one,
-/// because `types.zig` is IR and `native_ir.zig` is a codegen carrier below it;
+/// because `types.zig` is IR and `native/ir.zig` is a codegen carrier below it;
 /// the one consumer maps this class to its own `FieldKind` by name at the seam,
 /// which is a rename over the same three identities, not a second authority.
 ///

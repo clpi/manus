@@ -13,7 +13,7 @@ const Expr = ast.Expr;
 const types = @import("../types.zig");
 const comptime_eval = @import("../comptime.zig");
 const subject_home = @import("../subject_home.zig");
-const dnir = @import("../native_ir.zig");
+const dnir = @import("../native/ir.zig");
 const dnir_hardware = @import("../dnir_hardware.zig");
 const semantic_graph = @import("../graph.zig");
 const place = @import("../place.zig");
@@ -7924,7 +7924,7 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
 /// intrinsic. `native_backend.zig` reads the same constant.
 ///
 /// This rides `hw_unary` + `.field` because a vector op is not expressible in
-/// `native_ir.zig`'s `Op` set and that file is not this pass's to change. The
+/// `native/ir.zig`'s `Op` set and that file is not this pass's to change. The
 /// convention is not invented here: `mov_arg` already discriminates its
 /// variadic-tail form with `.field = "vararg"`. The tag is checked FIRST in the
 /// backend's `hw_unary` arm, so `.hw` stays `.none` and every existing consumer
@@ -8378,7 +8378,7 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // graph does not yet publish the application result descriptor for
         // these (GAP-124), so `applicationResultIs` answers false and the
         // type checker has to fall back to the AST shape. The method roster
-        // is the same one `native_bootstrap.zig` admits, so a method name
+        // is the same one `native/bootstrap.zig` admits, so a method name
         // here matches what the call site is allowed to write; a subject
         // that does not lower to a str is `.other` in `concatOperandClass`
         // and refused by `planConcat`, so this arm cannot accidentally
@@ -8388,7 +8388,7 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // because a boolean answer is not text.
         .method_call => |mc| blk: {
             // THE NEW STRING-METHODS ROSTER. Each entry here must match the
-            // `string_methods` list in `native_bootstrap.zig` so a method
+            // `string_methods` list in `native/bootstrap.zig` so a method
             // admitted at the call site also admits the type answer here —
             // BUT ONLY FOR THE METHODS THAT RETURN TEXT. The roster conflates
             // two return classes: `sub`/`rep`/`at`/`char`/`match` answer a str
@@ -9821,7 +9821,7 @@ fn lowerTestRelation(ctx: *LowerCtx, method: []const u8, args: []const *const as
 /// `call_extern` and none of them fire.
 ///
 /// It rides `hw_unary` + `.field` because a trap is not expressible in
-/// `native_ir.zig`'s `Op` set and that file is not this pass's to change. The
+/// `native/ir.zig`'s `Op` set and that file is not this pass's to change. The
 /// convention is not invented here: `mov_arg` already discriminates its
 /// variadic-tail form with `.field = "vararg"`, and the vector reduction above
 /// uses the same seam. `.hw` stays `.none`, so `intrinsicOfOp`,

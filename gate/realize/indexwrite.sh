@@ -6,7 +6,7 @@
 # on another. On this host the C99 realizer is the only route from source to a
 # running program (the direct backend refuses non-aarch64-darwin hosts by
 # name, DNB004), and until the indexed-store family landed in
-# `src/c_backend.zig` every `xs[i] = v` with a computed index refused at
+# `src/c/backend.zig` every `xs[i] = v` with a computed index refused at
 # `operation-not-in-c99-slice`. This gate pins the repaired behavior BY VALUE:
 # the program's own exit status is the byte compared, so the pin cannot decay
 # into prose the way the gap's headline did.

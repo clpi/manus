@@ -75,8 +75,8 @@ else
   echo "census/convergence: pass duo_native_ir retired"
 fi
 
-if [ ! -f src/native_ir.zig ]; then
-  echo "census/convergence: FAIL missing src/native_ir.zig"
+if [ ! -f src/native/ir.zig ]; then
+  echo "census/convergence: FAIL missing src/native/ir.zig"
   fail=$((fail + 1))
 else
   echo "census/convergence: pass native_ir present"

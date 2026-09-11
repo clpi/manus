@@ -14,7 +14,7 @@ TABLE_FACTS="$ROOT/src/table_facts.zig"
 CURSOR="$ROOT/src/source_cursor.zig"
 LOWER="$ROOT/src/graph/lower.zig"
 GRAPH="$ROOT/src/graph.zig"
-BOOTSTRAP="$ROOT/src/native_bootstrap.zig"
+BOOTSTRAP="$ROOT/src/native/bootstrap.zig"
 AST="$ROOT/src/ast.zig"
 GAP="$ROOT/gaps/GAP-201.md"
 
