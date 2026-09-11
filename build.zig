@@ -1619,6 +1619,7 @@ pub fn build(b: *std.Build) void {
     // drops `x.out` beside itself and this gate guards the tree it runs in.
     const mcp_gate_cmd = b.addSystemCommand(&.{"./tools/node/dev/mcp-gate"});
     mcp_gate_cmd.setCwd(b.path("."));
+    mcp_gate_cmd.setEnvironmentVariable("IDOL_NATIVE_ROOT", ".");
     mcp_gate_cmd.step.dependOn(b.getInstallStep());
     const mcp_gate_step = b.step("mcp-gate", "MCP servers must handshake, serve their full tool census, and answer by value");
     mcp_gate_step.dependOn(&mcp_gate_cmd.step);
