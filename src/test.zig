@@ -79,7 +79,7 @@ test {
     _ = @import("token_classify_gen.zig");
     _ = @import("backend_identity.zig");
     _ = @import("native_barrier_checks.zig");
-    _ = @import("target_model.zig");
+    _ = @import("target/model.zig");
     _ = @import("sim_pipeline.zig");
     _ = @import("meta_codegen.zig");
     _ = @import("directives.zig");

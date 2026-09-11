@@ -1300,7 +1300,7 @@ pub fn build(b: *std.Build) void {
 
     const native_module_target = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/target_model.zig"),
+            .root_source_file = b.path("src/target/model.zig"),
             .target = target,
             .optimize = optimize,
         }),
