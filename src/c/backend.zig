@@ -350,6 +350,21 @@ fn emitComparison(e: *Emitter, op: []const u8, lhs: dnir.Value, rhs: dnir.Value)
     try w.writeAll("))");
 }
 
+fn emitNarrowFit(e: *Emitter, ty: RT) Error!bool {
+    const fit = dnir_lower.narrowFit(ty) orelse return false;
+    const w = e.writer();
+    if (fit.signed) {
+        try w.print("((int64_t)(int{d}_t)(", .{fit.bits});
+    } else {
+        try w.print("(int64_t)((uint{d}_t)(", .{fit.bits});
+    }
+    return true;
+}
+
+fn emitFitClose(e: *Emitter) Error!void {
+    try e.writer().writeAll("))");
+}
+
 fn emitBinop(e: *Emitter, instruction: dnir.Instr) Error!void {
     switch (instruction.binop) {
         .add => try emitWrappedBinary(e, "+", instruction.lhs, instruction.rhs),
@@ -482,13 +497,23 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
         .@"const", .store_local => {
             const result = instruction.result orelse return e.refuse("result-slot-missing");
             try w.print("  s{d} = ", .{result});
-            try emitValue(e, instruction.lhs);
+            if (try emitNarrowFit(e, instruction.ty)) {
+                try emitValue(e, instruction.lhs);
+                try emitFitClose(e);
+            } else {
+                try emitValue(e, instruction.lhs);
+            }
             try w.writeAll(";\n");
         },
         .binop => {
             const result = instruction.result orelse return e.refuse("result-slot-missing");
             try w.print("  s{d} = ", .{result});
-            try emitBinop(e, instruction);
+            if (try emitNarrowFit(e, instruction.ty)) {
+                try emitBinop(e, instruction);
+                try emitFitClose(e);
+            } else {
+                try emitBinop(e, instruction);
+            }
             try w.writeAll(";\n");
         },
         .cmp => {
@@ -676,7 +701,12 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
         },
         .ret => {
             try w.writeAll("  return ");
-            try emitValue(e, instruction.lhs);
+            if (try emitNarrowFit(e, instruction.ty)) {
+                try emitValue(e, instruction.lhs);
+                try emitFitClose(e);
+            } else {
+                try emitValue(e, instruction.lhs);
+            }
             try w.writeAll(";\n");
         },
         // The indexed-store family (GAP-101). `alloc_slots` reserves `lhs`
@@ -919,7 +949,12 @@ pub fn emitSource(
         \\ * compiler accepts a typed call against this declaration. */
         \\typedef signed long int64_t;
         \\typedef unsigned long uint64_t;
+        \\typedef signed char int8_t;
+        \\typedef short int16_t;
+        \\typedef int int32_t;
         \\typedef unsigned char uint8_t;
+        \\typedef unsigned short uint16_t;
+        \\typedef unsigned int uint32_t;
         \\typedef unsigned long size_t;
         \\typedef long ptrdiff_t;
         \\typedef int64_t intptr_t;
