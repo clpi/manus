@@ -49,7 +49,7 @@ AST      meta_module.zig
 SEMA     sema.zig
 SEMA     graph.zig
 SEMA     graph/column.zig
-SEMA     graph/field.zig
+IR       graph/field.zig
 SEMA     semantic_algebra.zig
 SEMA     semantic_identity.zig
 SEMA     subject_home.zig
@@ -163,6 +163,7 @@ DRIVER   gap182_order34.zig
 DRIVER   term.zig
 DRIVER   debug_trace.zig
 DRIVER   explain_pipeline.zig
+DRIVER   stageprobe.zig
 DRIVER   module_names.zig
 DRIVER   build_framework.zig
 DRIVER   measurement.zig
