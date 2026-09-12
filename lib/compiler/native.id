@@ -1,0 +1,210 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = (v & 15) + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    hex(v >> 4) .. hex(v)
+
+word: str = (v: i64)
+    pair(v) .. pair(v >> 8) .. pair(v >> 16) .. pair(v >> 24)
+
+quad: str = (v: i64)
+    word(v) .. word(v >> 32)
+
+field: str = (s: str)
+    out = ""
+    i = 1
+    while i <= 16
+        if i <= s:len()
+            out = out .. pair(s:byte(i))
+        else
+            out = out .. "00"
+        i = i + 1
+    out
+
+set: i64 = (d: i64, v: i64)
+    3531603968 | ((v & 65535) << 5) | d
+
+trap: i64 = (v: i64)
+    3556769792 | (v << 5)
+
+ret: i64 = ()
+    3596551104
+
+digit: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+num: i64 = (s: str)
+    v = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    v
+
+dec: str = (v: i64)
+    if v == 0
+        return "0"
+    out = ""
+    x = v
+    while x > 0
+        out = hex(x - (x / 10) * 10) .. out
+        x = x / 10
+    out
+
+trim: str = (s: str)
+    n = s:len()
+    a = 1
+    while a <= n and s:byte(a) == 32
+        a = a + 1
+    b = n
+    while b >= a and s:byte(b) == 32
+        b = b - 1
+    if b < a
+        return ""
+    s:sub(a, b)
+
+find: i64 = (hay: str, key: str)
+    pat = key .. "|"
+    n = hay:len()
+    m = pat:len()
+    i = 1
+    idx = 0
+    while i + m - 1 <= n
+        if hay:sub(i, i + m - 1) == pat
+            return idx
+        if hay:byte(i) == 124
+            idx = idx + 1
+        i = i + 1
+    0 - 1
+
+at: i64 = (vals: str, idx: i64)
+    cur = 0
+    i = 1
+    n = vals:len()
+    while i <= n
+        if cur == idx
+            j = i
+            while j <= n and vals:byte(j) != 124
+                j = j + 1
+            return num(vals:sub(i, j - 1))
+        if vals:byte(i) == 124
+            cur = cur + 1
+        i = i + 1
+    0
+
+val: i64 = (t: str, names: str, vals: str)
+    if digit(t:byte(1)) == 1
+        return num(t)
+    at(vals, find(names, t))
+
+main: i64 = ()
+    src = stdin:read()
+    names = ""
+    vals = ""
+    result = 0
+    n = src:len()
+    i = 1
+    while i <= n
+        j = i
+        while j <= n and src:byte(j) != 10
+            j = j + 1
+        line = trim(src:sub(i, j - 1))
+        i = j + 1
+        if line:len() > 0
+            colon = 0
+            k = 1
+            while k <= line:len()
+                if line:byte(k) == 58
+                    colon = 1
+                k = k + 1
+            if colon == 0
+                eq = 0
+                k = 1
+                while k <= line:len()
+                    if line:byte(k) == 61 and eq == 0
+                        eq = k
+                    k = k + 1
+                if eq > 0
+                    name = trim(line:sub(1, eq - 1))
+                    rhs = trim(line:sub(eq + 1, line:len()))
+                    oppos = 0
+                    op = 0
+                    k = 1
+                    while k <= rhs:len()
+                        c = rhs:byte(k)
+                        if c == 43 or c == 45 or c == 42 or c == 47
+                            if oppos == 0
+                                oppos = k
+                                op = c
+                        k = k + 1
+                    v = 0
+                    if oppos > 0
+                        a = val(trim(rhs:sub(1, oppos - 1)), names, vals)
+                        b = val(trim(rhs:sub(oppos + 1, rhs:len())), names, vals)
+                        if op == 43
+                            v = a + b
+                        if op == 45
+                            v = a - b
+                        if op == 42
+                            v = a * b
+                        if op == 47
+                            v = a / b
+                    else
+                        v = val(rhs, names, vals)
+                    names = names .. name .. "|"
+                    vals = vals .. dec(v) .. "|"
+                else
+                    result = val(line, names, vals)
+    code = word(0:set(result)) .. word(ret())
+    head = word(4277009103)
+    head = head .. word(16777228)
+    head = head .. word(0)
+    head = head .. word(1)
+    head = head .. word(2)
+    head = head .. word(176)
+    head = head .. word(0)
+    head = head .. word(0)
+    head = head .. word(25)
+    head = head .. word(152)
+    head = head .. field("")
+    head = head .. quad(0)
+    head = head .. quad(8)
+    head = head .. quad(208)
+    head = head .. quad(8)
+    head = head .. word(7)
+    head = head .. word(7)
+    head = head .. word(1)
+    head = head .. word(0)
+    head = head .. field("__text")
+    head = head .. field("__TEXT")
+    head = head .. quad(0)
+    head = head .. quad(8)
+    head = head .. word(208)
+    head = head .. word(2)
+    head = head .. word(0)
+    head = head .. word(0)
+    head = head .. word(2147484672)
+    head = head .. word(0)
+    head = head .. word(0)
+    head = head .. word(0)
+    head = head .. word(2)
+    head = head .. word(24)
+    head = head .. word(216)
+    head = head .. word(1)
+    head = head .. word(232)
+    head = head .. word(11)
+    head = head .. code
+    head = head .. word(1)
+    head = head .. pair(15)
+    head = head .. pair(1)
+    head = head .. pair(0)
+    head = head .. pair(0)
+    head = head .. quad(0)
+    head = head .. "005f69646f6c6d61696e00"
+    stdout:write(head)
+    0
