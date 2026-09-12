@@ -1488,7 +1488,7 @@ main: i64 = ()
                         code = vgeti(code, 9, names, qi)
                         code = code .. word(subs(9, 9, 1))
                         code = vseti(code, 9, names, qi)
-                    code = code .. word(bcond(1, jp - (tp + 1)))
+                    code = code .. word(bcond(1, jp - code:len() / 8))
                 else
                     bp = jp + 1
                     code = patch(code, jp, jump(tp - jp))
@@ -1503,7 +1503,7 @@ main: i64 = ()
                         code = vgeti(code, 10, names, qi)
                         rr = 10
                     code = code .. word(cmp(rl, rr))
-                    code = code .. word(bcond(11, bp - (tp + 1)))
+                    code = code .. word(bcond(11, bp - code:len() / 8))
                 wjmp = pop(wjmp, wopen)
                 wrl = pop(wrl, wopen)
                 wrr = pop(wrr, wopen)
