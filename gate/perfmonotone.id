@@ -90,6 +90,7 @@ extractblock: str = (src: str, name: str)
 countrows: i64 = (blk: str, header: str)
   count = 0
   n = blk:len()
+  in_target = 0
   pos = 1
   while pos <= n
     nl = indexof(blk, "\n", pos)
@@ -101,7 +102,9 @@ countrows: i64 = (blk: str, header: str)
       p2 = indexof(blk, "|", p1 + 1)
       if p2 != 0 and p2 <= lineend
         cell = strip(blk:sub(p1 + 1, p2 - 1))
-        if cell != "" and cell != header and !alldash(cell)
+        if cell == header
+          in_target = 1
+        else if in_target == 1 and cell != "" and !alldash(cell)
           count = count + 1
     if nl == 0
       break
