@@ -33,7 +33,7 @@ WORK="$BENCH/.work"
 mkdir -p "$WORK"
 
 ROUNDS=21
-PROGS="sum arith fib nest div mul13 bigconst zerotrip upbranch startup"
+PROGS="sum arith fib nest div mul13 bigconst zerotrip upbranch startup brm1 brm2 brm3 divv divm divd dgcd divpow2 ceildiv mulc mulh madd sred1 powmod popc bitr xsft absd cltz nest3d unroll mixop loopinv satadd regp ilp stride3"
 WANT_COMPILERS="clang gcc"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -192,23 +192,77 @@ PYEOF
   echo "bench: [$P] done."
 done
 
-# --- 7. render RESULTS.md ---
-python3 - "$RESULT_JSON" "$BENCH/RESULTS.md" "$ROUNDS" << 'PYEOF'
-import json, sys, datetime
-res = json.load(open(sys.argv[1]))
-out_path, rounds = sys.argv[2], sys.argv[3]
+# --- 7. render RESULTS.md (structural format; no prose) ---
+# --- 8. append this run's per-program verdicts to bench/results/history.jsonl ---
+python3 - "$RESULT_JSON" "$BENCH/RESULTS.md" "$ROUNDS" "$BENCH/results/history.jsonl" "$REPO" << 'PYEOF'
+import json, sys, datetime, subprocess
+res_path, out_path, rounds, hist_path, repo = sys.argv[1:6]
+res = json.load(open(res_path))
+
+def commit_of(repo):
+    try:
+        p = subprocess.run(["git", "-C", repo, "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=20)
+        return p.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+verdicts = {}
+for prog, d in res["programs"].items():
+    vb = d["timing"].get("vs_best") or {}
+    verdicts[prog] = {
+        "verdict": vb.get("verdict", "?"),
+        "margin_pct": round(vb.get("margin", 0.0) * 100, 2),
+        "p": vb.get("p_value"),
+        "sig": bool(vb.get("significant", False)),
+        "rival": vb.get("rival", "?"),
+        "idol_med": vb.get("idol_median"),
+        "rival_med": vb.get("rival_median"),
+    }
+entry = {
+    "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+    "commit": commit_of(repo),
+    "rounds": int(rounds),
+    "verdicts": verdicts,
+}
+with open(hist_path, "a") as f:
+    f.write(json.dumps(entry) + "\n")
+
+hist = []
+for line in open(hist_path):
+    line = line.strip()
+    if line:
+        hist.append(json.loads(line))
+agg = {}
+for e in hist:
+    for prog, v in e["verdicts"].items():
+        a = agg.setdefault(prog, {"runs": 0, "first": e["ts"], "margins": [],
+                                  "last_verdict": "?", "last_margin": 0.0})
+        a["runs"] += 1
+        a["margins"].append(v["margin_pct"])
+        a["last_verdict"] = v["verdict"]
+        a["last_margin"] = v["margin_pct"]
+
 L = []
-L.append("# Benchmark results")
+L.append("| field | value |")
+L.append("|---|---|")
+L.append("| title | Benchmark results |")
 L.append("")
-L.append(f"Generated {datetime.datetime.now().isoformat(timespec='seconds')} by `bench/run.sh` "
-         f"({rounds} interleaved rounds, 3 warmup, median is primary).")
+L.append("| # | directive |")
+L.append("|---|---|")
+L.append(f"| 1 | Generated {entry['ts']} by `bench/run.sh` ({rounds} interleaved rounds, 3 warmup, median is primary). |")
 L.append("")
-L.append("Honesty policy: every program x every compiler is listed. Losses are")
-L.append("reported, not hidden. A loss is a bug report against the compiler.")
-L.append("")
+L.append("| # | directive |")
+L.append("|---|---|")
+L.append("| 1 | Honesty policy: every program x every compiler is listed. |")
+L.append("| 2 | Losses are reported, not hidden. |")
+L.append("| 3 | A loss is a bug report against the compiler. |")
 for prog, d in res["programs"].items():
     tj = d["timing"]
-    L.append(f"## {prog}")
+    L.append("")
+    L.append("| section |")
+    L.append("|---|---|")
+    L.append(f"| {prog} |")
     L.append("")
     L.append("| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |")
     L.append("|---|---|---|---|---|---|---|---|")
@@ -218,19 +272,43 @@ for prog, d in res["programs"].items():
     L.append("")
     vb = tj.get("vs_best")
     if vb:
-        L.append(f"Idol vs best rival ({vb['rival']}): {vb['verdict']}, "
+        L.append("| # | directive |")
+        L.append("|---|---|")
+        L.append(f"| 1 | Idol vs best rival ({vb['rival']}): {vb['verdict']}, "
                  f"margin {vb['margin']*100:+.2f}%, p={vb['p_value']:.4f} "
-                 f"({'significant' if vb['significant'] else 'not significant'}).")
+                 f"({'significant' if vb['significant'] else 'not significant'}). |")
         L.append("")
     ct = d["compile_time_s"]
-    L.append("Compile time, source to executable (median of 5): " +
-             ", ".join(f"{k} {v:.3f}s" for k, v in ct.items()) + ".")
+    L.append("| # | directive |")
+    L.append("|---|---|")
+    L.append("| 1 | Compile time, source to executable (median of 5): " +
+             ", ".join(f"{k} {v:.3f}s" for k, v in ct.items()) + ". |")
     L.append("")
-    L.append("Object size (bytes): " +
-             ", ".join(f"{k} {v}" for k, v in d["obj_bytes"].items() if v) + ".")
-    L.append("")
+    L.append("| # | directive |")
+    L.append("|---|---|")
+    L.append("| 1 | Object size (bytes): " +
+             ", ".join(f"{k} {v}" for k, v in d["obj_bytes"].items() if v) + ". |")
+L.append("")
+L.append("| section |")
+L.append("|---|---|")
+L.append("| history |")
+L.append("")
+L.append("| # | directive |")
+L.append("|---|---|")
+L.append("| 1 | Per-case verdict history across runs. Any commit that regresses a case is visible here. |")
+L.append("| 2 | margin% = (rival_median - idol_median) / rival_median; negative = idol slower. |")
+L.append("| 3 | Source: bench/results/history.jsonl, one entry appended per run. |")
+L.append("")
+L.append("| case | runs | first seen | last verdict | last margin% | worst margin% | best margin% |")
+L.append("|---|---|---|---|---|---|---|")
+for prog in sorted(agg):
+    a = agg[prog]
+    L.append(f"| {prog} | {a['runs']} | {a['first']} | {a['last_verdict']} | "
+             f"{a['last_margin']:+.2f}% | {min(a['margins']):+.2f}% | {max(a['margins']):+.2f}% |")
 open(out_path, "w").write("\n".join(L) + "\n")
-print(f"wrote {out_path}")
+print(f"wrote {out_path} (+ history entry {entry['commit']} {entry['ts']})")
 PYEOF
+
+echo "bench: complete. see $BENCH/RESULTS.md"
 
 echo "bench: complete. see $BENCH/RESULTS.md"
