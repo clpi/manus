@@ -5163,7 +5163,12 @@ fn needUnion(
 /// link line fails closed BY THAT SYMBOL'S NAME instead of answering 4 when
 /// the program means 7. Explicit-argument cross-home calls (every
 /// `gate/crosspartition.sh` subject) carry `arguments.len == params` and are
-/// unaffected.
+/// unaffected. A SUBJECT-FIRST cross-home call (`helper.twice(21)`) carries
+/// `arguments.len + 1 == params`: sema's `subjectSlotArgs` promotes the first
+/// argument to the subject role and the graph lift stores it on a separate
+/// subject projection, so `applicationArguments` returns the operands WITHOUT
+/// the subject. Counting it (`subject_arity` below) is what keeps a fully
+/// saturated 1-param cross-home call from reading as a default-operand one.
 fn graphHasForeignDefaultApplication(graph: *const semantic_graph.SemanticGraph) bool {
     for (graph.application_facts.items) |fact| {
         const target = switch (fact.target) {
@@ -5172,12 +5177,16 @@ fn graphHasForeignDefaultApplication(graph: *const semantic_graph.SemanticGraph)
         };
         if (graph.foreignHome(target) == null) continue;
         const arguments = graph.applicationArguments(fact.application) orelse continue;
+        // The subject is stored apart from the operand pack (subject projection,
+        // `application_subject_projection`), so it is not counted by
+        // `applicationArguments`; it still fills the relation's first parameter.
+        const subject_arity: usize = if (graph.applicationSubject(fact.application) != null) 1 else 0;
         var params: usize = 0;
         for (graph.nodes.items) |node| {
             if (node.kind == .param and node.scope != null and node.scope.? == target)
                 params += 1;
         }
-        if (arguments.len < params) return true;
+        if (arguments.len + subject_arity < params) return true;
     }
     return false;
 }
