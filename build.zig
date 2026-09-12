@@ -925,7 +925,7 @@ pub fn build(b: *std.Build) void {
     // under its own default invocation no matter what the compiler did — the
     // step failed on the build mode of the binary before it examined one row.
     // (Measured: `zig build defaults-gate -Doptimize=ReleaseFast` passes with
-    // rows=21.) A permanently-red step asserts nothing.
+    // rows=22.) A permanently-red step asserts nothing.
     //
     // Rather than weaken the gate (make it conditional on the top-level
     // optimize mode, which silently drops the census from every default run) or
@@ -933,7 +933,7 @@ pub fn build(b: *std.Build) void {
     // built ReleaseFast and stripped FROM THE SAME SOURCES as the compiler
     // under test and installed beside it, and `IDOL_BIN` points the gate at it.
     //
-    // WHAT THE SUITE NOW ASSERTS THAT IT DID NOT BEFORE: that the 21-row
+    // WHAT THE SUITE NOW ASSERTS THAT IT DID NOT BEFORE: that the 22-row
     // default-operand and descriptor census holds against a ReleaseFast
     // compiler built from the working tree, on every `zig build test` — not
     // only on the ReleaseFast invocation nobody ran. The cost is one extra

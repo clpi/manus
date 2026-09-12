@@ -196,6 +196,33 @@ cross() {
     printf 'ROW cross parse=PASS check=PASS direct=INFRA_REFUSE:cross-home-object run=NOT_REACHED first=direct:cross-home-object semantic=UNKNOWN\n'
 }
 
+crossone() {
+    # THE SATURATED TWIN OF `cross`, AND THE REGRESSION PIN FOR THE SUBJECT
+    # FALSE-POSITIVE. `provider.score(7)` supplies the one argument `score`
+    # declares, so this is not a default-operand application — but sema's
+    # `subjectSlotArgs` still promotes that argument to the subject role and
+    # the graph lift stores it apart from the operand pack, which is exactly
+    # the shape `graphHasForeignDefaultApplication` false-positived on
+    # (arguments.len 0 < params 1) and refused to link the reached partition
+    # for. The boundary is that this LINKS and answers 10 (7 + 3) while `cross`
+    # refuses: saturated cross-home calls link, undersaturated ones do not.
+    co_dir=$work/crossone
+    mkdir -p "$co_dir"
+    cp "$fixtures/cross/provider.case" "$co_dir/provider.id"
+    printf 'main: i64 = ()\n    provider.score(7)\n' >"$co_dir/caller.id"
+    parsekeep crossone/provider "$co_dir/provider.id" 'value: i64 = 4'
+    parsekeep crossone/caller "$co_dir/caller.id" 'provider.score(7)'
+    checkpass crossone/caller "$co_dir/caller.id"
+    co_out=$work/crossone.out
+    co_log=$work/crossone.direct.log
+    "$idol" compile --backend=direct "$co_dir/caller.id" -o "$co_out" \
+        --build-report=compact >"$co_log" 2>&1 || fail 'cross-home saturated call did not link'
+    if "$co_out" >/dev/null 2>&1; then co_rc=0; else co_rc=$?; fi
+    [ "$co_rc" -eq 10 ] || fail "cross-home saturated call answered $co_rc instead of 10"
+    rows=$((rows + 1))
+    printf 'ROW crossone parse=PASS check=PASS direct=PASS run=PASS:10 first=none\n'
+}
+
 controls() {
     cs_broken=$work/control-broken.id
     sed 's/add(19, 23)/add(19, 23/' "$fixtures/control.case" >"$cs_broken"
@@ -273,9 +300,10 @@ fieldrow dependent 'right: i64 = left + 4' unresolved-application-facts
 fieldrow spread 'x: i64 = 1' assign-value:call
 surface
 cross
+crossone
 controls
 
-expected=21
+expected=22
 [ "$rows" -gt 0 ] || fail 'subject census examined zero rows'
 [ "$rows" -eq "$expected" ] || fail "subject census examined $rows rows instead of $expected"
 
