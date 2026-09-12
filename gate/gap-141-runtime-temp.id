@@ -1,0 +1,108 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+relock: i64 = (idol: str, root: str, work: str)
+  gatecap("'{root}/tools/node/dev/idol-lock' -- '{idol}' run --backend=direct '{root}/gate/gap-141-runtime-temp.id' >'{work}/relock.log' 2>&1; printf '%s' \"$?\" >'{work}/relock.rc'")
+  print(chomp(gatecap("cat '{work}/relock.log'")))
+  digits(chomp(gatecap("cat '{work}/relock.rc'")))
+
+writeprobe: i64 = (helper: str, output: str)
+  gatecap("cat >'{output}' <<'HDR'\n#define _GNU_SOURCE 1\n#include <errno.h>\n#include <fcntl.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <sys/stat.h>\n#include <unistd.h>\nHDR\n")
+  gatecap("cat '{helper}' >>'{output}'")
+  gatecap("cat >>'{output}' <<'MID'\nstatic int ends_with(const char* value, const char* suffix) \{\n    size_t n = strlen(value), m = strlen(suffix);\n    return n >= m && strcmp(value + n - m, suffix) == 0;\n\}\n\nint main(void) \{\n    char first[512], second[512], parent[512];\n    struct stat info;\n    if (duo_make_temp_path(first, sizeof first, \".one\") != 0) return 1;\n    if (duo_make_temp_path(second, sizeof second, \".two\") != 0) return 2;\n    if (!ends_with(first, \".one\") || !ends_with(second, \".two\")) return 3;\n    if (access(first, F_OK) != 0 || access(second, F_OK) != 0) return 4;\n    char* first_slash = strrchr(first, '/');\n    char* second_slash = strrchr(second, '/');\n    if (!first_slash || !second_slash) return 5;\n    size_t parent_len = (size_t)(first_slash - first);\n    if (parent_len == 0 || parent_len >= sizeof parent) return 6;\n    memcpy(parent, first, parent_len);\n    parent[parent_len] = '\\0';\n    if ((size_t)(second_slash - second) != parent_len ||\n        memcmp(first, second, parent_len) != 0) return 7;\n    if (stat(parent, &info) != 0 || !S_ISDIR(info.st_mode)) return 8;\n    if ((info.st_mode & 0777) != 0700) \{\n        (void)unlink(first);\n        (void)unlink(second);\n        idol_cleanup_private_run_dir();\n        return 9;\n    \}\n    if (unlink(first) != 0 || unlink(second) != 0) return 10;\n    idol_cleanup_private_run_dir();\n    if (access(parent, F_OK) == 0) return 11;\n    return 0;\n\}\nMID\n")
+  0
+
+probes: i64 = (idol: str, cc: str, work: str)
+  if gatecap("test -x '{idol}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("gap-141 runtime temp gate: FAIL compiler is not executable: {idol}")
+    return 1
+  if gatecap("command -v '{cc}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("gap-141 runtime temp gate: FAIL C compiler is unavailable: {cc}")
+    return 1
+  gatecap("cat >'{work}/load.lua' <<'EOF'\nlocal f, err = load(\"return 42\")\nassert(f, err or \"load failed\")\nprint(f())\nEOF\n")
+  scratch = "{work}/compiler-scratch"
+  if digits(chomp(gatecap("mkdir -p '{scratch}' && TMPDIR='{scratch}' '{idol}' dump-c '{work}/load.lua' >'{work}/generated.c' 2>'{work}/gen.log'; echo $?"))) != 0
+    print("gap-141 runtime temp gate: FAIL compiler did not emit the compatibility runtime")
+    return 1
+  begin = digits(chomp(gatecap("grep -c 'IDOL_TEMP_SECTION_BEGIN' '{work}/generated.c' 2>/dev/null || printf '0'")))
+  finish = digits(chomp(gatecap("grep -c 'IDOL_TEMP_SECTION_END' '{work}/generated.c' 2>/dev/null || printf '0'")))
+  if begin != 1 or finish != 1
+    print("gap-141 runtime temp gate: FAIL emitted helper boundary is not unique (begin={begin} end={finish})")
+    return 1
+  gatecap("sed -n '/IDOL_TEMP_SECTION_BEGIN/,/IDOL_TEMP_SECTION_END/p' '{work}/generated.c' >'{work}/helper.c'")
+  writeprobe("{work}/helper.c", "{work}/probe.c")
+  if digits(chomp(gatecap("'{cc}' -std=c11 -Wall -Wextra -Werror '{work}/probe.c' -o '{work}/probe' 2>'{work}/probe-cc.log'; echo $?"))) != 0
+    print("gap-141 runtime temp gate: FAIL exact emitted helper did not compile")
+    return 1
+  if digits(chomp(gatecap("'{work}/probe' >/dev/null 2>&1; echo $?"))) != 0
+    print("gap-141 runtime temp gate: FAIL exact emitted helper did not reserve a private run directory")
+    return 1
+  gatecap("sed 's@int written = snprintf(out, out_sz, \"%s/artifact-XXXXXX%s\", idol_private_run_dir, suffix);@int written = snprintf(out, out_sz, \"/tmp/idol-artifact-XXXXXX%s\", suffix);@' '{work}/helper.c' >'{work}/helper-damaged.c'")
+  if gatecap("cmp -s '{work}/helper.c' '{work}/helper-damaged.c' >/dev/null 2>&1; echo $?") == "0\n"
+    print("gap-141 runtime temp gate: FAIL damage control did not alter the helper")
+    return 1
+  writeprobe("{work}/helper-damaged.c", "{work}/probe-damaged.c")
+  if digits(chomp(gatecap("'{cc}' -std=c11 -Wall -Wextra -Werror '{work}/probe-damaged.c' -o '{work}/probe-damaged' 2>'{work}/probe-damaged-cc.log'; echo $?"))) != 0
+    print("gap-141 runtime temp gate: FAIL damaged helper did not compile")
+    return 1
+  if digits(chomp(gatecap("'{work}/probe-damaged' >/dev/null 2>&1; echo $?"))) == 0
+    print("gap-141 runtime temp gate: FAIL shared-/tmp damage passed the private-directory observation")
+    return 1
+  flags = "-ldl"
+  if chomp(gatecap("uname -s")) == "Darwin"
+    flags = ""
+  if digits(chomp(gatecap("'{cc}' -std=gnu11 -O2 '{work}/generated.c' -lm {flags} -o '{work}/load' >'{work}/generated-cc.log' 2>&1; echo $?"))) != 0
+    print("gap-141 runtime temp gate: FAIL emitted dynamic-load translation unit did not compile")
+    return 1
+  gatecap("sed 's@int main(void) \{@int private_probe_main(void) \{@' '{work}/probe.c' >'{work}/probe-wasi-prefix.c'")
+  gatecap("cat >>'{work}/probe-wasi-prefix.c' <<'EOF'\nint main(void) \{\n    char path[32];\n    return duo_make_temp_path(path, sizeof path, \".x\") == -1 ? 0 : 1;\n\}\nEOF\n")
+  if digits(chomp(gatecap("'{cc}' -std=c11 -Wall -Wextra -Werror -Wno-unused-function -D__wasm__ '{work}/probe-wasi-prefix.c' -o '{work}/probe-wasi' 2>'{work}/probe-wasi-cc.log'; echo $?"))) != 0
+    print("gap-141 runtime temp gate: FAIL WASI refusal arm did not compile")
+    return 1
+  if digits(chomp(gatecap("'{work}/probe-wasi' >/dev/null 2>&1; echo $?"))) != 0
+    print("gap-141 runtime temp gate: FAIL WASI temporary-artifact bridge did not fail closed")
+    return 1
+  0
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  cc = os.env["CC"]
+  if cc == nil or cc == ""
+    cc = "cc"
+  if chomp(gatecap("printf '%s' \"$\{IDOL_LOCK_HELD:-0\}\"" )) != "1"
+    work = chomp(gatecap("mktemp -d \"$\{TMPDIR:-/tmp\}/idol-gap141.XXXXXX\""))
+    code = relock(idol, root, work)
+    gatecap("rm -rf '{work}'")
+    return code
+  work = chomp(gatecap("mktemp -d \"$\{TMPDIR:-/tmp\}/idol-gap141.XXXXXX\""))
+  code = probes(idol, cc, work)
+  gatecap("rm -rf '{work}'")
+  if code == 0
+    print("gap-141 runtime temp gate: PASS private-temp slice (private run, damage, integration compile, WASI refusal); dynamic-load acceptance remains OPEN")
+  code
