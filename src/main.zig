@@ -3825,6 +3825,22 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
     }
 }
 
+/// Extract the SDK version from its path: "/.../MacOSX26.5.sdk" -> "26.5".
+/// Returns null when the path carries no parseable version (e.g. the bare
+/// "MacOSX.sdk" symlink); callers fall back to omitting `-platform_version`.
+fn sdkVersionFromPath(path: []const u8) ?[]const u8 {
+    const marker = "MacOSX";
+    const idx = std.mem.lastIndexOf(u8, path, marker) orelse return null;
+    const rest = path[idx + marker.len ..];
+    if (!std.mem.endsWith(u8, rest, ".sdk")) return null;
+    const ver = rest[0 .. rest.len - 4];
+    if (ver.len == 0) return null;
+    for (ver) |c| {
+        if (!((c >= '0' and c <= '9') or c == '.')) return null;
+    }
+    return ver;
+}
+
 fn link_native_object(
     alloc: std.mem.Allocator,
     io: Io,
@@ -3874,6 +3890,15 @@ fn link_native_object(
         global_sdkroot.len > 0 and extra_sources.len == 0 and !shared;
     if (direct_ld) {
         try argv.appendSlice(alloc, &.{ "ld", obj_path, "-o", out_path, "-lSystem", "-syslibroot", global_sdkroot, "-dead_strip" });
+        // `-platform_version` makes direct-ld match the clang driver. Without
+        // it, ld falls back to lazy binding (__stub_helper + a __DATA segment
+        // for __la_symbol_ptr): a 49% bigger binary (49960 vs 33432 bytes on
+        // hello-world) that also pays first-call stub overhead at startup.
+        // The version is parsed from the SDK path, mirroring the driver's
+        // default of minos = SDK version.
+        if (sdkVersionFromPath(global_sdkroot)) |ver| {
+            try argv.appendSlice(alloc, &.{ "-platform_version", "macos", ver, ver });
+        }
         if (entry_symbol) |sym| {
             if (!std.mem.eql(u8, sym, "main")) {
                 // `-e _sym`, where the driver spelling was `-Wl,-e,_sym`. Same
@@ -4859,6 +4884,16 @@ test "an artifact that reaches nothing still selects the units its OWN object ne
     const alone = try needUnion(arena.allocator(), own, &.{});
     try std.testing.expect(bootstrapUnits(alone).str);
     try std.testing.expectEqual(own.len, alone.len);
+}
+
+test "sdkVersionFromPath extracts the version from the SDK path" {
+    try std.testing.expectEqualStrings("26.5", sdkVersionFromPath("/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk").?);
+    try std.testing.expectEqualStrings("15.4", sdkVersionFromPath("/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk").?);
+    try std.testing.expectEqualStrings("26", sdkVersionFromPath("/x/MacOSX26.sdk").?);
+    // Bare symlink and garbage yield null; the caller omits -platform_version.
+    try std.testing.expect(sdkVersionFromPath("/x/MacOSX.sdk") == null);
+    try std.testing.expect(sdkVersionFromPath("/x/Other.sdk") == null);
+    try std.testing.expect(sdkVersionFromPath("/x/MacOSX26a.sdk") == null);
 }
 
 fn directLinkInputs(
