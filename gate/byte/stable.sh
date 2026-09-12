@@ -44,9 +44,9 @@
 #                  bytes must be IDENTICAL.
 #   §4 CONTROL     linked executable, DIFFERENT basenames -> bytes must DIFFER.
 #   §5 SOURCE      identical content from two source directories, and under two
-#                  source filenames -> bytes must DIFFER, and the mangled symbol
-#                  must name the path, so the cause is exhibited and not
-#                  inferred.
+#                  source filenames -> bytes must be IDENTICAL: the source path
+#                  no longer reaches the symbols, and no emitted symbol may
+#                  carry it, so the cause is exhibited and not inferred.
 set -eu
 root=${BYTESTABLEROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)}
 if [ "${IDOL_LOCK_HELD:-0}" != 1 ]; then
@@ -197,10 +197,12 @@ if [ "$a" = "$b" ]; then
 fi
 
 # ------------------------------------------------------------------ §5 SOURCE
-# The hazard, pinned in BOTH of its faces, with the cause exhibited. If either
-# comparison ever comes back identical, home mangling stopped carrying the
-# source path and the rule in this gate's header must be re-measured before
-# anyone relies on it.
+# Source-path independence, pinned in BOTH of its faces, with the cause
+# exhibited. Identical source from different directories or under different
+# filenames must emit identical bytes; no emitted symbol may carry the path.
+# If either comparison ever comes back different, path mangling returned and
+# the rule in this gate's header must be re-measured before anyone relies on
+# it.
 mkdir -p "$work/aa" "$work/bbbbbbbb"
 cp "$work/src/arith.id" "$work/aa/arith.id"
 cp "$work/src/arith.id" "$work/bbbbbbbb/arith.id"
@@ -211,15 +213,15 @@ cp "$work/src/arith.id" "$work/aa/zzzzzzzzzz.id"
     fail "§5 object emission failed from the second directory"
 "$idol" compile --no-cache --emit obj -o "$work/s3.o" "$work/aa/zzzzzzzzzz.id" >/dev/null 2>&1 ||
     fail "§5 object emission failed under the second filename"
-[ "$(sum "$work/s1.o")" != "$(sum "$work/s2.o")" ] ||
-    fail "§5 identical source in two DIRECTORIES produced identical bytes; the source path no longer reaches the symbols and this gate's rule is stale"
-[ "$(sum "$work/s1.o")" != "$(sum "$work/s3.o")" ] ||
-    fail "§5 identical source under two FILENAMES produced identical bytes; the source path no longer reaches the symbols and this gate's rule is stale"
-# Exhibit the cause rather than inferring it from a hash difference.
-nm "$work/s1.o" 2>/dev/null | grep -q '_aa_arith__' ||
-    fail "§5 the emitted symbol does not carry the source path; the byte difference above has some OTHER cause and the header is wrong"
+[ "$(sum "$work/s1.o")" = "$(sum "$work/s2.o")" ] ||
+    fail "§5 identical source in two DIRECTORIES produced different bytes; the source path reaches the symbols"
+[ "$(sum "$work/s1.o")" = "$(sum "$work/s3.o")" ] ||
+    fail "§5 identical source under two FILENAMES produced different bytes; the source path reaches the symbols"
+# Exhibit the cause rather than inferring it from a hash identity.
+nm "$work/s1.o" 2>/dev/null | grep -q '_aa_' &&
+    fail "§5 an emitted symbol carries the source path; the byte identity above has some OTHER cause and the header is wrong"
 
 printf 'byte/stable gate: %d subject(s). object bytes: stable across processes, output basenames and output directories.\n' "$count"
 printf 'byte/stable gate: executable bytes: basename-sensitive (ad-hoc signature identity + LC_UUID).\n'
-printf 'byte/stable gate: source path is mangled into every symbol -- hold it FIXED across arms.\n'
+printf 'byte/stable gate: source path reaches no symbol -- builds are source-path independent.\n'
 printf 'byte/stable gate: OK.\n'
