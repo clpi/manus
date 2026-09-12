@@ -5,7 +5,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 gate="$here/vocabulary.sh"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/idol-vocabulary-controls.XXXXXX")
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp" "$here/../addprobe.id"' EXIT INT TERM
 
 pass=0
 fail=0
@@ -282,6 +282,48 @@ cat >"$tmp/tdunder.diff" <<'EOF'
 +a_thing = 1
 EOF
 expect_fail "underscore binding refused under a sidecar marker" env "IDOL=$REALIDOL" "$urepotd/gate/vocabulary.sh" --diff "$tmp/tdunder.diff"
+
+# ADDITIVE-MODULE PATH. A relation in a file this diff adds earns provisional
+# admission on structural checks; naming, prose, and canonical-collision
+# violations stay refused. The worktree file is created fresh per case and
+# removed by the EXIT trap.
+addprobe="$here/../addprobe.id"
+addcase() {
+    printf '%s\n' "$1" "$2" > "$addprobe"
+    {
+        printf '%s\n' '--- /dev/null' '+++ b/addprobe.id' '@@ -0,0 +1,2 @@'
+        printf '+%s\n' "$1" "$2"
+    } > "$tmp/addprobe.diff"
+}
+
+addcase 'double: i64 = (x: i64)' '  x + x'
+expect_pass "additive module: clean new word admitted provisionally" "$gate" --diff "$tmp/addprobe.diff"
+
+addcase 'myeval: i64 = (src: str)' '  eval(src)'
+expect_pass "additive module: cross-file bare call admitted provisionally (structural)" "$gate" --diff "$tmp/addprobe.diff"
+
+addcase 'bad_name: i64 = (x: i64)' '  x'
+expect_fail "additive module: underscore name refused" "$gate" --diff "$tmp/addprobe.diff"
+
+addcase 'badName: i64 = (x: i64)' '  x'
+expect_fail "additive module: camelCase name refused" "$gate" --diff "$tmp/addprobe.diff"
+
+addcase 'prosy: i64 = (x: i64)' '# a comment'
+expect_fail "additive module: prose refused" "$gate" --diff "$tmp/addprobe.diff"
+
+addcase 'fetch: i64 = (x: i64)' '  x'
+expect_fail "additive module: synonym of canonical vocabulary refused" "$gate" --diff "$tmp/addprobe.diff"
+
+addcase 'len: i64 = (x: i64)' '  x'
+expect_fail "additive module: already-canonical word refused" "$gate" --diff "$tmp/addprobe.diff"
+
+# Phantom file: the diff adds a new file that is absent from the worktree.
+rm -f "$addprobe"
+{
+    printf '%s\n' '--- /dev/null' '+++ b/addprobe.id' '@@ -0,0 +1,2 @@'
+    printf '%s\n' '+ghost2: i64 = (x: i64)' '  x'
+} > "$tmp/addprobe.diff"
+expect_fail "additive module: phantom new file refused" "$gate" --diff "$tmp/addprobe.diff"
 
 # The selftest carries the in-graph damage controls (no normalization; foreign
 # bytes need a binding; a binding admits only its own bytes) and nothing else

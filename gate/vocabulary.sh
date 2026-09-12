@@ -18,6 +18,17 @@
 # still requires compiler-produced body and linkage facts, and a name
 # declared twice in one unit is ambiguous and refused.
 #
+# ADDITIVE-MODULE PATH. A relation declared in a NEW file (added by this
+# diff, not in any concatenation unit) earns provisional admission when it
+# satisfies the structural checks -- LAW-16 naming, zero prose -- plus the
+# Requirement #24 canonical edge catalog (lib/graph/edges.id): a synonym of
+# a canonical word, or an already-canonical word, is refused as duplicated
+# vocabulary. Test files skip the catalog rule; test vocabulary is not
+# library surface. The admission is graph-shaped when the compiler sees the
+# new file standalone, structural otherwise; either way it is ledgered as
+# `provisional-admission` in the witness output, and the async graph census
+# promotes or revokes it once the production graph catches up.
+#
 # TEST-DATA SCOPE. Files under test/ -- or files carrying a `.testdata`
 # sidecar marker -- are data, not library surface. Their cases, descriptors,
 # and value bindings are admitted without graph proof when they satisfy the
@@ -253,17 +264,22 @@ except ValueError as exc:
     print(f"concat-units manifest refused: {exc}")
     raise SystemExit(1)
 
-# ---- candidate diff scan: added lines per file (prose control) ----
+# ---- candidate diff scan: new files and added lines per file ----
 added_lines = {}
+new_files = set()
 cur = None
+cur_new = False
 for line in Path(cand_path).read_text().splitlines():
     if line.startswith("--- "):
+        cur_new = line[4:].strip() == "/dev/null"
         cur = None
         continue
     if line.startswith("+++ "):
         p = line[4:].strip()
         cur = p[2:] if p.startswith("b/") else p
         added_lines.setdefault(cur, [])
+        if cur_new and cur != "/dev/null":
+            new_files.add(cur)
         continue
     if cur is not None and line.startswith("+") and not line.startswith("+++"):
         added_lines[cur].append(line[1:])
@@ -278,15 +294,63 @@ def test_scoped(file):
     return (root / (file + ".testdata")).is_file()
 
 
+def has_prose(file):
+    return any(re.match(r"[ \t]*#", ln) for ln in added_lines.get(file, []))
+
+
 def structural_refusal(name, file):
     """LAW-16 naming plus the zero-prose rule. Returns the refusal reason,
     or None when the declaration is structurally admissible."""
     if NATIVE_WORD.fullmatch(name) is None:
         return f"LAW-16 naming: {name!r} is not one irreducible lowercase word"
-    for ln in added_lines.get(file, []):
-        if re.match(r"[ \t]*#", ln):
-            return "prose: a # comment line; test-data sources carry zero comments"
+    if has_prose(file):
+        return "prose: a # comment line; admitted sources carry zero comments"
     return None
+
+
+catalog = None
+
+
+def load_catalog():
+    """Requirement #24 canonical edge catalog (lib/graph/edges.id): the
+    single source of truth for canon()/known(). Parsed here, never
+    duplicated; a parse failure fails the additive path closed."""
+    global catalog
+    if catalog is not None:
+        return catalog
+    syns, edges = {}, {}
+    section = None
+    for raw in (root / "lib" / "graph" / "edges.id").read_text().splitlines():
+        m = re.match(r"^(notions|edges|syns): any = \(\)$", raw)
+        if m:
+            section = m.group(1)
+            continue
+        if section is None:
+            continue
+        if re.match(r"^[A-Za-z]", raw):
+            section = None
+            continue
+        m = re.match(r'^\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*=\s*"([^"]+)"\s*,?\s*$', raw)
+        if m and section == "syns":
+            syns[m.group(1) or m.group(2)] = m.group(3)
+            continue
+        m = re.match(r'^\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*=\s*\{', raw)
+        if m and section == "edges":
+            edges[m.group(1) or m.group(2)] = True
+    if not syns or not edges:
+        raise ValueError("canonical edge catalog at lib/graph/edges.id yielded no syns/edges")
+    catalog = (syns, edges)
+    return catalog
+
+
+def canon(name):
+    syns, _ = load_catalog()
+    return syns.get(name, name)
+
+
+def known(name):
+    syns, edges = load_catalog()
+    return name in syns or name in edges
 
 graphs = {}
 unit_graphs = {}
@@ -461,6 +525,59 @@ for kind, name, file in rows:
     if kind != "relation":
         unproven.append((kind, name, file, "no graph-backed admission for this declaration kind"))
         continue
+    if kind == "relation" and file in new_files and uname is None:
+        # ADDITIVE-MODULE PATH. A relation in a file this diff adds earns
+        # provisional admission -- never full proof -- when it clears the
+        # structural checks. Zero prose holds on every branch. Outside test
+        # scope the Requirement #24 edge catalog additionally refuses
+        # synonyms and re-spellings of canonical vocabulary. When the
+        # compiler graphs the new file standalone the admission is
+        # graph-shaped (foreign bytes still need their real binding, via
+        # admits()); when per-file analysis is blind -- typically a bare
+        # call into another file of the same additive module -- the
+        # admission is structural and LAW-16 naming carries the check.
+        # Either way the line is ledgered as provisional-admission for the
+        # async graph census, which promotes or revokes it once the
+        # production graph catches up.
+        if has_prose(file):
+            unproven.append((kind, name, file, "additive module: prose: a # comment line; admitted sources carry zero comments"))
+            continue
+        if not test_scoped(file):
+            try:
+                c = canon(name)
+            except ValueError as exc:
+                unproven.append((kind, name, file, f"additive module: canonical edge catalog unavailable: {exc}"))
+                continue
+            if c != name:
+                unproven.append((kind, name, file, f"additive module: {name!r} is a synonym of canonical {c!r}; spell the canonical word"))
+                continue
+            if known(name):
+                unproven.append((kind, name, file, f"additive module: {name!r} is already canonical vocabulary; reference it, don't redeclare it"))
+                continue
+        src = (root / file).resolve()
+        if not src.is_relative_to(root) or not src.is_file():
+            unproven.append((kind, name, file, "additive module: new source is missing from the worktree"))
+            continue
+        try:
+            graph = graph_for(file)
+        except Exception as exc:
+            if "graph refused" not in str(exc):
+                unproven.append((kind, name, file, "additive module: " + str(exc)))
+            elif NATIVE_WORD.fullmatch(name) is None:
+                unproven.append((kind, name, file, f"additive module: LAW-16 naming: {name!r} is not one irreducible lowercase word"))
+            else:
+                admitted.append(("provisional-admission", kind, name, file, "structural"))
+            continue
+        try:
+            entity, gw = relation_witness(graph, name)
+        except Exception as exc:
+            unproven.append((kind, name, file, "additive module: " + str(exc)))
+            continue
+        if entity is None:
+            unproven.append((kind, name, file, "additive module: " + gw))
+        else:
+            admitted.append(("provisional-admission", kind, name, file, "graph"))
+        continue
     try:
         graph = graph_for(file)
         entity, why = relation_witness(graph, name)
@@ -555,8 +672,10 @@ if proven:
 
 for kind, name, file, entity, _ in proven:
     print(f"graph-proven {kind:12} {name:28} {file} id={entity}")
-for label, kind, name, file in admitted:
-    print(f"{label} {kind:12} {name:28} {file}")
+for row in admitted:
+    label, kind, name, file = row[0], row[1], row[2], row[3]
+    via = row[4] if len(row) > 4 else ""
+    print(f"{label} {kind:12} {name:28} {file} {via}".rstrip())
 if proven:
     print("vocabulary graph controls: PASS (body, linkage, exposure, root scope, schema version, source law)")
     print("vocabulary identity controls: PASS (no normalization, foreign bytes need a binding, binding admits only its own bytes)")
@@ -565,7 +684,7 @@ PY
         cat "$witness" >&2
     else
         cat "$witness" >&2
-        die "SEMANTIC-VOCABULARY-BLOCKED: $n_new declaration(s); only exact graph-proven module relations are admitted (single-file, or over the declared concatenation unit's sources). Cases, descriptors, bindings, missing/ambiguous linkage, missing body, invalid source-law evidence, and foreign exact bytes without a real foreign binding remain refused."
+        die "SEMANTIC-VOCABULARY-BLOCKED: $n_new declaration(s); admitted only by exact graph proof (single-file or declared concatenation unit), test-data scope (structural), or the additive-module path (structural + canonical edge catalog, provisional). Bindings/cases/descriptors outside test data, missing/ambiguous linkage, missing body, invalid source-law evidence, and foreign exact bytes without a real foreign binding remain refused."
     fi
 fi
 
