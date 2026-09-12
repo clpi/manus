@@ -250,3 +250,138 @@ shared cold region, never duplicate them. No separate workstream.
 ---
 
 *End of entry #1.*
+
+## Entry #2 — 2026-09-12: light scan (continuity run)
+
+**Scan window:** 2026-09-11 → 2026-09-12 for `[NEW]`; the arXiv
+cs.PL / cs.PF / cs.AR September 1–7 submission batches were also swept as a
+gap-fill (entry #1's method did not enumerate those batches).
+
+**Method:** LIGHT scan per `frontier-loop.md` (today is not the first Monday
+of the month; the deep scan lands on the first Monday of October, 2026-10-05).
+Swept arXiv cs.PL / cs.PF / cs.AR recent listings (Sept 1–7 batches, 31 + 18
+entries plus cs.AR cross-lists); LLVM 22.x AArch64 release notes; GCC 16.1 and
+CUDA Toolkit 13.4 release notes; Z3 release notes; web sweeps for lean / rocq /
+smt / z3, apple / arm / nvidia / amd compiler news, apple-silicon / risc-v
+hardware news, and the PLDI 2026 distinguished papers. Deduped against F1–F34
+by topic.
+
+**Next scan due:** 2026-09-19 (weekly cadence). Deep scan: 2026-10-05.
+
+**Headline:** no new finding displaces a current P0 on expected win (no
+p0-candidate this run). Three new findings enter the log — F35 (AY,
+proof-carrying SMT solver: Watch), F36 (SPEC CPU 2026: Watch), F37 (GCC 16.1
+multi-target speculative devirtualization: Watch).
+
+---
+
+### F35. AY: proof-carrying SAT/SMT/CHC solver (Z3-inspired, Rust) [NEW]
+
+**Summary.** AY (alabsystems/ay, actively updated this week) — "Fast,
+proof-carrying SAT/SMT/CHC solver. Inspired by Z3." The differentiator against
+Z3: every hard answer ships an independently checkable certificate — SMT
+`unsat` → Alethe proof checked by Carcara; SAT `unsat` → DRAT/LRAT checked by
+drat-trim; PB `unsat` *and* optimality → VeriPB proof; CHC SAFE → invariant
+certificate; LP/MILP → Farkas certificates. A rigor ladder controls the
+search/check tradeoff: `fast` (Z3 posture, no proof), `standard` (validate +
+emit + re-check), `strict`, `certified` (fail-closed: only self-verifiable
+answers). Status: 0.x, active development; explicitly not yet a full Z3
+replacement (its own docs: the Z3 5.1.0 full-replacement gate is red —
+217/805 C declarations executed, 0/805 exhaustive semantic contracts, the
+pinned 438,631-query official corpus not run).
+
+**Verdict: Watch** — this is the F1/F24 "untrusted search, trusted check"
+architecture in a solver: a Z3-compatible solver whose `unsat` answers arrive
+with machine-checkable proofs is the natural long-term checker for the F1 SMT
+lane. **Revisit trigger:** the Z3 5.1.0 full-replacement gate turning green, or
+when the F1 checker lane needs an independent proof artifact.
+
+**Dependency note (same lane).** Z3 itself hit **5.0.0** (July 2026):
+FiniteSets theory solver, NLSAT optimizations, parallel-search global
+backbones, soundness fixes. No technique change for Idol; plan the F1 checker
+bump to Z3 5.x at the next toolchain update. (Blaster — maintained Lean4↔Z3
+SMT backend, input-output-hk — is the Lean-side bridge; adjacent to F12
+proofunity, no integration.)
+
+---
+
+### F36. SPEC CPU 2026 released; first characterization on AMD EPYC 9755 (Zen 5) [NEW]
+
+**Summary.** SPEC CPU 2026 is the first major update to the industry-standard
+CPU benchmark suite since 2017. First microarchitecture-based characterization
+(Kashyap et al., arXiv:2609.01527): multi-lens methodology (pipeline
+efficiency, control flow, cache pressure, instruction mix) over SPECrate +
+SPECspeed; three behavioral clusters (frontend control-flow-dominated, SMT-
+contention compute, memory-bandwidth-bound with poor L3 filtering); scale-
+dependent effects (SMT dispatch contention, L3 capacity interference) visible
+only at full-system utilization.
+
+**Verdict: Watch** (bench methodology). Idol's F1 bench lane should adopt SPEC
+CPU 2026 as the reference suite rather than the 2017 suite when the bench
+workstream matures; the paper's *scale analysis* (single-copy vs full-system)
+is worth stealing — single-copy numbers hide system-level bottlenecks.
+**Revisit trigger:** bench workstream planning; no action now.
+
+---
+
+### F37. GCC 16.1: speculative devirtualization for general indirect calls + multiple speculative targets [MISSED]
+
+**Summary.** GCC 16.1 (May 2026) extended speculative devirtualization beyond
+single targets: general indirect function calls and *multiple* speculative
+targets; plus enhanced vectorization (uncounted loops, reductions/early exits)
+and `-march=znver6` (AMD Zen 6), Intel Wildcat Lake / Nova Lake.
+
+**Verdict: Watch** — corroborates F30 (value-profile indirect-call
+promotion): both LLVM and GCC are converging on multi-target speculative
+dispatch. When Idol's profile lane (F29) exists, check GCC 16's multi-target
+dispatch heuristic (fallback-chain design, guard cost) as the design reference
+before re-deriving it. **Expected win:** same class as F30 (2–10% on
+dispatch-heavy code). **Revisit trigger:** F29 profile lane exists.
+
+---
+
+### Short evaluations (logged, not deep-dived this round)
+
+- **MaxKernel (arXiv:2609.04523): agentic kernel generation for TPUs.**
+  Multi-agent LLM system (HITL / autonomous / graph-based autonomous search)
+  with real-time compiler feedback; matches expert hand-tuned baselines on
+  JaxBench (50 kernel tasks), open-sourced. Corroborates F27's AlphaEvolve
+  direction at the kernel level; TPU-specific, not transferable to Idol's
+  M4-SME target today. Watch alongside F27.
+- **Corten (arXiv:2609.04372): foundational Rust verification in Rocq/Iris**
+  (THIR deep embedding, buddy allocator case study). Rust-specific; no
+  technique beyond F12/F28. Reject.
+- **JLIR (arXiv:2609.04585): Julia-native MLIR-inspired IR.** Idol has no MLIR
+  dependency; dialect-oriented compilation already covered by F25's
+  DialEgg/ægraph analysis. Reject.
+- **SMART (arXiv:2609.05364): AI-native ML perf-modeling tool** (design docs as
+  durable artifact, symbolic cost IR). ML-systems serving tool; not a compiler
+  technique. Reject.
+- **CPL (arXiv:2609.04904): compact C-like systems language.** Toy language, no
+  novel technique. Reject.
+- **Augur (arXiv:2609.05288): view-serializability prediction for data
+  stores.** Databases, outside scope. Reject.
+- **CodeQL false-positive study (arXiv:2609.04535); concept-language survey
+  (arXiv:2609.04528).** Outside scope. Reject.
+- **Hardware-prefetch confidence gating (arXiv:2609.04040).** Hardware
+  prefetcher admission policy; not a compiler technique. Reject.
+- **PLDI 2026 distinguished paper "Towards Removing Undef Values From LLVM
+  IR".** Idol's native backend does not lower through LLVM IR; no action.
+  Reject (revisit if an LLVM-IR lowering lane ever appears).
+
+---
+
+### Design notes for existing workstreams (no new F-numbers)
+
+- **F17/F18 (SME kernel templates):** community evidence (ggml llama.cpp
+  #26547; onnxruntime #27633) that SME2 on Apple M4 is a *shared 2-device
+  coprocessor*, not per-core — dispatch must cap SME threads (KleidiAI's
+  hardcoded per-chip table: M4=1, M4 Pro/Max/Ultra=2 SME units) and fall back
+  to NEON at wide thread counts, or contention erases the 2.5–4.4x GEMM win
+  (ORT 1.24.x: rec 2.5x faster at t=2 on SME2, dilutes at t=8). The F17/F18
+  dispatch design should take the SME thread cap as a runtime-discovered
+  value, not a compile-time assumption.
+
+---
+
+*End of entry #2.*
