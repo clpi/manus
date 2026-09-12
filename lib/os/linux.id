@@ -1,10 +1,4 @@
-# os.linux — Linux-specific APIs
-# For epoll, inotify, eventfd, timerfd, and mmap.
-# Uses @c.emit for direct Linux syscalls.
 
-# ═══════════════════════════════════════════════════════════════
-# epoll Constants
-# ═══════════════════════════════════════════════════════════════
 
 M.EPOLL_CTL_ADD = 1
 M.EPOLL_CTL_MOD = 2
@@ -17,9 +11,6 @@ M.EPOLLHUP = 16
 M.EPOLLRDHUP = 8192
 M.EPOLLET = 2147483648
 
-# ═══════════════════════════════════════════════════════════════
-# Linux syscalls via @c.emit
-# ═══════════════════════════════════════════════════════════════
 
 @comp.c.emit('#include <sys/epoll.h>')
 
@@ -40,7 +31,6 @@ M.EPOLLET = 2147483648
 @comp.c.emit('#include <string.h>')
 
 
-# C shim functions for Linux syscalls
 
 @comp.c.emit([[
 static int duo_epoll_create(int maxevents) {
@@ -121,9 +111,6 @@ static int duo_close(int fd) {
 ]])
 
 
-# ═══════════════════════════════════════════════════════════════
-# epoll
-# ═══════════════════════════════════════════════════════════════
 
 epoll_new: any = ()
   epoll_create(64)
@@ -158,7 +145,6 @@ epoll_del: any = (epoll: any, fd: i64)
 epoll_wait: any = (epoll: any, timeout_ms: i64)
   if timeout_ms == nil
     timeout_ms = -1
-  # Allocate arrays for results
   fds = @comp.ffi("calloc", any, { i64, i64 })(epoll.max_events, 4)
   events_buf = @comp.ffi("calloc", any, { i64, i64 })(epoll.max_events, 4)
   count = @comp.ffi("duo_epoll_wait", i64, { i64, any, any, i64, i64 })(epoll.fd, fds, events_buf, epoll.max_events, timeout_ms)
@@ -184,9 +170,6 @@ epoll_close = (epoll: any)
   @comp.ffi("duo_close", i64, { i64 })(epoll.fd)
   epoll.fd = -1
 
-# ═══════════════════════════════════════════════════════════════
-# inotify
-# ═══════════════════════════════════════════════════════════════
 
 M.IN_CREATE = 256
 M.IN_DELETE = 512
@@ -239,7 +222,6 @@ inotify_read: any = (inotify: any)
     name = ""
     if name_len > 0
       name = buf:sub(pos + 16, pos + 15 + name_len)
-      # Strip null terminator
       null_pos = name:find(0:char())
       if null_pos
         name = name:sub(1, null_pos - 1)
@@ -255,9 +237,6 @@ inotify_close = (inotify: any)
   @comp.ffi("duo_close", i64, { i64 })(inotify.fd)
   inotify.fd = -1
 
-# ═══════════════════════════════════════════════════════════════
-# Memory Mapping
-# ═══════════════════════════════════════════════════════════════
 
 M.MAP_SHARED = 1
 M.MAP_PRIVATE = 2
@@ -269,8 +248,6 @@ M.MS_SYNC = 4
 mmap_new: any = (path: str, size: i64, flags: i64)
   if flags == nil
     flags = M.MAP_SHARED
-  # Open file for reading/writing
-  # O_RDWR | O_CREAT
   fd = @comp.ffi("open", i64, { str, i64, i64 })(path, 2, 1604)
   if fd < 0
     error("mmap: failed to open " .. path)
@@ -307,9 +284,6 @@ mmap_unmap = (mmap: any)
     @comp.ffi("duo_close", i64, { i64 })(mmap.fd)
     mmap.fd = -1
 
-# ═══════════════════════════════════════════════════════════════
-# Eventfd
-# ═══════════════════════════════════════════════════════════════
 
 M.EFD_SEMAPHORE = 1
 M.EFD_NONBLOCK = 2048
@@ -327,7 +301,6 @@ eventfd_new: any = (initval: i64, flags: i64)
 
 eventfd_write: any = (eventfd: any, value: i64)
   buf = 0:char():rep(8)
-  # Write 8-byte little-endian uint64
   v = value
   i = 1
   while i <= 8
@@ -353,9 +326,6 @@ eventfd_close = (eventfd: any)
   @comp.ffi("duo_close", i64, { i64 })(eventfd.fd)
   eventfd.fd = -1
 
-# ═══════════════════════════════════════════════════════════════
-# Timerfd
-# ═══════════════════════════════════════════════════════════════
 
 M.TFD_TIMER_ABSTIME = 1
 M.TFD_CLOEXEC = 2048
@@ -399,9 +369,6 @@ timerfd_close = (timerfd: any)
   @comp.ffi("duo_close", i64, { i64 })(timerfd.fd)
   timerfd.fd = -1
 
-# ═══════════════════════════════════════════════════════════════
-# Signalfd (stub - needs struct sigset_t)
-# ═══════════════════════════════════════════════════════════════
 
 signalfd_new: any = (signals: any, flags: i64)
   {
@@ -418,9 +385,6 @@ signalfd_read: any = (signalfd: any)
 signalfd_close = (signalfd: any)
   signalfd.fd = -1
 
-# ═══════════════════════════════════════════════════════════════
-# Timer Wheel (pure Lua, no syscalls needed)
-# ═══════════════════════════════════════════════════════════════
 
 timer_wheel_new: any = (slot_count: i64, resolution_ms: i64)
   slots = {}
@@ -466,9 +430,6 @@ timer_wheel_advance: any = (wheel: any, elapsed_ms: i64)
     count = fired:len()
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
 M.epoll_new = epoll_new
 M.epoll_create = epoll_create

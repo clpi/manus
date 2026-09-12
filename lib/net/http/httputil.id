@@ -1,5 +1,3 @@
-# net.http.httputil — HTTP utilities (mirrors Go's net/http/httputil)
-# Provides reverse proxy and dump helpers
 
 dump: str = (x: any)
     if x == nil return ""

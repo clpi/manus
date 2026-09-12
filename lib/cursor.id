@@ -1,6 +1,3 @@
-# cursor — typed byte cursor for binary parsing.
-# Blockers: (1) embedded-module record ctor codegen, (2) C str cannot hold NUL — need slice+len.
-# Proof: numeric LEB128 + u32 le decode through it.
 
 bytecursor: { data: str, pos: i64, len: i64 }
 
@@ -20,7 +17,6 @@ position: i64 = (c: bytecursor)
 skip(c: bytecursor, n: i64)
     c.pos = c.pos + n
 
-# Read one byte; returns -1 on EOF.
 readu8: i64 = (c: bytecursor)
     if c.pos > c.len return -1
     b = c.data:byte(c.pos)
@@ -45,7 +41,6 @@ readu32le: i64 = (c: bytecursor)
     if b3 < 0 return -1
     b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 
-# Wasm LEB128 unsigned (P9-M1 kernel primitive).
 readlebu: i64 = (c: bytecursor)
     result = 0
     shift = 0
@@ -58,7 +53,6 @@ readlebu: i64 = (c: bytecursor)
         if shift >= 35 return -1
     return -1
 
-# Wasm LEB128 signed.
 readlebs: i64 = (c: bytecursor)
     result = 0
     shift = 0
@@ -81,7 +75,6 @@ readbytes: str = (c: bytecursor, n: i64)
     c.pos = c.pos + n
     s
 
-# Wasm module header: magic (0x6D736100) + version (1).
 readwasmheader: i64 = (c: bytecursor)
     magic = readu32le(c)
     if magic < 0 return -1

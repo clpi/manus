@@ -1,32 +1,8 @@
-# fs_watch — file system watching via kqueue (macOS), inotify (Linux),
-# and a portable polling fallback.
-#
-# Usage:
-#   local watch = fs_watch
-#   local kq = watch.create()
-#   local fd = watch.add_watch(kq, "/tmp/foo.txt", watch.flags_from_mask("write|delete"))
-#   local events = watch.poll(kq, 5000)  # 5s timeout
-#   if events != nil then
-#     for _, ev in events do
-#       print("fd=" .. to(str)(ev.fd) .. " flags=" .. to(str)(ev.flags))
-#     end
-#   end
-#   watch.close(kq)
-#
-# Polling fallback:
-#   watch.poll_watch("/tmp/foo.txt", (ev) print("changed!") end, 1000)
 
-# ─────────────────────────────────────────────────────────────
-# Platform detection
-# ─────────────────────────────────────────────────────────────
 
-# Detect the current platform by checking which syscalls are available.
-# We use a runtime check: try to call kqueue(); if it fails, try inotify.
-# For simplicity, we check the OS via os.execute.
 _platform = "poll"
 
 detect_platform: str = ()
-  # macOS: kqueue available
   f = io.popen("uname -s 2>/dev/null", "r")
   if f != nil
     out = f:read("*a")
@@ -40,14 +16,9 @@ detect_platform: str = ()
 
 _platform = detect_platform()
 
-# ─────────────────────────────────────────────────────────────
-# Constants — kqueue / kevent (macOS)
-# ─────────────────────────────────────────────────────────────
 
-# EVFILT_VNODE filter identifier
 EVFILT_VNODE = 0 - 4
 
-# Event actions
 EV_ADD = 1
 EV_DELETE = 2
 EV_ENABLE = 4
@@ -55,7 +26,6 @@ EV_DISABLE = 8
 EV_ONESHOT = 16
 EV_CLEAR = 32
 
-# NOTE_* flags for EVFILT_VNODE
 NOTE_DELETE = 1
 NOTE_WRITE = 2
 NOTE_EXTEND = 4
@@ -64,12 +34,8 @@ NOTE_LINK = 16
 NOTE_RENAME = 32
 NOTE_REVOKE = 64
 
-# O_RDONLY for open()
 O_RDONLY = 0
 
-# ─────────────────────────────────────────────────────────────
-# Constants — inotify (Linux)
-# ─────────────────────────────────────────────────────────────
 
 IN_ACCESS = 1
 IN_MODIFY = 2
@@ -90,13 +56,9 @@ IN_ALL_EVENTS = 4095
 IN_CLOEXEC = 524288
 IN_NONBLOCK = 16384
 
-# inotify_init1 flags
 IN_INIT_CLOEXEC = 524288
 IN_INIT_NONBLOCK = 16384
 
-# ─────────────────────────────────────────────────────────────
-# FFI declarations — kqueue path (macOS)
-# ─────────────────────────────────────────────────────────────
 
 @ffi("kqueue")
 ffi_kqueue: i64 = ()
@@ -110,9 +72,6 @@ ffi_open: i64 = (path: str, flags: i64)
 @ffi("close")
 ffi_close: i64 = (fd: i64)
   void
-# ─────────────────────────────────────────────────────────────
-# FFI declarations — inotify path (Linux)
-# ─────────────────────────────────────────────────────────────
 
 @ffi("inotify_init1")
 ffi_inotify_init1: i64 = (flags: i64)
@@ -126,9 +85,6 @@ ffi_inotify_rm_watch: i64 = (fd: i64, wd: i64)
 @ffi("read")
 ffi_read: i64 = (fd: i64, buf: any, count: i64)
   void
-# ─────────────────────────────────────────────────────────────
-# FFI declarations — shared
-# ─────────────────────────────────────────────────────────────
 
 @ffi("malloc")
 ffi_malloc: any = (size: i64)
@@ -142,21 +98,12 @@ ffi_memset: void = (ptr: any, val: i64, size: i64)
 @ffi("memcpy")
 ffi_memcpy: void = (dst: any, src: any, size: i64)
   void
-# Write a uintptr-sized integer to a memory offset.
-# We use memset to zero, then write byte-by-byte for small values.
-# For the kevent struct, we need to write at specific offsets.
 
-# ─────────────────────────────────────────────────────────────
-# String flag parsing
-# ─────────────────────────────────────────────────────────────
 
-# Convert a string like "write|delete|rename" to a NOTE_* bitmask
-# (for kqueue) or IN_* bitmask (for inotify).
 flags_from_mask: int = (mask: str)
   if mask == nil or mask == ""
     return 0
   result = 0
-  # Split on "|"
   rest = mask
   while true
     pos = rest:find("|", 1, true)
@@ -167,7 +114,6 @@ flags_from_mask: int = (mask: str)
     else
       token = rest:sub(1, pos - 1)
       rest = rest:sub(pos + 1)
-    # Trim whitespace
     token = token:gsub("^%s+", "")
     token = token:gsub("%s+$", "")
     if _platform == "kqueue"
@@ -215,53 +161,28 @@ flags_from_mask: int = (mask: str)
       else(token == "all")
         result = result | IN_ALL_EVENTS
     else
-      # Polling: just use a sentinel
       if token == "write" or token == "delete" or token == "rename" or token == "attrib" or token == "all"
         result = result | 1
     if rest == ""
       break
   result
 
-# ─────────────────────────────────────────────────────────────
-# kqueue implementation (macOS)
-# ─────────────────────────────────────────────────────────────
 
-# The kevent struct on macOS (64-bit) is:
-#   struct kevent {
-#     uintptr_t ident;       // offset 0, 8 bytes
-#     short      filter;      // offset 8, 2 bytes
-#     u_short    flags;       // offset 10, 2 bytes
-#     u_int      fflags;      // offset 12, 4 bytes
-#     intptr_t   data;        // offset 16, 8 bytes
-#     void       *udata;     // offset 24, 8 bytes
-#   };
-# Total size: 32 bytes (with padding to 8-byte alignment)
-#
-# On 64-bit macOS, sizeof(struct kevent) == 32.
-# We write fields manually using memset/memcpy with a small helper.
 
 KEVENT_SIZE = 32
 
-# Write a 16-bit value at a byte offset (little-endian)
 write_u16: void = (buf: any, offset: int, val: int)
   b0 = val & 255
   b1 = val >> 8 & 255
-  # Use byte array access through the any pointer
   ptr = buf
-  # We store bytes via a small temp buffer and memcpy
-  # Since we can't write individual bytes directly, use string.char + memcpy
   tmp = ffi_malloc(2)
   if tmp != nil
-    # Build 2-byte LE value using memset to zero, then set bytes
     ffi_memset(tmp, 0, 2)
-    # Write bytes: we use a trick: create a small string and memcpy
-    # Actually, since we don't have byte-write, we use string approach:
     s = b0:char(b1)
     ffi_memcpy(tmp, s, 2)
     ffi_memcpy(ptr + offset, tmp, 2)
     ffi_free(tmp)
 
-# Write a 32-bit value at a byte offset (little-endian)
 write_u32: void = (buf: any, offset: int, val: int)
   b0 = val & 255
   b1 = val >> 8 & 255
@@ -270,16 +191,10 @@ write_u32: void = (buf: any, offset: int, val: int)
   s = b0:char(b1, b2, b3)
   ffi_memcpy(buf + offset, s, 4)
 
-# Write a 64-bit value at a byte offset (little-endian)
-# val may be negative (e.g. EVFILT_VNODE = -4), handle as signed
 write_u64: void = (buf: any, offset: int, val: int)
-  # For negative values, write each byte using two's complement.
-  # We write 8 bytes little-endian.
   bytes = {}
   v = val
   if v < 0
-    # Two's complement: for negative, each byte is (v >> (b*8)) & 0xFF
-    # which naturally produces the correct unsigned representation.
     for i = 0, 7
       byte_val = v >> (i * 8) & 255
       bytes[i + 1] = byte_val:char()
@@ -290,35 +205,20 @@ write_u64: void = (buf: any, offset: int, val: int)
   s = bytes:concat()
   ffi_memcpy(buf + offset, s, 8)
 
-# Read a 32-bit value at a byte offset (little-endian)
 read_u32: int = (buf: any, offset: int)
-  # We can't read individual bytes from C memory directly.
-  # Instead, we memcpy to a string and parse.
-  # Since we can't read C memory to Lua easily, we use an alternative approach:
-  # For kqueue, we read the event struct fields by copying to a Lua string.
-  # Actually, without byte-read FFI, we need a helper C function.
-  # For now, return 0 — the actual event reading will be done differently.
   0
 
-# Build a kevent change struct in a malloc'd buffer.
-# Returns a pointer to the allocated buffer (caller must free).
 build_kevent: any = (ident: int, filter: int, flags: int, fflags: int)
   buf = ffi_malloc(KEVENT_SIZE)
   if buf == nil
     return nil
   ffi_memset(buf, 0, KEVENT_SIZE)
-  # ident (uintptr_t, 8 bytes at offset 0)
   write_u64(buf, 0, ident)
-  # filter (short, 2 bytes at offset 8)
   write_u16(buf, 8, filter)
-  # flags (u_short, 2 bytes at offset 10)
   write_u16(buf, 10, flags)
-  # fflags (u_int, 4 bytes at offset 12)
   write_u32(buf, 12, fflags)
-  # data and udata remain zero
   buf
 
-# Create a kqueue. Returns kq fd, or -1 on error.
 create: int = ()
   if _platform == "kqueue"
     kq = ffi_kqueue()
@@ -331,24 +231,17 @@ create: int = ()
       return -1
     return fd
   else
-    # Polling: return a table-based watcher id
-    # We use a negative sentinel to distinguish from real fds
     return 0
 
-# Add a file watch. Returns the watch descriptor (file fd for kqueue,
-# watch id for inotify), or -1 on error.
 add_watch: int = (kq: int, path: str, mask: int)
   if _platform == "kqueue"
-    # Open the file to get a file descriptor
     fd = ffi_open(path, O_RDONLY)
     if fd < 0
       return -1
-    # Build kevent change: EV_ADD | EV_CLEAR, EVFILT_VNODE, fflags=mask
     change = build_kevent(fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, mask)
     if change == nil
       ffi_close(fd)
       return -1
-    # Register the change: kevent(kq, changelist, 1, nil, 0, nil)
     ret = ffi_kevent(kq, change, 1, nil, 0, nil)
     ffi_free(change)
     if ret < 0
@@ -361,13 +254,10 @@ add_watch: int = (kq: int, path: str, mask: int)
       return -1
     return wd
   else
-    # Polling: return a placeholder
     return 0
 
-# Remove a watch.
 remove_watch: void = (kq: int, fd: int)
   if _platform == "kqueue"
-    # Build kevent change: EV_DELETE for the vnode filter
     change = build_kevent(fd, EVFILT_VNODE, EV_DELETE, 0)
     if change != nil
       ffi_kevent(kq, change, 1, nil, 0, nil)
@@ -376,20 +266,14 @@ remove_watch: void = (kq: int, fd: int)
   else(_platform == "inotify")
     ffi_inotify_rm_watch(kq, fd)
 
-# Poll for events. Returns a table of {fd, flags} entries, or nil on timeout.
-# For kqueue: fd is the file descriptor, flags are NOTE_* bits.
-# For inotify: fd is the watch descriptor, flags are IN_* bits.
 poll: any = (kq: int, timeout_ms: int)
   if _platform == "kqueue"
-    # Allocate space for up to 16 events
     max_events = 16
     eventlist = ffi_malloc(KEVENT_SIZE * max_events)
     if eventlist == nil
       return nil
     ffi_memset(eventlist, 0, KEVENT_SIZE * max_events)
 
-    # Build a timespec for the timeout: {tv_sec, tv_nsec}
-    # struct timespec is 16 bytes on 64-bit: 8 sec + 8 nsec
     ts = ffi_malloc(16)
     if ts == nil
       ffi_free(eventlist)
@@ -402,7 +286,6 @@ poll: any = (kq: int, timeout_ms: int)
       write_u64(ts, 0, sec)
       write_u64(ts, 8, nsec)
 
-    # If timeout_ms == 0, use nil timeout for non-blocking
     timeout_ptr = ts
     if timeout_ms == 0
       timeout_ptr = nil
@@ -414,28 +297,17 @@ poll: any = (kq: int, timeout_ms: int)
       ffi_free(eventlist)
       return nil
 
-    # Parse events from the eventlist buffer.
-    # Each kevent is 32 bytes:
-    #   ident (8), filter (2), flags (2), fflags (4), data (8), udata (8)
-    # We need to read ident and fflags from each event.
-    #
-    # Since we can't read individual bytes from C memory directly,
-    # we use a workaround: copy each event to a Lua string via memcpy,
-    # then parse the string.
     events = {}
     for i = 0, n - 1
       offset = i * KEVENT_SIZE
-      # Copy 32 bytes to a Lua string
       tmp = "0":rep(KEVENT_SIZE)
       ffi_memcpy(tmp, eventlist + offset, KEVENT_SIZE)
 
-      # Parse ident (bytes 0-7, little-endian u64)
       ident = 0
       for b = 0, 7
         byte_val = tmp:byte(b + 1)
         ident = ident | byte_val << (b * 8)
 
-      # Parse fflags (bytes 12-15, little-endian u32)
       fflags = 0
       for b = 0, 3
         byte_val = tmp:byte(12 + b + 1)
@@ -446,15 +318,6 @@ poll: any = (kq: int, timeout_ms: int)
     return events
   else(_platform == "inotify")
 
-    # Read inotify events from the fd.
-    # struct inotify_event {
-    #   int      wd;       // 4 bytes
-    #   u_int    mask;     // 4 bytes
-    #   u_int    cookie;   // 4 bytes
-    #   u_int    len;      // 4 bytes
-    #   char     name[];   // variable
-    # };
-    # Total fixed size: 16 bytes
 
     buf_size = 4096
     buf = ffi_malloc(buf_size)
@@ -467,30 +330,24 @@ poll: any = (kq: int, timeout_ms: int)
       ffi_free(buf)
       return nil
 
-    # Copy the read data to a Lua string for parsing
     data = "0":rep(n)
     ffi_memcpy(data, buf, n)
     ffi_free(buf)
 
-    # Parse inotify events from the string
     events = {}
-    # 1-based for Lua strings
     pos = 1
     while pos <= n
       if pos + 15 > n
         break
 
-      # wd (4 bytes, little-endian)
       wd = 0
       for b = 0, 3
         wd = wd | data:byte(pos + b) << (b * 8)
 
-      # mask (4 bytes, little-endian)
       mask = 0
       for b = 0, 3
         mask = mask | data:byte(pos + 4 + b) << (b * 8)
 
-      # len (4 bytes, offset 12, little-endian) — name length
       name_len = 0
       for b = 0, 3
         name_len = name_len | data:byte(pos + 12 + b) << (b * 8)
@@ -498,9 +355,6 @@ poll: any = (kq: int, timeout_ms: int)
       if wd > 0
         events[events:len() + 1] = { fd = wd, flags = mask }
 
-      # Advance past event + name (16 + name_len, aligned to 16? No, name is padded)
-      # Actually inotify events are not padded to 16; name is included inline.
-      # The total event size is 16 + name_len.
       pos = pos + 16 + name_len
 
     if events:len() == 0
@@ -508,28 +362,20 @@ poll: any = (kq: int, timeout_ms: int)
     return events
   else
 
-    # Polling doesn't use this API
     return nil
 
-# Close the watcher and release resources.
 close: void = (kq: int)
   if _platform == "kqueue"
     ffi_close(kq)
   else(_platform == "inotify")
     ffi_close(kq)
 
-# ─────────────────────────────────────────────────────────────
-# Polling fallback
-# ─────────────────────────────────────────────────────────────
 
-# Get the modification time of a file as a string (epoch seconds).
-# Uses stat command for portability.
 get_mtime: str = (path: str)
   if path == nil
     return ""
   f = io.popen("stat -f%m '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
   if f == nil
-    # Try Linux stat
     f = io.popen("stat -c %Y '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
     if f == nil
       return ""
@@ -537,15 +383,10 @@ get_mtime: str = (path: str)
   f:close()
   if out == nil
     return ""
-  # Trim whitespace
   out = out:gsub("%s+$", "")
   out = out:gsub("^%s+", "")
   out
 
-# Poll a file for changes. Calls callback on each detected change.
-# The callback receives a table {path, event} where event is a string
-# like "modified", "deleted", or "renamed".
-# This function runs forever (blocking) until the callback returns false.
 poll_watch: void = (path: str, callback: any, interval_ms: int)
   if path == nil
     return
@@ -558,7 +399,6 @@ poll_watch: void = (path: str, callback: any, interval_ms: int)
   last_exists = last_mtime != ""
 
   while true
-    # Sleep for interval
     sec = interval_ms / 1000.0
     os.execute("sleep " .. sec:to(str))
 
@@ -566,20 +406,17 @@ poll_watch: void = (path: str, callback: any, interval_ms: int)
     cur_exists = cur_mtime != ""
 
     if cur_exists and last_exists
-      # Check for modification
       if cur_mtime != last_mtime
         cont = callback({ path = path, event = "modified" })
         if cont == false
           return
         last_mtime = cur_mtime
     else(cur_exists and not last_exists)
-      # File was created
       cont = callback({ path = path, event = "created" })
       if cont == false
         return
       last_mtime = cur_mtime
     else(not cur_exists and last_exists)
-      # File was deleted
       cont = callback({ path = path, event = "deleted" })
       if cont == false
         return
@@ -587,14 +424,6 @@ poll_watch: void = (path: str, callback: any, interval_ms: int)
 
     last_exists = cur_exists
 
-# ─────────────────────────────────────────────────────────────
-# Platform info
-# ─────────────────────────────────────────────────────────────
 
 platform: str = ()
   _platform
-# Expose constants for users
-# Constants
-# API
-# Polling fallback
-# Platform info

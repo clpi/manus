@@ -1,32 +1,19 @@
-# crypto_sha — SHA-1 and SHA-256 hash implementations
-# These are pure-Duo implementations of SHA-1 and SHA-256. They operate on
-# byte strings and produce hex-encoded digests.
-# Note: rotate-right (ror) is inlined at each call site because duo's typed
-# local functions expect int64_t, while table indexing yields lua_Value.
 
-# SHA-1 implementation
 
-# sha1: compute SHA-1 digest of string s, return as 40-char hex string.
 sha1: str = (s: str)
   if s == nil
     s = ""
-  # padding: append 0x80, then zeros, then 64-bit length
   msg = s .. 128:char()
   while msg:len() % 64 != 56
     msg = msg .. 0:char()
-  # append length in bits as big-endian 64-bit
   bits = s:len() * 8
-  # high 32 bits (usually 0 for small inputs)
   msg = msg .. 0:char(0, 0, 0)
-  # low 32 bits
   msg = msg .. string.char(bits / 16777216 % 256, bits / 65536 % 256, bits / 256 % 256, bits % 256)
-  # initial hash values
   h0 = 1732584193
   h1 = 4023233417
   h2 = 2562383102
   h3 = 271733878
   h4 = 3285377520
-  # process each 64-byte block
   block = 0
   blocks = msg:len() / 64
   while block < blocks
@@ -80,13 +67,10 @@ sha1: str = (s: str)
     block = block + 1
   "%08x%08x%08x%08x%08x":format(h0, h1, h2, h3, h4)
 
-# SHA-256 implementation
 
-# sha256: compute SHA-256 digest of string s, return as 64-char hex string.
 sha256: str = (s: str)
   if s == nil
     s = ""
-  # SHA-256 constants
   K = {
     1116352408,
     1899447441,
@@ -153,14 +137,12 @@ sha256: str = (s: str)
     3204031479,
     3329325298
   }
-  # padding
   msg = s .. 128:char()
   while msg:len() % 64 != 56
     msg = msg .. 0:char()
   bits = s:len() * 8
   msg = msg .. 0:char(0, 0, 0)
   msg = msg .. string.char(bits / 16777216 % 256, bits / 65536 % 256, bits / 256 % 256, bits % 256)
-  # initial hash values
   hv0 = 1779033703
   hv1 = 3144134277
   hv2 = 1013904242
@@ -181,10 +163,8 @@ sha256: str = (s: str)
       j = j + 1
     j = 16
     while j < 64
-      # s0 = ror(w[j-14+1], 7) ^ ror(w[j-14+1], 18) ^ (w[j-14+1] >> 3)
       wt = w[j - 14 + 1]
       s0 = (wt >> 7 | wt << 25) % 2 ^ 32 ~ (wt >> 18 | wt << 14) % 2 ^ 32 ~ wt >> 3
-      # s1 = ror(w[j-15+1], 17) ^ ror(w[j-15+1], 19) ^ (w[j-15+1] >> 10)
       wt2 = w[j - 15 + 1]
       s1 = (wt2 >> 17 | wt2 << 15) % 2 ^ 32 ~ (wt2 >> 19 | wt2 << 13) % 2 ^ 32 ~ wt2 >> 10
       w[j + 1] = (w[j + 1] + s0 + w[j - 7 + 1] + s1) % 2 ^ 32
@@ -199,11 +179,9 @@ sha256: str = (s: str)
     h = hv7
     j = 0
     while j < 64
-      # S1 = ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)
       S1 = (e >> 6 | e << 26) % 2 ^ 32 ~ (e >> 11 | e << 21) % 2 ^ 32 ~ (e >> 25 | e << 7) % 2 ^ 32
       ch = e & f | ~e & g
       temp1 = (h + S1 + ch + K(j + 1) + w[j + 1]) % 2 ^ 32
-      # S0 = ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)
       S0 = (a >> 2 | a << 30) % 2 ^ 32 ~ (a >> 13 | a << 19) % 2 ^ 32 ~ (a >> 22 | a << 10) % 2 ^ 32
       maj = a & b | a & c | b & c
       temp2 = (S0 + maj) % 2 ^ 32
@@ -227,10 +205,8 @@ sha256: str = (s: str)
     block = block + 1
   "%08x%08x%08x%08x%08x%08x%08x%08x":format(hv0, hv1, hv2, hv3, hv4, hv5, hv6, hv7)
 
-# sha1_hex: alias for sha1 (returns hex).
 sha1_hex: str = (s: str)
   sha1(s)
 
-# sha256_hex: alias for sha256.
 sha256_hex: str = (s: str)
   sha256(s)

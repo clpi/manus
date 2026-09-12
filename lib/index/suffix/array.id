@@ -1,5 +1,3 @@
-# index/suffix/array — suffix array for substring search
-# Home topology: index/suffix/array.id projects the array table for suffix search.
 
 build: any = (data: str)
     if data == nil return {data = "", sa = {}} 
@@ -7,7 +5,6 @@ build: any = (data: str)
     sa = {}
     for i = 1, n
         sa[i] = i
-    # Sort suffixes using insertion sort (simple, adequate for small-medium data)
     for i = 1, n
         j = i
         while j > 1
@@ -25,7 +22,6 @@ lookup: any = (store: any, pattern: str)
     plen = pattern:len()
     if plen == 0 or n == 0 return {} 
     results = {}
-    # Binary search for first occurrence
     lo = 1
     hi = n
     while lo <= hi

@@ -1,4 +1,3 @@
-# net.http.httptest — HTTP test utilities (mirrors Go's net/http/httptest)
 
 server: any = (handler: any)
   port = 0

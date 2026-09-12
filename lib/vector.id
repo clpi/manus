@@ -1,33 +1,7 @@
-# vector — Duo-native text embeddings + cosine similarity.
-#
-# Provides symbol/query "vector embeddings" with NO Python, NO model download.
-# Backs `duo_embed_symbols` (MCP) so it is a genuine semantic symbol index, not a
-# keyword `find` bag-of-words.
-#
-# Method: hashed bag-of-n-grams (feature hashing / "the hashing trick").
-#   - word tokens contribute weight WORD_W (exact-lemma signal)
-#   - char 3-grams contribute weight NGRAM_W (morphology / typo / prefix signal)
-#   - features are hashed (djb2) into a fixed D-dim space, TF-weighted, L2-normed
-#   - similarity = cosine (dot / (||q|| * ||s||))
-#
-# Sparse vector representation: a single table mapping the STRING key "f"..idx
-# to its TF weight, plus metadata keys "norm" and "dim". String keys are used
-# deliberately so that:
-#   (1) the table is heterogeneous -> lowers to a lua_Value table, NOT a native
-#       int64[] slice (which cannot be stored as a table value or JSON-encoded);
-#   (2) numeric feature indices round-trip EXACTLY through JSON (JSON object
-#       keys are strings), so a query embedded at runtime matches an index built
-#       and serialized earlier. Numeric keys would collide under JSON.
-# The compute-heavy part (djb2 hashing) stays native i64; only the result table
-# is dynamic, which is the expected dynamic path (NO boxed values mandate).
-#
-# NOTE: no nested `fun` closures — they don't lower cleanly in current codegen.
 
 WORD_W = 3.0
 NGRAM_W = 1.0
 
-# djb2 string hash -> unsigned 32-bit (no xor operator, immune to the pattern
-# engine bugs in F-13813-5; pure arithmetic, lowers to native i64).
 hash32: i64 = (s: str)
   h = 5381
   n = s:len()
@@ -37,8 +11,6 @@ hash32: i64 = (s: str)
     i = i + 1
   h
 
-# Split text into lowercase identifier-ish word tokens (alnum runs, len >= 2).
-# Chars scanned directly (no Lua patterns) to dodge the F-13813-5 bugs.
 tokens: any = (text: str)
   out = {}
   if text == nil
@@ -62,7 +34,6 @@ tokens: any = (text: str)
     out[out:len() + 1] = cur:lower()
   out
 
-# Char 3-grams of a token, edge-padded with sentinels so prefix/suffix matter.
 trigrams: any = (token: str)
   out = {}
   if token == nil
@@ -77,7 +48,6 @@ trigrams: any = (token: str)
     i = i + 1
   out
 
-# Embed text into a fixed `dim`-dim sparse vector (string-keyed table; see top).
 embed: any = (text: str, dim: i64)
   vec = {}
   for _, word in tokens(text)
@@ -91,16 +61,10 @@ embed: any = (text: str, dim: i64)
   sumsq = 0.0
   for k, w in vec
     sumsq = sumsq + w * w
-  # Store the L2 norm as a SCALED INTEGER (norm * 1e6), NOT a float. The C
-  # runtime's tonumber crashes (heap corruption, EXIT 128) on long (>=15 sig-
-  # digit) float reprs, which truncated json.decode of the symbol index at
-  # ~1029 entries. Integers parse safely; cosine() un-scales at query time.
   vec.norm = sumsq:sqrt() * 1000000 + 0.5:floor()
   vec.dim = dim
   vec
 
-# Cosine similarity between two sparse vectors from embed(). Iterates the
-# (usually smaller) query vector and probes `s` by shared feature key.
 cosine: float = (q: any, s: any)
   if q == nil or s == nil
     return 0.0
@@ -114,11 +78,6 @@ cosine: float = (q: any, s: any)
         dot = dot + qw * sw
   dot / q.norm / 1000000.0 * s.norm / 1000000.0
 
-# Rank records (each with a `vec` field) against query vector `q`, returning the
-# top_k records with an added `score` field, best-first.
-# k-pass max selection (O(k*n)): avoids element-swapping, which miscompiles at
-# scale; uses a `taken` marker table and the field-vs-local comparison that is
-# verified to lower correctly.
 rank: any = (q: any, records: any, topk: i64)
   all = {}
   for _, rec in records

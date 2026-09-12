@@ -1,11 +1,4 @@
-# schema — Declarative data validation framework
-# Define schemas as data, validate values against them.
-# Critical for: API request/response validation, config validation,
-# data pipeline contracts, ML input shape/type checking.
 
-# ═══════════════════════════════════════════════════════════════
-# Schema constructors
-# ═══════════════════════════════════════════════════════════════
 
 any_type: any = ()
     {type = "any"}
@@ -34,9 +27,6 @@ optional: any = (inner: any)
 one_of: any = (...variants)
     {type = "one_of", variants = variants}
 
-# ═══════════════════════════════════════════════════════════════
-# Constraint modifiers
-# ═══════════════════════════════════════════════════════════════
 
 min_length: any = (s: any, n: i64)
     s.min_length = n
@@ -69,9 +59,6 @@ enum_: any = (...values)
 shape: any = (fields: any)
     {type = "shape", fields = fields}
 
-# ═══════════════════════════════════════════════════════════════
-# Validation engine
-# ═══════════════════════════════════════════════════════════════
 
 validate: any = (value: any, schema: any)
     errors = {}
@@ -192,9 +179,6 @@ check_number_constraints: bool = (v: any, s: any, path: str, errors: any)
         ok = false
     ok
 
-# ═══════════════════════════════════════════════════════════════
-# Convenience
-# ═══════════════════════════════════════════════════════════════
 
 check: bool = (value: any, schema: any)
     validate(value, schema).ok

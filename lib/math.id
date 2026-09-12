@@ -1,4 +1,3 @@
-# math — numeric helper utilities
 
 clamp: any = (x: any, lo: any, hi: any)
     if x < lo return lo
@@ -149,7 +148,6 @@ M.distance_squared = distsq
 M.gcd = gcd
 M.lcm = lcm
 
-# Expose core Lua math utilities
 M.pi = math.pi
 M.huge = math.huge
 M.maxinteger = math.maxinteger

@@ -1,4 +1,3 @@
-# build — build system helpers and environment info
 
 global _project = { name = "duo-app", version = "0.1.0", default = "app" }
 global _targets = {}

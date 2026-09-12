@@ -1,4 +1,3 @@
-# hash.crc32 — CRC-32 checksum (mirrors Go's hash/crc32)
 
 table = 0
 for i = 0, 255

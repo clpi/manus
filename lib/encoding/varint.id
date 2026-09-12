@@ -1,12 +1,3 @@
-# encoding.varint — Variable-length integer encodings
-# Provides three common varint formats:
-#   1. Base-128 varint (protobuf-style, unsigned)
-#   2. ZigZag encoding (maps signed to unsigned for better compression)
-#   3. LEB128 (DWARF/ELF style, signed and unsigned)
-# ═══════════════════════════════════════════════════════════════
-# Base-128 Varint (protobuf-style, unsigned)
-# Each byte: 7 bits of data + 1 continuation bit (high bit)
-# ═══════════════════════════════════════════════════════════════
 
 write = (buf: any, value: i64)
   while value >= 128
@@ -51,11 +42,6 @@ size: i64 = (value: i64)
     return 9
   10
 
-# ═══════════════════════════════════════════════════════════════
-# ZigZag encoding (protobuf-style, maps signed → unsigned)
-# ZigZag(n) = (n << 1) ^ (n >> 63)
-#   0 → 0, -1 → 1, 1 → 2, -2 → 3, ...
-# ═══════════════════════════════════════════════════════════════
 
 zigzag_encode: i64 = (value: i64)
   value << 1 ~ value >> 63
@@ -69,11 +55,6 @@ write_zigzag = (buf: any, value: i64)
 read_zigzag: i64 = (data: str, pos: any)
   zigzag_decode(read(data, pos))
 
-# ═══════════════════════════════════════════════════════════════
-# LEB128 (Little-Endian Base-128, DWARF/ELF style)
-# Each byte: 7 bits of data + 1 continuation bit (high bit)
-# Little-endian ordering (lsb first)
-# ═══════════════════════════════════════════════════════════════
 
 write_leb128 = (buf: any, value: i64)
   repeat
@@ -128,6 +109,3 @@ read_signed_leb128: i64 = (data: str, pos: any)
     if shift >= 64
       error("signed leb128: overflow")
   result
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════

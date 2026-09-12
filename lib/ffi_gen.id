@@ -1,16 +1,4 @@
-# ffi_gen — Intelligent FFI Binding Generator
-# At compile time, parses C headers and generates Duo FFI bindings
-# with proper type mapping, error handling, and memory management hints.
-#
-# Usage:
-#   local ffi = ffi_gen
-#   local bindings = ffi.from_header("sqlite3.h", { prefix = "sqlite3_" })
-#   # bindings contains generated C code as a string
-#   # Pass to @c.emit(@run(...)) or use directly
 
-# ═══════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════
 
 str_join: str = (parts: any, sep: str)
     result = ""
@@ -20,21 +8,10 @@ str_join: str = (parts: any, sep: str)
         result = result .. part
     result
 
-# ═══════════════════════════════════════════════════════════════
-# Header parsing and binding generation
-# ═══════════════════════════════════════════════════════════════
 
-# from_header: parse a C header and generate Duo FFI bindings.
-# Use at module scope: the caller preprocesses with @run and passes the source.
-# Example:
-#   local preprocessed = @run("echo '#include \"sqlite3.h\"' | cc -E -dM -x c - 2>/dev/null | head -500")
-#   local bindings = ffi.from_header_source(preprocessed, { prefix = "sqlite3_" })
 from_header: str = (header: str, opts: any)
-    # NOTE: @run with string concat doesn't work inside function bodies.
-    # Use from_header_source() with a preprocessed string instead.
     "/* from_header: use from_header_source() with @run at module scope */"
 
-# from_source: parse a preprocessed header source string directly.
 from_source: str = (source: str, opts: any)
     if opts == nil opts = {}
     prefix = opts.prefix or ""
@@ -50,11 +27,7 @@ from_source: str = (source: str, opts: any)
         parts[parts:len() + 1] = emit_ffi_binding(func)
     str_join(parts, "\n")
 
-# ═══════════════════════════════════════════════════════════════
-# C declaration parser
-# ═══════════════════════════════════════════════════════════════
 
-# parse_c_declarations: extract function signatures from C source.
 parse_c_declarations: any = (source: str, prefix: str, excludes: any, includes: any)
     funcs = {}
     lines = source:split("\n")
@@ -87,7 +60,6 @@ parse_c_declarations: any = (source: str, prefix: str, excludes: any, includes: 
                             }
     funcs
 
-# parse_c_params: parse a C parameter list string into a list of {type, name} pairs
 parse_c_params: any = (params_str: str)
     if params_str == "void" or params_str == "" return {}
     params = {}
@@ -119,9 +91,6 @@ parse_c_params: any = (params_str: str)
             }
     params
 
-# ═══════════════════════════════════════════════════════════════
-# Type mapping: C types → Duo types
-# ═══════════════════════════════════════════════════════════════
 
 c_type_to_duo: str = (c_type: str, is_pointer: bool)
     base = c_type:gsub("%*", "")
@@ -153,12 +122,7 @@ c_ret_type_to_duo: str = (c_type: str)
     if cleaned:find("*") return "any"
     c_type_to_duo(cleaned, false)
 
-# ═══════════════════════════════════════════════════════════════
-# Binding generation
-# ═══════════════════════════════════════════════════════════════
 
-# emit_ffi_binding: generate a Duo FFI binding string for a C function.
-# Returns the binding as a string (caller passes to @c.emit or uses directly).
 emit_ffi_binding: str = (func: any)
     duo_params = {}
     for _, p in func.params
@@ -172,16 +136,12 @@ emit_ffi_binding: str = (func: any)
     body = "    @comp.c.call(\"" .. func.name .. "\"" .. (func.params:len() > 0 and ", " or "") .. call_args .. ")"
     sig .. "\n" .. body .. "\nend"
 
-# build_c_call_args: generate the argument list for @comp.c.call
 build_c_call_args: str = (params: any)
     args = {}
     for _, p in params
         args[args:len() + 1] = p.name
     str_join(args, ", ")
 
-# ═══════════════════════════════════════════════════════════════
-# Convenience: generate bindings for common libraries
-# ═══════════════════════════════════════════════════════════════
 
 bind_sqlite: str = ()
     from_header("sqlite3.h", {

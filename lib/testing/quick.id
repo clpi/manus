@@ -1,5 +1,3 @@
-# testing.quick — property-based testing (mirrors Go's testing/quick)
-# Generates random test values and checks that properties hold for all of them.
 
 default_config: any = ()
   { max_count = 100, max_count_scale = 10 }

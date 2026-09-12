@@ -1,5 +1,3 @@
-# script — bootstrap tooling bridge (frozen — delete under GAP-157).
-# Prefer shell tools/node/dev/* and direct os.env / io:read / fs: homes.
 echo = (msg: str)
   print(msg)
 
@@ -13,15 +11,6 @@ run: i64 = (cmd: str)
     return 0
   1
 
-# The EXACT exit status, which `run` cannot give. os:execute collapses
-# every failure to 1 # `os:execute("exit 7")` returns 1, not 7 # so any
-# differential built on `run` calls a 7-vs-3 divergence "agreement". The status
-# is read back through the shell instead, which is exact and needs no runtime
-# change.
-#
-# The subshell parentheses are load-bearing: without them `exit 7` terminates
-# the popen'd shell before `echo $?` ever runs, and capture returns "" -> 0.
-# That reads as "everything succeeded", the worst possible failure mode here.
 status: i64 = (cmd: str)
   to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
 
@@ -33,27 +22,6 @@ must = (cmd: str)
     echo("FAIL: " .. cmd)
     os:exit(1)
 
-# Reads the command's stdout through `io.popen`, not through a temp file.
-#
-# TWO faults were repaired here at once, and the first is why NOTHING in this
-# module compiled.
-#
-# 1. `path:read()` — the `subject:read()` readable protocol — emits
-#    `idol_io_read_path(...)` on the C backend, and NO SUCH SYMBOL EXISTS in
-#    the emitted C runtime; the runtime defines `lua_io_read_path`. Both
-#    branches of that protocol are dead the same way (`stdin:read()` emits an
-#    equally undefined `idol_io_read_stdin`). Minimal repro, measured
-#    2026-08-15 — a three-line program whose only statement is
-#    `body = "/etc/hostname":read()` — fails C compile with "call to
-#    undeclared function 'idol_io_read_path'". Routed to the src lane;
-#    `io.popen` / `io.open` are used here because they are MEASURED to work.
-#
-# 2. `/tmp/duo-capture` was a FIXED, SHARED path. Two agents, two lanes, or one
-#    program calling `capture` from a subshell would read each other's output,
-#    and the read would look completely successful. The pipe has no such path.
-#
-# `2>/dev/null` is preserved from the temp-file form: callers depend on stderr
-# NOT appearing in the captured value (`exec` re-adds `2>&1` deliberately).
 capture: str = (cmd: str)
   h = io.popen(cmd .. " 2>/dev/null", "r")
   if h == nil
@@ -76,8 +44,6 @@ idol_run_all = (paths: any, bin: str)
     idol_run(path, bin)
 
 zig_build = ()
-  # When invoked via the build target the duo binary is already fresh; a second
-  # `zig build` here would just race other agents on .zig-cache. Skip it then.
   if os.env("DUO_ALREADY_BUILT") == "1"
     echo("agent-smoke: zig build skipped (DUO_ALREADY_BUILT)")
     return
@@ -86,41 +52,7 @@ zig_build = ()
 zig_test_file = (path: str)
   must("zig test " .. path)
 
-# === Environment ===
 
-# THE READER IS `os.getenv`, AND THE LAWFUL NAME CANNOT BE USED YET.
-#
-# The standing ruling (src/table_apply.zig, src/subject_home.zig) is that
-# `os.getenv` "is not a lawful name at all — two words glued", and that the
-# canonical spelling is the bare `env` edge on the `os` world, with `os.env` as
-# the anchored disambiguator. This module CANNOT honour that ruling today,
-# because the lawful edge does not read the environment. Measured 2026-08-15,
-# C backend, PROBE_SET=hello in the process environment:
-#
-#     env("PROBE_SET")        -> nil        <- lawful spelling, WRONG ANSWER
-#     os.env("PROBE_SET")     -> nil        <- lawful anchor,   WRONG ANSWER
-#     os.getenv("PROBE_SET")  -> "hello"    <- retired name,    right answer
-#     os.getenv(unset)        -> nil
-#     os.getenv(set-to-"")    -> ""         <- unset and empty ARE distinguishable
-#
-# `os.env` answers nil for EVERY name, set or unset. This file previously read
-# `os.env`, so every `getenv(name, fallback)` in the tree — ~100 call sites —
-# would have silently answered its FALLBACK for a variable that was set. That is
-# not a hypothetical: it was measured on this file the moment it first compiled
-# (`getenv("PROBE_SET", "fb")` -> "fb" with PROBE_SET=hello).
-#
-# So the rename is BLOCKED ON A COMPILER REPAIR, not on this file. Migrating
-# `script.getenv` to the `env` edge before that repair lands would convert a
-# working reader into a silent fallback across the whole tree — the exact
-# failure this project keeps retracting claims over. `tools/wasm/test/conform.id`
-# reached the same conclusion independently and for the same reason: its
-# `_getenv` reads `os.getenv`, and it is the one harness in this family that
-# still runs.
-#
-# The fallback fires on EMPTY as well as nil, deliberately. An env var
-# deliberately set to "" is therefore indistinguishable from unset THROUGH THIS
-# SIGNATURE — a caller passing a fallback wants a usable value. Callers that
-# must tell the two apart use `getenv_or`, which does distinguish them.
 getenv: str = (name: str, fallback: str)
   v = env(name)
   if v == nil
@@ -129,53 +61,15 @@ getenv: str = (name: str, fallback: str)
     return fallback
   v
 
-# Unlike `getenv`, this DOES distinguish set-to-empty from unset in the only way
-# its signature can: both answer "", but that is the documented contract here
-# and ~32 call sites compare the result against "" expecting exactly that.
 getenv_or: str = (name: str)
   v = env(name)
   if v == nil
     return ""
   v
 
-# STILL A NO-OP. The comment that used to sit here said this had been repaired;
-# it has not been, and the claim is retracted.
-#
-# The history is right: this SHELLED OUT (`must("export NAME='v'")`), which
-# cannot work because `export` runs in the child `os.execute` spawns and a child
-# cannot mutate its parent's environment. It was then rewritten to
-# `os.env(name) = value` and declared "a real setenv". Measured 2026-08-15,
-# C backend, through this module:
-#
-#     env_set("ZZ_SETME", "yes"); getenv_or("ZZ_SETME")   -> ""      (unchanged)
-#     env_set("ZZ_SETME", "yes"); capture("printf %s $ZZ_SETME") -> ""
-#
-# and the underlying call is dead the same way:
-#
-#     os.setenv("ZZ_A", "1"); os.getenv("ZZ_A")           -> nil
-#
-# `os.setenv` COMPILES and does nothing. `os.env(name) = value` compiles and
-# does nothing. There is at this revision NO working way to mutate the process
-# environment from Idol, so this relation cannot be repaired from this file.
-#
-# It is left in place rather than made to fail, because ten call sites in five
-# files owned by other lanes call it and every one of them would stop building.
-# All ten publish a variable intended to reach a CHILD process, and all ten are
-# silently getting nothing: `scripts/duo_lock.id` (DUO_LOCK_HELD,
-# DUO_BUILD_LOCK), `scripts/capability_rows.id` (CAPROWS_LIST),
-# `scripts/run_honest_benchmark.id` (HONEST_SEED), `scripts/run_benchmark.id`
-# (DUO_BUILD_REPORT, DUO_BENCH_MANIFEST — whose own line 57 carries the false
-# claim this note retracts), `scripts/proof/benchmark.id` (BENCH_BACKEND,
-# DUO_BENCH_MANIFEST, DUO_EMIT_PROOF).
-#
-# THE WORKING SHAPE for a CHILD process is still to put the assignment in the
-# command itself — `run("NAME=value " .. cmd)` — which reaches the child because
-# the shell, not this process, performs it. `env(k) = v` below sets it in THIS
-# process, which is a different fact and the one this relation names.
 env_set = (name: str, value: str)
   env(name) = value
 
-# === Path manipulation (makes Duo ergonomic vs Python os.path) ===
 
 path_join: str = (a: str, b: str)
   if a == ""
@@ -188,7 +82,6 @@ path_join: str = (a: str, b: str)
   a .. sep .. b
 
 path_basename: str = (p: str)
-  # Find last /
   pos = 0
   for i = p:len(), 1, -1
     if p:sub(i, i) == "/"
@@ -228,7 +121,6 @@ path_stem: str = (p: str)
     return base
   base:sub(1, base:len() - ext:len())
 
-# === File system ===
 
 fs_exists: bool = (p: str)
   ok("test -e '" .. p .. "'")
@@ -239,10 +131,6 @@ fs_is_file: bool = (p: str)
 fs_is_dir: bool = (p: str)
   ok("test -d '" .. p .. "'")
 
-# `io.open`, not `p:read()` — see the note on `capture` for why the readable
-# protocol emits an undefined symbol on the C backend. `io.open` answers nil for
-# a missing path (measured against /nonexistent/zzz), so the "" contract for an
-# unreadable file is preserved exactly.
 fs_read: str = (p: str)
   h = io.open(p, "r")
   if h == nil
@@ -259,27 +147,6 @@ fs_write = (p: str, content: str)
 fs_mkdir = (p: str)
   must("mkdir -p '" .. p .. "'")
 
-# RETURNED AN EMPTY TABLE FOR EVERY PATTERN, and said nothing about it.
-#
-# The append was `out:insert(line)`. On the C backend the receiver form
-# `t:insert(v)` does NOT reach the table-insert runtime: it is emitted as a
-# DYNAMIC FIELD LOOKUP of "insert" on the table itself —
-# `lua_table_get_str_lit(out, "insert", ...)` — which on a plain table is nil,
-# and `lua_invoke(nil, ...)` then returns silently. So every append was
-# discarded and `fs_glob` answered `{}` for a pattern that matched files.
-#
-# Minimal repro, measured 2026-08-15, four lines and no library involved:
-#     u = {}
-#     u:insert("q")
-#     print(u:len())     -> 0        (and u(1) -> nil)
-# against `{"a","b"}:len() -> 2` and `w(1) = "z"; w:len() -> 1`, so table
-# storage and `:len()` are both fine — `insert` alone is the no-op. The DIRECT
-# backend refuses the same program outright (DNB001 keyed-table-export), so this
-# is a C-backend-only silent wrong answer. Routed to the src lane.
-#
-# The append below is the index form `out(out:len() + 1) = line`, which is what
-# `lib/proof.id` already uses and which is MEASURED to work on this backend.
-# `table.insert(out, line)` also works, but the index form needs no module.
 fs_glob: any = (pattern: str)
   out = {}
   text = capture("ls -1 " .. pattern .. " 2>/dev/null")
@@ -311,28 +178,18 @@ fs_mv = (src: str, dst: str)
 fs_rm = (path: str)
   must("rm -rf '" .. path .. "'")
 
-# Strip trailing newlines. `capture` terminates every line it reads, so a
-# single-line command's output is a value with a "\n" welded on -- fine to
-# print, silently wrong the moment it is used as a PATH.
 chomp: str = (s: str)
   n = s:len()
   while n > 0 and s:byte(n) == 10
     n = n - 1
   s:sub(1, n)
 
-# Both of these returned the temp path WITH capture's trailing newline, so
-# `fs_tmpdir() .. "/x"` built "/var/.../tmp.ABC\n/x". Embedded in a shell
-# command that newline ends the line, and the remainder runs as its own
-# command # giving exit 127 ("command not found") rather than any error
-# naming the real problem. A differential harness reading that 127 in every
-# column concluded the columns AGREED.
 fs_tmp: str = ()
   chomp(capture("mktemp 2>/dev/null"))
 
 fs_tmpdir: str = ()
   chomp(capture("mktemp -d 2>/dev/null"))
 
-# === Process piping (makes Duo ergonomic vs bash pipes) ===
 
 pipe: str = (cmd1: str, cmd2: str)
   capture(cmd1 .. " | " .. cmd2)
@@ -340,24 +197,6 @@ pipe: str = (cmd1: str, cmd2: str)
 pipe_ok: bool = (cmd1: str, cmd2: str)
   ok(cmd1 .. " | " .. cmd2)
 
-# === CLI args — BOTH OF THESE ANSWER NOTHING AT THIS REVISION ===
-#
-# `os.args` is nil in a compiled binary. Measured 2026-08-15, C backend, the
-# same binary invoked three ways:
-#
-#     ./p            -> args() NIL, arg(1,"fb") = "fb"
-#     ./p hello      -> args() NIL, arg(1,"fb") = "fb"     <- argument IGNORED
-#
-# So `args()` is always nil and `arg(n, fallback)` is always `fallback`. `arg`
-# is at least SAFE — its `a == nil` guard fires and it hands back the fallback
-# rather than crashing — but a caller reading argv through it is reading a
-# constant. That is why every harness in tools/wasm/ selects its mode through an
-# ENVIRONMENT VARIABLE and not through argv, and why doing otherwise silently
-# takes the default branch (tools/wasm/HANDOFF.md records a whole 18-module
-# benchmark sweep invalidated by exactly this).
-#
-# Left in place, not deleted: the shape is right and one compiler repair makes
-# both correct. Routed to the src lane with `os.env`/`os.setenv`.
 args: any = ()
   os.args
 
@@ -367,29 +206,6 @@ arg: str = (n: i64, fallback: str)
     return fallback
   return a[n]
 
-# === Quick JSON read — REMOVED, and the removal is the finding ===
-#
-# `json_read_file` was `json:decode(fs_read(p))`. Two separate faults, and
-# together they are why this whole file did not compile:
-#
-#   1. `json:` is subject-first application on a name that is not a subject
-#      here. Bare `json` never resolves: a module is registered only by an
-#      explicit `require("...")` or by an ambient `std.`-prefixed dotted path
-#      (src/codegen.zig collect_require_names). A bare module name collects
-#      NOTHING, so `json` reached the C emitter as a free identifier.
-#   2. The repair — `require("json")` — does not work either. `lib/json.id`
-#      passes `idol check` and then emits C that does not compile (three
-#      lua_Value/const char* type errors inside the embedded module). Measured
-#      2026-08-15 on a four-line probe whose only content was the require.
-#
-# It had ZERO callers in the entire tree — measured, `json_read_file` appears
-# nowhere outside this file — so it never worked and nothing ever noticed. It
-# is deleted rather than left as a compile error that takes every one of this
-# module's other 60 relations down with it, which is exactly what it was doing:
-# ~100 `script.*` call sites across the tree were dead because of a function
-# no one called.
-#
-# Restoring it is one line once `lib/json.id` emits valid C.
 
 exec: any = (cmd: str)
   out = capture(cmd .. " 2>&1")
@@ -445,4 +261,3 @@ M =
   pipe_ok = pipe_ok
   args = args
   arg = arg
-# Ergonomic aliases

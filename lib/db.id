@@ -1,9 +1,4 @@
-# db — Database abstraction: connection pooling, query builder
-# Generic interface for SQLite (via sqlite FFI), PostgreSQL, MySQL with connection pooling.
 
-# ═══════════════════════════════════════════════════════════════
-# Database Configuration
-# ═══════════════════════════════════════════════════════════════
 
 config_new: any = (driver: str)
   {
@@ -21,7 +16,6 @@ config_new: any = (driver: str)
     ssl_mode = "prefer",
     options = {}
   }
-# "sqlite", "postgres", "mysql"
 
 config_set_host: any = (config: any, host: str)
   config.host = host
@@ -45,9 +39,6 @@ config_set_pool: any = (config: any, min: i64, max: i64)
   config.max_connections = max
   config
 
-# ═══════════════════════════════════════════════════════════════
-# Connection Pool
-# ═══════════════════════════════════════════════════════════════
 
 pool_new: any = (config: any)
   pool = {
@@ -57,7 +48,6 @@ pool_new: any = (config: any)
     in_use = 0,
     total = 0
   }
-  # Pre-create minimum connections
   i = 0
   while i < config.min_connections
     conn = connection_new(config)
@@ -69,14 +59,12 @@ pool_new: any = (config: any)
   pool
 
 pool_acquire: any = (pool: any)
-  # Try to get an available connection
   if pool.available:len() > 0
     conn = pool.available[pool.available:len()]
     pool.available[pool.available:len()] = nil
     pool.in_use = pool.in_use + 1
     return conn
 
-  # Create new connection if under limit
   if pool.total < pool.config.max_connections
     conn = connection_new(pool.config)
     if conn
@@ -84,7 +72,6 @@ pool_acquire: any = (pool: any)
       pool.in_use = pool.in_use + 1
       return conn
 
-  # pool exhausted
   nil
 
 pool_release: void = (pool: any, conn: any)
@@ -110,9 +97,6 @@ pool_stats: any = (pool: any)
     utilization = pool.total > 0 and pool.in_use / pool.total or 0
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Database Connection (backed by real SQLite FFI)
-# ═══════════════════════════════════════════════════════════════
 
 connection_new: any = (config: any)
   if config.driver == "sqlite"
@@ -130,7 +114,6 @@ connection_new: any = (config: any)
       transaction_active = false
     }
   else
-    # Non-sqlite drivers not yet supported
     { error = "Unsupported driver: " .. config.driver }
 
 connection_close: void = (conn: any)
@@ -148,7 +131,6 @@ connection_execute: any = (conn: any, sql: str, params: any)
   if not conn.connected
     return { error = "Connection closed" }
   if conn.driver == "sqlite"
-    # Use sqlite.exec for DDL/DML without results
     err = sqlite.execute(conn.handle, sql)
     if err != ""
       return { ok = false, error = err, rows_affected = 0, rows = {}, columns = {} }
@@ -163,7 +145,6 @@ connection_query: any = (conn: any, sql: str, params: any)
     rows = sqlite.query(conn.handle, sql)
     if rows == nil
       return { ok = false, error = "Query failed", rows = {}, columns = {} }
-    # Extract column names from first row
     columns = {}
     if rows:len() > 0
       for k, _ in rows[1]
@@ -209,9 +190,6 @@ connection_rollback: any = (conn: any)
   conn.transaction_active = false
   { ok = true }
 
-# ═══════════════════════════════════════════════════════════════
-# Query Builder
-# ═══════════════════════════════════════════════════════════════
 
 query: any = ()
   {
@@ -300,54 +278,43 @@ build: any = (q: any)
   params = {}
 
 if q.type == "select"
-  # SELECT
   if q.columns:len() == 0
     parts[parts:len() + 1] = "SELECT *"
   else
     parts[parts:len() + 1] = "SELECT " .. q.columns:concat(", ")
 
-  # FROM
   if q.table != ""
     parts[parts:len() + 1] = "FROM " .. q.table
 
-  # JOINs
   for join in q.joins
     parts[parts:len() + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
 
-  # WHERE
   if q.where:len() > 0
     parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
     for p in q.params
       params[params:len() + 1] = p
 
-  # GROUP BY
   if q.group_by:len() > 0
     parts[parts:len() + 1] = "GROUP BY " .. q.group_by:concat(", ")
 
-  # HAVING
   if q.having:len() > 0
     parts[parts:len() + 1] = "HAVING " .. q.having:concat(" AND ")
 
-  # ORDER BY
   if q.order_by:len() > 0
     order_parts = {}
     for o in q.order_by
       order_parts[order_parts:len() + 1] = o.column .. " " .. o.direction
     parts[parts:len() + 1] = "ORDER BY " .. order_parts:concat(", ")
 
-  # LIMIT
   if has(.limit)(q)
     parts[parts:len() + 1] = "LIMIT " .. q.limit:to(str)
 
-  # OFFSET
   if has(.offset)(q)
     parts[parts:len() + 1] = "OFFSET " .. q.offset:to(str)
 else(q.type == "insert")
 
-  # INSERT INTO
   parts[parts:len() + 1] = "INSERT INTO " .. q.table
 
-  # Columns and values
   columns = {}
   values = {}
   placeholders = {}
@@ -360,27 +327,22 @@ else(q.type == "insert")
   parts[parts:len() + 1] = "VALUES (" .. placeholders:concat(", ") .. ")"
 else(q.type == "update")
 
-  # UPDATE
   parts[parts:len() + 1] = "UPDATE " .. q.table
 
-  # SET
   set_parts = {}
   for col, val in q.data
     set_parts[set_parts:len() + 1] = col .. " = $" .. to(str)(params:len() + 1)
     params[params:len() + 1] = val
   parts[parts:len() + 1] = "SET " .. set_parts:concat(", ")
 
-  # WHERE
   if q.where:len() > 0
     parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
     for p in q.params
       params[params:len() + 1] = p
 else(q.type == "delete")
 
-  # DELETE
   parts[parts:len() + 1] = "DELETE FROM " .. q.table
 
-  # WHERE
   if q.where:len() > 0
     parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
     for p in q.params
@@ -390,10 +352,3 @@ else(q.type == "delete")
   sql = parts:concat(" "),
   params = params
 }
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Config
-# Pool
-# Connection
-# Query Builder

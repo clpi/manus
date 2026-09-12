@@ -1,5 +1,3 @@
-# hash.sha512 — SHA-512 hash (mirrors Go's crypto/sha512)
-# Pure-Duo implementation using 32-bit word pairs to represent 64-bit values.
 
 wide: any = (hi: i64, lo: i64)
   { hi = hi % 4294967296, lo = lo % 4294967296 }

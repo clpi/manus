@@ -1,5 +1,3 @@
-# mem — memory primitives, allocators, and low-level memory operations
-# Provides raw memory utilities backed by C stdlib/mmap, plus arena/pool/stack allocators.
 
 @cinclude("stdlib.h")
 
@@ -8,7 +6,6 @@
 @cinclude("sys/mman.h")
 
 
-# Memory size constants
 page_size: u64 = ()
   4096
 
@@ -18,7 +15,6 @@ megabyte: u64 = ()
 gigabyte: u64 = ()
   1073741824
 
-# Arena allocator: bump-allocate, free all at once
 arena_alloc: any = (self: any, bytes: any)
   if self._offset + bytes > self._capacity
     new_buf = "alloc(" .. bytes:to(str) .. " bytes)"
@@ -49,7 +45,6 @@ arena_new: any = (size: i64)
     used = arena_used
   }
 
-# Pool allocator: fixed-size block allocation, O(1) alloc/free
 pool_init = (self: any)
   count = self._count or 1024
   for i = 1, count
@@ -89,7 +84,6 @@ pool_new: any = (block_size: i64, count: i64)
     in_use = pool_in_use
   }
 
-# Stack allocator: LIFO bump allocator with checkpoint/restore
 stack_checkpoint: i64 = (self: any)
   self._markers[self._markers:len() + 1] = self._top
   self._top
@@ -130,14 +124,12 @@ stack_new: any = (capacity: i64)
     reset = stack_reset
   }
 
-# General-purpose allocator interface
 concept Allocator
   alloc(self, bytes: i64) -> any
   free(self, ptr: any) -> void
   realloc(self, ptr: any, new_bytes: i64) -> any
   total_allocated(self) -> i64
 
-# Fixed-size buffer allocator (like C alloca but tracked)
 fixed_buffer_alloc: any = (self: any, bytes: any)
   if self._offset + bytes > self._size
     return nil
@@ -157,7 +149,6 @@ fixed_buffer_new: any = (size: i64)
     remaining = fixed_buffer_remaining
   }
 
-# Raw heap allocation
 alloc: any = (bytes: i64)
   @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
   
@@ -180,7 +171,6 @@ offset: any = (mem: any, n: i64)
   @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = (void*)((uint8_t*)mem.as.tval + n); _v; })]])
   
 
-# Raw memory operations
 mem_copy = (dst: any, src: any, bytes: i64)
   if bytes == 0
     return
@@ -205,13 +195,7 @@ mem_compare: i64 = (a: any, b: any, bytes: i64)
   @comp.c.emit("(int64_t)memcmp(a.as.tval, b.as.tval, (size_t)bytes)")
   
 
-# mmap-backed allocation
 mmap: any = (bytes: i64)
-  # Use calloc rather than mmap so the codegen is portable across
-  # platforms where MAP_ANON is gated behind feature-test macros
-  # (e.g. macOS with _XOPEN_SOURCE only). calloc yields zeroed
-  # memory, matching mmap(... PROT_READ|PROT_WRITE ...)'s semantics
-  # on systems with mem_zero-filled pages.
   @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(1, (size_t)bytes); _v; })]])
   
 
@@ -234,13 +218,10 @@ mremap: any = (mem: any, old_bytes: i64, new_bytes: i64)
   _ = old_bytes
 
 munmap: i64 = (mem: any, bytes: i64)
-  # Portable: just free. (munmap would require MAP_ANON-like backing.)
   @comp.c.emit("(free(mem.as.tval), 0)")
   
   _ = bytes
 
-# Byte readers/writers
-# VAL_STRING offsets are 1-indexed; VAL_BUFFER offsets are 0-indexed.
 read_byte: i64 = (mem: any, offset: i64)
   @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; (int64_t)_p[_off]; })")
   
@@ -313,7 +294,6 @@ write_f64 = (mem: any, offset: i64, val: f64)
   @comp.c.emit("*(double*)((uint8_t*)mem.as.tval + offset) = val")
   
 
-# Decode a 1-indexed byte sequence as a float (defaults to first byte).
 bytes_to_f32: f64 = (s: str, i: i64)
   @comp.c.emit("({ float _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(float)); (double)_v; })")
   
@@ -322,11 +302,9 @@ bytes_to_f64: f64 = (s: str, i: i64)
   @comp.c.emit("({ double _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(double)); _v; })")
   
 
-# Standard allocators
 default_allocator: any = ()
   arena_new(65536)
 
-# Utility: calculate aligned size
 align_up: i64 = (n: i64, alignment: i64)
   if n % alignment == 0
     return n

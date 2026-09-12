@@ -1,42 +1,6 @@
-# jit — executable code buffers for runtime code generation.
-#
-# The three primitives a JIT needs and that no pure Idol code can express:
-# allocate memory that can be made executable, write machine words into it,
-# and call it. Written once here so consumers (e.g. a WASM runtime's tier-1
-# compiler) stay entirely in Idol.
-#
-# Lifecycle: alloc -> w32/w8 -> seal -> call*. Writing after seal is
-# undefined; allocate a fresh buffer instead.
-#
-# WHAT THIS FILE IS UNDER CURRENT LAW. Every relation below is a FOREIGN
-# ORIGIN / ABI REALIZATION: an mmap mapping, an mprotect transition, an icache
-# flush, a dlsym resolution, an indirect call under the C ABI. Those are
-# genuine foreign semantic identities with exact equivalence witnesses
-# (docs/spec/law.md §2), and they are the one category the graph is entitled
-# to hold as foreign rather than native. The `@` spellings that carry them are
-# NOT that classification — `@` is current-world access (law.md §5/§6) and
-# `docs/metaprogramming.md` admits no compiler-directive syntax at all. The
-# owner these ten relations want is a foreign-realization fact with a named
-# producer, and it does not exist yet: SEMANTIC-VOCABULARY-BLOCKED. Renaming
-# the spelling would not establish it, so the spellings are left exactly as
-# they are, censused by `gate/directive.sh`, and repaired by the JIT
-# re-architecture rather than by a rename.
-#
-# REALIZABILITY, MEASURED AT ce03c7eb: no backend reachable from `idol
-# compile` realizes this file. `--backend=auto|direct` refuses
-# (`DNB011 ... relation: __emit missing: unresolved-application-facts`) and
-# `--backend=c --emit=c` refuses (`graph-to-DNIR refused (UnsupportedConstruct)
-# ... refused at: directive`). Only `idol dump-c` still reaches the emitter
-# that honours these payloads. Treat the relations below as unrealizable
-# through the supported entry points until the foreign-realization owner
-# exists.
 
 @comp.c.emit([[
-#include <sys/mman.h>
-#include <dlfcn.h>
-#if defined(__APPLE__)
 extern void sys_icache_invalidate(void *start, size_t len);
-#endif
 
 /* Publish freshly written code: make it executable and flush the icache.
  * W^X is respected by never holding write and execute at the same time,
@@ -44,90 +8,34 @@ extern void sys_icache_invalidate(void *start, size_t len);
  * the allow-jit entitlement. Returns 0 on success. */
 static int idoljitseal(void* p, long n) {
     if (mprotect(p, (size_t)n, PROT_READ | PROT_EXEC) != 0) return -1;
-#if defined(__APPLE__)
     sys_icache_invalidate(p, (size_t)n);
-#else
     __builtin___clear_cache((char*)p, (char*)p + n);
-#endif
     return 0;
 }
 
 static const char* idoljitarch(void) {
-#if defined(__aarch64__) || defined(__arm64__)
     return "arm64";
-#elif defined(__x86_64__)
     return "x86_64";
-#else
     return "unknown";
-#endif
 }
 ]])
 
 
-# Reserve `bytes` of writable memory that seal() can later make executable.
-# Answers a buffer value, or the absent case when the host refused the mapping.
 alloc: any = (bytes: i64)
   return @comp.c.emit("({ lua_Value _v; _v.type = VAL_BUFFER;\n        void* _p = mmap(NULL, (size_t)bytes, PROT_READ | PROT_WRITE,\n                        MAP_PRIVATE | MAP_ANON, -1, 0);\n        _v.as.tval = (_p == MAP_FAILED) ? NULL : _p; _v; })")
 
-# Store one 32-bit instruction word at instruction index `idx`.
-#
-# THE NAME-MISMATCH DEFECT THIS NOTE USED TO WARN ABOUT IS REPAIRED. It read:
-# a bare emit line in STATEMENT position parses into a `.directive` statement
-# carrying the dotted spelling, while every consumer in the C emitter compared
-# against the short spelling instead; the two never compare equal, so the
-# payload is DROPPED and the relation is emitted with an empty body that
-# answers the absent case — a silent no-op, with only a stray
-# `unknown module directive` from sema to mark it.
-#
-# That was the worst possible shape for exactly this relation. A JIT whose word
-# writer does nothing allocates a page, "emits" a body into the void, seals a
-# page of ZEROS and BRANCHES INTO IT — on ARM64 an all-zero word is `udf`, so
-# the observable failure is SIGILL from inside generated code, thousands of
-# lines away from the primitive that lied.
-#
-# MEASURED AT ce03c7eb, which is why this is history and not a warning: both
-# positions now route through ONE predicate. `src/codegen.zig` asks
-# `isCEmitDirectiveName`, which asks `meta_module.isCEmitDirective`, which
-# reads the same alias table the parser reads, so there is no second spelling
-# left to disagree with. Control: `idol dump-c` over a statement-position word
-# writer emits `((uint32_t*)buf.as.tval)[idx] = (uint32_t)word;` into the
-# relation body, and all six recognised emit spellings behave identically.
-# `gate/directive.sh --control` reruns that measurement.
-#
-# THE DECLARED DESCRIPTOR STAYS `any`, and THAT is the reason the write is
-# still an expression. The obvious repair was a word-returning `w32`, and it
-# broke the only consumer there is, in a way no test would have named: a caller
-# that ends an `if` arm with `jit.w32(...)` has that call in TAIL POSITION, and
-# when the callee's result descriptor matches the caller's, the C emitter
-# promotes the tail call to a return. The WASM engine's emitter does that in
-# twenty-eight places, all inside one `i64` relation, so giving `w32` an `i64`
-# result turned twenty-eight instruction emissions into early returns: the
-# emitter stopped after the first one it reached and handed back an ARM64
-# instruction word as its word count (measured: 1522536448 words, which
-# mprotect declined). A primitive's result descriptor is part of its interface
-# even when nobody reads it.
-#
-# The statement-expression below performs the store and yields the absent case,
-# so the emitted C is byte-for-byte what the void form was meant to be.
 w32: any = (buf: any, idx: i64, word: i64)
   return @comp.c.emit("({ ((uint32_t*)buf.as.tval)[idx] = (uint32_t)word; lua_val_nil(); })")
 
-# Read back one 32-bit word (debugging emitted code).
 r32: i64 = (buf: any, idx: i64)
   return @comp.c.emit("(int64_t)((uint32_t*)buf.as.tval)[idx]")
 
-# Store one raw byte at byte offset `off`. Expression position, answering the
-# absent case, for the tail-position reason `w32` is — see the note there.
 w8: any = (buf: any, off: i64, byte: i64)
   return @comp.c.emit("({ ((uint8_t*)buf.as.tval)[off] = (uint8_t)byte; lua_val_nil(); })")
 
-# Make the first `bytes` executable and flush the instruction cache.
-# Returns true on success.
 seal: bool = (buf: any, bytes: i64)
   return @comp.c.emit("(idoljitseal(buf.as.tval, (long)bytes) == 0)")
 
-# Call the buffer. The arity-specific entry points exist because a raw
-# function pointer has to be cast to a concrete signature at the call site.
 call0: i64 = (buf: any)
   return @comp.c.emit("((int64_t(*)(void))buf.as.tval)()")
 call1: i64 = (buf: any, a0: i64)
@@ -135,49 +43,14 @@ call1: i64 = (buf: any, a0: i64)
 call2: i64 = (buf: any, a0: i64, a1: i64)
   return @comp.c.emit("((int64_t(*)(int64_t,int64_t))buf.as.tval)(a0, a1)")
 
-# Expression position for the same reason `w32` is. Answers munmap's status,
-# zero on success.
 release: any = (buf: any, bytes: i64)
   return @comp.c.emit("({ munmap(buf.as.tval, (size_t)bytes); lua_val_nil(); })")
 
-# Address of a host function already loaded in this process, or 0 when the
-# host does not export that name.
-#
-# This is the primitive the other nine could not substitute for. alloc/w32/
-# seal/call* let Idol emit code and ENTER it; nothing let emitted code LEAVE
-# it. A JIT whose generated code cannot reach a host routine can only compile
-# self-contained arithmetic — the moment a body calls out (an imported
-# function, an allocator, a syscall) the whole compilation has to be abandoned
-# and the consumer falls back to its interpreter. `sym` closes that: materialize
-# the returned address into a register and `BLR` it.
-#
-# It resolves by NAME against everything already mapped, so it never widens
-# what a process can reach: a name the host has not linked answers 0, and the
-# caller must check. It says nothing about the signature # the emitted code is
-# what fixes the ABI, exactly as `call0/1/2` do at the other end.
-# `return` is load-bearing here and is NOT the denied trailing-return: written
-# as a bare tail expression this answers 0 for every name, exactly as its nine
-# siblings above would. Verified by value against a symbol the host does have.
 sym: i64 = (name: str)
   return @comp.c.emit("(int64_t)(intptr_t)dlsym(RTLD_DEFAULT, name)")
 
-# Base address of a buffer `alloc` returned, or 0 if it refused the mapping.
-#
-# `sym` let emitted code reach a HOST function; this lets it reach ITS OWN
-# functions through a table rather than a fixed branch. A wasm `call_indirect`
-# resolves a table slot to a function index at run time, so the branch target
-# is not a constant and no `BL` displacement can express it: the emitter has to
-# bake in the address of a dispatch table it fills after every body has an
-# address, and load the target from there. `mem.addr` cannot answer for these
-# buffers — `alloc` hands back a VAL_BUFFER, and casting that struct to an
-# integer is a C type error, not an address.
-#
-# `return` is load-bearing for the same reason it is on `sym`: written as a
-# bare tail expression this answers 0 for every buffer. Verified by value
-# against a buffer whose first word was then written through the address.
 addr: i64 = (buf: any)
   return @comp.c.emit("(int64_t)(intptr_t)buf.as.tval")
 
-# True when this build targets an architecture the emitter can produce for.
 arch: str = ()
   return @comp.c.emit("idoljitarch()")

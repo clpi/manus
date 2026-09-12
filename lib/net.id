@@ -1,10 +1,4 @@
-# net — TCP/UDP sockets + HTTP client/server
-# Architecture: When the module variable is named "net", the duo codegen emits
-# direct C calls (duo_net_tcp_connect, duo_net_http_get, etc.) for zero-overhead
-# networking. This fallback uses curl for HTTP and stubs for raw sockets.
-# A native C binding via FFI is planned (see duo_gap_analysis.md).
 
-# Parse a URL into {scheme, host, port, path}
 parse_url: any = (url: str)
   scheme = "http"
   rest = url
@@ -29,9 +23,7 @@ parse_url: any = (url: str)
     host = host:sub(1, colon_pos - 1)
   { scheme = scheme, host = host, port = port, path = path }
 
-# HTTP GET via curl (fallback when variable not named "net")
 http_get: str = (url: str)
-  # Sanitize URL to prevent shell injection
   safe_url = url:gsub("[;&|`$]", "")
   f = io.popen("curl -sL --max-time 30 -- " .. safe_url, "r")
   if f == nil
@@ -40,14 +32,12 @@ http_get: str = (url: str)
   f:close()
   return body
 
-# HTTP POST via curl (fallback)
 http_post: str = (url: str, body: str, content_type: str)
   ct = content_type
   if ct == nil
     ct = "application/x-www-form-urlencoded"
   if body == nil
     body = ""
-  # Sanitize URL and escape body for shell
   safe_url = url:gsub("[;&|`$]", "")
   escaped = body:gsub("'", "'\\''")
   cmd = "curl -sL --max-time 30 -X POST" .. " -H 'Content-Type: " .. ct .. "'" .. " --data '" .. escaped .. "' -- " .. safe_url
@@ -58,14 +48,11 @@ http_post: str = (url: str, body: str, content_type: str)
   f:close()
   return resp
 
-# HTTP request returning {body, status} via curl
 http_request: any = (method: str, url: str, body: str, headers: any)
-  # Sanitize URL to prevent shell injection
   safe_url = url:gsub("[;&|`$]", "")
   cmd = "curl -si --max-time 30 -X " .. method
   if headers
     for k, v in headers
-      # Also sanitize header values
       safe_k = k:gsub("[;&|`$']", "")
       safe_v = v:to(str):gsub("[;&|`$']", "")
       cmd = cmd .. " -H '" .. safe_k .. ": " .. safe_v .. "'"
@@ -85,53 +72,33 @@ http_request: any = (method: str, url: str, body: str, headers: any)
     resp_b = raw:sub(sep + 4)
   { body = resp_b, status = status }
 
-# Raw TCP connect — stub (real impl via codegen interception when var = "net")
 connect: any = (host: str, port: i64)
-  # intercepted: duo_net_tcp_connect(host, port)
   nil
 
-# TCP listen — stub
 listen: any = (host: str, port: i64, backlog: i64)
-  # intercepted: duo_net_tcp_listen(host, port, backlog)
   nil
 
-# TCP accept — stub
 accept: any = (srv_fd: any)
-  # intercepted: duo_net_tcp_accept(srv_fd)
   nil
 
-# TCP send — stub
 send: i64 = (fd: any, data: str)
-  # intercepted: duo_net_tcp_send(fd, data)
   0 - 1
 
-# TCP recv — stub
 recv: any = (fd: any, maxlen: i64)
-  # intercepted: duo_net_tcp_recv(fd, maxlen)
   nil
 
-# TCP close — stub
 close = (fd: any)
-  # intercepted: duo_net_tcp_close(fd)
   void
 
-# UDP socket — stub
 udp_socket: any = (host: str, port: i64)
-  # intercepted: duo_net_udp_socket_open(host, port)
   nil
 
-# UDP sendto — stub
 udp_sendto: i64 = (fd: any, data: str, host: str, port: i64)
-  # intercepted: duo_net_udp_sendto(fd, data, host, port)
   0 - 1
 
-# UDP recvfrom — stub
 udp_recvfrom: any = (fd: any, maxlen: i64)
-  # intercepted: duo_net_udp_recvfrom(fd, maxlen)
   nil
 
-# Simple blocking HTTP server (requires native socket support via codegen path)
-# handler(method, path, raw_request): response_body string
 http_serve = (port: i64, handler: any)
   srv = listen("0.0.0.0", port, 128)
   if srv == nil
@@ -156,7 +123,5 @@ http_serve = (port: i64, handler: any)
     close(cli)
   close(srv)
 
-# DNS resolve — codegen-intercepted to use getaddrinfo
 dns_resolve: any = (host: str)
-  # intercepted: duo_net_dns_resolve(host)
   nil

@@ -1,9 +1,4 @@
-# ml.export — Model export (ONNX, PyTorch, etc.)
-# For saving trained models to standard formats.
 
-# ═══════════════════════════════════════════════════════════════
-# ONNX Export
-# ═══════════════════════════════════════════════════════════════
 
 onnx_graph_new: any = (name: str)
   {
@@ -49,8 +44,6 @@ onnx_model_new: any = (graph: any, opset: i64)
   }
 
 onnx_model_encode: any = (model: any)
-  # Encode model as JSON (ONNX protobuf would require a protobuf encoder)
-  # This JSON representation captures the full graph structure for interoperability
   graph_summary =
     name = model.graph.name
     nodes = {}
@@ -79,9 +72,6 @@ onnx_model_save: any = (model: any, path: str)
   f:close()
   { ok = true, path = path, size = data:len() }
 
-# ═══════════════════════════════════════════════════════════════
-# PyTorch Export (state dict)
-# ═══════════════════════════════════════════════════════════════
 
 pytorch_state_dict_new: any = ()
   {
@@ -93,7 +83,6 @@ pytorch_state_dict_add = (state_dict: any, name: str, tensor: any)
   state_dict.tensors[name] = tensor
 
 pytorch_state_dict_save: any = (state_dict: any, path: str)
-  # Encode state dict as JSON
   payload =
     tensors = {}
     metadata = state_dict.metadata
@@ -110,9 +99,6 @@ pytorch_state_dict_save: any = (state_dict: any, path: str)
   f:close()
   { ok = true, path = path, size = encoded:len() }
 
-# ═══════════════════════════════════════════════════════════════
-# SafeTensors Export
-# ═══════════════════════════════════════════════════════════════
 
 safetensors_new: any = ()
   {
@@ -127,7 +113,6 @@ safetensors_add_tensor = (st: any, name: str, tensor: any, dtype: str)
     shape = tensor.shape or { tensor.size }
 
 safetensors_encode: any = (st: any)
-  # SafeTensors format: JSON header mapping tensor names to dtype/shape/offsets
   header = {}
   offset = 0
   for name, tensor in st.tensors
@@ -149,16 +134,12 @@ safetensors_save: any = (st: any, path: str)
   f = io.open(path, "w")
   if f == nil
     return { ok = false, error = "Cannot create file: " .. path }
-  # Write 8-byte header length prefix, then header JSON
   header_len = data.header_size
   f:write(string.pack("<I8", header_len))
   f:write(data.header)
   f:close()
   { ok = true, path = path, size = 8 + data.header_size + data.data_size }
 
-# ═══════════════════════════════════════════════════════════════
-# GGUF Export
-# ═══════════════════════════════════════════════════════════════
 
 gguf_writer_new: any = (quantization: str)
   {
@@ -176,7 +157,6 @@ gguf_writer_add_metadata = (gw: any, key: str, value: any)
   gw.metadata[key] = value
 
 gguf_writer_encode: any = (gw: any)
-  # GGUF header as JSON (simplified; real GGUF uses binary format)
   payload =
     format = "gguf"
     version = 3
@@ -203,9 +183,6 @@ gguf_writer_save: any = (gw: any, path: str)
   f:close()
   { ok = true, path = path, size = data.size }
 
-# ═══════════════════════════════════════════════════════════════
-# Model Conversion
-# ═══════════════════════════════════════════════════════════════
 
 convert_onnx_to_safetensors: any = (onnx_model: any)
   st = safetensors_new()
@@ -224,11 +201,3 @@ convert_gguf_to_safetensors: any = (gguf_model: any)
   for name, tensor in gguf_model.tensors
     safetensors_add_tensor(st, name, tensor.data, "f32")
   st
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# ONNX
-# PyTorch
-# SafeTensors
-# GGUF
-# Conversion

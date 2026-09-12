@@ -1,9 +1,4 @@
-# crypto.aes — AES encryption/decryption (AES-128, AES-192, AES-256)
-# For ward runtime security and general cryptographic needs.
 
-# ═══════════════════════════════════════════════════════════════
-# AES S-Box (pre-computed)
-# ═══════════════════════════════════════════════════════════════
 
 sbox = {
   99,
@@ -264,7 +259,6 @@ sbox = {
   22
 }
 
-# AES Inverse S-Box (pre-computed, correct for decryption)
 AES_INV_SBOX = {
   82,
   9,
@@ -524,7 +518,6 @@ AES_INV_SBOX = {
   125
 }
 
-# Round constants
 rcon = {
   1,
   2,
@@ -538,7 +531,6 @@ rcon = {
   54
 }
 
-# Galois field multiplication
 aes_gmul: i64 = (a: i64, b: i64)
   p = 0
   i = 0
@@ -553,9 +545,6 @@ aes_gmul: i64 = (a: i64, b: i64)
     i = i + 1
   p
 
-# ═══════════════════════════════════════════════════════════════
-# Key Expansion
-# ═══════════════════════════════════════════════════════════════
 
 key_expansion: any = (key: any, key_len: i64)
   if key_len == 16
@@ -579,7 +568,6 @@ while i < 4 * (nr + 1)
   temp = { w[i - 1][1], w[i - 1][2], w[i - 1][3], w[i - 1][4] }
 
 if i % nk == 0
-  # RotWord + SubWord + Rcon
   temp = {
     sbox[temp[2] + 1] ~ rcon[i / nk],
     sbox[temp[3] + 1],
@@ -587,7 +575,6 @@ if i % nk == 0
     sbox[temp[1] + 1]
   }
 else(nk > 6 and i % nk == 4)
-  # SubWord only for AES-256
   temp = {
     sbox[temp[1] + 1],
     sbox[temp[2] + 1],
@@ -604,9 +591,6 @@ i = i + 1
 
 { round_keys = w, num_rounds = nr }
 
-# ═══════════════════════════════════════════════════════════════
-# AES Block Operations
-# ═══════════════════════════════════════════════════════════════
 
 aes_sub_bytes: void = (state: any)
   i = 0
@@ -621,14 +605,12 @@ aes_inv_sub_bytes: void = (state: any)
     i = i + 1
 
 aes_inv_shift_rows: void = (state: any)
-  # Row 1: shift right by 1
   temp = state[13]
   state[13] = state[9]
   state[9] = state[5]
   state[5] = state[1]
   state[1] = temp
 
-  # Row 2: shift right by 2
   temp = state[2]
   state[2] = state[10]
   state[10] = temp
@@ -636,7 +618,6 @@ aes_inv_shift_rows: void = (state: any)
   state[6] = state[14]
   state[14] = temp
 
-  # Row 3: shift right by 3
   temp = state[3]
   state[3] = state[7]
   state[7] = state[11]
@@ -658,14 +639,12 @@ state[col * 4 + 3] = aes_gmul(s0, 11) ~ aes_gmul(s1, 13) ~ aes_gmul(s2, 9) ~ aes
 col = col + 1
 
 aes_shift_rows: void = (state: any)
-  # Row 1: shift left by 1
   temp = state[1]
   state[1] = state[5]
   state[5] = state[9]
   state[9] = state[13]
   state[13] = temp
 
-  # Row 2: shift left by 2
   temp = state[2]
   state[2] = state[10]
   state[10] = temp
@@ -673,7 +652,6 @@ aes_shift_rows: void = (state: any)
   state[6] = state[14]
   state[14] = temp
 
-  # Row 3: shift left by 3
   temp = state[15]
   state[15] = state[11]
   state[11] = state[7]
@@ -700,9 +678,6 @@ aes_add_round_key: void = (state: any, w: any, round: i64)
     state[i] = state[i] ~ w[round * 4 + i / 4][i % 4 + 1]
     i = i + 1
 
-# ═══════════════════════════════════════════════════════════════
-# AES Encrypt Block (single 16-byte block)
-# ═══════════════════════════════════════════════════════════════
 
 encrypt_block: any = (block: any, expanded_key: any)
   state = {}
@@ -714,10 +689,8 @@ encrypt_block: any = (block: any, expanded_key: any)
 w = expanded_key.round_keys
 nr = expanded_key.num_rounds
 
-# Initial round key addition
 aes_add_round_key(state, w, 0)
 
-# Main rounds
 round = 1
 while round < nr
   aes_sub_bytes(state)
@@ -726,16 +699,12 @@ while round < nr
   aes_add_round_key(state, w, round)
   round = round + 1
 
-# Final round (no MixColumns)
 aes_sub_bytes(state)
 aes_shift_rows(state)
 aes_add_round_key(state, w, nr)
 
 state
 
-# ═══════════════════════════════════════════════════════════════
-# AES Decrypt Block
-# ═══════════════════════════════════════════════════════════════
 
 decrypt_block: any = (block: any, expanded_key: any)
   state = {}
@@ -764,15 +733,11 @@ aes_add_round_key(state, w, 0)
 
 state
 
-# ═══════════════════════════════════════════════════════════════
-# AES-CBC Mode
-# ═══════════════════════════════════════════════════════════════
 
 cbc_encrypt: any = (plaintext: any, key: any, iv: any)
   key_len = key:len()
   expanded = key_expansion(key, key_len)
 
-  # PKCS7 padding
   pad_len = 16 - plaintext:len() % 16
   padded = {}
   for i = 1, plaintext:len()
@@ -796,7 +761,6 @@ while block_idx <= padded:len()
 encrypted = encrypt_block(block, expanded)
 for i = 0, 15
   ciphertext[ciphertext:len() + 1] = encrypted[i]
-# Convert to 1-based for consistent XOR in next iteration
 prev = {}
 for i = 0, 15
   prev[i + 1] = encrypted[i]
@@ -822,13 +786,11 @@ while block_idx <= ciphertext:len()
 decrypted = decrypt_block(block, expanded)
 for i = 0, 15
   plaintext[plaintext:len() + 1] = decrypted[i] ~ prev[i + 1]
-# Convert current ciphertext block to 1-based for next iteration
 prev = {}
 for i = 0, 15
   prev[i + 1] = block[i]
 block_idx = block_idx + 16
 
-# Remove PKCS7 padding
 if plaintext:len() > 0
   pad = plaintext[plaintext:len()]
   if pad >= 1 and pad <= 16
@@ -837,7 +799,6 @@ if plaintext:len() > 0
       if plaintext[i] != pad
         return plaintext
       i = i + 1
-    # Valid padding, trim
     new_len = plaintext:len() - pad
     trimmed = {}
     i = 1
@@ -847,9 +808,6 @@ if plaintext:len() > 0
     return trimmed
 plaintext
 
-# ═══════════════════════════════════════════════════════════════
-# AES-CTR Mode (stream cipher)
-# ═══════════════════════════════════════════════════════════════
 
 ctr_crypt: any = (data: any, key: any, nonce: any)
   key_len = key:len()
@@ -871,7 +829,6 @@ while byte_idx < 16 and block_idx + byte_idx < data:len()
   output[output:len() + 1] = data[block_idx + byte_idx + 1] ~ keystream[byte_idx]
   byte_idx = byte_idx + 1
 
-# Increment counter
 i = 15
 while i >= 0
   counter[i] = (counter[i] + 1) & 255
@@ -883,9 +840,6 @@ block_idx = block_idx + 16
 
 output
 
-# ═══════════════════════════════════════════════════════════════
-# Utility functions
-# ═══════════════════════════════════════════════════════════════
 
 string_to_bytes: any = (s: str)
   bytes = {}
@@ -902,12 +856,3 @@ bytes_to_string: str = (bytes: any)
     parts[parts:len() + 1] = bytes[i]:char()
     i = i + 1
   parts:concat()
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Key expansion
-# Block operations
-# CBC mode
-# CTR mode
-# Utilities
-# Constants

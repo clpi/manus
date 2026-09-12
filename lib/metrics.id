@@ -1,9 +1,4 @@
-# metrics — Observability: counters, gauges, histograms, timers
-# For profiling ward runtime, ML inference, and application monitoring.
 
-# ═══════════════════════════════════════════════════════════════
-# Counter (monotonically increasing)
-# ═══════════════════════════════════════════════════════════════
 
 counter_new: any = (name: str, help: str)
   {
@@ -25,9 +20,6 @@ counter_get: f64 = (c: any)
 counter_reset = (c: any)
   c.value = 0
 
-# ═══════════════════════════════════════════════════════════════
-# Gauge (can go up and down)
-# ═══════════════════════════════════════════════════════════════
 
 gauge_new: any = (name: str, help: str)
   {
@@ -53,9 +45,6 @@ gauge_dec = (g: any, amount: f64)
 gauge_get: f64 = (g: any)
   g.value
 
-# ═══════════════════════════════════════════════════════════════
-# Histogram (value distribution)
-# ═══════════════════════════════════════════════════════════════
 
 histogram_new: any = (name: str, help: str, buckets: any)
   if buckets == nil
@@ -117,9 +106,6 @@ histogram_reset = (h: any)
   for i = 1, h.buckets:len()
     h.bucket_counts[i] = 0
 
-# ═══════════════════════════════════════════════════════════════
-# Timer (measure elapsed time)
-# ═══════════════════════════════════════════════════════════════
 
 timer_new: any = (name: str)
   {
@@ -158,9 +144,6 @@ timer_get: any = (t: any)
     histogram = histogram_get(t.histogram)
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Registry (collect all metrics)
-# ═══════════════════════════════════════════════════════════════
 
 registry_new: any = ()
   {
@@ -209,11 +192,3 @@ registry_summary: any = (reg: any)
       type = "timer"
       value = timer_get(t)
   summary
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Counter
-# Gauge
-# Histogram
-# Timer
-# Registry

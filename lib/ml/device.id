@@ -1,7 +1,3 @@
-# ml.device — Device selection (runtime table + compile-time @device hints)
-#
-# Use `@device(.auto)` on functions for backend selection at compile time.
-# This module tracks runtime placement for tensors and pipelines.
 
 cpu: any = ()
     return { kind = "cpu", id = 0 }
@@ -23,27 +19,22 @@ webgpu: any = ()
 wasm_simd: any = ()
     return { kind = "wasm", id = 0 }
 
-# Pick best device for current host (Metal on Apple, CUDA on NVIDIA, else CPU)
 best: any = ()
-    # Check for CUDA
     cuda_env = env("CUDA_VISIBLE_DEVICES")
     if cuda_env and cuda_env != ""
         return cuda(0)
-    # Check for Apple Silicon / Metal via uname
     handle = io.popen("uname -m 2>/dev/null")
     if handle
         arch = handle:read("*l") or ""
         handle:close()
         if arch == "arm64" or arch == "aarch64"
-            # Likely Apple Silicon — check for Metal support
             metal_handle = io.popen("system_profiler SPDisplaysDataType 2>/dev/null | head -5")
             if metal_handle
                 info = metal_handle:read("*a") or ""
                 metal_handle:close()
                 if info:find("Metal") or info:find("Apple")
                     return metal(0)
-            return metal(0)  # Default to Metal on ARM
-    # Check for NVIDIA GPU
+            return metal(0)
     nvidia_handle = io.popen("nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1")
     if nvidia_handle
         gpu_name = nvidia_handle:read("*l") or ""
@@ -52,7 +43,6 @@ best: any = ()
             return cuda(0)
     cpu()
 
-# Place a tensor descriptor on a device (metadata only until GPU buffers land)
 on: any = (tensor, dev)
     out = {}
     for k, v in tensor
@@ -60,7 +50,6 @@ on: any = (tensor, dev)
     out.device = dev
     return out
 
-# Pipeline stage placement: { encoder = metal(), llm = cuda(0), ... }
 place: any = (stages)
     return { type = "placement", stages = stages }
 

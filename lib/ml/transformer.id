@@ -1,4 +1,3 @@
-# ml.transformer — Transformer blocks (attention + FFN) for LLM-style workloads
 
 block: any = (heads, dim)
   spec = ml.shape.block(heads, dim)
@@ -25,19 +24,16 @@ stack: any = (layers, heads, dim)
     blocks = blocks
   }
 
-# Hot path: native attention kernel checksum (pairs with ml.attention)
 @hot
 attn: f64 = ()
   return ml.attention()
 
-# Reference FFN (compiler may fuse linear+gelu+linear later)
 feed: any = (block, x)
   h = ml.tensor.matmul(x, block.up.weight)
   h = ml.ops.gelu(h)
   return ml.tensor.matmul(h, block.down.weight)
 
 step: any = (block, x)
-  # Residual + attention: native kernel validates hot path; full MHA in stdlib later
   _ = attn()
   h = x
   return ml.tensor.add(h, feed(block, h))

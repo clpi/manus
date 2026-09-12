@@ -1,4 +1,3 @@
-# hex — Hexadecimal encoding and decoding utilities
 
 encode: str = (s: str)
   crypto.hex_encode(s)

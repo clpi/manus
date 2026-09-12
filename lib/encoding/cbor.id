@@ -1,22 +1,14 @@
-# encoding.cbor — CBOR (RFC 7049) encoder/decoder
-# Concise Binary Object Representation: self-describing binary format
-# that supports integers, floats, strings, arrays, maps, and more.
 
 M = {}
 
-# Major types
 MT_UINT = 0
 MT_NEGINT = 1
 MT_BYTES = 2
 MT_TEXT = 3
 MT_ARRAY = 4
 MT_MAP = 5
-# float, bool, nil, etc.
 MT_SPECIAL = 7
 
-# ═══════════════════════════════════════════════════════════════
-# Encoder
-# ═══════════════════════════════════════════════════════════════
 
 encode: str = (v: any)
   buf = {}
@@ -52,16 +44,12 @@ encode_value = (v: any, buf: any)
 
 encode_number = (n: f64, buf: any)
   if n >= 0 and n:floor() == n and n < 18446744073709552000.0
-    # Unsigned integer
     encode_uint(MT_UINT, n:floor(), buf)
   else(n < 0 and n:floor() == n and n >= -18446744073709552000.0)
-    # Negative integer: store as -1 - n
     encode_uint(MT_NEGINT, -1 - n:floor(), buf)
   else(n:floor() == n and n:abs() < 2 ^ 53)
-    # Large integer — encode as 8-byte float
     encode_float64(n, buf)
   else
-    # Float
     encode_float64(n, buf)
 
 encode_uint = (major: i64, value: i64, buf: any)
@@ -82,7 +70,6 @@ encode_uint = (major: i64, value: i64, buf: any)
     buf(buf:len() + 1) = value % 256:char()
   else
     buf(buf:len() + 1) = major * 32 + 27:char()
-    # 8-byte big-endian
     hi = value / 4294967296:floor()
     lo = value % 4294967296
     buf(buf:len() + 1) = hi / 16777216:floor() % 256:char()
@@ -97,9 +84,7 @@ encode_uint = (major: i64, value: i64, buf: any)
 encode_float64 = (value: f64, buf: any)
   -- float64
   buf(buf:len() + 1) = 251:char()
-  # IEEE 754 double-precision big-endian
   if value != value
-    # NaN: all exponent bits set, non-zero mantissa
     buf(buf:len() + 1) = 127:char()
     buf(buf:len() + 1) = 248:char()
     buf(buf:len() + 1) = 0:char()
@@ -129,13 +114,11 @@ encode_float64 = (value: f64, buf: any)
     buf(buf:len() + 1) = 0:char()
     buf(buf:len() + 1) = 0:char()
     return
-  # Use string.pack if available, else manual encoding
   if string.pack
     packed = string.pack(">d", value)
     for i = 1, packed:len()
       buf(buf:len() + 1) = packed:sub(i, i)
   else
-    # Manual IEEE 754 encoding
     sign = 0
     if value < 0
       sign = 1
@@ -150,7 +133,6 @@ encode_float64 = (value: f64, buf: any)
       buf(buf:len() + 1) = 0:char()
       buf(buf:len() + 1) = 0:char()
       return
-    # Decompose into mantissa and exponent
     exp = 0
     while value >= 2
       value = value / 2
@@ -227,12 +209,8 @@ is_array: bool = (t: any)
     n = n + 1
   return n == t:len() and n > 0
 
-# ═══════════════════════════════════════════════════════════════
-# Decoder
-# ═══════════════════════════════════════════════════════════════
 
 decode: any = (data: str)
-  # mutable position wrapper
   pos = { 1 }
   return decode_value(data, pos)
 
@@ -309,7 +287,6 @@ decode_text: str = (addinfo: i64, data: str, pos: any)
 
 decode_array: any = (addinfo: i64, data: str, pos: any)
   if addinfo == 31
-    # Indefinite length array
     arr = {}
     while true
       if pos(1) > data:len()
@@ -330,7 +307,6 @@ decode_array: any = (addinfo: i64, data: str, pos: any)
 
 decode_map: any = (addinfo: i64, data: str, pos: any)
   if addinfo == 31
-    # Indefinite length map
     m = {}
     while true
       if pos(1) > data:len()
@@ -354,26 +330,20 @@ decode_map: any = (addinfo: i64, data: str, pos: any)
   return m
 
 decode_special: any = (addinfo: i64, data: str, pos: any)
-  # false
   if addinfo == 20
     return false
-  # true
   if addinfo == 21
     return true
-  # null
   if addinfo == 22
     return nil
-  # undefined
   if addinfo == 23
     return nil
   if addinfo == 25
-    # float16
     b0 = data:byte(pos(1))
     b1 = data:byte(pos(1) + 1)
     pos(1) = pos(1) + 2
     return decode_float16(b0, b1)
   if addinfo == 26
-    # float32
     b0 = data:byte(pos(1))
     b1 = data:byte(pos(1) + 1)
     b2 = data:byte(pos(1) + 2)
@@ -381,7 +351,6 @@ decode_special: any = (addinfo: i64, data: str, pos: any)
     pos(1) = pos(1) + 4
     return decode_float32(b0, b1, b2, b3)
   if addinfo == 27
-    # float64
     b0 = data:byte(pos(1))
     b1 = data:byte(pos(1) + 1)
     b2 = data:byte(pos(1) + 2)
@@ -406,7 +375,6 @@ decode_float16: f64 = (b0: i64, b1: i64)
   if exp == 31
     if mantissa == 0
       return sign * math.huge
-    # NaN
     return 0 / 0
   return sign * (1 + mantissa * 2 ^ -10) * 2 ^ (exp - 15)
 

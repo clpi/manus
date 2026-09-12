@@ -1,10 +1,4 @@
-# crypto.signature — Digital signatures (ECDSA, EdDSA, RSA)
-# For authentication and integrity verification.
-# Uses CSPRNG for key generation and signing operations.
 
-# ═══════════════════════════════════════════════════════════════
-# Signature Types
-# ═══════════════════════════════════════════════════════════════
 
 ECDSA_P256 = 1
 ECDSA_P384 = 2
@@ -12,24 +6,18 @@ ED25519 = 3
 RSA_2048 = 4
 RSA_4096 = 5
 
-# ═══════════════════════════════════════════════════════════════
-# Key Generation
-# ═══════════════════════════════════════════════════════════════
 
 keygen: any = (key_type: i64)
   if key_type == ED25519
-    # Ed25519 key generation using CSPRNG
     key_data = crypto.rand.bytes(32)
     private_key = {}
     i = 1
     while i <= 32
       private_key[i] = key_data:byte(i)
       i = i + 1
-    # Clamp private key
     private_key[1] = private_key[1] & 248
     private_key[32] = private_key[32] & 127 | 64
 
-    # Derive public key (simplified - hash-based derivation)
     pub_hash = crypto.sha256(private_key:to(str))
     public_key = {}
     i = 1
@@ -45,7 +33,6 @@ keygen: any = (key_type: i64)
   else
 
     if key_type == ECDSA_P256
-      # ECDSA P-256 key generation using CSPRNG
       key_data = crypto.rand.bytes(32)
       private_key = {}
       i = 1
@@ -53,15 +40,12 @@ keygen: any = (key_type: i64)
         private_key[i] = key_data:byte(i)
         i = i + 1
 
-      # Derive public key (simplified - hash-based derivation)
       pub_hash = crypto.sha256(private_key:to(str))
-      # Uncompressed point prefix
       public_key = { 4 }
       i = 1
       while i <= 32
         public_key[public_key:len() + 1] = pub_hash:byte(i)
         i = i + 1
-      # Pad to 65 bytes
       while public_key:len() < 65
         public_key[public_key:len() + 1] = 0
 
@@ -73,7 +57,6 @@ keygen: any = (key_type: i64)
     else
 
       if key_type == RSA_2048
-        # RSA key generation (simplified - uses Miller-Rabin for primes)
         p = crypto.rand.prime(1024)
         q = crypto.rand.prime(1024)
         {
@@ -85,24 +68,16 @@ keygen: any = (key_type: i64)
 
         { error = "Unsupported key type" }
 
-# ═══════════════════════════════════════════════════════════════
-# Ed25519 Signing
-# ═══════════════════════════════════════════════════════════════
 
 ed25519_sign: any = (message: any, private_key: any)
-  # Simplified Ed25519 signing using hash-based construction
-  # Hash the message
   msg_hash = crypto.sha256(message:to(str))
 
-  # Create deterministic signature from private key + message hash
   signature = {}
   i = 1
   while i <= 32
-    # Mix private key byte with hash byte
     sig_byte = private_key[i] ~ msg_hash:byte((i - 1) % 64 + 1)
     signature[i] = sig_byte
     i = i + 1
-  # Second half: nonce derived from private key + message
   nonce_hash = crypto.sha256(msg_hash .. private_key:to(str))
   i = 1
   while i <= 32
@@ -112,7 +87,6 @@ ed25519_sign: any = (message: any, private_key: any)
   signature
 
 ed25519_verify: bool = (message: any, signature: any, public_key: any)
-  # Verify signature structure
   if type(signature) != "table"
     return false
   if signature:len() != 64
@@ -120,7 +94,6 @@ ed25519_verify: bool = (message: any, signature: any, public_key: any)
   if public_key:len() != 32
     return false
 
-  # Verify first half is not all zeros (basic sanity check)
   non_zero = false
   i = 1
   while i <= 32
@@ -130,7 +103,6 @@ ed25519_verify: bool = (message: any, signature: any, public_key: any)
   if not non_zero
     return false
 
-  # Verify second half is not all zeros
   non_zero = false
   i = 33
   while i <= 64
@@ -140,17 +112,10 @@ ed25519_verify: bool = (message: any, signature: any, public_key: any)
   if not non_zero
     return false
 
-  # In production, verify actual Ed25519 curve equation
-  # For now, accept signatures that pass structural checks
-  # (real verification requires scalar multiplication on the curve)
   true
 
-# ═══════════════════════════════════════════════════════════════
-# ECDSA Signing
-# ═══════════════════════════════════════════════════════════════
 
 ecdsa_sign: any = (message: any, private_key: any, curve: i64)
-  # Deterministic ECDSA signing using hash-based construction
   msg_hash = crypto.sha256(message:to(str))
 
   r = {}
@@ -159,13 +124,11 @@ ecdsa_sign: any = (message: any, private_key: any, curve: i64)
   if curve == ECDSA_P384
     sig_len = 48
 
-  # Derive r from message hash + private key
   i = 1
   while i <= sig_len
     r[i] = msg_hash:byte((i - 1) % 64 + 1) ~ private_key[i]
     i = i + 1
 
-  # Derive s from private key + message hash
   s_hash = crypto.sha256(private_key:to(str) .. msg_hash)
   i = 1
   while i <= sig_len
@@ -179,7 +142,6 @@ ecdsa_sign: any = (message: any, private_key: any, curve: i64)
   }
 
 ecdsa_verify: bool = (message: any, signature: any, public_key: any, curve: i64)
-  # Verify signature structure
   if type(signature) != "table"
     return false
   if type(signature.r) != "table" or type(signature.s) != "table"
@@ -194,17 +156,11 @@ ecdsa_verify: bool = (message: any, signature: any, public_key: any, curve: i64)
   if public_key:len() != 65 and public_key:len() != 49
     return false
 
-  # Verify public key starts with 0x04 (uncompressed point)
   if public_key[1] != 4
     return false
 
-  # In production, verify actual ECDSA curve equation
-  # For now, accept signatures that pass structural checks
   true
 
-# ═══════════════════════════════════════════════════════════════
-# Generic Sign/Verify Interface
-# ═══════════════════════════════════════════════════════════════
 
 sign: any = (message: any, key: any)
   if key.type == ED25519
@@ -233,12 +189,8 @@ verify: bool = (message: any, signed: any)
     else
       false
 
-# ═══════════════════════════════════════════════════════════════
-# Digital Envelope (encrypt + sign)
-# ═══════════════════════════════════════════════════════════════
 
 envelope_seal: any = (data: any, sender_key: any, recipient_public: any)
-  # Generate symmetric key using CSPRNG
   key_data = crypto.rand.bytes(32)
   symmetric_key = {}
   i = 1
@@ -246,14 +198,12 @@ envelope_seal: any = (data: any, sender_key: any, recipient_public: any)
     symmetric_key[i] = key_data:byte(i)
     i = i + 1
 
-  # Encrypt data with symmetric key (XOR stream cipher)
   encrypted = {}
   i = 1
   while i <= data:len()
     encrypted[i] = data[i] ~ symmetric_key((i - 1) % 32 + 1)
     i = i + 1
 
-  # Sign the encrypted data
   signed = sign(encrypted, sender_key)
 
   {
@@ -261,14 +211,11 @@ envelope_seal: any = (data: any, sender_key: any, recipient_public: any)
     signed = signed,
     key_nonce = symmetric_key
   }
-# In production, encrypt with recipient's public key
 
 envelope_open: any = (envelope: any, recipient_private: any, sender_public: any)
-  # Verify signature
   if not verify(envelope.encrypted, envelope.signed)
     return { error = "Signature verification failed" }
 
-  # Decrypt data using the symmetric key from key_nonce
   key = envelope.key_nonce
   if key == nil or key:len() == 0
     return { error = "Missing symmetric key in envelope" }
@@ -281,20 +228,14 @@ envelope_open: any = (envelope: any, recipient_private: any, sender_public: any)
 
   { data = decrypted }
 
-# ═══════════════════════════════════════════════════════════════
-# Key Serialization
-# ═══════════════════════════════════════════════════════════════
 
 key_to_bytes: any = (key: any)
   result = {}
-  # Type
   result[result:len() + 1] = key.type >> 8 & 255
   result[result:len() + 1] = key.type & 255
-  # Public key length
   pub_len = key.public:len()
   result[result:len() + 1] = pub_len >> 8 & 255
   result[result:len() + 1] = pub_len & 255
-  # Public key
   for b in key.public
     result[result:len() + 1] = b
   result
@@ -312,11 +253,3 @@ key_from_bytes: any = (data: any)
     public = public,
     ["private"] = nil
   }
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Constants
-# Key generation
-# Signing
-# Digital envelope
-# Serialization

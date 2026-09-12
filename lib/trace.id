@@ -1,34 +1,6 @@
-# trace — beautiful, semantically-formatted trace & debug output
-#
-# Design:
-#   * Every event is signed with a beautiful Unicode glyph and colored
-#     by severity. Bold/italic/dim/underline/strikethrough/reverse
-#     carry semantic meaning (see LEGEND below).
-#   * Spans can be opened/closed and timed.
-#   * Field values are colored by Lua TYPE so a glance reveals shape.
-#   * Source locations are underline; function names are magenta-italic;
-#     timestamps are dim; slow durations are bold-yellow.
-#   * Honors NO_COLOR / DUO_COLOR env vars.
-#
-# LEGEND of formatting semantics:
-#   bold       = essential payload (msg, error text, slow span durs)
-#   italic     = identity (function names, type names, nil)
-#   dim        = ancillary (timestamps, caller meta, trace level)
-#   underline  = location references (file:line, field keys)
-#   strikethrough = deleted/removed (in diffs, deprecated values)
-#   reverse    = breakpoint / attention-grab (fatal banner, divider)
-#   color      = severity / type class
-#
-# NOTE: this module is intentionally self-contained — it does not
-# `req` other stdlib modules at top level. The current codegen drops
-# top-level `local x = stdlib` bindings when a stdlib module is
-# inlined under `duo run`; inlining ANSI codes + tty detection here
-# keeps trace compilable today. When that codegen gap is fixed,
-# trace.id can switch back to `local color = color` etc.
 
 global M = {}
 
-# ─── ANSI codes (inline copy of color) ─────────────────────────
 M.RESET      = "\x1b[0m"
 M.BOLD       = "\x1b[1m"
 M.DIM        = "\x1b[2m"
@@ -65,7 +37,6 @@ M.BG_MAGENTA = "\x1b[45m"
 M.BG_CYAN    = "\x1b[46m"
 M.BG_WHITE   = "\x1b[47m"
 
-# ─── Glyphs ────────────────────────────────────────────────────────
 M.G_TRACE      = "∘"
 M.G_DEBUG      = "⊙"
 M.G_INFO       = "✦"
@@ -103,22 +74,20 @@ M.G_CIRCLE     = "●"
 M.G_TRIANGLE   = "▲"
 M.G_HEXAGON    = "⬡"
 
-# ─── Box-drawing palette ──────────────────────────────────────────
-M.BOX_TL = "╭"   # top-left rounded
-M.BOX_TR = "╮"   # top-right rounded
-M.BOX_BL = "╰"   # bottom-left rounded
-M.BOX_BR = "╯"   # bottom-right rounded
-M.BOX_ML = "├"   # mid-left
-M.BOX_MR = "┤"   # mid-right
-M.BOX_H  = "─"   # horizontal
-M.BOX_V  = "│"   # vertical
-M.BOX_C  = "┼"   # cross
+M.BOX_TL = "╭"
+M.BOX_TR = "╮"
+M.BOX_BL = "╰"
+M.BOX_BR = "╯"
+M.BOX_ML = "├"
+M.BOX_MR = "┤"
+M.BOX_H  = "─"
+M.BOX_V  = "│"
+M.BOX_C  = "┼"
 M.BOX_TL_SQUARE = "┌"
 M.BOX_TR_SQUARE = "┐"
 M.BOX_BL_SQUARE = "└"
 M.BOX_BR_SQUARE = "┘"
 
-# ─── Levels ────────────────────────────────────────────────────────
 M.LV_TRACE = 0
 M.LV_DEBUG = 1
 M.LV_INFO  = 2
@@ -141,7 +110,6 @@ global trace_show_ts = true
 global trace_spans = {}
 global trace_color = true
 
-# ─── tty detection ────────────────────────────────────────────────
 tty: bool = ()
     ok, val = pcall(os.getenv, "DUO_COLOR")
     if ok and val != nil and val != "" and val != "0"
@@ -151,7 +119,6 @@ tty: bool = ()
         return false
     return true
 
-# ─── Low-level style wrappers ────────────────────────────────────
 
 s: str = (prefix: str, text: str, suffix: str)
     if prefix == nil prefix = "" 
@@ -223,9 +190,6 @@ bright_white: str = (text: str)
 gray: str = (text: str)
     return M.BRIGHT_BLACK .. text:to(str) .. M.RESET
 
-# ─── Compound semantic styles ─────────────────────────────────────
-# These combine attributes for specific semantic roles.
-# Each one paints a single concept — use them to build readable output.
 
 sem_success: str = (text: str)
     return M.BOLD .. M.GREEN .. text:to(str) .. M.RESET
@@ -329,7 +293,6 @@ sem_diff_hunk: str = (text: str)
 sem_context_line: str = (text: str)
     return M.DIM .. text:to(str) .. M.RESET
 
-# ─── Value formatting ─────────────────────────────────────────────
 tbl_summary: str = (t: any)
     if t == nil return "nil" 
     n = t:len()
@@ -367,7 +330,6 @@ pretty_val: str = (value: any)
 pretty_kv: str = (k: str, v: any)
     return sem_key(k:to(str)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
 
-# ─── Contextual formatters ───────────────────────────────────────
 
 _to_hex: str = (n: int)
     digits = "0123456789abcdef"
@@ -436,7 +398,6 @@ fmt_ref: str = (id: any)
 fmt_path: str = (path: str)
     return sem_location(path:to(str))
 
-# ─── Caller info ───────────────────────────────────────────────────
 caller: str = (level: int)
     info = debug.getinfo(level, "Snl")
     if info == nil return "" 
@@ -451,7 +412,6 @@ caller: str = (level: int)
         loc = src .. dim(":") .. yellow(info.currentline:to(str))
     return sem_identity(name_part) .. dim(" " .. M.G_ARROW .. " ") .. sem_location(loc)
 
-# ─── Timestamp ─────────────────────────────────────────────────────
 ts: str = ()
     secs = os.time()
     ms = (os.clock() * 1000) % 1000:floor()
@@ -460,7 +420,6 @@ ts: str = ()
     else(ms < 100) frac = ".0" .. ms:to(str)
     return sem_meta(os.date("%H:%M:%S", secs) .. frac)
 
-# ─── Level tag ─────────────────────────────────────────────────────
 level_tag: str = (level: int)
     glyph = M.G_TRACE
     tag = "trace"
@@ -489,7 +448,6 @@ level_tag: str = (level: int)
         return sem_breakpoint(body)
     return body
 
-# ─── Span indent ───────────────────────────────────────────────────
 span_indent: str = ()
     n = trace_spans:len()
     if n <= 0 return "" 
@@ -497,7 +455,6 @@ span_indent: str = ()
     if rep == nil or rep == "" return "" 
     return dim(rep)
 
-# ─── Duration formatting with speed coloring ──────────────────────
 _fmt_dur: str = (ms: float)
     whole = ms:floor()
     frac = (ms - whole) * 100:floor()
@@ -511,7 +468,6 @@ _fmt_dur: str = (ms: float)
     else
         return sem_time_slow(raw)
 
-# ─── Emit ──────────────────────────────────────────────────────────
 emit = (level: int, msg: str, fields: any, skip: int)
     if level < trace_level return 
     parts = {}
@@ -530,7 +486,6 @@ emit = (level: int, msg: str, fields: any, skip: int)
             parts[parts:len() + 1] = pretty_kv(k, v)
     print(parts:concat(" "))
 
-# ─── Public API ─────────────────────────────────────────────────
 set_level = (level: any)
     if type(level) == "string"
         v = M.level_value[level:lower()]
@@ -571,7 +526,6 @@ error = (msg: str, fields: any)
 fatal = (msg: str, fields: any)
     emit(M.LV_FATAL, msg, fields, 2)
 
-# ─── Spans ────────────────────────────────────────────────────────
 span: any = (name: str, fields: any)
     h = {
         name = name or "span",
@@ -620,7 +574,6 @@ span_end = (h: any, fields: any)
             parts[parts:len() + 1] = pretty_kv(k, v)
     print(parts:concat(" "))
 
-# ─── Assertion / check helpers ────────────────────────────────────
 
 assert_ok = (condition: bool, msg: str)
     if condition
@@ -640,7 +593,6 @@ assert_eq = (actual: any, expected: any, msg: str)
         parts[parts:len() + 1] = sem_changed_old(pretty_val(actual))
         print(parts:concat(" "))
 
-# ─── Structured diff ──────────────────────────────────────────────
 
 diff_line: str = (kind: str, key: str, old_val: any, new_val: any)
     prefix = ""
@@ -677,7 +629,6 @@ print_diff = (label: str, diffs: any)
     print(dim(M.BOX_BL .. M.G_DASH:rep(50)))
     print(dim("  " .. n:to(str) .. " difference(s)"))
 
-# ─── Checkpoint / milestone markers ───────────────────────────────
 
 checkpoint = (label: str)
     ind = span_indent()
@@ -706,7 +657,6 @@ milestone = (label: str, value: any)
         parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     print(parts:concat(" "))
 
-# ─── Variable watch ───────────────────────────────────────────────
 
 watch = (name: str, value: any)
     ind = span_indent()
@@ -720,7 +670,6 @@ watch = (name: str, value: any)
         parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     print(parts:concat(" "))
 
-# ─── Event timeline entry ────────────────────────────────────────
 
 event = (name: str, fields: any)
     ind = span_indent()
@@ -734,7 +683,6 @@ event = (name: str, fields: any)
         parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     print(parts:concat(" "))
 
-# ─── Section / divider helpers ────────────────────────────────────
 
 banner = (title: str, subtitle: str)
     if title == nil title = "trace" 
@@ -768,7 +716,6 @@ section = (title: str)
     print(ind .. dim(" ") .. sem_banner_line(M.G_DIAMOND .. " " .. title) ..
           dim(" " .. M.BOX_H:rep(pad)))
 
-# ─── Legend ───────────────────────────────────────────────────────
 
 legend = ()
     print(bold(italic("trace legend:")))
@@ -813,7 +760,6 @@ legend = ()
           sem_table_val("{…}") .. "  " ..
           sem_function_val("⟪fn⟫"))
 
-# ─── Recursive pretty printer for dump() ───────────────────────────
 _seen: bool = (seen: any, value: any)
     if seen == nil return false 
     i = 1
@@ -887,7 +833,6 @@ dump = (label: str, value: any)
             print(dim(M.BOX_V .. " ") .. sem_numbering(line_num:to(str) .. " ") ..
                   cyan(rendered:sub(line_start)))
 
-# ─── Compact value table ──────────────────────────────────────────
 
 table_print = (label: str, t: any)
     if t == nil or type(t) != "table"
@@ -908,7 +853,6 @@ table_print = (label: str, t: any)
                   dim(" = ") .. pretty_val(v))
         print(ind .. dim("}"))
 
-# ─── Exports ──────────────────────────────────────────────────────
 M.set_level = set_level
 M.get_level = get_level
 M.show_caller = show_caller

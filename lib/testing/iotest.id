@@ -1,5 +1,3 @@
-# testing.iotest — I/O test helpers (mirrors Go's testing/iotest)
-# Provides readers/writers that simulate errors, slow reads, etc.
 
 new_one_byte_reader: any = (data: str)
   { data = data, pos = 1 }

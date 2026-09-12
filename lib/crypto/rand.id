@@ -1,4 +1,3 @@
-# crypto.rand — cryptographic random number generation (uses /dev/urandom)
 
 @cinclude("fcntl.h")
 

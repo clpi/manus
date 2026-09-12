@@ -1,12 +1,7 @@
-# bytes — Native byte slices and cursors for binary parsing.
-# Ward blocker: Duo needs byte buffers for Wasm binary decoding.
-# This is a general-purpose capability, not Ward-specific.
 
-# Create a byte buffer from a string (zero-copy view of string bytes)
 from_string: any = (s: str)
   { data = s, pos = 1, len = s:len() }
 
-# Read one byte at current position, advance cursor
 read_byte: i64 = (buf: any)
   if buf.pos > buf.len
     return -1
@@ -14,7 +9,6 @@ read_byte: i64 = (buf: any)
   buf.pos = buf.pos + 1
   b
 
-# Read a u32 (little-endian) from cursor
 read_u32_le: i64 = (buf: any)
   if buf.pos + 3 > buf.len
     return -1
@@ -25,7 +19,6 @@ read_u32_le: i64 = (buf: any)
   buf.pos = buf.pos + 4
   b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
 
-# Read a u16 (little-endian) from cursor
 read_u16_le: i64 = (buf: any)
   if buf.pos + 1 > buf.len
     return -1
@@ -34,7 +27,6 @@ read_u16_le: i64 = (buf: any)
   buf.pos = buf.pos + 2
   b0 + b1 * 256
 
-# Read LEB128-encoded unsigned integer (used extensively in Wasm binary format)
 read_leb128_u: i64 = (buf: any)
   result = 0
   shift = 0
@@ -51,7 +43,6 @@ read_leb128_u: i64 = (buf: any)
       return -1
   result
 
-# Read LEB128-encoded signed integer
 read_leb128_s: i64 = (buf: any)
   result = 0
   shift = 0
@@ -70,7 +61,6 @@ read_leb128_s: i64 = (buf: any)
       return -1
   result
 
-# Read N bytes as a substring
 read_bytes: str = (buf: any, n: i64)
   if buf.pos + n - 1 > buf.len
     return ""
@@ -78,18 +68,14 @@ read_bytes: str = (buf: any, n: i64)
   buf.pos = buf.pos + n
   result
 
-# Remaining bytes in buffer
 remaining: i64 = (buf: any)
   buf.len - buf.pos + 1
 
-# Check if at end
 eof: bool = (buf: any)
   buf.pos > buf.len
 
-# Skip N bytes
 skip = (buf: any, n: i64)
   buf.pos = buf.pos + n
 
-# Current position (1-indexed)
 position: i64 = (buf: any)
   buf.pos

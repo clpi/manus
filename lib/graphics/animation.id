@@ -1,9 +1,4 @@
-# graphics.animation — Animation and keyframe system
-# For character animation, procedural motion, and visual effects.
 
-# ═══════════════════════════════════════════════════════════════
-# Keyframe
-# ═══════════════════════════════════════════════════════════════
 
 keyframe_new: any = (time: f64, value: any)
     {
@@ -16,9 +11,6 @@ keyframe_set_easing: any = (kf: any, easing: str)
     kf.easing = easing
     kf
 
-# ═══════════════════════════════════════════════════════════════
-# Animation Curve
-# ═══════════════════════════════════════════════════════════════
 
 curve_new: any = (name: str)
     {
@@ -33,10 +25,8 @@ curve_add_keyframe = (curve: any, time: f64, value: any)
     kf = keyframe_new(time, value)
     curve.keyframes[curve.keyframes:len() + 1] = kf
 
-    # Sort by time
     curve.keyframes:sort((a: any, b: any) a.time < b.time)
 
-    # Update duration
     if time > curve.duration
         curve.duration = time
 
@@ -48,7 +38,6 @@ curve_evaluate: any = (curve: any, time: f64)
     if curve.keyframes:len() == 0 return nil
     if curve.keyframes:len() == 1 return curve.keyframes[1].value
 
-    # Handle loop/ping-pong
     if curve.loop
         time = time % curve.duration
     elseif curve.ping_pong
@@ -57,7 +46,6 @@ curve_evaluate: any = (curve: any, time: f64)
         if cycle % 2 == 1
             time = curve.duration - time
 
-    # Find surrounding keyframes
     prev = curve.keyframes[1]
     nxt = curve.keyframes[curve.keyframes:len()]
 
@@ -67,14 +55,11 @@ curve_evaluate: any = (curve: any, time: f64)
             nxt = curve.keyframes[i + 1]
             break
 
-    # Calculate interpolation factor
     if nxt.time == prev.time return prev.value
     t = (time - prev.time) / (nxt.time - prev.time)
 
-    # Apply easing
     t = apply_easing(t, nxt.easing)
 
-    # Interpolate value
     interpolate_values(prev.value, nxt.value, t)
 
 curve_get_duration: f64 = (curve: any)
@@ -86,9 +71,6 @@ curve_set_loop = (curve: any, loop: bool)
 curve_set_ping_pong = (curve: any, ping_pong: bool)
     curve.ping_pong = ping_pong
 
-# ═══════════════════════════════════════════════════════════════
-# Animation Clip
-# ═══════════════════════════════════════════════════════════════
 
 clip_new: any = (name: str)
     {
@@ -112,9 +94,6 @@ clip_evaluate: any = (clip: any, time: f64)
 clip_set_fps = (clip: any, fps: i64)
     clip.fps = fps
 
-# ═══════════════════════════════════════════════════════════════
-# Animation Player
-# ═══════════════════════════════════════════════════════════════
 
 player_new: any = ()
     {
@@ -154,10 +133,8 @@ player_update: any = (player: any, delta_time: f64)
 
     player.current_time += delta_time * player.speed
 
-    # Handle end of clip
     if player.current_time > clip.duration
         if clip.curves and next(clip.curves)
-            # Check if any curve loops
             for curve in clip.curves
                 if curve.loop
                     player.current_time = player.current_time % clip.duration
@@ -166,10 +143,8 @@ player_update: any = (player: any, delta_time: f64)
             player.current_time = clip.duration
             player.playing = false
 
-    # Evaluate clip
     result = clip_evaluate(clip, player.current_time)
 
-    # Trigger callbacks
     for callback in player.callbacks
         callback(result, player.current_time)
 
@@ -184,9 +159,6 @@ player_get_time: f64 = (player: any)
 player_is_playing: bool = (player: any)
     player.playing
 
-# ═══════════════════════════════════════════════════════════════
-# Animation State Machine
-# ═══════════════════════════════════════════════════════════════
 
 state_machine_new: any = ()
     {
@@ -215,7 +187,6 @@ state_machine_set_state = (sm: any, state_name: str)
 state_machine_update: any = (sm: any, params: any)
     if sm.current_state == nil return nil
 
-    # Check transitions
     transitions = sm.transitions[sm.current_state]
     if transitions
         for transition in transitions
@@ -227,16 +198,12 @@ state_machine_update: any = (sm: any, params: any)
                     to = transition.to,
                 }
 
-    # Return current state info
     state = sm.states[sm.current_state]
     {
         state = sm.current_state,
         clip_name = state.clip_name,
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Procedural Animation
-# ═══════════════════════════════════════════════════════════════
 
 procedural_sine: f64 = (time: f64, frequency: f64, amplitude: f64, phase: f64)
     if frequency == nil frequency = 1
@@ -245,19 +212,15 @@ procedural_sine: f64 = (time: f64, frequency: f64, amplitude: f64, phase: f64)
     amplitude * 2 * math.pi * frequency * time + phase:sin()
 
 procedural_noise: f64 = (time: f64, frequency: f64, amplitude: f64)
-    # Value noise using hash-based interpolation
     if frequency == nil frequency = 1
     if amplitude == nil amplitude = 1
 
     t = time * frequency
-    # Integer and fractional parts
     i0 = t:floor()
     frac = t - i0
 
-    # Smoothstep interpolation (ease-in-out)
     fade = frac * frac * (3 - 2 * frac)
 
-    # Hash function for pseudo-random values at integer points
     _hash: f64 = (n: i64)
         h = (n * 2654435761) & 0xFFFFFFFF
         h = ((h >> 16) ~ h) & 0xFFFFFFFF
@@ -272,7 +235,6 @@ procedural_bounce: f64 = (time: f64, period: f64, height: f64)
     if period == nil period = 1
     if height == nil height = 1
     t = time % period
-    # Parabola
     height * (1 - (2 * t / period - 1) ^ 2)
 
 procedural_wobble: f64 = (time: f64, frequency: f64, damping: f64)
@@ -280,9 +242,6 @@ procedural_wobble: f64 = (time: f64, frequency: f64, damping: f64)
     if damping == nil damping = 2 end
     -damping * time:exp() * 2 * math.pi * frequency * time:cos()
 
-# ═══════════════════════════════════════════════════════════════
-# Utility Functions
-# ═══════════════════════════════════════════════════════════════
 
 apply_easing: f64 = (t: f64, easing: str)
     if easing == "linear" return t
@@ -314,13 +273,3 @@ interpolate_values: any = (a: any, b: f64, t: f64)
         return result
     a
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Keyframe
-# Curve
-# Clip
-# Player
-# State Machine
-# Procedural
-# Utilities

@@ -1,4 +1,3 @@
-# ml.data — Batching, shuffling, and dataset iterators (training pipelines)
 
 batch: any = (samples, batch_size)
     if batch_size == nil batch_size = 32
@@ -24,7 +23,6 @@ from_pairs: any = (xs, ys)
         samples[i] = { x = xs[i], y = ys[i] }
     return samples
 
-# Fisher–Yates shuffle (in-place on array table)
 shuffle(samples): any
     n = samples:len()
     i = n

@@ -1,54 +1,22 @@
-# wasm.opcodes — CANONICAL Wasm opcode algebra, owned in Duo.
-#
-# Supersedes the Zig-generated flat tables (ward_mvp_opcodes.id,
-# opcode_lookup.id) as the source of truth. Those list constants one by one,
-# stub whole families (i64/f32/f64 arithmetic appear only as a single `add`),
-# and export no `M` table at all, so `req` of either returns nil and any field
-# access segfaults — they are unreachable by construction.
-#
-# THE PROJECTION. MVP numeric opcodes are not arbitrary. Each
-# (class, width, kind) family occupies a contiguous block whose members appear
-# in a FIXED order shared by both widths of its class, so
-#
-#     opcode = base(type, kind) + index(name)
-#
-# 98 numeric-family opcodes therefore follow from 8 bases and 4 name lists.
-# The conversion block (167-191) projects the same way off the TARGET type,
-# which is exactly the canonical `to`/`from` relation applied to Wasm.
-#
-# Every number here is verified against wasm-tools by
-# `scripts/wasm_opcode_oracle.sh` — derived is not the same as correct, and
-# `i64x2.add` was wrong for exactly that reason (guessed +16, actually +32).
-#
-# Parallel arrays rather than keyed tables: `{ i32 = 69 }` is a parse error
-# (type names are keywords), and a string-keyed lookup returns a boxed value
-# where an integer-indexed array stays a native scalar.
-# ── carriers ─────────────────────────────────────────────────────────────
 TYPES = { "i32", "i64", "f32", "f64" }
 TYPE_COUNT = 4
 
-# ── the four operation orders ────────────────────────────────────────────
-# Both widths of a class share one order; that sharing IS the projection.
 INT_CMP = { "eqz", "eq", "ne", "lt_s", "lt_u", "gt_s", "gt_u", "le_s", "le_u", "ge_s", "ge_u" }
 FLT_CMP = { "eq", "ne", "lt", "gt", "le", "ge" }
 INT_ALU = { "clz", "ctz", "popcnt", "add", "sub", "mul", "div_s", "div_u", "rem_s", "rem_u", "and", "or", "xor", "shl", "shr_s", "shr_u", "rotl", "rotr" }
 FLT_ALU = { "abs", "neg", "ceil", "floor", "trunc", "nearest", "sqrt", "add", "sub", "mul", "div", "min", "max", "copysign" }
 
-# ── family bases, indexed by position in TYPES ───────────────────────────
 CMP_BASE = { 69, 80, 91, 97 }
 ALU_BASE = { 103, 121, 139, 153 }
 CMP_SIZE = { 11, 11, 6, 6 }
 ALU_SIZE = { 18, 18, 14, 14 }
 
-# ── conversions: one block per TARGET type (the `to` relation) ───────────
 CONV_BASE = { 167, 172, 178, 183 }
 CONV_I32 = { "wrap_i64", "trunc_f32_s", "trunc_f32_u", "trunc_f64_s", "trunc_f64_u" }
 CONV_I64 = { "extend_i32_s", "extend_i32_u", "trunc_f32_s", "trunc_f32_u", "trunc_f64_s", "trunc_f64_u" }
 CONV_F32 = { "convert_i32_s", "convert_i32_u", "convert_i64_s", "convert_i64_u", "demote_f64" }
 CONV_F64 = { "convert_i32_s", "convert_i32_u", "convert_i64_s", "convert_i64_u", "promote_f32" }
 
-# Reinterpret is the identity on bits, so it sits apart from `to`: one opcode
-# per type, contiguous, immediately after the conversion blocks.
 REINTERPRET_BASE = 188
 
 float: i64 = (ty: str)
@@ -64,8 +32,6 @@ type_index: i64 = (ty: str)
     i += 1
   0
 
-# Position of `name` within its family order, or -1. Comparison and
-# arithmetic orders are disjoint per class, so a name determines its kind.
 cmp_index: i64 = (ty: str, name: str)
   i: i64 = 1
   if ty:float() == 1
@@ -94,7 +60,6 @@ alu_index: i64 = (ty: str, name: str)
     i += 1
   -1
 
-# THE projection: opcode for a numeric-family instruction, or -1.
 op: i64 = (ty: str, name: str)
   k: i64 = type_index(ty)
   if k == 0
@@ -108,8 +73,6 @@ op: i64 = (ty: str, name: str)
   end
   -1
 
-# Family bounds, so a consumer writes ONE range arm per family instead of
-# repeating the constants. This is what ward's dispatch is gated against.
 cmp_lo: i64 = (ty: str)
   k: i64 = type_index(ty)
   if k == 0
@@ -134,8 +97,6 @@ alu_hi: i64 = (ty: str)
     return -1
   ALU_BASE[k] + ALU_SIZE[k] - 1
 
-# Conversion projection: `to(target)` curried by source form, e.g.
-# convert_op("i32", "trunc_f64_s") -> 170.
 convert_op: i64 = (target: str, name: str)
   k: i64 = type_index(target)
   if k == 0

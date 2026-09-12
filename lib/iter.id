@@ -1,13 +1,7 @@
-# iter — functional iterators and higher-order functions
-# This module delegates core operations to fn for consistency.
-# Adds iterator-specific utilities (zip, enumerate, flat_map) that
-# don't belong in the pure functional programming module.
 
-# map: apply a function to each element, return results.
 map: any = (list: any, fn_ref: any)
   fn.map_filter(list, fn_ref)
 
-# filter: keep elements where the predicate returns true.
 filter: any = (list: any, fn_ref: any)
   out = {}
   if list == nil
@@ -19,11 +13,9 @@ filter: any = (list: any, fn_ref: any)
     i = i + 1
   out
 
-# reduce: fold a list with an accumulator.
 reduce: any = (list: any, init: any, fn_ref: any)
   fn.foldl(list, init, fn_ref)
 
-# all: return true if all elements satisfy the predicate.
 all: bool = (list: any, fn_ref: any)
   if list == nil
     return true
@@ -34,7 +26,6 @@ all: bool = (list: any, fn_ref: any)
     i = i + 1
   true
 
-# find: return the first element satisfying the predicate.
 find: any = (list: any, fn_ref: any)
   if list == nil
     return nil
@@ -45,7 +36,6 @@ find: any = (list: any, fn_ref: any)
     i = i + 1
   nil
 
-# find_index: return the 1-based index of the first matching element, or nil.
 find_index: any = (list: any, fn_ref: any)
   if list == nil
     return nil
@@ -56,7 +46,6 @@ find_index: any = (list: any, fn_ref: any)
     i = i + 1
   nil
 
-# count: count elements satisfying the predicate.
 count: i64 = (list: any, fn_ref: any)
   if list == nil
     return 0
@@ -68,7 +57,6 @@ count: i64 = (list: any, fn_ref: any)
     i = i + 1
   n
 
-# zip: combine two lists into a list of pairs.
 zip: any = (l1: any, l2: any)
   out = {}
   if l1 == nil or l2 == nil
@@ -85,7 +73,6 @@ zip: any = (l1: any, l2: any)
     i = i + 1
   out
 
-# zip_with: combine two lists using a function.
 zip_with: any = (l1: any, l2: any, fn_ref: any)
   out = {}
   if l1 == nil or l2 == nil
@@ -99,7 +86,6 @@ zip_with: any = (l1: any, l2: any, fn_ref: any)
     i = i + 1
   out
 
-# enumerate: return a list of {index, value} pairs (1-based).
 enumerate: any = (list: any)
   out = {}
   if list == nil
@@ -113,11 +99,9 @@ enumerate: any = (list: any)
     i = i + 1
   out
 
-# flat_map: apply a function that returns a list, then flatten.
 flat_map: any = (list: any, fn_ref: any)
   fn.flatten(fn.map_filter(list, fn_ref))
 
-# sliding_window: return all contiguous sub-lists of size n.
 sliding_window: any = (list: any, n: i64)
   out = {}
   if list == nil or n <= 0
@@ -134,7 +118,6 @@ sliding_window: any = (list: any, n: i64)
     i = i + 1
   out
 
-# take: return the first n elements.
 take: any = (list: any, n: i64)
   out = {}
   if list == nil or n <= 0
@@ -148,7 +131,6 @@ take: any = (list: any, n: i64)
     i = i + 1
   out
 
-# drop: return everything except the first n elements.
 drop: any = (list: any, n: i64)
   out = {}
   if list == nil or n <= 0
@@ -160,15 +142,12 @@ drop: any = (list: any, n: i64)
     i = i + 1
   out
 
-# unique: return list with duplicates removed (first occurrence wins).
 unique: any = (list: any)
   fn.unique_by(list, fn.identity)
 
-# group_by: partition list into groups keyed by function result.
 group_by: any = (list: any, fn_ref: any)
   fn.group_by(list, fn_ref)
 
-# min_by / max_by / sort_by: delegate to fn module.
 min_by: any = (list: any, fn_ref: any)
   fn.min_by(list, fn_ref)
 
@@ -178,6 +157,5 @@ max_by: any = (list: any, fn_ref: any)
 sort_by = (list: any, fn_ref: any)
   fn.sort_by(list, fn_ref)
 
-# partition: split list by predicate into {yes, no}.
 partition: any = (list: any, fn_ref: any)
   fn.partition(list, fn_ref)

@@ -1,6 +1,3 @@
-# ml.shape — Compile-time-friendly shape helpers (const dims + runtime checks)
-#
-# `Tensor[M,N,T]` types are resolved in the compiler; use these helpers for runtime bundles and asserts.
 
 matmul = (ar: any, ac: any, br: any, bc: any)
   assert(ac == br, string.format("matmul shape mismatch: (%d,%d) @ (%d,%d)", ar, ac, br, bc))
@@ -12,7 +9,6 @@ broadcast = (ar: any, ac: any, br: any, bc: any)
 numel: i64 = (rows, cols)
   return rows * cols
 
-# MNIST-style MLP shape bundle
 mnist: any = ()
   return {
     input = { rows = 784, cols = 1 },
@@ -21,7 +17,6 @@ mnist: any = ()
     output = { rows = 10, cols = 1 }
   }
 
-# Transformer block shape template (batch, seq, dim)
 block: any = (heads, dim)
   return {
     heads = heads,

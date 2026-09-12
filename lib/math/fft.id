@@ -1,9 +1,4 @@
-# math.fft — Fast Fourier Transform
-# For signal processing, audio analysis, and convolution acceleration.
 
-# ═══════════════════════════════════════════════════════════════
-# Complex Number Operations (for FFT)
-# ═══════════════════════════════════════════════════════════════
 
 complex_new: any = (re: f64, im: f64)
   { re = re, im = im }
@@ -32,18 +27,13 @@ complex_abs: f64 = (a: any)
 complex_phase: f64 = (a: any)
   math.atan2(a.im, a.re)
 
-# ═══════════════════════════════════════════════════════════════
-# FFT (Cooley-Tukey algorithm)
-# ═══════════════════════════════════════════════════════════════
 
 fft: any = (x: any)
   n = x:len()
   if n == 0
     return {}
 
-  # Check if power of 2
   if n & (n - 1) != 0
-    # Pad to next power of 2
     new_n = 1
     while new_n < n
       new_n = new_n * 2
@@ -62,7 +52,6 @@ fft: any = (x: any)
   if n == 1
     return x
 
-  # Bit-reversal permutation
   j = 0
   i = 1
   while i < n
@@ -78,7 +67,6 @@ fft: any = (x: any)
       x[j + 1] = temp
     i = i + 1
 
-  # FFT butterfly
   length = 2
   while length <= n
     half = length >> 1
@@ -103,26 +91,20 @@ fft: any = (x: any)
 
   x
 
-# ═══════════════════════════════════════════════════════════════
-# Inverse FFT
-# ═══════════════════════════════════════════════════════════════
 
 ifft: any = (x: any)
   n = x:len()
   if n == 0
     return {}
 
-  # Conjugate input
   conjugated = {}
   i = 1
   while i <= n
     conjugated[i] = complex_conjugate(x[i])
     i = i + 1
 
-  # Forward FFT
   result = fft(conjugated)
 
-  # Conjugate and scale
   scaled = {}
   i = 1
   while i <= n
@@ -130,9 +112,6 @@ ifft: any = (x: any)
     i = i + 1
   scaled
 
-# ═══════════════════════════════════════════════════════════════
-# Real-valued FFT (for real signals)
-# ═══════════════════════════════════════════════════════════════
 
 rfft: any = (signal: any)
   n = signal:len()
@@ -154,9 +133,6 @@ irfft: any = (spectrum: any, n: i64)
     i = i + 1
   signal
 
-# ═══════════════════════════════════════════════════════════════
-# Power Spectrum
-# ═══════════════════════════════════════════════════════════════
 
 power_spectrum: any = (spectrum: any)
   ps = {}
@@ -182,19 +158,14 @@ phase_spectrum: any = (spectrum: any)
     i = i + 1
   phase
 
-# ═══════════════════════════════════════════════════════════════
-# Convolution via FFT
-# ═══════════════════════════════════════════════════════════════
 
 convolve: any = (a: any, b: any)
   n = a:len() + b:len() - 1
 
-  # Pad to next power of 2
   fft_size = 1
   while fft_size < n
     fft_size = fft_size * 2
 
-  # Zero-pad inputs
   fa = {}
   fb = {}
   i = 1
@@ -213,21 +184,17 @@ convolve: any = (a: any, b: any)
         im = 0
     i = i + 1
 
-  # FFT both
   fa_fft = fft(fa)
   fb_fft = fft(fb)
 
-  # Multiply in frequency domain
   product = {}
   i = 1
   while i <= fft_size
     product[i] = complex_mul(fa_fft(i), fb_fft(i))
     i = i + 1
 
-  # Inverse FFT
   result = ifft(product)
 
-  # Extract real part
   output = {}
   i = 1
   while i <= a:len() + b:len() - 1
@@ -235,12 +202,8 @@ convolve: any = (a: any, b: any)
     i = i + 1
   output
 
-# ═══════════════════════════════════════════════════════════════
-# Correlation via FFT
-# ═══════════════════════════════════════════════════════════════
 
 correlate: any = (a: any, b: any)
-  # Cross-correlation: correlate(a, b) = convolve(a, reverse(b))
   b_rev = {}
   i = b:len()
   while i >= 1
@@ -251,9 +214,6 @@ correlate: any = (a: any, b: any)
 autocorrelate: any = (x: any)
   correlate(x, x)
 
-# ═══════════════════════════════════════════════════════════════
-# DFT (Discrete Fourier Transform) - for small sizes
-# ═══════════════════════════════════════════════════════════════
 
 dft: any = (x: any)
   n = x:len()
@@ -290,11 +250,3 @@ idft: any = (x: any)
     result[k + 1] = complex_scale(sum, 1.0 / n)
     k = k + 1
   result
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Complex
-# FFT
-# Spectrum
-# Convolution
-# DFT

@@ -1,12 +1,7 @@
-# ml.optim — Optimizers and learning rate schedulers
 
 Tensor = tensor
 
-# ═══════════════════════════════════════════════════════════════
-# Optimizers
-# ═══════════════════════════════════════════════════════════════
 
-# SGD with optional momentum and weight decay
 sgd: any = (lr: f64, momentum: f64, weight_decay: f64)
   if momentum == nil
     momentum = 0
@@ -21,7 +16,6 @@ sgd: any = (lr: f64, momentum: f64, weight_decay: f64)
     step_count = 0
   }
 
-# Adam optimizer
 adam: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
   if beta1 == nil
     beta1 = 0.9
@@ -43,7 +37,6 @@ adam: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
     step_count = 0
   }
 
-# AdamW optimizer (decoupled weight decay)
 adamw: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
   if beta1 == nil
     beta1 = 0.9
@@ -65,7 +58,6 @@ adamw: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
     step_count = 0
   }
 
-# AdaGrad
 adagrad: any = (lr: f64, eps: f64, weight_decay: f64)
   if eps == nil
     eps = 0.00000001
@@ -80,7 +72,6 @@ adagrad: any = (lr: f64, eps: f64, weight_decay: f64)
     step_count = 0
   }
 
-# RMSprop
 rmsprop: any = (lr: f64, alpha: f64, eps: f64, momentum: f64, weight_decay: f64)
   if alpha == nil
     alpha = 0.99
@@ -102,7 +93,6 @@ rmsprop: any = (lr: f64, alpha: f64, eps: f64, momentum: f64, weight_decay: f64)
     step_count = 0
   }
 
-# LAMB (Layer-wise Adaptive Moments for Batch training)
 lamb: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
   if beta1 == nil
     beta1 = 0.9
@@ -124,9 +114,6 @@ lamb: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
     step_count = 0
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Optimizer step
-# ═══════════════════════════════════════════════════════════════
 
 @hot
 optimizer_step: void = (opt: any, params: any, grads: any)
@@ -202,7 +189,6 @@ step_adamw: void = (opt: any, params: any, grads: any)
     v = opt.v[key]
 
     for j = 1, p.size
-      # Decoupled weight decay
       p.data[j] = p.data[j] * (1 - opt.lr * opt.weight_decay)
       m.data[j] = opt.beta1 * m.data[j] + (1 - opt.beta1) * g.data[j]
       v.data[j] = opt.beta2 * v.data[j] + (1 - opt.beta2) * g.data[j] * g.data[j]
@@ -256,12 +242,10 @@ step_lamb: void = (opt: any, params: any, grads: any)
     m = opt.m[key]
     v = opt.v[key]
 
-    # Adam update
     for j = 1, p.size
       m.data[j] = opt.beta1 * m.data[j] + (1 - opt.beta1) * g.data[j]
       v.data[j] = opt.beta2 * v.data[j] + (1 - opt.beta2) * g.data[j] * g.data[j]
 
-    # Compute trust ratio
     weight_norm = 0
     for j = 1, p.size
       weight_norm = weight_norm + p.data[j] * p.data[j]
@@ -282,11 +266,7 @@ step_lamb: void = (opt: any, params: any, grads: any)
       v_hat = v.data[j] / bc2
       p.data[j] = p.data[j] - opt.lr * ratio * (m_hat / (v_hat:sqrt() + opt.eps) + opt.weight_decay * p.data[j])
 
-# ═══════════════════════════════════════════════════════════════
-# Learning Rate Schedulers
-# ═══════════════════════════════════════════════════════════════
 
-# Step decay: multiply lr by gamma every step_size epochs
 step_scheduler: any = (initial_lr: f64, step_size: i64, gamma: f64)
   {
     type = "step",
@@ -296,7 +276,6 @@ step_scheduler: any = (initial_lr: f64, step_size: i64, gamma: f64)
     last_epoch = 0
   }
 
-# Exponential decay: lr = initial_lr * gamma^epoch
 exponential_scheduler: any = (initial_lr: f64, gamma: f64)
   {
     type = "exponential",
@@ -305,7 +284,6 @@ exponential_scheduler: any = (initial_lr: f64, gamma: f64)
     last_epoch = 0
   }
 
-# Cosine annealing
 cosine_scheduler: any = (initial_lr: f64, T_max: i64, eta_min: f64)
   if eta_min == nil
     eta_min = 0
@@ -317,7 +295,6 @@ cosine_scheduler: any = (initial_lr: f64, T_max: i64, eta_min: f64)
     last_epoch = 0
   }
 
-# Warmup + cosine decay (used in transformer training)
 warmup_cosine: any = (warmup_steps: i64, total_steps: i64, peak_lr: f64, min_lr: f64)
   if min_lr == nil
     min_lr = 0
@@ -330,7 +307,6 @@ warmup_cosine: any = (warmup_steps: i64, total_steps: i64, peak_lr: f64, min_lr:
     step = 0
   }
 
-# Linear warmup then constant
 warmup_constant: any = (warmup_steps: i64, peak_lr: f64)
   {
     type = "warmup_constant",
@@ -339,7 +315,6 @@ warmup_constant: any = (warmup_steps: i64, peak_lr: f64)
     step = 0
   }
 
-# One cycle policy (super-convergence)
 one_cycle: any = (max_lr: f64, total_steps: i64, pct_start: f64)
   if pct_start == nil
     pct_start = 0.3
@@ -351,7 +326,6 @@ one_cycle: any = (max_lr: f64, total_steps: i64, pct_start: f64)
     step = 0
   }
 
-# Get current learning rate
 scheduler_get_lr: f64 = (scheduler: any)
   scheduler.step = scheduler.step + 1
   step = scheduler.step
@@ -387,9 +361,6 @@ scheduler_get_lr: f64 = (scheduler: any)
 
   scheduler.initial_lr
 
-# ═══════════════════════════════════════════════════════════════
-# Gradient clipping
-# ═══════════════════════════════════════════════════════════════
 
 clip_grad_norm: f64 = (params: any, grads: any, max_norm: f64)
   total_norm = 0
@@ -417,12 +388,8 @@ clip_grad_value: void = (grads: any, max_value: f64)
       else(g.data[j] < -max_value)
         g.data[j] = -max_value
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
 M = {}
-# Optimizers
 M.sgd = sgd
 M.adam = adam
 M.adamw = adamw
@@ -430,7 +397,6 @@ M.adagrad = adagrad
 M.rmsprop = rmsprop
 M.lamb = lamb
 M.step = optimizer_step
-# Schedulers
 M.step_scheduler = step_scheduler
 M.exponential_scheduler = exponential_scheduler
 M.cosine_scheduler = cosine_scheduler
@@ -438,7 +404,6 @@ M.warmup_cosine = warmup_cosine
 M.warmup_constant = warmup_constant
 M.one_cycle = one_cycle
 M.get_lr = scheduler_get_lr
-# Gradient ops
 M.clip_grad_norm = clip_grad_norm
 M.clip_grad_value = clip_grad_value
 M

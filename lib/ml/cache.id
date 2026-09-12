@@ -1,15 +1,10 @@
-# ml.cache — Model inference cache
-# For caching model outputs and reducing redundant computation.
 
-# ═══════════════════════════════════════════════════════════════
-# Cache Configuration
-# ═══════════════════════════════════════════════════════════════
 
 config_new: any = ()
     {
         max_size = 1000,
-        ttl = 300,  # seconds
-        eviction_policy = "lru",  # "lru", "lfu", "fifo"
+        ttl = 300,
+        eviction_policy = "lru",
         enable_hash_keys = true,
         compression = false,
     }
@@ -26,9 +21,6 @@ config_set_eviction: any = (config: any, policy: str)
     config.eviction_policy = policy
     config
 
-# ═══════════════════════════════════════════════════════════════
-# Inference Cache
-# ═══════════════════════════════════════════════════════════════
 
 cache_new: any = (config: any)
     {
@@ -48,18 +40,15 @@ cache_get: any = (cache: any, key: str)
         cache.miss_count = cache.miss_count + 1
         return nil
 
-    # Check TTL
     if os.clock() - entry.timestamp > cache.config.ttl
         cache_evict(cache, key)
         cache.miss_count = cache.miss_count + 1
         return nil
 
-    # Update access
     entry.access_count = entry.access_count + 1
     entry.last_access = os.clock()
     cache.hit_count = cache.hit_count + 1
 
-    # Move to front of access order
     for i, k in cache.access_order
         if k == key
             cache.access_order:remove(i)
@@ -69,18 +58,15 @@ cache_get: any = (cache: any, key: str)
     entry.value
 
 cache_set = (cache: any, key: str, value: any)
-    # Check if already exists
     if cache.entries[key]
         cache.entries[key].value = value
         cache.entries[key].timestamp = os.clock()
         cache.entries[key].access_count = cache.entries[key].access_count + 1
         return
 
-    # Evict if at capacity
     if cache.entries:len() >= cache.config.max_size
         inference_cache_evict_oldest(cache)
 
-    # Add new entry
     cache.entries[key] = {
         value = value,
         timestamp = os.clock(),
@@ -115,9 +101,6 @@ cache_stats: any = (cache: any)
         hit_rate = total > 0 and cache.hit_count / total or 0,
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Attention Cache (for KV cache in transformers)
-# ═══════════════════════════════════════════════════════════════
 
 attention_cache_new: any = (max_seq_len: i64, num_heads: i64, head_dim: i64)
     {
@@ -152,9 +135,6 @@ attention_cache_reset = (cache: any)
 attention_cache_is_full: bool = (cache: any)
     cache.current_len >= cache.max_seq_len
 
-# ═══════════════════════════════════════════════════════════════
-# Embedding Cache
-# ═══════════════════════════════════════════════════════════════
 
 embedding_cache_new: any = (max_entries: i64)
     {
@@ -167,7 +147,6 @@ embedding_cache_get: any = (cache: any, token_id: i64)
     entry = cache.embeddings[token_id]
     if entry == nil return nil 
 
-    # Update access order
     for i, id in cache.access_order
         if id == token_id
             cache.access_order:remove(i)
@@ -181,7 +160,6 @@ embedding_cache_set = (cache: any, token_id: i64, embedding: any)
         cache.embeddings[token_id].embedding = embedding
         return
 
-    # Evict if full
     if cache.access_order:len() >= cache.max_entries
         oldest = cache.access_order[cache.access_order:len()]
         cache.embeddings[oldest] = nil
@@ -199,9 +177,6 @@ embedding_cache_stats: any = (cache: any)
         max_size = cache.max_entries,
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Result Cache (for caching function results)
-# ═══════════════════════════════════════════════════════════════
 
 result_cache_new: any = (max_size: i64, ttl: i64)
     {
@@ -221,7 +196,6 @@ result_cache_get: any = (cache: any, key: str)
     entry.value
 
 result_cache_set = (cache: any, key: str, value: any)
-    # Evict oldest if full
     count = 0
     for _ in cache.results
         count += 1
@@ -242,12 +216,4 @@ result_cache_set = (cache: any, key: str, value: any)
 result_cache_clear = (cache: any)
     cache.results = {}
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
-# Config
-# Inference Cache
-# Attention Cache
-# Embedding Cache
-# Result Cache

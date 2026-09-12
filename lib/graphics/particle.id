@@ -1,9 +1,4 @@
-# graphics.particle — Particle systems
-# For visual effects, explosions, rain, fire, and other phenomena.
 
-# ═══════════════════════════════════════════════════════════════
-# Particle
-# ═══════════════════════════════════════════════════════════════
 
 particle_new: any = ()
   {
@@ -19,9 +14,6 @@ particle_new: any = ()
     alive = true
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Emitter Configuration
-# ═══════════════════════════════════════════════════════════════
 
 emitter_config_new: any = ()
   {
@@ -81,9 +73,6 @@ emitter_config_set_gravity = (config: any, x: f64, y: f64, z: f64)
     y = y
     z = z
 
-# ═══════════════════════════════════════════════════════════════
-# Particle Emitter
-# ═══════════════════════════════════════════════════════════════
 
 emitter_new: any = (config: any)
   {
@@ -97,13 +86,11 @@ emitter_emit: any = (emitter: any)
   config = emitter.config
   particle = particle_new()
 
-  # Randomize position within spread
   particle.position =
     x = config.position.x + (math.random() - 0.5) * config.spread.x
     y = config.position.y + (math.random() - 0.5) * config.spread.y
     z = config.position.z + (math.random() - 0.5) * config.spread.z
 
-  # Randomize velocity
   speed = config.speed.min + math.random() * (config.speed.max - config.speed.min)
   angle = math.random() * 2 * math.pi
   elevation = (math.random() - 0.5) * math.pi * config.spread.y
@@ -113,13 +100,11 @@ particle.velocity =
   y = config.direction.y + elevation:sin() * speed
   z = config.direction.z + angle:sin() * elevation:cos() * speed
 
-# Randomize properties
 particle.lifetime = config.lifetime.min + math.random() * (config.lifetime.max - config.lifetime.min)
 particle.size = config.size.min + math.random() * (config.size.max - config.size.min)
 particle.rotation = config.rotation.min + math.random() * (config.rotation.max - config.rotation.min)
 particle.angular_velocity = config.angular_velocity.min + math.random() * (config.angular_velocity.max - config.angular_velocity.min)
 
-# Interpolate color
 if config.colors:len() >= 2
   t = math.random()
   c1 = config.colors(1)
@@ -140,13 +125,11 @@ emitter_update = (emitter: any, delta_time: f64)
 
 config = emitter.config
 
-# Emit new particles
 emitter.time_since_emission = emitter.time_since_emission + delta_time
 if emitter.time_since_emission >= 1 / config.rate
   emitter_emit(emitter)
   emitter.time_since_emission = 0
 
-# Burst
 if config.burst > 0
   i = 0
   while i < config.burst
@@ -154,7 +137,6 @@ if config.burst > 0
     i = i + 1
   config.burst = 0
 
-# Update particles
 i = 1
 while i <= emitter.particles:len()
   p = emitter.particles(i)
@@ -164,23 +146,19 @@ if p.age >= p.lifetime
   p.alive = false
   emitter.particles:remove(i)
 else
-  # Update velocity with acceleration
   p.velocity.x = p.velocity.x + p.acceleration.x * delta_time
   p.velocity.y = p.velocity.y + p.acceleration.y * delta_time
   p.velocity.z = p.velocity.z + p.acceleration.z * delta_time
 
-  # Apply drag
   drag = 1 - config.drag * delta_time
   p.velocity.x = p.velocity.x * drag
   p.velocity.y = p.velocity.y * drag
   p.velocity.z = p.velocity.z * drag
 
-  # Update position
   p.position.x = p.position.x + p.velocity.x * delta_time
   p.position.y = p.position.y + p.velocity.y * delta_time
   p.position.z = p.position.z + p.velocity.z * delta_time
 
-  # Update rotation
   p.rotation = p.rotation + p.angular_velocity * delta_time
 
 i = i + 1
@@ -197,9 +175,6 @@ emitter_set_active = (emitter: any, active: bool)
 emitter_particle_count: i64 = (emitter: any)
   emitter.particles:len()
 
-# ═══════════════════════════════════════════════════════════════
-# Particle System
-# ═══════════════════════════════════════════════════════════════
 
 system_new: any = ()
   {
@@ -233,9 +208,6 @@ system_total_count: i64 = (system: any)
     count = count + emitter_particle_count(emitter)
   count
 
-# ═══════════════════════════════════════════════════════════════
-# Preset Configurations
-# ═══════════════════════════════════════════════════════════════
 
 fire: any = ()
   config = emitter_config_new()
@@ -361,11 +333,3 @@ sparkle: any = ()
     z = 0
   config.drag = 0.3
   config
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Particle
-# Emitter Config
-# Emitter
-# System
-# Presets

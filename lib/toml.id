@@ -1,4 +1,3 @@
-# toml — TOML parser with section support
 
 parse_value: any = (s: str)
   if s == nil

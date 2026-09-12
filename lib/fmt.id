@@ -1,4 +1,3 @@
-# fmt — formatting utilities
 
 int: str = (v: any)
   if v == nil
@@ -15,11 +14,6 @@ float: str = (v: any, precision: i64)
 boolean: str = (v: any)
   if v == nil
     return "false"
-  # A guard, not `if v "true" else "false" end`. The endless one-liner clause
-  # must be SELF-DELIMITED, and `v "true"` reads as PARENLESS
-  # APPLICATION # it called `v("true")` and returned that. Because `v` is
-  # `any` the bogus call TYPE-CHECKS, so unlike strconv's `b: bool` version
-  # this compiled and shipped: boolean(true) returned "false".
   if v
     return "true"
   "false"

@@ -1,6 +1,4 @@
-# net_url — URL parsing and construction (mirrors Go's net/url)
 
-# escape: percent-encode a string for use in URL components.
 escape: str = (s: str)
   if s == nil
     return ""
@@ -17,7 +15,6 @@ escape: str = (s: str)
     i = i + 1
   out:concat()
 
-# path_escape: percent-encode for URL path segments (preserves /).
 path_escape: str = (s: str)
   if s == nil
     return ""
@@ -32,7 +29,6 @@ path_escape: str = (s: str)
     i = i + 1
   out:concat()
 
-# unescape: decode a percent-encoded string.
 unescape: str = (s: str)
   if s == nil
     return ""
@@ -56,7 +52,6 @@ unescape: str = (s: str)
       i = i + 1
   out:concat()
 
-# parse_query: parse a query string into a table mapping keys to value arrays.
 parse_query: any = (query: str)
   if query == nil or query == ""
     return {}
@@ -88,7 +83,6 @@ parse_query: any = (query: str)
     j = j + 1
   out
 
-# encode_query: encode a query table into a URL query string.
 encode_query: str = (params: any)
   if params == nil
     return ""
@@ -103,7 +97,6 @@ encode_query: str = (params: any)
       out[out:len() + 1] = escape(k) .. "=" .. escape(vs)
   out:concat("&")
 
-# parse: parse a URL string into a structured table.
 parse: any = (raw_url: str)
   if raw_url == nil or raw_url == ""
     return nil
@@ -152,7 +145,6 @@ parse: any = (raw_url: str)
     url = "/"
   { scheme = scheme, host = host, port = port, path = url, query = query, raw_query = raw_query, fragment = fragment, user = user }
 
-# resolve: resolve a reference URL against a base URL.
 resolve: str = (base: str, ref: str)
   if ref == nil or ref == ""
     return base
@@ -187,7 +179,6 @@ resolve: str = (base: str, ref: str)
     result = result .. ":" .. base_url.port:to(str)
   result .. new_path
 
-# build: construct a URL string from a parsed URL table.
 build: str = (u: any)
   if u == nil
     return ""

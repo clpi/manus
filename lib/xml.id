@@ -1,4 +1,3 @@
-# xml — basic XML parsing and formatting
 
 xml_entity_to_char: any = (c: any)
   c:char()
@@ -21,11 +20,6 @@ unescape: str = (s: str)
   s = s:gsub("&gt;", ">")
   s = s:gsub("&quot;", "\"")
   s = s:gsub("&apos;", "'")
-  # A named function, not a lambda. `to_char = (c) c:char()`
-  # lowered to `lua_Value to_char = c;` — the lambda BODY leaked into the
-  # initializer and its parameter `c` was undeclared at that scope, taking
-  # the module down. A file-scope declaration lowers correctly and is passed
-  # by name.
   s = s:gsub("&#(%d+);", xml_entity_to_char)
   s
 

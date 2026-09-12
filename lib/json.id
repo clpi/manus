@@ -1,25 +1,7 @@
-# json — JSON encoder and decoder for Duo.
-#
-# Pure Duo, no external module dependencies. Objects become tables with
-# string keys; arrays become tables with integer keys 1..n; null becomes nil;
-# booleans/numbers/strings map to the obvious Duo values.
-#
-# `encode` is total (never errors): tables, arrays, scalars all round-trip.
-# `decode` is a recursive-descent parser tolerant of standard JSON (strings
-# with \uXXXX escapes, nested arrays/objects). Returns nil on malformed input.
 
-# ── encode ──────────────────────────────────────────────────────────────────
 
-# Sentinel that encodes as `{}` rather than `[]`. An empty Duo table is
-# indistinguishable from an empty sequence, so `{}` defaults to `[]` (see
-# `is_array`). Where the consumer requires a JSON *object* — JSON Schema
-# `properties`, MCP `capabilities` — pass `json.empty_object` instead.
-# Compared by table identity, so it must never be mutated by callers.
 empty_object = {}
 
-# JSON arrays are tables whose every key is a positive integer. A table with
-# only string keys (an object) is not an array; an empty table is treated as
-# an empty array (matches Duo/Lua table usage where {} grows as a sequence).
 is_array: bool = (t: any)
     if type(t) != "table" return false
     for k, _ in t
@@ -87,9 +69,6 @@ encode: str = (val: any)
 
 
 
-# ── decode ──────────────────────────────────────────────────────────────────
-# Recursive-descent over a {s=string, i=index} cursor table. Passes the cursor
-# explicitly to avoid nested-function codegen quirks.
 
 skip(cur: any)
     s = cur.s
@@ -167,10 +146,6 @@ json_string: any = (cur)
                 out[out:len() + 1] = e:char()
             cur.i = cur.i + 1
         else
-            # accumulate a run of plain chars up to the next quote/backslash
-            # (one chunk per run, not one char per byte — avoids the O(n*chars)
-            # concat cliff that made large decodes take >100s). Manual byte scan,
-            # no Lua patterns (immune to F-13813-5).
             start = cur.i
             cur.i = cur.i + 1
             while cur.i <= n

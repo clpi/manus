@@ -1,10 +1,5 @@
-# config — structured configuration with defaults, merge, and validation
-# Provides a config object that supports default schemas, deep merging,
-# dot-path access, and environment variable overrides.
 
-# ---- Internal helpers (defined first for forward reference) ----
 
-# deep_get: get a value from a nested table by dot-path.
 deep_get: any = (t: any, key: any)
   if t == nil
     return nil
@@ -18,11 +13,9 @@ deep_get: any = (t: any, key: any)
     i = i + 1
   current
 
-# deep_has: check if a dot-path key exists.
 deep_has: bool = (t: any, key: any)
   deep_get(t, key) != nil
 
-# deep_set: set a value in a nested table by dot-path.
 deep_set = (t: any, key: any, value: any)
   parts = key:split(".")
   current = t
@@ -34,7 +27,6 @@ deep_set = (t: any, key: any, value: any)
     i = i + 1
   current(parts(parts:len())) = value
 
-# deep_merge_into: recursively merge src into dst.
 deep_merge_into = (dst: any, src: any)
   if src == nil
     return
@@ -44,7 +36,6 @@ deep_merge_into = (dst: any, src: any)
     else
       dst(k) = v
 
-# collect_keys: collect dot-path keys from a nested table.
 collect_keys = (seen: any, out: any, t: any, prefix: any)
   if t == nil
     return
@@ -59,7 +50,6 @@ collect_keys = (seen: any, out: any, t: any, prefix: any)
       else
         collect_keys(seen, out, v, full_key)
 
-# deep_copy_flat: copy nested values as dot-path keys into a flat table.
 deep_copy_flat = (dst: any, prefix: any, src: any)
   if src == nil
     return
@@ -73,9 +63,7 @@ deep_copy_flat = (dst: any, prefix: any, src: any)
       if dst(full_key) == nil
         dst(full_key) = v
 
-# ---- Constructors ----
 
-# new: create a config from a table of defaults.
 new: any = (defaults: any)
   if defaults == nil
     defaults = {}
@@ -85,50 +73,38 @@ new: any = (defaults: any)
   cfg.env_prefix = ""
   cfg
 
-# ---- Access ----
 
-# get: retrieve a value by dot-path key (e.g. "server.port").
-# Falls back to defaults if not set.
 get: any = (cfg: any, key: any)
   val = deep_get(cfg.values, key)
   if val != nil
     return val
   deep_get(cfg.defaults, key)
 
-# get_or: retrieve a value with a custom fallback.
 get_or: any = (cfg: any, key: any, fallback: any)
   val = get(cfg, key)
   if val != nil
     return val
   fallback
 
-# set: set a value by dot-path key.
 set = (cfg: any, key: any, value: any)
   deep_set(cfg.values, key, value)
 
-# has: check if a key exists (values or defaults).
 has: bool = (cfg: any, key: any)
   if deep_has(cfg.values, key)
     return true
   deep_has(cfg.defaults, key)
 
-# ---- Merge ----
 
-# merge: deep-merge another config or table into this config's values.
 merge = (cfg: any, overlay: any)
   deep_merge_into(cfg.values, overlay)
 
-# merge_defaults: merge overrides into the defaults schema.
 merge_defaults = (cfg: any, overlay: any)
   deep_merge_into(cfg.defaults, overlay)
 
-# ---- Environment ----
 
-# set_env_prefix: set a prefix for env var overrides (e.g. "APP").
 set_env_prefix = (cfg: any, prefix: str)
   cfg.env_prefix = prefix
 
-# load_env: populate config values from environment variables.
 load_env = (cfg: any)
   env_data = os.getenv()
   if env_data == nil
@@ -147,9 +123,7 @@ load_env = (cfg: any)
         dot_key = dot_key:gsub("_", ".")
         deep_set(cfg.values, dot_key, v)
 
-# ---- Bulk Access ----
 
-# keys: return a list of all defined keys (values + defaults).
 keys: any = (cfg: any)
   seen = {}
   out = {}
@@ -157,16 +131,13 @@ keys: any = (cfg: any)
   collect_keys(seen, out, cfg.defaults, "")
   out
 
-# to_table: return the fully resolved config as a flat table.
 to_table: any = (cfg: any)
   result = {}
   deep_copy_flat(result, "", cfg.defaults)
   deep_copy_flat(result, "", cfg.values)
   result
 
-# ---- Validation ----
 
-# require_keys: check that all dot-path keys are present; return missing keys.
 require_keys: any = (cfg: any, keys: any)
   missing = {}
   i = 1
@@ -176,15 +147,12 @@ require_keys: any = (cfg: any, keys: any)
     i = i + 1
   missing
 
-# validate_not_nil: check that a key is not nil; return error message or nil.
 validate_not_nil: any = (cfg: any, key: any)
   if get(cfg, key) != nil
     return nil
   "missing required config key: " .. key
 
-# ---- Serialization ----
 
-# to_string: format config as a readable string.
 to_string: str = (cfg: any)
   parts = {}
   all_keys = keys(cfg)

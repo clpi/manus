@@ -1,21 +1,13 @@
-# hash.crc64 — CRC-64 checksum (mirrors Go's hash/crc64)
-# Uses the ECMA-182 polynomial with 32-bit wide arithmetic.
 
 make_poly_hi: i64 = (lo: i64)
-  # ECMA-182 polynomial top 32 bits
   1123082731
 
 make_poly_lo: i64 = (lo: i64)
-  # ECMA-182 polynomial bottom 32 bits
   (2850698899 + lo) % 4294967296
 
 poly_hi = 3379320725
 poly_lo = 3615952706
 
-# NOT `table`: a module-level binding named `table` shadows the runtime
-# `table` global, and `update` then resolved `table[idx+1]` to the library
-# table instead of this one. `.hi`/`.lo` came back nil, so no XOR ever
-# happened and the checksum was pure byte-shifting (crc_hi stayed 0).
 crc_table = {}
 for i = 0, 255
   crc_hi = 0

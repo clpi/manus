@@ -1,12 +1,3 @@
-# process home — work value and run/evidence relations (C0 §67 · docs/spec/host.md).
-#
-# Home supplies context. Process world grants authority (witness when elided).
-# run = semantic execution. outcome = semantic truth. status = foreign evidence.
-# evidence = output demand on run — not a second execution relation identity.
-#
-# A string is not executable. Shell is law on explicit run only.
-# Bootstrap ingress (GAP-155): gatecap / os.execute until graph-owned run.
-# Do not call this a subprocess module.
 
 work: { line: str } = (line: str)
   { line = line }
@@ -26,9 +17,6 @@ run: { outcome: str, status: i64 } = (line: str)
 evidence: str = (line: str)
   gatecap(line)
 
-# os.capture — process world capture relation (C0 §67 · GAP-155).
-# run + stdout as evidence; empty-output is a legal str value, not a sentinel.
-# Lowers through idol_process_capture via os.capture in dnir_lower.
 capture: str = (line: str)
   evidence(line)
 
@@ -47,8 +35,6 @@ read: str = (w: { line: str })
 halt = (code: i64)
   os.exit(code)
 
-# Positive control — run/evidence algebra (revision-bound smoke).
-# Negative control: ensure status reflects actual child, not transport exit.
 main: i64 = ()
   w = command("printf ok")
   r = run(w.line)

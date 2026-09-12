@@ -1,5 +1,3 @@
-# c world — C ABI surface through anchored access (`c.abs`, `c.labs`).
-# Bodies are semantic stubs; physical realization is the foreign boundary at link time.
 
 abs: i64 = (v: i64)
   v

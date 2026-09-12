@@ -1,5 +1,3 @@
-# encoding.pem — PEM encoding (mirrors Go's encoding/pem package)
-# Encode binary data as PEM-formatted ASCII.
 
 line_width = 64
 

@@ -1,16 +1,10 @@
-# math.wavelet — Wavelet transforms
-# For signal processing, compression, and denoising.
 
-# ═══════════════════════════════════════════════════════════════
-# Haar Wavelet Transform
-# ═══════════════════════════════════════════════════════════════
 
 haar_forward: any = (data: any)
   n = data:len()
   if n <= 1
     return data
 
-  # Pad to even length if needed
   padded = { data:unpack() }
   if n % 2 != 0
     padded[n + 1] = padded[n]
@@ -35,7 +29,6 @@ haar_forward: any = (data: any)
       i = i + 1
     level = half
 
-  # Reorder: store as [cA_n, cD_n, cD_{n-1}, ..., cD_1]
   result
 
 haar_inverse: any = (data: any)
@@ -57,11 +50,7 @@ haar_inverse: any = (data: any)
 
   temp
 
-# ═══════════════════════════════════════════════════════════════
-# Daubechies Wavelet (db4)
-# ═══════════════════════════════════════════════════════════════
 
-# Filter coefficients for Daubechies-4
 DB4_LO_DE = {
   0.4829629131446902,
   0.8365163037378077,
@@ -147,9 +136,6 @@ db4_inverse: any = (approx: any, detail: any)
     i = i + 1
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Multi-level Decomposition
-# ═══════════════════════════════════════════════════════════════
 
 decompose: any = (data: any, levels: i64)
   coeffs = { data }
@@ -173,14 +159,10 @@ reconstruct: any = (decomp: any)
     i = i - 1
   signal
 
-# ═══════════════════════════════════════════════════════════════
-# Denoising
-# ═══════════════════════════════════════════════════════════════
 
 denoise: any = (signal: any, threshold: f64)
   decomp = decompose(signal, 3)
 
-  # Soft threshold detail coefficients
   i = 1
   while i <= decomp.details:len()
     j = 1
@@ -194,11 +176,3 @@ denoise: any = (signal: any, threshold: f64)
     i = i + 1
 
   reconstruct(decomp)
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Haar
-# Daubechies
-# Multi-level
-# Denoise
-# Utility

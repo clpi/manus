@@ -1,9 +1,4 @@
-# graphics.postprocess — Post-processing effects
-# For screen-space effects in ward's rendering pipeline.
 
-# ═══════════════════════════════════════════════════════════════
-# Post-process Config
-# ═══════════════════════════════════════════════════════════════
 
 config_new: any = ()
   {
@@ -51,11 +46,7 @@ config_new: any = ()
       intensity = 0.05
     }
   }
-# "reinhard", "aces", "linear"
 
-# ═══════════════════════════════════════════════════════════════
-# Bloom
-# ═══════════════════════════════════════════════════════════════
 
 bloom_extract_bright: any = (image: any, threshold: f64)
   width = image.width
@@ -88,12 +79,10 @@ result = {}
   }
 
 bloom_blur: any = (image: any, radius: i64)
-  # Separable Gaussian blur (two-pass: horizontal then vertical)
   width = image.width
   height = image.height
   channels = image.channels
   
-# Build 1D Gaussian kernel
   sigma = radius / 3.0
   if sigma < 0.5
     sigma = 0.5
@@ -105,13 +94,11 @@ bloom_blur: any = (image: any, radius: i64)
     kernel[i + radius + 1] = val
     kernel_sum = kernel_sum + val
     i = i + 1
-  # Normalize kernel
   i = 1
   while i <= kernel:len()
     kernel[i] = kernel[i] / kernel_sum
     i = i + 1
   
-# Horizontal pass
   temp = {}
   y = 0
   while y < height
@@ -143,7 +130,6 @@ bloom_blur: any = (image: any, radius: i64)
       x = x + 1
     y = y + 1
   
-# Vertical pass
   result = {}
   y = 0
   while y < height
@@ -186,7 +172,6 @@ bloom_apply: any = (original: any, config: any)
   bright = bloom_extract_bright(original, config.threshold)
   blurred = bloom_blur(bright, config.radius)
   
-# Add blurred bloom to original
   result = {}
   i = 1
   while i <= original.data:len()
@@ -203,9 +188,6 @@ bloom_apply: any = (original: any, config: any)
     data = result
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Tone Mapping
-# ═══════════════════════════════════════════════════════════════
 
 tonemap_reinhard: any = (color: any)
   {
@@ -237,9 +219,6 @@ tonemap_linear: any = (color: any, exposure: f64)
     b = 1 - -color.b * exposure:exp()
   }
 
-# ═══════════════════════════════════════════════════════════════
-# FXAA (Fast Approximate Anti-Aliasing)
-# ═══════════════════════════════════════════════════════════════
 
 fxaa_luminance: f64 = (r: f64, g: f64, b: f64)
   0.2126 * r + 0.7152 * g + 0.0722 * b
@@ -256,7 +235,6 @@ y = 1
     while x < width - 1
       idx = (y * width + x) * channels + 1
       
-# Get 3x3 neighborhood luminance
       n = {}
       dy = -1
       while dy <= 1
@@ -268,13 +246,10 @@ y = 1
           dx = dx + 1
         dy = dy + 1
       
-# Simple edge detection
       edge_h = n[1] - n[7]:abs() + 2 * n[2] - n[8]:abs() + n[3] - n[9]:abs()
       edge_v = n[1] - n[3]:abs() + 2 * n[4] - n[6]:abs() + n[7] - n[9]:abs()
       
-# Blend based on edge
       if edge_h > config.edge_threshold or edge_v > config.edge_threshold
-        # Apply simple blur
         i = 0
         while i < channels
           result[result:len() + 1] = (image.data[idx + i] * 4 + image.data[idx - channels + i] + image.data[idx + channels + i] + image.data[idx - 1 + i] + image.data[idx + 1 + i]) / 8
@@ -295,9 +270,6 @@ x = x + 1
     data = result
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Vignette
-# ═══════════════════════════════════════════════════════════════
 
 vignette_apply: any = (image: any, intensity: f64, smoothness: f64)
   width = image.width
@@ -332,9 +304,6 @@ idx = (y * width + x) * channels + 1
     data = result
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Film Grain
-# ═══════════════════════════════════════════════════════════════
 
 film_grain_apply: any = (image: any, intensity: f64)
   width = image.width
@@ -363,19 +332,7 @@ idx = (y * width + x) * channels + 1
     data = result
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Utility Functions
-# ═══════════════════════════════════════════════════════════════
 
 smoothstep: f64 = (edge0: f64, edge1: f64, x: f64)
   t = 0:max(1:min((x - edge0) / (edge1 - edge0)))
   t * t * (3 - 2 * t)
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Config
-# Bloom
-# Tone Map
-# FXAA
-# Vignette
-# Film Grain

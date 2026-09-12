@@ -1,6 +1,3 @@
-# go — Go compatibility wrapper
-# Provides Go-standard function names mapping to Duo std implementations.
-# Import with: local go = go
 
 std = std
 

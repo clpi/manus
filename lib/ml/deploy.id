@@ -1,4 +1,3 @@
-# ml.deploy — Edge / WASM / static-binary deploy helpers
 
 static_binary_opts: any = ()
     return {
@@ -25,11 +24,8 @@ edge_pipeline(model): any
         model = model,
     }
 
-# Metadata for ONNX / safetensors export
 export_onnx: any = (model, path)
-    # Build ONNX model from Duo model's layers
     graph = std.ml.export.onnx_graph_new(model.name or "model")
-    # Export layers as ONNX nodes
     for layer in model.layers
         if layer.type == "linear"
             std.ml.export.onnx_graph_add_node(graph, "MatMul", {layer.name .. "_input", layer.name .. "_weight"}, {layer.name .. "_output"}, layer.name)
@@ -44,7 +40,6 @@ export_onnx: any = (model, path)
         else(layer.type == "embedding")
             std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.vocab_size, layer.embed_dim}, layer.weight)
             std.ml.export.onnx_graph_add_node(graph, "Gather", {layer.name .. "_weight", layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
-    # Set input/output specs
     std.ml.export.onnx_graph_add_input(graph, "input", {nil}, "float32")
     std.ml.export.onnx_graph_add_output(graph, "output", {nil}, "float32")
     onnx_model = std.ml.export.onnx_model_new(graph, model.opset or 17)
@@ -55,20 +50,17 @@ load_safetensors: any = (path: str)
     if f == nil
         return {ok = false, error = "Cannot open file: " .. path}
 
-    # Read 8-byte header length prefix
     len_bytes = f:read(8)
     if len_bytes == nil or len_bytes:len() < 8
         f:close()
         return {ok = false, error = "Invalid safetensors: missing header length"}
 
-    # Decode little-endian u64 header length
     header_len = 0
     i = 1
     while i <= 8
         header_len += len_bytes:byte(i) * (2 ^ ((i - 1) * 8))
         i += 1
 
-    # Read header JSON
     header_json = f:read(header_len)
     f:close()
     if header_json == nil
@@ -78,7 +70,6 @@ load_safetensors: any = (path: str)
     if header == nil
         return {ok = false, error = "Invalid safetensors: bad header JSON"}
 
-    # Build tensor map from header metadata
     tensors = {}
     for name, entry in header
         if type(entry) == "table" and entry.dtype

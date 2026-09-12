@@ -1,7 +1,5 @@
-# mproc — multi-process utilities
 
 pid: str = ()
-  # Get PID via /proc/self (Linux) or POSIX getpid
   f = io.open("/proc/self/stat", "r")
   if f
     line = f:read("*l")
@@ -10,7 +8,6 @@ pid: str = ()
       space_idx = line:find(" ")
       if space_idx
         return line:sub(1, space_idx - 1)
-  # Fallback: use Lua's os.execute to capture $$
   handle = io.popen("echo $$", "r")
   if handle
     result = handle:read("*l")
@@ -32,5 +29,4 @@ kill = (pid: str)
   os.execute("kill " .. pid:to(str) .. " 2>/dev/null")
 
 wait = (pid: str)
-  # Use waitpid via os.execute for the given PID
   os.execute("wait " .. pid:to(str) .. " 2>/dev/null")

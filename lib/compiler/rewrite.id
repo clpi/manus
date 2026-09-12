@@ -1,27 +1,4 @@
-# SH-09 — the transformation registry, seed.
-#
-# Transformations are EDGES, not a pass pipeline. The
-# compiler is browsable as data — `rewrite[idiom]` is a query — and every
-# transformation record declares what it requires, what it produces, and what
-# it invalidates, so a schedule can be derived rather than hand-ordered.
-#
-# This is the registry with one real member: constant folding, which SH-08
-# already evaluates. That pairing is deliberate — a registry with no member is
-# a data structure, and a folder with no registry is a function. Together they
-# are the first instance of the actual architecture.
-#
-# THE PROPERTY. A rewrite is legal when it preserves meaning. For constant
-# folding the check is exact and needs no oracle beyond SH-08 itself: the
-# replacement must fold to the same value as the expression it replaces. So
-# every rewrite this registry performs carries its own proof, per site, and
-# `apply` refuses any site where the two disagree.
-#
-# Browsability is not decoration either: `names()` and `describe(name)` are how
-# a transformation is discovered without reading this file, which is what
-# "the compiler is data" has to mean at the smallest scale.
 
-# The registry. One row per transformation; adding one is a table entry, not a
-# new pass and !a new call site in a driver.
 names: str = ()
   "|fold_constants|"
 
@@ -36,14 +13,6 @@ _is_digit: bool = (c: i64)
 _is_expr_byte: bool = (c: i64)
   _is_digit(c) or c == 32 or c == 43 or c == 45 or c == 42 or c == 47 or c == 37 or c == 94 or c == 38 or c == 124 or c == 126 or c == 60 or c == 62 or c == 40 or c == 41 or c == 120 or c == 88 or c >= 97 and c <= 102 or c >= 65 and c <= 70
 
-# Constant folding over a source string.
-#
-# Scans for a maximal run of expression bytes that (a) is not adjacent to an
-# identifier character, so `x2 + 1` is never treated as an expression starting
-# inside a name and `f(1 + 2)` is not mistaken for a parenthesised constant,
-# and (b) `compiler.comptime.foldable` accepts. Each candidate is replaced by
-# its value ONLY when the replacement folds to the same number — the rewrite's
-# own legality proof, checked per site rather than argued once.
 _fold_once: str = (src: str)
   n: i64 = src:len()
   out = ""
@@ -91,14 +60,6 @@ _fold_once: str = (src: str)
         p2: i64 = src:byte(i - 1)
         if p2 >= 97 and p2 <= 122 or p2 >= 65 and p2 <= 90 or p2 >= 48 and p2 <= 57 or p2 == 95 or p2 == 46
           prev_ok = false
-      # NARROWED, deliberately. A run is a candidate only when it is
-      # the whole right-hand side of an assignment: preceded by `= ` and
-      # ending at the newline. Anything looser kept corrupting
-      # lib/encoding/varint.id — the SAFE property caught it three
-      # times and I could not make the general scanner safe by argument.
-      # A transformation that is provably correct on a small shape beats
-      # one that is probably correct on a large one, and the registry and
-      # its proofs are the deliverable; the shape can widen behind them.
       after_assign = false
       if i > 2
         if src:byte(i - 1) == 32 and src:byte(i - 2) == 61
@@ -112,8 +73,6 @@ _fold_once: str = (src: str)
         e = e - 1
         while e > i and src:byte(e) == 32
           e = e - 1
-        # and it must end the line, so the run cannot swallow a
-        # trailing comment or a continuation
         tail_ok = false
         if e + 1 > n
           tail_ok = true
@@ -133,15 +92,6 @@ _fold_once: str = (src: str)
         i = i + 1
   out
 
-# Run to a FIXED POINT. One pass is not idempotent, and the reason is
-# legitimate rather than a bug in the scanner: folding a sub-expression can
-# create a new foldable site — `(1 << 7) - 1` becomes `128 - 1` becomes `127`.
-# A transformation that is not a fixed point cannot be scheduled, because its
-# result depends on how many times it ran. lib/encoding/varint.id is the
-# file that proved it.
-#
-# Bounded, so a transformation that oscillates terminates instead of hanging —
-# the same discipline as the parser's no-progress guard.
 fold_constants: str = (src: str)
   cur = src
   round: i64 = 0

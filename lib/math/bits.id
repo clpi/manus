@@ -1,9 +1,4 @@
-# math_bits — bit manipulation (mirrors Go's math/bits package)
-# Provides bit-counting, leading/trailing zeros, rotation, and length functions.
-# Duo integers are 64-bit; these operate using arithmetic since Duo has no
-# direct bit-shift intrinsics beyond << and >>.
 
-# leading_zeros_8: count leading zero bits in an 8-bit value.
 leading_zeros_8: i64 = (x: i64)
   n = 8
   i = 7
@@ -14,7 +9,6 @@ leading_zeros_8: i64 = (x: i64)
     i = i - 1
   n
 
-# leading_zeros_32: count leading zero bits in a 32-bit value.
 leading_zeros_32: i64 = (x: i64)
   n = 32
   i = 31
@@ -25,7 +19,6 @@ leading_zeros_32: i64 = (x: i64)
     i = i - 1
   n
 
-# leading_zeros_64: count leading zero bits in a 64-bit value.
 leading_zeros_64: i64 = (x: i64)
   n = 64
   i = 63
@@ -36,7 +29,6 @@ leading_zeros_64: i64 = (x: i64)
     i = i - 1
   n
 
-# trailing_zeros_8: count trailing zero bits in an 8-bit value.
 trailing_zeros_8: i64 = (x: i64)
   if x == 0
     return 8
@@ -45,7 +37,6 @@ trailing_zeros_8: i64 = (x: i64)
     n = n + 1
   n
 
-# trailing_zeros_32: count trailing zero bits in a 32-bit value.
 trailing_zeros_32: i64 = (x: i64)
   if x == 0
     return 32
@@ -54,7 +45,6 @@ trailing_zeros_32: i64 = (x: i64)
     n = n + 1
   n
 
-# trailing_zeros_64: count trailing zero bits in a 64-bit value.
 trailing_zeros_64: i64 = (x: i64)
   if x == 0
     return 64
@@ -63,7 +53,6 @@ trailing_zeros_64: i64 = (x: i64)
     n = n + 1
   n
 
-# ones_count_8: count set bits in an 8-bit value.
 ones_count_8: i64 = (x: i64)
   c = 0
   i = 0
@@ -72,7 +61,6 @@ ones_count_8: i64 = (x: i64)
     i = i + 1
   c
 
-# ones_count_32: count set bits in a 32-bit value.
 ones_count_32: i64 = (x: i64)
   c = 0
   i = 0
@@ -81,7 +69,6 @@ ones_count_32: i64 = (x: i64)
     i = i + 1
   c
 
-# ones_count_64: count set bits in a 64-bit value.
 ones_count_64: i64 = (x: i64)
   c = 0
   i = 0
@@ -90,26 +77,21 @@ ones_count_64: i64 = (x: i64)
     i = i + 1
   c
 
-# len_8: length of an 8-bit value (position of highest set bit + 1).
 len_8: i64 = (x: i64)
   8 - leading_zeros_8(x)
 
-# len_32: length of a 32-bit value.
 len_32: i64 = (x: i64)
   32 - leading_zeros_32(x)
 
-# len_64: length of a 64-bit value.
 len_64: i64 = (x: i64)
   64 - leading_zeros_64(x)
 
-# rotate_left_8: rotate bits left by k positions (8-bit).
 rotate_left_8: i64 = (x: i64, k: i64)
   k = k % 8
   if k < 0
     k = k + 8
   (x << k | x >> (8 - k)) % 256
 
-# rotate_left_32: rotate bits left by k positions (32-bit).
 rotate_left_32: i64 = (x: i64, k: i64)
   k = k % 32
   if k < 0
@@ -120,27 +102,22 @@ rotate_left_32: i64 = (x: i64, k: i64)
   lo = x >> (32 - k)
   return (hi | lo) % 2 ^ 32
 
-# rotate_left_64: rotate bits left by k positions (64-bit).
 rotate_left_64: i64 = (x: i64, k: i64)
   k = k % 64
   if k < 0
     k = k + 64
   if k == 0
     return x
-  # approximate for 64-bit using Lua's integer arithmetic
   hi = x << k
   lo = x >> (64 - k)
   hi | lo
 
-# rotate_right_32: rotate bits right by k positions (32-bit).
 rotate_right_32: i64 = (x: i64, k: i64)
   rotate_left_32(x, 0 - k)
 
-# rotate_right_64: rotate bits right by k positions (64-bit).
 rotate_right_64: i64 = (x: i64, k: i64)
   rotate_left_64(x, 0 - k)
 
-# reverse_8: reverse the bits of an 8-bit value.
 reverse_8: i64 = (x: i64)
   r = 0
   i = 0
@@ -149,7 +126,6 @@ reverse_8: i64 = (x: i64)
     i = i + 1
   r % 256
 
-# reverse_32: reverse the bits of a 32-bit value.
 reverse_32: i64 = (x: i64)
   r = 0
   i = 0
@@ -158,7 +134,6 @@ reverse_32: i64 = (x: i64)
     i = i + 1
   r % 2 ^ 32
 
-# reverse_bytes_32: reverse the byte order of a 32-bit value.
 reverse_bytes_32: i64 = (x: i64)
   b0 = x % 256
   b1 = x / 256 % 256
@@ -166,7 +141,6 @@ reverse_bytes_32: i64 = (x: i64)
   b3 = x / 16777216 % 256
   b0 * 16777216 + b1 * 65536 + b2 * 256 + b3
 
-# reverse_bytes_64: reverse the byte order of a 64-bit value.
 reverse_bytes_64: i64 = (x: i64)
   parts = {}
   i = 0
@@ -181,21 +155,18 @@ reverse_bytes_64: i64 = (x: i64)
     i = i + 1
   v
 
-# mul_32: multiply two 32-bit values, returning (hi, lo) as a 64-bit result split.
 mul_32: any = (x: i64, y: i64)
   p = x * y
   lo = p % 2 ^ 32
   hi = p / 2 ^ 32
   return { hi = hi, lo = lo }
 
-# add_32: add two 32-bit values, returning (sum, carry).
 add_32: any = (x: i64, y: i64)
   s = x + y
   lo = s % 2 ^ 32
   carry = s / 2 ^ 32
   return { sum = lo, carry = carry }
 
-# sub_32: subtract y from x (32-bit), returning (diff, borrow).
 sub_32: any = (x: i64, y: i64)
   d = x - y
   if d < 0

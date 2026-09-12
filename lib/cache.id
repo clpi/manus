@@ -1,14 +1,8 @@
-# cache — caching strategies (TTL, LRU, and simple)
-# Provides time-based expiration, least-recently-used eviction,
-# and simple key-value caches with statistics.
 
-# ===== Simple cache =====
 
-# simple_new: create a simple cache with no expiration.
 simple_new: any = ()
     {data = {}, order = {}, hits = 0, misses = 0}
 
-# simple_get: retrieve a value from the cache.
 simple_get: any = (c: any, key: str)
     if c == nil return nil 
     val = c.data[key]
@@ -18,19 +12,16 @@ simple_get: any = (c: any, key: str)
     c.misses = c.misses + 1
     nil
 
-# simple_set: store a value in the cache.
 simple_set = (c: any, key: str, value: any)
     if c == nil return 
     if c.data[key] == nil
         c.order[c.order:len() + 1] = key
     c.data[key] = value
 
-# simple_has: check if a key exists in the cache.
 simple_has: bool = (c: any, key: str)
     if c == nil return false 
     c.data[key] != nil
 
-# simple_delete: remove a key from the cache.
 simple_delete = (c: any, key: str)
     if c == nil return 
     c.data[key] = nil
@@ -42,7 +33,6 @@ simple_delete = (c: any, key: str)
         i += 1
     c.order = new_order
 
-# simple_clear: remove all entries from the cache.
 simple_clear = (c: any)
     if c == nil return 
     c.data = {}
@@ -50,12 +40,10 @@ simple_clear = (c: any)
     c.hits = 0
     c.misses = 0
 
-# simple_size: return the number of entries in the cache.
 simple_size: i64 = (c: any)
     if c == nil return 0 
     c.order:len()
 
-# simple_stats: return hit/miss statistics.
 simple_stats: any = (c: any)
     if c == nil return {hits = 0, misses = 0, hit_rate = 0} 
     total = c.hits + c.misses
@@ -63,20 +51,16 @@ simple_stats: any = (c: any)
     if total > 0 rate = c.hits / total 
     {hits = c.hits, misses = c.misses, hit_rate = rate}
 
-# ===== TTL cache =====
 
-# ttl_new: create a TTL cache with the given default TTL in seconds.
 ttl_new: any = (default_ttl: i64)
     if default_ttl == nil default_ttl = 60 
     {data = {}, timestamps = {}, ttl = default_ttl, hits = 0, misses = 0}
 
-# Internal: remove a key from the TTL cache.
 std_cache_ttl_delete = (c: any, key: str)
     if c == nil return 
     c.data[key] = nil
     c.timestamps[key] = nil
 
-# ttl_get: retrieve a value, returning nil if expired.
 ttl_get: any = (c: any, key: str)
     if c == nil return nil 
     val = c.data[key]
@@ -93,13 +77,11 @@ ttl_get: any = (c: any, key: str)
     c.hits = c.hits + 1
     val
 
-# ttl_set: store a value with a custom TTL (seconds). nil uses default.
 ttl_set = (c: any, key: str, value: any, custom_ttl: i64)
     if c == nil return 
     c.data[key] = value
     c.timestamps[key] = os.clock()
 
-# ttl_has: check if a key exists and is not expired.
 ttl_has: bool = (c: any, key: str)
     if c == nil return false 
     val = c.data[key]
@@ -110,11 +92,9 @@ ttl_has: bool = (c: any, key: str)
         return false
     true
 
-# ttl_delete: remove a key from the cache.
 ttl_delete = (c: any, key: str)
     std_cache_ttl_delete(c, key)
 
-# ttl_clear: remove all entries.
 ttl_clear = (c: any)
     if c == nil return 
     c.data = {}
@@ -122,7 +102,6 @@ ttl_clear = (c: any)
     c.hits = 0
     c.misses = 0
 
-# ttl_purge_expired: remove all expired entries.
 ttl_purge_expired: i64 = (c: any)
     if c == nil return 0 
     removed = 0
@@ -139,7 +118,6 @@ ttl_purge_expired: i64 = (c: any)
         i += 1
     removed
 
-# ttl_size: return the number of entries.
 ttl_size: i64 = (c: any)
     if c == nil return 0 
     n = 0
@@ -147,9 +125,7 @@ ttl_size: i64 = (c: any)
         n += 1
     n
 
-# ===== LRU cache =====
 
-# Internal: move key to end of order list (mark as recently used).
 std_cache_lru_touch = (c: any, key: str)
     new_order = {}
     i = 1
@@ -160,7 +136,6 @@ std_cache_lru_touch = (c: any, key: str)
     new_order[new_order:len() + 1] = key
     c.order = new_order
 
-# Internal: remove key from order list.
 std_cache_lru_remove_order = (c: any, key: str)
     new_order = {}
     i = 1
@@ -170,12 +145,10 @@ std_cache_lru_remove_order = (c: any, key: str)
         i += 1
     c.order = new_order
 
-# lru_new: create an LRU cache with a maximum capacity.
 lru_new: any = (capacity: i64)
     if capacity == nil capacity = 128 
     {data = {}, order = {}, capacity = capacity, hits = 0, misses = 0}
 
-# lru_get: retrieve a value and mark it as recently used.
 lru_get: any = (c: any, key: str)
     if c == nil return nil 
     val = c.data[key]
@@ -186,7 +159,6 @@ lru_get: any = (c: any, key: str)
     c.misses = c.misses + 1
     nil
 
-# lru_set: store a value, evicting LRU entry if at capacity.
 lru_set = (c: any, key: str, value: any)
     if c == nil return 
     if c.data[key] != nil
@@ -205,18 +177,15 @@ lru_set = (c: any, key: str, value: any)
     c.data[key] = value
     c.order[c.order:len() + 1] = key
 
-# lru_has: check if a key exists in the cache.
 lru_has: bool = (c: any, key: str)
     if c == nil return false 
     c.data[key] != nil
 
-# lru_delete: remove a key from the cache.
 lru_delete = (c: any, key: str)
     if c == nil return 
     c.data[key] = nil
     std_cache_lru_remove_order(c, key)
 
-# lru_clear: remove all entries.
 lru_clear = (c: any)
     if c == nil return 
     c.data = {}
@@ -224,12 +193,10 @@ lru_clear = (c: any)
     c.hits = 0
     c.misses = 0
 
-# lru_size: return the number of entries.
 lru_size: i64 = (c: any)
     if c == nil return 0 
     c.order:len()
 
-# lru_evict: evict the least recently used entry.
 lru_evict: any = (c: any)
     if c == nil or c.order:len() == 0 return nil 
     oldest = c.order[1]
@@ -243,7 +210,6 @@ lru_evict: any = (c: any)
     c.order = new_order
     val
 
-# lru_stats: return hit/miss statistics.
 lru_stats: any = (c: any)
     if c == nil return {hits = 0, misses = 0, hit_rate = 0, size = 0, capacity = 0} 
     total = c.hits + c.misses

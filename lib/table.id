@@ -1,4 +1,3 @@
-# table — table and array helper utilities
 
 len: any = (t: any)
     if t == nil return 0 

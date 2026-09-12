@@ -1,9 +1,4 @@
-# graphics.pbr — Physically Based Rendering
-# For PBR materials and shading in ward's rendering pipeline.
 
-# ═══════════════════════════════════════════════════════════════
-# PBR Material
-# ═══════════════════════════════════════════════════════════════
 
 material_new: any = ()
   {
@@ -39,11 +34,7 @@ material_set_emissive = (mat: any, r: f64, g: f64, b: f64)
     g = g
     b = b
 
-# ═══════════════════════════════════════════════════════════════
-# BRDF Functions
-# ═══════════════════════════════════════════════════════════════
 
-# Normal Distribution Function (GGX/Trowbridge-Reitz)
 distribution_ggx: f64 = (n_dot_h: f64, roughness: f64)
   a = roughness * roughness
   a2 = a * a
@@ -57,7 +48,6 @@ distribution_ggx: f64 = (n_dot_h: f64, roughness: f64)
   else
     0
 
-# Geometry Function (Smith's method)
 geometry_schlick_ggx: f64 = (n_dot_v: f64, roughness: f64)
   r = roughness + 1
   k = r * r / 8
@@ -69,7 +59,6 @@ geometry_smith: f64 = (n_dot_v: f64, n_dot_l: f64, roughness: f64)
   ggx2 = geometry_schlick_ggx(n_dot_l, roughness)
   ggx1 * ggx2
 
-# Fresnel Equation (Schlick approximation)
 fresnel_schlick: any = (cos_theta: f64, f0: any)
   power = 1 - cos_theta:pow(5)
   return {
@@ -78,13 +67,8 @@ fresnel_schlick: any = (cos_theta: f64, f0: any)
     b = f0.b + (1 - f0.b) * power
   }
 
-# ═══════════════════════════════════════════════════════════════
-# PBR Shading
-# ═══════════════════════════════════════════════════════════════
 
 calculate_f0: any = (mat: any)
-  # F0 is the reflectance at normal incidence
-  # Dielectrics: 0.04, Metals: albedo
   {
     r = 0.04 + mat.metallic * (mat.albedo.r - 0.04),
     g = 0.04 + mat.metallic * (mat.albedo.g - 0.04),
@@ -92,24 +76,19 @@ calculate_f0: any = (mat: any)
   }
 
 shade: any = (mat: any, n: any, v: any, l: any, light_color: any, light_intensity: f64)
-  # Calculate F0
   f0 = calculate_f0(mat)
 
-  # Half vector
   h = vec3_normalize(vec3_add(v, l))
 
-  # Dot products
   n_dot_l = 0:max(vec3_dot(n, l))
   n_dot_v = 0.001:max(vec3_dot(n, v))
   n_dot_h = 0:max(vec3_dot(n, h))
   v_dot_h = 0:max(vec3_dot(v, h))
 
-  # Cook-Torrance BRDF
   d = distribution_ggx(n_dot_h, mat.roughness)
   g = geometry_smith(n_dot_v, n_dot_l, mat.roughness)
   f = fresnel_schlick(v_dot_h, f0)
 
-  # Specular
   numerator =
     r = d * g * f.r
     g = d * g * f.g
@@ -120,7 +99,6 @@ shade: any = (mat: any, n: any, v: any, l: any, light_color: any, light_intensit
     g = numerator.g / denominator
     b = numerator.b / denominator
 
-  # Energy conservation
   k_d =
     r = 1 - f.r
     g = 1 - f.g
@@ -129,13 +107,11 @@ shade: any = (mat: any, n: any, v: any, l: any, light_color: any, light_intensit
   k_d.g = k_d.g * (1 - mat.metallic)
   k_d.b = k_d.b * (1 - mat.metallic)
 
-  # Diffuse (Lambertian)
   diffuse =
     r = mat.albedo.r / math.pi
     g = mat.albedo.g / math.pi
     b = mat.albedo.b / math.pi
 
-  # Combine
   lo =
     r = (k_d.r * diffuse.r + specular.r) * light_color.r * light_intensity * n_dot_l
     g = (k_d.g * diffuse.g + specular.g) * light_color.g * light_intensity * n_dot_l
@@ -143,9 +119,6 @@ shade: any = (mat: any, n: any, v: any, l: any, light_color: any, light_intensit
 
   lo
 
-# ═══════════════════════════════════════════════════════════════
-# Vector Utilities
-# ═══════════════════════════════════════════════════════════════
 
 vec3_new: any = (x: f64, y: f64, z: f64)
   { x = x, y = y, z = z }
@@ -178,10 +151,3 @@ vec3_normalize: any = (v: any)
     { x = v.x / len, y = v.y / len, z = v.z / len }
   else
     { x = 0, y = 0, z = 0 }
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Material
-# BRDF
-# Shading
-# Vec3

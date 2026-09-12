@@ -1,30 +1,5 @@
-# image.gif — GIF image decoder with LZW decompression
-# Decodes GIF87a/GIF89a images including LZW-compressed image data.
 
-# ═══════════════════════════════════════════════════════════════
-# LZW Decompressor (GIF variant: LSB-first, variable-width codes)
-# ═══════════════════════════════════════════════════════════════
 
-# Read one variable-width code from the bit stream, LSB first.
-#
-# This lived INSIDE lzw_decompress as a nested bare declaration
-# (`read_code(): i64 ... end`). GR-001 bare declarations are file-scope only,
-# so it never parsed, the block structure came apart, and the error surfaced a
-# hundred lines later as "expected '<eof>', got 'end'" on the function's own
-# closing end. That took the whole module down.
-#
-# It is hoisted rather than turned into a lambda, which is what fixed the same
-# shape in std.fn: this one CAPTURES a parameter (`data`) and MUTATES three
-# enclosing locals (`bit_pos`, `byte_pos`, and `code_size`, which grows as the
-# dictionary fills). Lambdas capture neither, so the state is threaded
-# explicitly through a record instead — which is also the honest shape, since
-# the mutation is the point.
-# The record fields are read into TYPED locals for the duration of the call and
-# written back once. Operating on `st.bit_pos` directly mixes an i64 with the
-# `any` field's lua_Value ("invalid operands to binary expression"), and
-# arithmetic on an `any` field against integer literals truncates the field
-# before the operation — a silently-wrong-numbers trap. Typed locals sidestep
-# both, and the bit twiddling stays native.
 gif_read_code: i64 = (st: any)
   code: i64 = 0
   bits_read: i64 = 0
@@ -55,7 +30,6 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
   clear_code = 2 ^ min_code_size
   eoi_code = clear_code + 1
 
-  # Initialize code table
   dict = {}
   i = 0
   while i < clear_code
@@ -65,9 +39,6 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
   code_size = min_code_size + 1
   next_code = dict_size
 
-  # Bit reader state, shared with gif_read_code. `code_size` lives here too
-  # because the reader consumes it and the decoder grows it as the dictionary
-  # fills — one owner for one fact.
   st =
     data = data
     eoi_code = eoi_code
@@ -75,7 +46,6 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
     byte_pos = 1
     bit_pos = 0
 
-  # Output buffer
   output = {}
   prev = nil
 
@@ -83,7 +53,6 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
     code = gif_read_code(st)
 
     if code == clear_code
-      # Reset
       i = 0
       while i < clear_code
         dict[i] = { i }
@@ -99,16 +68,13 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
       else
 
         if code < dict_size
-          # Code is in the table
           entry = dict[code]
-          # Output the entry
           i = 1
           while i <= entry:len()
             output[output:len() + 1] = entry[i]
             i = i + 1
 
           if prev != nil
-            # Add new entry: prev + first byte of current entry
             new_entry = {}
             j = 1
             while j <= dict[prev]:len()
@@ -119,21 +85,15 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
             if next_code < 4096
               dict[next_code] = new_entry
               next_code = next_code + 1
-              # Increase code size if needed
-              # Typed local: `2 ^ st.code_size` on the `any` field
-              # yields a lua_Value, and comparing it against the i64
-              # next_code is "invalid operands to binary expression".
               cs: i64 = st.code_size
               if next_code > to(i64)(2 ^ cs) and cs < 12
                 st.code_size = cs + 1
           prev = code
         else
 
-          # code >= dict_size: special case
           if prev == nil
             break
           entry = dict[prev]
-          # Output entry + first byte of entry
           new_entry = {}
           j = 1
           while j <= entry:len()
@@ -157,9 +117,6 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
 
   output
 
-# ═══════════════════════════════════════════════════════════════
-# GIF Decoder
-# ═══════════════════════════════════════════════════════════════
 
 read_u16_le: i64 = (s: str, off: i64)
   s:byte(off) + s:byte(off + 1) * 256
@@ -168,12 +125,10 @@ decode: any = (data: str)
   if data == nil
     return nil
 
-  # Verify signature
   sig = data:sub(1, 6)
   if sig != "GIF87a" and sig != "GIF89a"
     return nil
 
-  # Logical Screen Descriptor
   width = read_u16_le(data, 7)
   height = read_u16_le(data, 9)
   packed = data:byte(11)
@@ -184,7 +139,6 @@ decode: any = (data: str)
 
   off = 14
 
-  # Global Color Table
   gct = {}
   if gct_flag == 1
     i = 0
@@ -204,14 +158,11 @@ decode: any = (data: str)
     byte = data:byte(off)
 
     if byte == 33
-      # Extension block
       ext_label = data:byte(off + 1)
       off = off + 2
 
-      # Read sub-blocks
       sub_len = data:byte(off)
       if ext_label == 249
-        # Graphics Control Extension
         if sub_len >= 4
           packed = data:byte(off + 1)
           transparent_flag = packed & 1
@@ -219,7 +170,6 @@ decode: any = (data: str)
             transparent_idx = data:byte(off + 4)
       off = off + sub_len + 1
 
-      # Skip remaining sub-blocks
       while off < data:len()
         sub_len = data:byte(off)
         off = off + 1
@@ -229,7 +179,6 @@ decode: any = (data: str)
     else
 
       if byte == 44
-        # Image Descriptor
         left = read_u16_le(data, off + 1)
         top = read_u16_le(data, off + 3)
         img_w = read_u16_le(data, off + 5)
@@ -239,7 +188,6 @@ decode: any = (data: str)
         lct_size = 2 ^ (local_packed & (7 + 1))
         off = off + 10
 
-        # Local Color Table
         lct = nil
         if lct_flag == 1
           lct = {}
@@ -252,14 +200,11 @@ decode: any = (data: str)
             i = i + 1
           off = off + lct_size * 3
 
-        # Use LCT if present, otherwise GCT
         palette = lct or gct
 
-        # LZW Minimum Code Size
         min_code_size = data:byte(off)
         off = off + 1
 
-        # Collect LZW data from sub-blocks
         lzw_data = ""
         while off < data:len()
           sub_len = data:byte(off)
@@ -269,10 +214,8 @@ decode: any = (data: str)
           lzw_data = lzw_data .. data:sub(off, off + sub_len - 1)
           off = off + sub_len
 
-        # Decompress
         pixels = lzw_decompress(lzw_data, min_code_size, img_w * img_h)
 
-        # Write pixels to image
         idx = 1
         y = top
         while y < top + img_h and y < height
@@ -290,7 +233,6 @@ decode: any = (data: str)
       else
 
         if byte == 59
-          # Trailer
           break
         else
           break

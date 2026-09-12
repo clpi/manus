@@ -1,21 +1,13 @@
-# crypto_hmac — HMAC implementation (mirrors Go's crypto/hmac)
-# Provides HMAC construction using any hash function that takes a string and
-# returns a hex string.
 
 h = hash
 
-# hmac: compute HMAC of message m using key k and hash function hash.
-# hash(s) should return a hex string. block is the hash's block size.
 hmac: str = (hash: any, key: str, message: str, block: i64)
   if block == nil
     block = 64
-  # if key is longer than block, hash it
   if key:len() > block
     key = hash(key)
-  # pad key to block
   while key:len() < block
     key = key .. 0:char()
-  # create inner and outer pads
   inner = ""
   outer = ""
   i = 1
@@ -24,16 +16,12 @@ hmac: str = (hash: any, key: str, message: str, block: i64)
     inner = (inner .. k) ~ 54:char()
     outer = (outer .. k) ~ 92:char()
     i = i + 1
-  # compute inner hash
   digest = hash(inner .. message)
-  # compute outer hash
   hash(outer .. digest)
 
-# hmac_sha256: HMAC-SHA-256 using the crypto sha256.
 hmac_sha256: str = (key: str, message: str)
   hmac(crypto.sha256, key, message, 64)
 
-# hmac_sha256_bytes: HMAC-SHA-256 returning raw 32-byte binary string.
 hmac_sha256_bytes: str = (key: str, message: str)
   hex = hmac_sha256(key, message)
   bytes = {}
@@ -44,19 +32,15 @@ hmac_sha256_bytes: str = (key: str, message: str)
     i = i + 2
   return bytes:concat()
 
-# hmac_sha1: HMAC-SHA-1.
 hmac_sha1: str = (key: str, message: str)
   hmac(crypto.sha1, key, message, 64)
 
-# hmac_md5: HMAC-MD5.
 hmac_md5: str = (key: str, message: str)
   hmac(h.md5, key, message, 64)
 
-# hmac_fnv1a: HMAC using FNV-1a (non-standard but available).
 hmac_fnv1a: str = (key: str, message: str)
   hmac(h.fnv1a, key, message, 64)
 
-# equal: constant-time comparison of two hex strings (length-checked).
 equal: bool = (a: str, b: str)
   if a:len() != b:len()
     return false

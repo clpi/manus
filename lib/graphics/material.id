@@ -1,9 +1,4 @@
-# graphics.material — Material and texture management
-# For ward's graphics pipeline and rendering.
 
-# ═══════════════════════════════════════════════════════════════
-# Texture
-# ═══════════════════════════════════════════════════════════════
 
 texture_new: any = (width: i64, height: i64, channels: i64)
     data = {}
@@ -99,9 +94,6 @@ texture_flip_v: any = (tex: any)
         y += 1
     new_tex
 
-# ═══════════════════════════════════════════════════════════════
-# Procedural Textures
-# ═══════════════════════════════════════════════════════════════
 
 texture_checkerboard: any = (size: i64, square_size: i64)
     tex = texture_new(size, size, 3)
@@ -133,9 +125,6 @@ texture_gradient: any = (size: i64, color1: any, color2: any)
         y += 1
     tex
 
-# ═══════════════════════════════════════════════════════════════
-# Material
-# ═══════════════════════════════════════════════════════════════
 
 material_new: any = (name: str)
     {
@@ -152,7 +141,7 @@ material_new: any = (name: str)
         ao_texture = nil,
         emissive_texture = nil,
         double_sided = false,
-        alpha_mode = "opaque",  # "opaque", "mask", "blend"
+        alpha_mode = "opaque",
         alpha_cutoff = 0.5,
     }
 
@@ -179,9 +168,6 @@ material_set_texture = (mat: any, texture_type: str, texture: any)
     else(texture_type == "emissive")
         mat.emissive_texture = texture
 
-# ═══════════════════════════════════════════════════════════════
-# Material Library
-# ═══════════════════════════════════════════════════════════════
 
 library_new: any = ()
     {
@@ -204,7 +190,6 @@ library_list: any = (store: any)
         names[names:len() + 1] = name
     names
 
-# Default materials
 default_white: any = ()
     mat = material_new("default_white")
     mat.albedo = {r = 1, g = 1, b = 1}
@@ -256,22 +241,16 @@ emissive: any = (color: any, strength: f64)
     mat.emissive_strength = strength or 1.0
     mat
 
-# ═══════════════════════════════════════════════════════════════
-# PBR Shading (simplified)
-# ═══════════════════════════════════════════════════════════════
 
 pbr_shade: any = (material: any, normal: any, light_dir: any, view_dir: any)
-    # Simplified PBR shading
     n_dot_l = 0:max(normal.x * light_dir.x + normal.y * light_dir.y + normal.z * light_dir.z)
 
-    # Diffuse
     diffuse = {
         r = material.albedo.r * n_dot_l,
         g = material.albedo.g * n_dot_l,
         b = material.albedo.b * n_dot_l,
     }
 
-    # Specular (simplified)
     half_dir = {
         x = light_dir.x + view_dir.x,
         y = light_dir.y + view_dir.y,
@@ -292,20 +271,10 @@ pbr_shade: any = (material: any, normal: any, light_dir: any, view_dir: any)
         b = spec * material.metallic,
     }
 
-    # Combine
     {
         r = 1:min(diffuse.r + specular.r),
         g = 1:min(diffuse.g + specular.g),
         b = 1:min(diffuse.b + specular.b),
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
-# Texture
-# Procedural
-# Material
-# Library
-# Defaults
-# Shading

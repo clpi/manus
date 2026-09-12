@@ -1,9 +1,4 @@
-# math.stats — Statistical functions
-# For ML training metrics and data analysis.
 
-# ═══════════════════════════════════════════════════════════════
-# Descriptive Statistics
-# ═══════════════════════════════════════════════════════════════
 
 stats_mean: f64 = (data: any)
   if data:len() == 0
@@ -73,9 +68,6 @@ stats_standardize: any = (data: any)
     result[result:len() + 1] = (v - mean) / std
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Percentiles & Quartiles
-# ═══════════════════════════════════════════════════════════════
 
 stats_percentile: f64 = (data: any, p: f64)
   if data:len() == 0
@@ -105,9 +97,6 @@ stats_iqr: f64 = (data: any)
   q = stats_quartiles(data)
   q.q3 - q.q1
 
-# ═══════════════════════════════════════════════════════════════
-# Covariance & Correlation
-# ═══════════════════════════════════════════════════════════════
 
 stats_covariance: f64 = (x: any, y: any)
   n = x:len()
@@ -131,9 +120,6 @@ stats_correlation: f64 = (x: any, y: any)
     return 0.0
   cov / std_x * std_y
 
-# ═══════════════════════════════════════════════════════════════
-# Distribution Functions
-# ═══════════════════════════════════════════════════════════════
 
 stats_normal_pdf: f64 = (x: f64, mean: f64, std: f64)
   if std < 0.0000000001
@@ -159,9 +145,6 @@ stats_uniform_cdf: f64 = (x: f64, a: f64, b: f64)
     return 1.0
   (x - a) / (b - a)
 
-# ═══════════════════════════════════════════════════════════════
-# Histogram
-# ═══════════════════════════════════════════════════════════════
 
 stats_histogram: any = (data: any, bins: i64)
   if data:len() == 0
@@ -200,9 +183,6 @@ stats_histogram: any = (data: any, bins: i64)
 
   { bins = counts, edges = edges }
 
-# ═══════════════════════════════════════════════════════════════
-# Summary Statistics
-# ═══════════════════════════════════════════════════════════════
 
 stats_summary: any = (data: any)
   if data:len() == 0
@@ -225,9 +205,6 @@ stats_summary: any = (data: any)
     q3 = stats_percentile(data, 75)
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Outlier Detection
-# ═══════════════════════════════════════════════════════════════
 
 stats_outliers_iqr: any = (data: any)
   q = stats_quartiles(data)
@@ -258,35 +235,25 @@ stats_outliers_zscore: any = (data: any, threshold: f64)
         zscore = z
   { outliers = outliers }
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
 M = {}
-# Descriptive
 M.mean = stats_mean
 M.median = stats_median
 M.mode = stats_mode
 M.variance = stats_variance
 M.std_dev = stats_std_dev
 M.standardize = stats_standardize
-# Percentiles
 M.percentile = stats_percentile
 M.quartiles = stats_quartiles
 M.iqr = stats_iqr
-# Correlation
 M.covariance = stats_covariance
 M.correlation = stats_correlation
-# Distributions
 M.normal_pdf = stats_normal_pdf
 M.normal_cdf = stats_normal_cdf
 M.uniform_pdf = stats_uniform_pdf
 M.uniform_cdf = stats_uniform_cdf
-# Histogram
 M.histogram = stats_histogram
-# Summary
 M.summary = stats_summary
-# Outliers
 M.outliers_iqr = stats_outliers_iqr
 M.outliers_zscore = stats_outliers_zscore
 M

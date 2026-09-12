@@ -1,5 +1,3 @@
-# testing.fstest — filesystem test helpers (mirrors Go's testing/fstest)
-# Provides a MapFS in-memory filesystem for testing file operations.
 
 MapFS = {}
 MapFS.__index = MapFS

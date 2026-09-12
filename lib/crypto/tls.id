@@ -1,62 +1,41 @@
-# crypto.tls — TLS client via OpenSSL (@ffi bindings)
-# Provides TLS/SSL connections over TCP sockets.
-# Link with: duo compile myapp.id #link ssl crypto
 
-# ═══════════════════════════════════════════════════════════════
-# OpenSSL FFI declarations
-# ═══════════════════════════════════════════════════════════════
 
-# SSL_CTX *SSL_CTX_new(const SSL_METHOD *method)
 @ffi("SSL_CTX_new")
 ssl_ctx_new(method: any): any
 
-# const SSL_METHOD *TLS_client_method(void)
 @ffi("TLS_client_method")
 tls_client_method: any = ()
 
-# int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
 @ffi("SSL_CTX_set_default_verify_paths")
 ssl_ctx_set_default_verify_paths(ctx: any): int
 
-# SSL *SSL_new(SSL_CTX *ctx)
 @ffi("SSL_new")
 ssl_new(ctx: any): any
 
-# int SSL_set_fd(SSL *ssl, int fd)
 @ffi("SSL_set_fd")
 ssl_set_fd(ssl: any, fd: int): int
 
-# int SSL_connect(SSL *ssl)
 @ffi("SSL_connect")
 ssl_connect(ssl: any): int
 
-# int SSL_write(SSL *ssl, const void *buf, int num)
 @ffi("SSL_write")
 ssl_write(ssl: any, buf: str, num: int): int
 
-# int SSL_read(SSL *ssl, void *buf, int num)
 @ffi("SSL_read")
 ssl_read(ssl: any, buf: str, num: int): int
 
-# void SSL_free(SSL *ssl)
 @ffi("SSL_free")
 ssl_free(ssl: any): void
 
-# void SSL_CTX_free(SSL_CTX *ctx)
 @ffi("SSL_CTX_free")
 ssl_ctx_free(ctx: any): void
 
-# int SSL_get_error(SSL *ssl, int ret)
 @ffi("SSL_get_error")
 ssl_get_error(ssl: any, ret: int): int
 
-# int SSL_shutdown(SSL *ssl)
 @ffi("SSL_shutdown")
 ssl_shutdown(ssl: any): int
 
-# ═══════════════════════════════════════════════════════════════
-# TLS Configuration
-# ═══════════════════════════════════════════════════════════════
 
 new_config: any = ()
     {
@@ -78,43 +57,32 @@ set_ca = (config: any, ca: str)
 set_name = (config: any, name: str)
     config.name = name
 
-# ═══════════════════════════════════════════════════════════════
-# TLS Client Connection
-# ═══════════════════════════════════════════════════════════════
 
 dial: any = (host: str, port: i64, config: any)
     if config == nil config = new_config()
 
-    # Establish TCP connection first
     fd = net.connect(host, port)
     if fd == nil
         return nil, "TCP connection failed"
 
-    # Initialize OpenSSL
     method = tls_client_method()
     ctx = ssl_ctx_new(method)
     if ctx == nil
         net.close(fd)
         return nil, "Failed to create SSL context"
 
-    # Set default CA paths
     ssl_ctx_set_default_verify_paths(ctx)
 
-    # Create SSL connection
     ssl = ssl_new(ctx)
     if ssl == nil
         ssl_ctx_free(ctx)
         net.close(fd)
         return nil, "Failed to create SSL connection"
 
-    # Associate TCP fd with SSL
     ssl_set_fd(ssl, fd)
 
-    # Set server name for SNI
     if config.name
-        # Use the hostname for SNI
 
-    # Perform TLS handshake
     ret = ssl_connect(ssl)
     if ret != 1
         ssl_free(ssl)
@@ -139,7 +107,6 @@ write: i64 = (conn: any, data: str)
 read: any = (conn: any, maxlen: i64)
     if conn == nil or conn.ssl == nil return nil
     if maxlen == nil maxlen = 4096
-    # Allocate a buffer of the right size for SSL_read
     buf = "\0":rep(maxlen)
     n = ssl_read(conn.ssl, buf, maxlen)
     if n <= 0 return nil
@@ -158,12 +125,8 @@ close = (conn: any)
         net.close(conn.fd)
         conn.fd = nil
 
-# ═══════════════════════════════════════════════════════════════
-# Convenience: HTTPS GET
-# ═══════════════════════════════════════════════════════════════
 
 https_get: any = (url: str)
-    # Parse URL
     parsed = net.parse_url(url)
     host = parsed.host
     port = parsed.port
@@ -171,19 +134,16 @@ https_get: any = (url: str)
 
     if port == nil or port == 0 port = 443
 
-    # Connect with TLS
     conn, err = dial(host, port, nil)
     if conn == nil
         return {body = "", status = 0, error = err}
 
-    # Send HTTP request
     request = "GET " .. path .. " HTTP/1.0\r\n"
         .. "Host: " .. host .. "\r\n"
         .. "Connection: close\r\n"
         .. "\r\n"
     write(conn, request)
 
-    # Read response
     body = ""
     while true
         chunk, err = read(conn, 4096)
@@ -192,7 +152,6 @@ https_get: any = (url: str)
 
     close(conn)
 
-    # Parse status
     status = string["match"](body, "HTTP/%d+%.%d+ (%d+)"):to(i64) or 0
     sep = body:find("\r\n\r\n", 1, true)
     out = body
@@ -201,7 +160,4 @@ https_get: any = (url: str)
 
     {body = out, status = status}
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 

@@ -1,9 +1,4 @@
-# encoding_gob — simple gob-like encoding (mirrors Go's encoding/gob)
-# Provides a simple binary serialization format for Duo tables.
-# This is NOT Go's gob format; it is a Duo-specific binary serializer
-# that can encode tables, arrays, strings, numbers, booleans, and nil.
 
-# Type tags
 TAG_NIL = 0
 TAG_BOOL = 1
 TAG_INT = 2
@@ -12,13 +7,11 @@ TAG_STRING = 4
 TAG_ARRAY = 5
 TAG_TABLE = 6
 
-# marshal: encode a value as a binary string.
 marshal: str = (v: any)
   out = {}
   encode(v, out)
   return out:concat()
 
-# encode: internal encoder that appends to the out array.
 encode = (v: any, out: any)
   if v == nil
     out[out:len() + 1] = TAG_NIL:char()
@@ -38,7 +31,6 @@ encode = (v: any, out: any)
     else
       out[out:len() + 1] = TAG_FLOAT:char()
       out[out:len() + 1] = "%.17g":format(v)
-      # null terminator
       out[out:len() + 1] = 0:char()
     return
   if t == "string"
@@ -47,7 +39,6 @@ encode = (v: any, out: any)
     out[out:len() + 1] = v
     return
   if t == "table"
-    # check if array
     n = v:len()
     count = 0
     for _ in v
@@ -66,10 +57,8 @@ encode = (v: any, out: any)
         encode(k:to(str), out)
         encode(val, out)
     return
-  # unsupported type
   out[out:len() + 1] = TAG_NIL:char()
 
-# encode_int: encode an integer as a variable-length string.
 encode_int = (v: i64, out: any)
   if v == 0
     out[out:len() + 1] = 0:char()
@@ -77,7 +66,6 @@ encode_int = (v: i64, out: any)
   parts = {}
   n = v
   if n < 0
-    # encode sign as complement
     n = 0 - n
   while n > 0
     parts[parts:len() + 1] = n % 256:char()
@@ -87,8 +75,6 @@ encode_int = (v: i64, out: any)
     out[out:len() + 1] = parts[i]
     i = i - 1
 
-# unmarshal: decode a binary string into a Duo value.
-# Returns (value, bytes_consumed).
 unmarshal: any = (data: str)
   if data == nil or data == ""
     return nil, 0
@@ -98,7 +84,6 @@ unmarshal: any = (data: str)
   v = decode(parser)
   return v, parser.pos - 1
 
-# decode: internal decoder.
 decode: any = (p: any)
   if p.pos > p.s:len()
     return nil
@@ -117,7 +102,6 @@ decode: any = (p: any)
     while p.pos <= p.s:len() and p.s:byte(p.pos) != 0
       p.pos = p.pos + 1
     s = p.s:sub(start, p.pos - 1)
-    # skip null terminator
     p.pos = p.pos + 1
     return s:to(i64)
   if tag == TAG_STRING
@@ -145,7 +129,6 @@ decode: any = (p: any)
     return tbl
   nil
 
-# decode_int: decode a variable-length integer.
 decode_int: i64 = (p: any)
   v = 0
   while p.pos <= p.s:len()

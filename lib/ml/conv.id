@@ -1,8 +1,4 @@
-# ml.conv — Convolution and pooling layers for neural networks
 
-# ═══════════════════════════════════════════════════════════════
-# Conv1D
-# ═══════════════════════════════════════════════════════════════
 
 conv1d_layer: any = (in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64, padding: i64)
   if stride == nil
@@ -26,8 +22,6 @@ conv1d_layer: any = (in_channels: i64, out_channels: i64, kernel_size: i64, stri
 
 @hot
 conv1d_forward: any = (layer: any, input: any)
-  # input: {batch_size, in_channels, length}
-  # Simplified: assumes input is a single flattened sequence
   batch = input.rows
   in_len = input.cols
   out_len = (in_len + 2 * layer.padding - layer.kernel_size) / layer.stride:floor() + 1
@@ -38,26 +32,20 @@ conv1d_forward: any = (layer: any, input: any)
       for k = 0, layer.kernel_size - 1
         pos = (o - 1) * layer.stride + k - layer.padding + 1
         if pos >= 1 and pos <= in_len
-          # Dot product of input slice with kernel
           for c = 1, layer.in_channels
             idx_in = (b - 1) * in_len + (pos - 1) * layer.in_channels + c
             for oc = 1, layer.out_channels
               idx_w = (k * layer.in_channels + c - 1) * layer.out_channels + oc
               idx_out = (o - 1) * layer.out_channels + oc
               acc.data[idx_out] = acc.data(idx_out) + input.data(idx_in) * layer.weight.data(idx_w)
-      # Add bias
       for oc = 1, layer.out_channels
         idx_out = (o - 1) * layer.out_channels + oc
         acc.data[idx_out] = acc.data(idx_out) + layer.bias.data(oc)
-      # Write to result
       for oc = 1, layer.out_channels
         idx_res = (b - 1) * out_len * layer.out_channels + (o - 1) * layer.out_channels + oc
         result.data[idx_res] = acc.data(oc)
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Conv2D
-# ═══════════════════════════════════════════════════════════════
 
 conv2d_layer: any = (in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64, padding: i64)
   if stride == nil
@@ -81,8 +69,6 @@ conv2d_layer: any = (in_channels: i64, out_channels: i64, kernel_size: i64, stri
 
 @hot
 conv2d_forward: any = (layer: any, input: any)
-  # input: flattened {height, width, in_channels}
-  # Simplified: 2D convolution on a single image
   h_in = input.rows
   w_in = input.cols / layer.in_channels:floor()
   h_out = (h_in + 2 * layer.padding - layer.kernel_size) / layer.stride:floor() + 1
@@ -105,9 +91,6 @@ conv2d_forward: any = (layer: any, input: any)
         result.data[idx_out] = acc + layer.bias.data(oc)
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Max Pooling
-# ═══════════════════════════════════════════════════════════════
 
 maxpool1d: any = (kernel_size: i64, stride: i64)
   if stride == nil
@@ -134,9 +117,6 @@ maxpool1d_forward: any = (layer: any, input: any)
       result.data[(c - 1) * out_len + o] = max_val
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Average Pooling
-# ═══════════════════════════════════════════════════════════════
 
 avgpool1d: any = (kernel_size: i64, stride: i64)
   if stride == nil
@@ -161,9 +141,6 @@ avgpool1d_forward: any = (layer: any, input: any)
       result.data[(c - 1) * out_len + o] = sum / layer.kernel_size
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Adaptive Average Pooling (output size is fixed)
-# ═══════════════════════════════════════════════════════════════
 
 adaptive_avgpool: any = (output_size: i64)
   {
@@ -191,9 +168,6 @@ adaptive_avgpool_forward: any = (layer: any, input: any)
         result.data[(c - 1) * out_size + o] = sum / count
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Global Average Pooling
-# ═══════════════════════════════════════════════════════════════
 
 global_avgpool: any = ()
   { type = "global_avgpool" }
@@ -211,21 +185,14 @@ global_avgpool_forward: any = (layer: any, input: any)
     result.data[c] = sum / len
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Flatten (for transitioning conv to linear layers)
-# ═══════════════════════════════════════════════════════════════
 
 flatten: any = ()
   { type = "flatten" }
 
 flatten_forward: any = (layer: any, input: any)
-  # Reshape to {1, total_elements}
   result = ml.tensor.zeros(1, input.size)
   i = 1
   while i <= input.size
     result.data[i] = input.data(i)
     i = i + 1
   result
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════

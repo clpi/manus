@@ -1,14 +1,10 @@
-# compiler.token
-# Token descriptors for the Duo-native lexer
 
 loc: { file: str, line: i64, col: i64 }
 
 kindname = 0
 kindintlit = 1
 kindfloatlit = 2
-# Slot 3 is unpublished. Not an identity. Do not renumber 4–113.
 
-# Keywords from classify.id
 kindand = 4
 kindbreak = 5
 kindcontinue = 6
@@ -64,7 +60,6 @@ kindcomptime = 55
 kindby = 56
 kindlet = 57
 
-# Single-char punctuation
 kindlparen = 58
 kindrparen = 59
 kindlbracket = 60
@@ -93,7 +88,6 @@ kindquestion = 82
 kindbang = 83
 kindbacktick = 84
 
-# Multi-char operators
 kindconcat = 85
 kinddots = 86
 kindhashhash = 87
@@ -126,12 +120,7 @@ kindcompatlongcomment = 113
 
 token: { kind: i64, loc: loc, text: str, int_val: i64, float_val: f64 }
 
-# ---------------------------------------------------------------------------
-# GRAMMAR-ROLE FACTS — the one executable owner (GAP-134, law.grammar.one).
-# Keyed by producer slot identity, never by spelling.
-# ---------------------------------------------------------------------------
 
-# may this identity open an expression
 rolebeginexpr: bool = (kind: i64)
   if (kind >= kindname and kind <= kindfloatlit) or kind == kindfalse or kind == kindnil
     return true
@@ -153,7 +142,6 @@ rolebeginexpr: bool = (kind: i64)
     return true
   false
 
-# prefix (unary) position
 roleprefix: bool = (kind: i64)
   if kind == kindnot or kind == kindawait or kind == kindcomptime
     return true
@@ -163,37 +151,31 @@ roleprefix: bool = (kind: i64)
     return true
   false
 
-# postfix position
 rolepostfix: bool = (kind: i64)
   if kind == kinddot
     return true
   false
 
-# parameter-slot marker
 roleparameter: bool = (kind: i64)
   if kind == kindcolon
     return true
   false
 
-# literal payload identity
 roleliteral: bool = (kind: i64)
   if kind == kindintlit or kind == kindfloatlit or (kind >= kindtextlit and kind <= kindcompatlongtextlit)
     return true
   false
 
-# quoted payload identity (text / bytes / compat)
 rolequoted: bool = (kind: i64)
   if (kind >= kindtextlit and kind <= kindcompatlongtextlit)
     return true
   false
 
-# projection face (dot / bracket / colon)
 roleprojection: bool = (kind: i64)
   if kind == kindlbracket or kind == kindcolon or kind == kinddot
     return true
   false
 
-# may this identity open a callable body
 rolebodystart: bool = (kind: i64)
   if (kind >= kindname and kind <= kindfloatlit) or (kind >= kindbreak and kind <= kinddo) or (kind >= kindfalse and kind <= kindfun)
     return true
@@ -209,13 +191,11 @@ rolebodystart: bool = (kind: i64)
     return true
   false
 
-# primitive descriptor identity
 roledescriptor: bool = (kind: i64)
   if (kind >= kindi8 and kind <= kindstr)
     return true
   false
 
-# match-pattern start
 rolepattern: bool = (kind: i64)
   if (kind >= kindname and kind <= kindfloatlit) or kind == kindfalse or kind == kindnil
     return true
@@ -225,7 +205,6 @@ rolepattern: bool = (kind: i64)
     return true
   false
 
-# canonical tooling may not WRITE this spelling
 rolecompatonly: bool = (kind: i64)
   if kind == kindand or kind == kinddo or (kind >= kindelseif and kind <= kindfalse)
     return true
@@ -243,24 +222,9 @@ rolecompatonly: bool = (kind: i64)
     return true
   false
 
-# ---------------------------------------------------------------------------
-# RELATION IDENTITY — one operation ontology, several source faces.
-#
-# `a + b`, `a += b` and the adjacency-glued `a >>= b` are THREE SOURCE FACES
-# of ONE relation. They therefore read ONE fact: `_relationname`. A face is a
-# separate fact (`_roleinfix` / `_roleupdate` / `_roleglue`) because it says WHERE
-# the relation is applied, never WHICH relation it is. "." means this identity
-# denotes no relation; it is not a relation spelled ".".
-# ---------------------------------------------------------------------------
 
-# The relation ontology itself, in one order. The host enum generated from
-# this row IS the physical encoding of these identities; the AST layer only
-# aliases it, because relation identity is not the tree's to own
-# (gate/layers.manifest). A name here that no slot claims fails the
-# bijection control in src/grammar_roles.zig.
 _relationorder = "add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline "
 
-# The prefix relations, same ownership.
 _prefixorder = "neg not len bnot compile "
 
 _relationname: str = (kind: i64)
@@ -314,8 +278,6 @@ _relationname: str = (kind: i64)
     return "pipeline"
   "."
 
-# Prefix relation of this identity. `-` and `~` carry BOTH a prefix and an
-# infix relation, which is why the two are separate facts and not one map.
 _unaryname: str = (kind: i64)
   if kind == kindnot or kind == kindbang
     return "not"
@@ -329,7 +291,6 @@ _unaryname: str = (kind: i64)
     return "bnot"
   "."
 
-# infix face: this identity applies its relation between two operands
 _roleinfix: bool = (kind: i64)
   if kind == kindor or kind == kindand or kind == kindin
     return true
@@ -345,14 +306,11 @@ _roleinfix: bool = (kind: i64)
     return true
   false
 
-# compound-update face carried by ONE identity (`+=`)
 _roleupdate: bool = (kind: i64)
   if kind >= kindplusassign and kind <= kindcaretassign
     return true
   false
 
-# compound-update face formed by an ADJACENT `=` (`>>=` is `>>` then `=`).
-# The lexer mints no token for these, so the face is a grammar fact.
 _roleglue: bool = (kind: i64)
   if kind == kindrshift or kind == kindlshift or kind == kindpipe
     return true
@@ -360,19 +318,6 @@ _roleglue: bool = (kind: i64)
     return true
   false
 
-# CANNOT END AN EXPRESSION, so whatever follows is an operand.
-#
-# The dual of `rolebeginexpr`, and the other half of one ruling: that fact
-# says what an identity can BEGIN, this one says what it cannot END, and
-# between them they decide where an expression stops. Not derivable from the
-# infix and prefix faces — `(`, `[`, `,`, `:`, `->`, `=>`, `if`, `while`,
-# `until`, `return` and `by` demand an operand without applying a relation.
-# ONE CHARACTER PER PRODUCER SLOT, "1" where the identity demands an operand.
-# A ZERO-PARAMETER relation because that is the only new module-scope
-# declaration form that is lawful in both directions today: a parameterised
-# one is refused by `gate/vocabulary.sh`, and the underscore-private name it
-# offers instead is refused by `gate/idiom.id` under LAW-ONE. Restore the
-# parameter when GAP-224 lifts the freeze.
 demand(): str
   out = ""
   kind = 0
@@ -400,12 +345,6 @@ demand(): str
     kind += 1
   out
 
-# A LINE-LEADING occurrence of this identity opens an expression instead of
-# continuing the one above. Only an identity with both an infix and a
-# line-leading reading is ambiguous at the head of a line; a line-leading `*`
-# can only be a continuation. `-` and `~` carry a prefix relation, `@` carries
-# the attribute face, and all three are infix.
-# Same row shape, same reason for the shape.
 lead(): str
   out = ""
   kind = 0
@@ -417,11 +356,6 @@ lead(): str
     kind += 1
   out
 
-# A PREFIX identity begins an expression even when no caller precedes it.
-# The relation owns this fact — Zig carries only the physical kind ordinal.
-# Same row shape as `lead` because both are dense zero/one fact slices over
-# every role slot; `prefix` excludes the infix-only identities that `lead`
-# shares with the attribute face (`*`, `+`).
 prefix(): str
   out = ""
   kind = 0
@@ -437,14 +371,6 @@ prefix(): str
     kind += 1
   out
 
-# Literal-kind identities (`int_lit`, `float_lit`, text/bytes/compat). One
-# character per producer slot, "1" where the kind carries a literal payload
-# usable as a call operand or value position. Mirrors `roleliteral` so the
-# parser-side fact and the generated role row's `.literal_kind` field share
-# one definition; damaging the predicate regenerates both projections and
-# the parser.id consumer crosses the same owner.
-# Same zero-arg row shape as `prefix()` / `demand()` / `lead()` — a dense
-# 0/1 char slice over every role slot.
 literal(): str
   out = ""
   kind = 0
@@ -456,13 +382,6 @@ literal(): str
     kind += 1
   out
 
-# Static-member identities. Once `.` / `:` / `@` has fixed member position,
-# an ordinary name or any keyword identity names the member. Literal payloads
-# and punctuation do not. The host used to inspect the first byte of the
-# generated display spelling, which classified the literal labels `integer`,
-# `float`, `text`, and `bytes` as member names and accepted `value."field"`
-# while refusing the contextual `value.end`. This row carries identity rather
-# than reconstructing it from presentation text.
 member(): str
   out = ""
   kind = 0
@@ -474,12 +393,6 @@ member(): str
     kind += 1
   out
 
-# Quoted-payload identities (text / bytes / compat). One character per
-# producer slot, "1" where the kind is a quoted payload (the same set the
-# generated role row marks `.quoted = true`). Mirrors `rolequoted` so the
-# parser-side fact and the role-row emit agree; damaging the predicate
-# regenerates both projections. Slot 3 stays unpublished and never reads as
-# quoted. Same zero-arg row shape as `literal()` / `prefix()` / `demand()`.
 quoted(): str
   out = ""
   kind = 0
@@ -491,7 +404,6 @@ quoted(): str
     kind += 1
   out
 
-# Layout terminators own the six identities that close an offside frame.
 layoutterminator(): str
   out = ""
   kind = 0
@@ -505,12 +417,6 @@ layoutterminator(): str
     kind += 1
   out
 
-# Same six identities minus `eof` — `eof` as the FIRST token of a block has
-# a different reading (the body is empty) than `end`/`else`/`elseif`/`until`/
-# `catch` (the block has a written closer the host must still reach), so the
-# empty-body branch in the parser needs the smaller list. The full six
-# remain the parser-side terminator fact; this row is the empty-body
-# discriminant.
 emptybodyterminator(): str
   out = ""
   kind = 0
@@ -524,9 +430,6 @@ emptybodyterminator(): str
     kind += 1
   out
 
-# Unconditional block boundary identities. These always return control to the
-# construct that opened the block; bracket closers belong to their opener and
-# never begin a statement.
 boundary(): str
   out = ""
   kind = 0
@@ -540,9 +443,6 @@ boundary(): str
     kind += 1
   out
 
-# Conditional branch identities. `else` / `elseif` close the current block
-# unless an offside frame proves they sit at that block's exact body column, in
-# which case they belong to a nested conditional statement.
 branch(): str
   out = ""
   kind = 0
@@ -554,11 +454,6 @@ branch(): str
     kind += 1
   out
 
-# Direct statement dispatch face. `A` is expression/default; `B` is the `@`
-# contextual path; `W` is contextual name. Every other nonzero face selects one
-# direct production branch. Contextual name/attribute lookahead and source-law
-# retired-keyword admission remain in the parser until the whole producer pack
-# supplies those decisions too.
 statement(): str
   alphabet = "ABCDEFGHIJKLMNOPQRSTUVW"
   out = ""
@@ -613,9 +508,6 @@ statement(): str
     kind += 1
   out
 
-# Statement admission face. `A` is accepted; `B` is macro (denied in every
-# family); `C`..`I` are the source-law retirements denied only in canonical Idol.
-# Diagnostic prose stays physical; this row owns which token identity selects it.
 admission(): str
   alphabet = "ABCDEFGHI"
   out = ""
@@ -642,7 +534,6 @@ admission(): str
     kind += 1
   out
 
-# Pratt binding power
 roleprecedence: i64 = (kind: i64)
   if kind == kindcaret
     return 23
@@ -674,7 +565,6 @@ roleprecedence: i64 = (kind: i64)
     return 1
   0
 
-# associativity: 0 none, 1 left, 2 right, 3 nonassoc
 roleassoc: i64 = (kind: i64)
   if kind == kindin or kind == kindlt or kind == kindgt
     return 3
@@ -692,21 +582,8 @@ roleassoc: i64 = (kind: i64)
     return 1
   0
 
-# Host bridge spelling per physical producer slot. Provenance only:
-# recognition keys on the ordinal, never on this text. "." is the
-# unpublished slot that must never acquire a role.
 kindzig = "name int_lit float_lit . kw_and kw_break kw_continue kw_do kw_else kw_elseif kw_end kw_false kw_for kw_function kw_fun kw_global kw_goto kw_if kw_in kw_local kw_nil kw_not kw_or kw_repeat kw_return kw_then kw_true kw_until kw_while kw_const kw_enum kw_i8 kw_i16 kw_i32 kw_i64 kw_u8 kw_u16 kw_u32 kw_u64 kw_f32 kw_f64 kw_bool kw_void kw_str kw_match kw_try kw_catch kw_defer kw_async kw_await kw_concept kw_alias kw_private kw_extends kw_macro kw_comptime kw_by kw_let lparen rparen lbracket rbracket lbrace rbrace plus minus star slash percent caret hash amp pipe lt gt assign tilde semi colon comma dot at question bang backtick concat dots hash_hash eq neq leq geq lshift rshift idiv dcolon arrow pipe_gt fat_arrow plus_assign minus_assign star_assign slash_assign percent_assign caret_assign text_lit bytes_lit compat_text_lit compat_long_text_lit eof shebang comment compat_comment compat_long_comment "
 
-# ---------------------------------------------------------------------------
-# GENERATED PROJECTIONS (GAP-134 bridge, law.bridge.death).
-#
-# The facts above are the ONE executable grammar-role owner. Everything below
-# only writes them out. `src/grammar_role_table.zig` is the host bridge the
-# production parser reads; `lib/token/grammarrole.id` is the Idol projection.
-# Delete this section when the host consumes the owner without a Zig table.
-#
-#   idol run lib/compiler/token.id
-# ---------------------------------------------------------------------------
 
 roleslotcount = 114
 roleidentitycount = 113
@@ -721,8 +598,6 @@ assocname: str = (kind: i64)
     return "nonassoc"
   "none"
 
-# The nth space-separated _word of a row. One splitter for every ordered row
-# in this file: slot spellings, relation order, prefix order.
 _word: str = (row: str, n: i64)
   size = row:len()
   i = 1
@@ -738,11 +613,9 @@ _word: str = (row: str, n: i64)
     i += 1
   out
 
-# Host bridge spelling for one physical slot. Provenance, never recognition.
 _zigname: str = (kind: i64)
   _word(kindzig, kind)
 
-# How many words an ordered row carries.
 _wordcount: i64 = (row: str)
   size = row:len()
   i = 1
@@ -753,7 +626,6 @@ _wordcount: i64 = (row: str)
     i += 1
   seen
 
-# One generated host enum over an ordered relation row.
 _zigenum: str = (name: str, row: str)
   s = "pub const {name} = enum \{\n"
   n = _wordcount(row)
@@ -763,9 +635,6 @@ _zigenum: str = (name: str, row: str)
     k += 1
   "{s}\};\n\n"
 
-# Host-bridge spelling of one relation identity. Two relation names collide
-# with a host keyword and take the escaped face there; the identity is the
-# same either way, and the escape is provenance, not a second name.
 _zigescape: str = (name: str)
   if name == "and" or name == "or"
     return "@\"{name}\""
@@ -775,26 +644,6 @@ zigrow: str = (kind: i64)
   z = _zigname(kind)
   if z == "."
     return "    .\{ .kind = null \},\n"
-  # Source spelling per physical producer slot — the grammar fact
-  # `src/lexer.zig` `spelling()` used to own in a 60-arm switch with a fallback
-  # into `src/token_semantic.zig`. Two producers answered "how is this identity
-  # written"; this is the one that stays (`law.fact.producer.one`). Recognition
-  # still keys on the ordinal: this row is what a diagnostic PRINTS and what a
-  # projection consumer MATCHES, never what the lexer decides from.
-  #
-  # Slot 3 is the unpublished producer slot and its field is EMPTY (two spaces
-  # after `float`), not `.` — `.` is the real spelling of `dot` at slot 80, and
-  # a sentinel that collides with a live spelling is how a spelling-keyed
-  # consumer silently resolves to the wrong identity.
-  #
-  # THE ROW AND ITS READER LIVE IN THIS BODY, and the field scan below repeats
-  # `zigname`'s. That duplication is deliberate and measured: `gate/vocabulary.sh`
-  # refuses every new module-scope declaration in `.id` outright, and the only
-  # alternatives it names are underscore-private names — which `gate/idiom.id`
-  # `under()` forbids in `.id` source — nested bindings, and body-only changes.
-  # A shared `pick(row, kind)` is a new module-scope relation and cannot be
-  # committed; a nested binding can. Fold the two scans together when the
-  # vocabulary freeze lifts.
   row = "name integer float  and break continue do else elseif end false for function fun global goto if in local nil not or repeat return then true until while const enum i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 bool void str match try catch defer async await concept alias private extends macro comptime by let ( ) [ ] \{ \} + - * / % ^ # & | < > = ~ ; : , . @ ? ! ` .. ... ## == != <= >= << >> // :: -> |> => += -= *= /= %= ^= text bytes compat_text compat_long_text <eof> #! # -- --[[ "
   n = row:len()
   i = 1
@@ -809,12 +658,6 @@ zigrow: str = (kind: i64)
       start = i + 1
     i += 1
   s = "    .\{ .kind = .{z}, .spell = \"{spell}\""
-  # Keyword fact: the identities the word scanner may select by spelling.
-  # This is the "Keywords from classify.id" block above (kindand..kindlet)
-  # made an executable emitted fact, so the production keyword lookup
-  # (src/keyword_bridge.zig) reads THIS owner instead of a second table
-  # generated from src/token_semantic.zig. Recognition still keys on the
-  # ordinal; the spelling is what the scanner MATCHES, never a dispatch name.
   if kind >= kindand and kind <= kindlet
     s = "{s}, .keyword = true"
   if rolebeginexpr(kind)
@@ -862,9 +705,6 @@ zigrow: str = (kind: i64)
   "{s} \},\n"
 
 zigbody: str = ()
-  # A module constant reaches interpolation only through a local
-  # binding: `"{roleslotcount}"` refuses DNB001 concat, `n = …` then
-  # `"{n}"` does not. Bootstrap subset limit, not a grammar fact.
   slots = roleslotcount
   ids = roleidentitycount
   eof = kindeof
@@ -927,8 +767,6 @@ zigbody: str = ()
     k += 1
   "{s}\};\n"
 
-# Physical ordinal in one owner-published order. `-1` is absence; generated
-# tables store ordinal + 1 so zero remains the absent value.
 _ordinal: i64 = (name: str, order: str)
   if name == "." or name:len() == 0
     return -1
@@ -945,9 +783,6 @@ _ordinal: i64 = (name: str, order: str)
     i += 1
   -1
 
-# Compact per-slot physical projection. `.` is absence; `A` is ordinal zero,
-# through `X` for the last current relation. The semantic order above remains
-# the sole producer; this row is only its byte-sized ABI realization.
 _encode: str = (which: i64)
   alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
   out = ""
@@ -1050,10 +885,6 @@ idbody: str = ()
   s = "{s}\n_roleinfix: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _infix[kind + 1] > 0\n"
   s = "{s}\n_roleupdate: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _update[kind + 1] > 0\n"
   s = "{s}\n_roleglue: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _glue[kind + 1] > 0\n"
-  # Zero-parameter rows carry exact owner facts into the generated home without
-  # adding another semantic table. Parameterised parser relations now pass only
-  # through the graph-backed vocabulary witness; the row shape remains the
-  # compact owner projection rather than a spelling registry.
   s = "{s}\ndemand(): str\n  \"{demand()}\"\n"
   s = "{s}\nlead(): str\n  \"{lead()}\"\n"
   s = "{s}\nprefix(): str\n  \"{prefix()}\"\n"

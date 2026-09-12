@@ -1,9 +1,4 @@
-# graphics.ui — UI widgets and layout
-# For building user interfaces in ward's rendering pipeline.
 
-# ═══════════════════════════════════════════════════════════════
-# UI Rect
-# ═══════════════════════════════════════════════════════════════
 
 rect_new: any = (x: f64, y: f64, width: f64, height: f64)
   {
@@ -16,9 +11,6 @@ rect_new: any = (x: f64, y: f64, width: f64, height: f64)
 rect_contains: bool = (rect: any, px: f64, py: f64)
   px >= rect.x and px <= rect.x + rect.width and py >= rect.y and py <= rect.y + rect.height
 
-# ═══════════════════════════════════════════════════════════════
-# UI Widget
-# ═══════════════════════════════════════════════════════════════
 
 widget_new: any = (widget_type: str)
   {
@@ -57,9 +49,6 @@ widget_remove_child = (parent: any, child: any)
 widget_set_rect = (widget: any, x: f64, y: f64, width: f64, height: f64)
   widget.rect = rect_new(x, y, width, height)
 
-# ═══════════════════════════════════════════════════════════════
-# Button Widget
-# ═══════════════════════════════════════════════════════════════
 
 button_new: any = (label: str)
   widget = widget_new("button")
@@ -70,9 +59,6 @@ button_new: any = (label: str)
 button_set_on_click = (button: any, callback: any)
   button.on_click = callback
 
-# ═══════════════════════════════════════════════════════════════
-# Label Widget
-# ═══════════════════════════════════════════════════════════════
 
 label_new: any = (text: str)
   widget = widget_new("label")
@@ -83,9 +69,6 @@ label_new: any = (text: str)
 label_set_text = (label: any, text: str)
   label.text = text
 
-# ═══════════════════════════════════════════════════════════════
-# Text Input Widget
-# ═══════════════════════════════════════════════════════════════
 
 text_input_new: any = (placeholder: str)
   widget = widget_new("text_input")
@@ -108,9 +91,6 @@ text_input_get_text: str = (input: any)
 text_input_set_on_change = (input: any, callback: any)
   input.on_change = callback
 
-# ═══════════════════════════════════════════════════════════════
-# Slider Widget
-# ═══════════════════════════════════════════════════════════════
 
 slider_new: any = (min: f64, max: f64, value: f64)
   widget = widget_new("slider")
@@ -127,9 +107,6 @@ slider_set_value = (slider: any, value: f64)
 slider_get_value: f64 = (slider: any)
   slider.value
 
-# ═══════════════════════════════════════════════════════════════
-# Checkbox Widget
-# ═══════════════════════════════════════════════════════════════
 
 checkbox_new: any = (label: str, checked: bool)
   widget = widget_new("checkbox")
@@ -144,9 +121,6 @@ checkbox_set_checked = (checkbox: any, checked: bool)
 checkbox_is_checked: bool = (checkbox: any)
   checkbox.checked
 
-# ═══════════════════════════════════════════════════════════════
-# Panel Widget
-# ═══════════════════════════════════════════════════════════════
 
 panel_new: any = ()
   widget = widget_new("panel")
@@ -155,9 +129,6 @@ panel_new: any = ()
   widget.overflow = "hidden"
   widget
 
-# ═══════════════════════════════════════════════════════════════
-# Layout
-# ═══════════════════════════════════════════════════════════════
 
 layout_vertical = (container: any, x: f64, y: f64, spacing: f64)
   current_y = y
@@ -188,9 +159,6 @@ layout_grid = (container: any, x: f64, y: f64, cols: i64, spacing: f64)
     else
       current_x = current_x + child.rect.width + spacing
 
-# ═══════════════════════════════════════════════════════════════
-# Event Handling
-# ═══════════════════════════════════════════════════════════════
 
 event_mouse_move: bool = (widget: any, x: f64, y: f64)
   widget.hovered = rect_contains(widget.rect, x, y)
@@ -210,16 +178,3 @@ event_mouse_up: bool = (widget: any, x: f64, y: f64)
     return true
   widget.pressed = false
   false
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Rect
-# Widget
-# Button
-# Label
-# Text Input
-# Slider
-# Checkbox
-# Panel
-# Layout
-# Events

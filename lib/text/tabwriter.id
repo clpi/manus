@@ -1,8 +1,4 @@
-# text_tabwriter — tab-separated column writer (mirrors Go's text/tabwriter)
-# Aligns columns of text separated by tab characters into a neat table.
 
-# new_writer: create a tabwriter with the given parameters.
-# minwidth: minimum cell width, tabwidth: width of tab chars, padding: cell padding, padchar: fill char.
 new_writer: any = (minwidth: i64, tabwidth: i64, padding: i64, padchar: str)
   if minwidth == nil
     minwidth = 0
@@ -14,13 +10,10 @@ new_writer: any = (minwidth: i64, tabwidth: i64, padding: i64, padchar: str)
     padchar = " "
   { rows = {}, minwidth = minwidth, tabwidth = tabwidth, padding = padding, padchar = padchar, cur_row = {}, col_widths = {} }
 
-# write: add a string to the current row. Tabs delimit columns.
 write: any = (w: any, s: str)
-  # split on tabs
   i = 1
   start = 1
   while i <= s:len()
-    # tab
     if s:byte(i) == 9
       w.cur_row[w.cur_row:len() + 1] = s:sub(start, i - 1)
       start = i + 1
@@ -28,14 +21,11 @@ write: any = (w: any, s: str)
   w.cur_row[w.cur_row:len() + 1] = s:sub(start)
   w
 
-# write_col: add a single cell to the current row.
 write_col: any = (w: any, s: str)
   w.cur_row[w.cur_row:len() + 1] = s
   w
 
-# newline: finalize the current row and start a new one.
 newline: any = (w: any)
-  # update column widths
   i = 1
   while i <= w.cur_row:len()
     cell_len = to(str)(w.cur_row(i)):len()
@@ -46,9 +36,7 @@ newline: any = (w: any)
   w.cur_row = {}
   w
 
-# flush: render the aligned table as a single string.
 flush: str = (w: any)
-  # if there is a pending row, add it
   if w.cur_row:len() > 0
     newline(w)
   out = {}
@@ -62,13 +50,11 @@ flush: str = (w: any)
       width = w.col_widths(c) + w.padding
       if width < w.minwidth
         width = w.minwidth
-      # pad the cell
       pad_len = width - cell:len()
       if pad_len < 0
         pad_len = 0
       line = line .. cell .. w.padchar:rep(pad_len)
       c = c + 1
-    # trim trailing pad
     line = line:gsub(w.padchar .. "*$", "")
     out[out:len() + 1] = line
     r = r + 1

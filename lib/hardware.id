@@ -1,15 +1,9 @@
-# hardware — Host CPU hooks and low-level control primitives.
-#
-# Pair with `@device(.auto)` on kernels (see ml.device) and `simd.*` vector ops.
-# For raw instructions use `@asm("template", outputs, inputs, clobbers)` in expressions.
 
-# Compiler memory fence (prevents reordering across this point)
 @hot
 fence: void = ()
   @comp.c.emit("__asm__ volatile(\"\" ::: \"memory\");")
   
 
-# Spin loop hint: x86 `pause`, AArch64 `yield`
 @hot
 spinwait: void = ()
   @comp.c.emit("#if defined(__x86_64__) || defined(__i386__)")
@@ -22,4 +16,3 @@ spinwait: void = ()
   
   @comp.c.emit("#endif")
   
-# Re-export ML device placement helpers (@device runtime table)

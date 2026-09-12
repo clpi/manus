@@ -1,45 +1,33 @@
-# result — Result and Option types for safe error handling
-# Provides Result (ok/err) and Option (some/none) with chaining,
-# unwrapping, and transformation. Enables composable pipelines
-# without explicit nil checks at every step.
 
-# ===== Result type =====
 
-# ok: wrap a successful value.
 ok: any = (value: any)
   { kind = "ok", value = value, err = nil }
 
-# err: wrap a failure with a message.
 err: any = (message: any)
   if type(message) == "table" and message.message != nil
     return { kind = "err", value = nil, err = message }
   { kind = "err", value = nil, err = { message = message:to(str), cause = nil, kind = "error" } }
 
-# is_ok: returns true if the result is ok.
 is_ok: bool = (r: any)
   if r == nil
     return false
   r.kind == "ok"
 
-# is_err: returns true if the result is an error.
 is_err: bool = (r: any)
   if r == nil
     return true
   r.kind == "err"
 
-# value: extract the value or return fallback.
 value: any = (r: any, fallback: any)
   if r != nil and r.kind == "ok"
     return r.value
   fallback
 
-# error: extract the error or return nil.
 std_result_error: any = (r: any)
   if r == nil
     return nil
   r.err
 
-# unwrap: extract the value or raise an error message.
 unwrap: any = (r: any)
   if r != nil and r.kind == "ok"
     return r.value
@@ -48,41 +36,34 @@ unwrap: any = (r: any)
     msg = msg .. ": " .. r.err.message
   error(msg)
 
-# unwrap_or_else: extract value or compute fallback from the error.
 unwrap_or_else: any = (r: any, fn: any)
   if r != nil and r.kind == "ok"
     return r.value
   fn(r.err)
 
-# map: transform the value inside an ok result; pass through errors.
 map: any = (r: any, fn: any)
   if r != nil and r.kind == "ok"
     return ok(fn(r.value))
   r
 
-# map_err: transform the error inside an err result; pass through oks.
 map_err: any = (r: any, fn: any)
   if r != nil and r.kind == "err"
     return err(fn(r.err))
   r
 
-# flat_map: like map but fn returns a Result (avoids double-wrapping).
 flat_map: any = (r: any, fn: any)
   if r != nil and r.kind == "ok"
     return fn(r.value)
   r
 
-# and_then: alias for flat_map.
 and_then: any = (r: any, fn: any)
   flat_map(r, fn)
 
-# or_else: if err, call fn(error) which should return a new Result.
 or_else: any = (r: any, fn: any)
   if r != nil and r.kind == "err"
     return fn(r.err)
   r
 
-# to_string: human-readable representation.
 result_to_str: str = (r: any)
   if r == nil
     return "Result(nil)"
@@ -93,73 +74,59 @@ result_to_str: str = (r: any)
     msg = r.err.message
   return "Err(" .. msg .. ")"
 
-# ===== Option type =====
 
-# some: wrap a present value.
 some: any = (value: any)
   { kind = "some", value = value }
 
-# none: represent absence of value.
 none: any = ()
   { kind = "none", value = nil }
 
-# is_some: returns true if the option has a value.
 is_some: bool = (o: any)
   if o == nil
     return false
   o.kind == "some"
 
-# is_none: returns true if the option is empty.
 is_none: bool = (o: any)
   if o == nil
     return true
   o.kind != "some"
 
-# option_value: extract the value or return fallback.
 option_value: any = (o: any, fallback: any)
   if o != nil and o.kind == "some"
     return o.value
   fallback
 
-# option_unwrap: extract the value or raise an error.
 option_unwrap: any = (o: any)
   if o != nil and o.kind == "some"
     return o.value
   error("option_unwrap called on none")
 
-# option_unwrap_or_else: extract value or compute from a function.
 option_unwrap_or_else: any = (o: any, fn: any)
   if o != nil and o.kind == "some"
     return o.value
   fn()
 
-# option_map: transform the value inside a some; pass through none.
 option_map: any = (o: any, fn: any)
   if o != nil and o.kind == "some"
     return some(fn(o.value))
   none()
 
-# option_flat_map: like option_map but fn returns an Option.
 option_flat_map: any = (o: any, fn: any)
   if o != nil and o.kind == "some"
     return fn(o.value)
   none()
 
-# option_filter: keep the value only if predicate holds.
 option_filter: any = (o: any, fn: any)
   if o != nil and o.kind == "some" and fn(o.value)
     return o
   none()
 
-# option_to_string: human-readable representation.
 option_to_str: str = (o: any)
   if o == nil or o.kind != "some"
     return "None"
   return "Some(" .. o.value:to(str) .. ")"
 
-# ===== Batch utilities =====
 
-# collect: take a list of Results; return {ok: values, err: first_error}.
 collect: any = (results: any)
   vals = {}
   errs = {}
@@ -178,7 +145,6 @@ collect: any = (results: any)
     first_err = errs[1]
   { ok = vals, err = first_err, errors = errs }
 
-# all_ok: returns true if every Result in the list is ok.
 all_ok: bool = (results: any)
   if results == nil
     return true
@@ -189,7 +155,6 @@ all_ok: bool = (results: any)
     i = i + 1
   true
 
-# values: extract all ok values from a list of Results.
 values: any = (results: any)
   out = {}
   if results == nil
@@ -202,7 +167,6 @@ values: any = (results: any)
     i = i + 1
   out
 
-# errors: extract all error values from a list of Results.
 std_result_errors: any = (results: any)
   out = {}
   if results == nil

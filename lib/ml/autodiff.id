@@ -1,7 +1,3 @@
-# ml.autodiff — Gradient tape for sequential models (Mojo-style @grad companion)
-#
-# Pair with `@autodiff` on loss functions; compiler marks bodies for future
-# comptime reverse-mode. This module provides a working tape today.
 
 tape_new: any = ()
   return { ops = {}, n = 0 }
@@ -29,7 +25,6 @@ backward_linear: any = (tape, idx, grad_out)
   op = tape.ops(idx)
   x = op.inputs(1)
   layer = op.inputs(2)
-  # dW = x^T @ grad_out, db = sum(grad_out), dx = grad_out @ W^T
   dx = ml.tensor.matmul(grad_out, ml.tensor.transpose(layer.weight))
   if layer.grad_weight == nil
     layer.grad_weight = ml.tensor.zeros(layer.in_features, layer.out_features)
@@ -47,20 +42,15 @@ backward_linear: any = (tape, idx, grad_out)
   return dx
 
 backward_softmax: any = (tape, idx, grad_out)
-  # Softmax backward: dL/dx_i = sum_j (dL/dy_j * (delta_ij * y_i - y_i * y_j))
-  # For a single sample (row), this simplifies to: grad_out * softmax_output - softmax_output * sum(grad_out * softmax_output)
   op = tape.ops(idx)
-  # softmax output from forward pass
   y = op.output
   n = y.rows * y.cols
   g = ml.tensor.zeros(y.rows, y.cols)
-  # Compute sum(grad_out * y) for each row
   for row = 1, y.rows
     dot = 0.0
     for col = 1, y.cols
       idx_flat = (row - 1) * y.cols + col
       dot = dot + grad_out.data(idx_flat) * y.data(idx_flat)
-    # g_i = y_i * (grad_out_i - dot)
     for col = 1, y.cols
       idx_flat = (row - 1) * y.cols + col
       g.data[idx_flat] = y.data(idx_flat) * (grad_out.data(idx_flat) - dot)
@@ -84,7 +74,6 @@ backward: any = (tape, grad_out)
     i = i - 1
   return g
 
-# Finite-difference check for scalar losses (debug / tests)
 grad_check: f64 = (f, x, eps)
   if eps == nil
     eps = 0.0001
@@ -92,6 +81,5 @@ grad_check: f64 = (f, x, eps)
   y1 = f(x + eps)
   return (y1 - y0) / eps
 
-# `@grad(loss_fn, wrt)` companion: returns gradient descriptor for autodiff / tape
 grad: any = (loss_fn, wrt)
   return { fn = loss_fn, wrt = wrt }

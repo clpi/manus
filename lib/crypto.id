@@ -1,13 +1,8 @@
-# crypto — cryptographic hash and encoding utilities
 
 global crypto_sha = sha
 global hash_sha512 = sha512
 global crypto_rand = rand
 
-# Wrappers are prefixed with `wrap_` so they don't collide at the C
-# static level with the same-named implementations in std.crypto.sha
-# / std.hash.sha512 when both modules end up embedded in the same
-# compilation unit.
 sha1: str = (s: str)
   crypto_sha.sha1(s)
 
@@ -17,19 +12,12 @@ sha256: str = (s: str)
 sha512: str = (s: str)
   hash_sha512.sha512(s)
 
-# ── Base64 ──────────────────────────────────────────────────────────────
 
 B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 base64_encode: str = (s: str)
   if s == nil
     return ""
-  # Partial groups are handled EXPLICITLY rather than by padding the input
-  # with "\0". Null bytes do not survive runtime string concatenation #
-  # duo_str_concat is C-string based, so `padded = padded .. "\0"` appends
-  # nothing and the trailing group is built from whatever follows in memory.
-  # That is why encode("h") produced "aD==" instead of "aA==": the second
-  # sextet came from a byte that was never there.
   n = s:len()
   out = {}
   i = 1
@@ -81,13 +69,6 @@ base64_decode: str = (s: str)
     b1 = triple / 65536:floor()
     b2 = triple % 65536 / 256:floor()
     b3 = triple % 256
-    # Which bytes a 4-character group yields (RFC 4648 s4):
-    #   b1 ALWAYS      # every group carries at least one byte
-    #   b2 unless char3 is '='
-    #   b3 unless char4 is '='
-    # The conditions were misassigned: b1 was gated on char3 and b2 on
-    # char4, so decoding "aGk=" emitted only b1 and returned "h" for "hi".
-    # One byte lost from every 2-byte tail, silently.
     out[out:len() + 1] = b1:char()
     if clean:sub(i + 2, i + 2) != "="
       out[out:len() + 1] = b2:char()
@@ -112,7 +93,6 @@ base64_url_decode: str = (s: str)
     padded = padded .. "="
   base64_decode(padded:to(str))
 
-# ── Hex ─────────────────────────────────────────────────────────────────
 
 HEX_CHARS = "0123456789abcdef"
 
@@ -146,7 +126,6 @@ hex_decode: str = (s: str)
     out = out .. h * 16 + l:char()
   out
 
-# ── XOR encryption ──────────────────────────────────────────────────────
 
 xor_encrypt: str = (s: str, key: str)
   if s == nil or key == nil
@@ -159,7 +138,6 @@ xor_encrypt: str = (s: str, key: str)
     out = (out .. sc) ~ kc:char()
   out
 
-# ── Secure random ───────────────────────────────────────────────────────
 
 secure_random_bytes: str = (n: i64)
   if n == nil or n <= 0
@@ -170,12 +148,8 @@ secure_random_hex: str = (n: i64)
   hex_encode(secure_random_bytes(n))
 
 secure_random_int: i64 = {}
-# `int` takes a required bound and returns `r % max`; calling it with no
-# argument did not compile, which took std.crypto and its four dependents
-# down. Unbounded here means the full i64 range.
 crypto_rand.int(9223372036854775807)
 
-# ── Constant-time comparison (timing-attack safe) ───────────────────────
 
 compare_digest: bool = (a: str, b: str)
   if a == nil or b == nil
@@ -187,7 +161,6 @@ compare_digest: bool = (a: str, b: str)
     result = result | a:byte(i) ~ b:byte(i)
   result == 0
 
-# ── HMAC (RFC 2104) ────────────────────────────────────────────────────
 
 hmac_sha256: str = (key: str, message: str)
   block = 64

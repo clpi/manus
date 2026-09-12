@@ -1,9 +1,4 @@
-# ml.generate — Text generation for LLMs
-# For ward's text generation pipeline and inference.
 
-# ═══════════════════════════════════════════════════════════════
-# Generation Config
-# ═══════════════════════════════════════════════════════════════
 
 config_new: any = ()
   {
@@ -43,9 +38,6 @@ config_set_seed: any = (config: any, seed: i64)
   config.seed = seed
   config
 
-# ═══════════════════════════════════════════════════════════════
-# Sampling Strategies
-# ═══════════════════════════════════════════════════════════════
 
 sample_greedy: i64 = (logits: any)
   max_idx = 1
@@ -62,49 +54,40 @@ sample_temperature: i64 = (logits: any, temperature: f64)
   if temperature < 0.01
     return sample_greedy(logits)
 
-  # Apply temperature
   scaled = {}
   for i = 1, logits:len()
     scaled[i] = logits[i] / temperature
 
-  # Softmax
   probs = softmax(scaled)
 
-  # Sample from distribution
   return sample_from_probs(probs)
 
 sample_top_k: i64 = (logits: any, k: i64, temperature: f64)
   if temperature < 0.01
     return sample_greedy(logits)
 
-  # Find top k
   indexed = {}
   for i = 1, logits:len()
     indexed[indexed:len() + 1] =
       idx = i
       logit = logits[i]
 
-  # Sort by logit descending
   indexed:sort((a: any, b: any) -> any
     a.logit > b.logit
   )
 
-  # Keep top k
   top_k = {}
   i = 1
   while i <= k and i <= indexed:len()
     top_k[top_k:len() + 1] = indexed[i]
     i = i + 1
 
-  # Apply temperature to top k
   scaled = {}
   for item in top_k
     scaled[scaled:len() + 1] = item.logit / temperature
 
-  # Softmax
   probs = softmax(scaled)
 
-  # Sample
   chosen = sample_from_probs(probs)
   top_k[chosen].idx
 
@@ -112,7 +95,6 @@ sample_top_p: i64 = (logits: any, top_p: f64, temperature: f64)
   if temperature < 0.01
     return sample_greedy(logits)
 
-  # Sort logits
   indexed = {}
   for i = 1, logits:len()
     indexed[indexed:len() + 1] =
@@ -122,13 +104,11 @@ sample_top_p: i64 = (logits: any, top_p: f64, temperature: f64)
     a.logit > b.logit
   )
 
-  # Apply temperature and softmax
   scaled = {}
   for item in indexed
     scaled[scaled:len() + 1] = item.logit / temperature
   probs = softmax(scaled)
 
-  # Accumulate until top_p
   cumulative = 0
   cutoff = 0
   i = 1
@@ -142,7 +122,6 @@ sample_top_p: i64 = (logits: any, top_p: f64, temperature: f64)
   if cutoff == 0
     cutoff = probs:len()
 
-  # Renormalize and sample
   truncated_probs = {}
   i = 1
   while i <= cutoff
@@ -153,10 +132,7 @@ sample_top_p: i64 = (logits: any, top_p: f64, temperature: f64)
   indexed[chosen].idx
 
 sample_beam_search: any = (logits: any, beams: i64, sequence: any)
-  # Beam search: maintain top-k candidates across decoding steps
-  # sequence is the accumulated token history for each beam
   if sequence == nil
-    # First step: initialize beams from first logits
     beam_scores = {}
     for i = 1, beams
       beam_scores[i] =
@@ -179,11 +155,9 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
       i = i + 1
     return beam_scores
 
-  # Subsequent steps: expand each beam, keep top beams
   all_candidates = {}
   for beam_idx = 1, sequence:len()
     beam = sequence[beam_idx]
-    # Expand this beam with top candidates
     indexed = {}
     for i = 1, logits:len()
       indexed[indexed:len() + 1] =
@@ -205,7 +179,6 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
         tokens = new_tokens
       i = i + 1
 
-  # Sort all candidates by score and keep top beams
   all_candidates:sort((a: any, b: any) -> any
     a.score > b.score
   )
@@ -216,9 +189,6 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
     i = i + 1
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Repetition Penalty
-# ═══════════════════════════════════════════════════════════════
 
 apply_repetition_penalty: any = (logits: any, generated: any, penalty: f64)
   if penalty <= 1.0
@@ -260,14 +230,10 @@ apply_presence_penalty: any = (logits: any, generated: any, penalty: f64)
 
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Stop Conditions
-# ═══════════════════════════════════════════════════════════════
 
 check_stop_tokens: bool = (generated: any, stop_tokens: any)
   if stop_tokens:len() == 0
     return false
-  # Check if any stop token appears at the end
   for stop in stop_tokens
     stop_len = stop:len()
     if generated:len() >= stop_len
@@ -288,9 +254,6 @@ check_stop_strings: bool = (generated_text: str, stop_strings: any)
       return true
   false
 
-# ═══════════════════════════════════════════════════════════════
-# Utility Functions
-# ═══════════════════════════════════════════════════════════════
 
 softmax: any = (logits: any)
   max_logit = -1000000000000000000000000000000.0
@@ -334,11 +297,3 @@ top_k_logits: any = (logits: any, k: i64)
     result[result:len() + 1] = indexed[i]
     i = i + 1
   result
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Config
-# Sampling
-# Penalties
-# Stop conditions
-# Utilities

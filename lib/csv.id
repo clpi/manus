@@ -1,4 +1,3 @@
-# csv — basic CSV parsing and formatting
 
 parse_line: any = (line: any)
   res = {}
@@ -7,7 +6,6 @@ parse_line: any = (line: any)
   while i <= len
     c = line:sub(i, i)
     if c == "\""
-      # quoted field
       field = ""
       i = i + 1
       while i <= len
@@ -26,15 +24,12 @@ parse_line: any = (line: any)
       if i <= len and line:sub(i, i) == ","
         i = i + 1
     else
-      # unquoted field
       start = i
       while i <= len and line:sub(i, i) != ","
         i = i + 1
       res:insert(line:sub(start, i - 1))
       if i <= len
-        # skip comma
         i = i + 1
-  # Handle trailing comma
   if len > 0 and line:sub(len, len) == ","
     res:insert("")
   res

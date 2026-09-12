@@ -1,4 +1,3 @@
-# hash — hashing utilities
 
 md5: str = (s: str)
     sum = 0

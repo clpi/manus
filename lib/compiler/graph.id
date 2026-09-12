@@ -1,24 +1,3 @@
-# Name-reference census, seed. NOT the semantic graph; SH-07 blocked, see gaps/GAP-125.md.
-#
-# Nodes are top-level binding names token-scanned from column 1; edges are
-# same-spelled name references. That is a spelling census, not semantic
-# authority: it carries no applications, no canonical relation identity,
-# no subject roles, no required or reachable world edges, no demand, no
-# effects, and no provenance.
-#
-# TODAY/DELTA. This bootstrap reference scan still treats `_`-prefixed names as
-# private and a file's top-level names as a surface. Those are source-name
-# approximations, not language law. Home/reachability facts must replace this
-# query before it becomes semantic authority.
-#
-# SH-07 stays blocked until parsed structured applications normalize into
-# graph facts that support home-rename-invariant WORLDGATE and SUBJECTGATE.
-# The one query this census answers that no other pass can is dead-private
-# in-degree: a `_`-prefixed top-level name never referenced in its file.
-#
-# Limits, stated: nodes are top-level only, and a reference is a NAME token not
-# in member position. Nested scopes, shadowing and indirect reference through a
-# table field are refinements, not corrections.
 
 has: bool = (set: str, name: str)
   needle = "|" .. name .. "|"
@@ -43,9 +22,6 @@ add: str = (set: str, name: str)
     return set
   set .. name .. "|"
 
-# Top-level binding names, as "|a|b|". A binding is at top level when its name
-# token sits in column 1 — the same layout signal the parser uses to recognise
-# a bodiless declaration.
 nodes: str = (src: str, file: str, family: i64)
   lx: lexer = lexer.new(src, file, family)
   acc = "|"
@@ -59,8 +35,6 @@ nodes: str = (src: str, file: str, family: i64)
         acc = add(acc, t.text)
   acc
 
-# Private nodes with in-degree 0: declared `_name`, never referenced in the
-# file that declares them, and unreachable from outside it by policy.
 dead: i64 = (src: str, file: str, family: i64, report: bool)
   declared = nodes(src, file, family)
   lx: lexer = lexer.new(src, file, family)
@@ -71,25 +45,13 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
     t = lexer.next(lx)
     if t.kind == token.kindeof
       break
-    # gap[025]: a RECEIVER FACE is a reference. `self:_fail(2)` calls the
-    # top-level `_fail`, so excluding names after `:` made every converted
-    # call site invisible and reported live privates as unreachable.
-    #
-    # `.` stays excluded: `a.b` is field access, not a call face.
-    #
-    # The residual error is in the SAFE direction. A genuine member call
-    # `a:m()` now also marks a same-named top-level binding as used, so the
-    # query can MISS a dead private — it can no longer invent one, which is
-    # the failure that would delete live code.
     if t.kind == token.kindname and kind != token.kinddot
-      # a declaration site is not a use of itself
       decl = t.loc.col == 1
       if !decl
         used = add(used, t.text)
     kind = t.kind
     col = t.loc.col
 
-  # walk the declared set and count private names never used
   n: i64 = declared:len()
   count: i64 = 0
   start: i64 = 2

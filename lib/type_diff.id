@@ -1,24 +1,4 @@
-# type_diff — Compile-Time Structural Type Diffing
-# Compare two type signatures at compile time and generate a diff
-# showing added, removed, and changed fields.
-# Useful for API migration, schema evolution, and compatibility checks.
-#
-# Usage:
-#   local diff = type_diff
-#   local changes = diff.diff_types(OldUser, NewUser)
-#   # changes = {
-#   #   added = { {name = "email", type = "str"} },
-#   #   removed = { {name = "nick", type = "str"} },
-#   #   changed = { {name = "age", old_type = "i64", new_type = "f64"} },
-#   #   compatible = false,
-#   # }
-#
-#   # Generate a migration function
-#   diff.emit_migration("User", changes)
 
-# ═══════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════
 
 str_join: str = (parts: any, sep: str)
   result = ""
@@ -45,12 +25,7 @@ default_value: str = (type_name: str)
   }
   defaults[type_name] or "0"
 
-# ═══════════════════════════════════════════════════════════════
-# Type compatibility analysis
-# ═══════════════════════════════════════════════════════════════
 
-# is_widening: check if the type change is a safe widening.
-# Widening: i32→i64, f32→f64, str→any, etc.
 is_widening: bool = (old_type: str, new_type: str)
   widenings = {
     ["i8"] = { "i16", "i32", "i64", "f64" },
@@ -69,25 +44,18 @@ is_widening: bool = (old_type: str, new_type: str)
         return true
   false
 
-# is_compatible: check if two types are compatible (same or widening)
 is_compatible: bool = (old_type: str, new_type: str)
   if old_type == new_type
     return true
   is_widening(old_type, new_type)
 
-# ═══════════════════════════════════════════════════════════════
-# Type diffing engine
-# ═══════════════════════════════════════════════════════════════
 
-# diff_types: compare two type definitions (as tables of field→type).
-# Returns a diff descriptor with added, removed, and changed fields.
 diff_types: any = (old_type: any, new_type: any)
   added = {}
   removed = {}
   changed = {}
   unchanged = {}
 
-  # Find added and changed fields
   for name, new_typ in new_type
     if old_type(name) == nil
       added[added:len() + 1] = { name = name, type = new_typ }
@@ -101,17 +69,12 @@ diff_types: any = (old_type: any, new_type: any)
       else
         unchanged[unchanged:len() + 1] = { name = name, type = new_typ }
 
-  # Find removed fields
   for name, old_typ in old_type
     if new_type(name) == nil
       removed[removed:len() + 1] = { name = name, type = old_typ }
 
-  # Determine compatibility:
-  # - Compatible if only additions (no removals, no type changes)
-  # - Incompatible if anything was removed or changed
   compatible = removed:len() == 0 and changed:len() == 0
 
-  # Check type widening (widening is compatible)
   for _, c in changed
     if is_widening(c.old_type, c.new_type)
       compatible = true
@@ -126,34 +89,24 @@ diff_types: any = (old_type: any, new_type: any)
     new_count = count_fields(new_type)
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Migration code generation
-# ═══════════════════════════════════════════════════════════════
 
-# emit_migration: build C migration source that converts from the old type to
-# the new type, handling added/removed/changed fields.
 emit_migration: str = (type_name: str, changes: any)
   lower = type_name:lower()
   parts = {}
 
-  # Generate the migration function
   parts[parts:len() + 1] = "/* [type_diff] migrate_" .. lower .. ": old → new */"
   parts[parts:len() + 1] = type_name .. "_v2 migrate_" .. lower .. "(const " .. type_name .. "_v1* old) {"
   parts[parts:len() + 1] = "    " .. type_name .. "_v2 new = {0};"
 
-  # Copy unchanged fields
   for _, u in changes.unchanged
     parts[parts:len() + 1] = "    new." .. u.name .. " = old->" .. u.name .. ";"
 
-  # Copy widened fields (safe widening)
   for _, c in changes.changed
     if is_widening(c.old_type, c.new_type)
       parts[parts:len() + 1] = "    new." .. c.name .. " = (" .. c.new_type .. ")old->" .. c.name .. ";  /* " .. c.old_type .. " → " .. c.new_type .. " */"
     else
-      # Type narrowing: use a default value
       parts[parts:len() + 1] = "    new." .. c.name .. " = (" .. c.new_type .. ")0;  /* WARNING: " .. c.old_type .. " → " .. c.new_type .. " is narrowing, using default */"
 
-  # Initialize added fields with defaults
   for _, a in changes.added
     parts[parts:len() + 1] = "    new." .. a.name .. " = (" .. a.type .. ")" .. default_value(a.type) .. ";  /* added field */"
 
@@ -162,11 +115,7 @@ emit_migration: str = (type_name: str, changes: any)
 
   str_join(parts, "\n")
 
-# ═══════════════════════════════════════════════════════════════
-# Diff reporting
-# ═══════════════════════════════════════════════════════════════
 
-# format_diff: generate a human-readable diff report
 format_diff: str = (type_name: str, changes: any)
   lines = {}
   lines[lines:len() + 1] = "=== Type Diff: " .. type_name .. " ==="

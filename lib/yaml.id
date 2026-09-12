@@ -1,4 +1,3 @@
-# yaml — YAML parser with nested structure support
 
 parse_value: any = (data: str, start: i64, indent: i64)
   i = start
@@ -31,7 +30,6 @@ parse_value: any = (data: str, start: i64, indent: i64)
     key = line:sub(1, colon_pos - 1):trim()
     val_str = line:sub(colon_pos + 1):trim()
     if val_str:len() == 0
-      # Nested mapping: parse children at deeper indent
       nested = {}
       while true
         nv, ni, ns = parse_value(data, i, current_indent + 1)
@@ -65,7 +63,6 @@ parse_value: any = (data: str, start: i64, indent: i64)
                 val = num
       return { _key = key, _value = val }, i, val
   else
-    # List item or scalar
     if line:sub(1, 2) == "- " or line:sub(1, 2) == "-"
       item_val = line:sub(2):trim()
       if item_val:len() == 0
@@ -92,7 +89,6 @@ parse: any = (data: str)
     if kv == nil
       if val == nil
         break
-      # List item at root
       res[res:len() + 1] = kv
       i = ni
     else

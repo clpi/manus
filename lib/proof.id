@@ -1,4 +1,3 @@
-# proof — proof helpers (codegen-safe; no json.decode/inspect on hot path).
 sha256: str = (data: str)
   p = script.fs_tmp():gsub("\n", "")
   script.fs_write(p, data)

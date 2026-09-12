@@ -1,11 +1,4 @@
-# diff — Structural diff algorithms
-# Myers O(ND) text diff, LCS, and hierarchical table diff.
-# Critical for: config management, CRDTs, code review, data sync,
-# ML model versioning, and version control systems.
 
-# ═══════════════════════════════════════════════════════════════
-# LCS: longest common subsequence
-# ═══════════════════════════════════════════════════════════════
 
 lcs: any = (a: any, b: any)
     la = a:len()
@@ -35,7 +28,6 @@ lcs: any = (a: any, b: any)
         prev = curr
         curr = tmp
         i += 1
-    # backtrack
     out = {}
     i = la
     j = lb
@@ -64,7 +56,6 @@ lcs: any = (a: any, b: any)
         k -= 1
     ops
 
-# lcs_length: return just the length of the LCS (faster, no backtrack).
 lcs_length: i64 = (a: any, b: any)
     la = a:len()
     lb = b:len()
@@ -95,9 +86,6 @@ lcs_length: i64 = (a: any, b: any)
         i += 1
     prev[lb + 1]
 
-# ═══════════════════════════════════════════════════════════════
-# Myers diff: edit script (insert/delete) for sequences
-# ═══════════════════════════════════════════════════════════════
 
 myers: any = (a: any, b: any)
     la = a:len()
@@ -159,9 +147,6 @@ myers_backtrack: any = (a: any, b: any, trace: any, x: any, y: any)
         i -= 1
     out
 
-# ═══════════════════════════════════════════════════════════════
-# Unified diff: produce human-readable line diff
-# ═══════════════════════════════════════════════════════════════
 
 unified: any = (old_lines: any, new_lines: any)
     ops = myers(old_lines, new_lines)
@@ -178,9 +163,6 @@ unified: any = (old_lines: any, new_lines: any)
         i += 1
     out
 
-# ═══════════════════════════════════════════════════════════════
-# Table diff: hierarchical structural diff for nested tables
-# ═══════════════════════════════════════════════════════════════
 
 table_diff: any = (old: any, new_: any)
     diffs = {}
@@ -223,9 +205,6 @@ table_diff_into = (old: any, new_: any, path: str, diffs: any)
                 p = p .. k:to(str)
             diffs[diffs:len() + 1] = {op = "add", path = p, value = v}
 
-# ═══════════════════════════════════════════════════════════════
-# Utility: count additions, removals, replacements
-# ═══════════════════════════════════════════════════════════════
 
 stats: any = (diffs: any)
     adds = 0
@@ -239,6 +218,5 @@ stats: any = (diffs: any)
         i += 1
     {adds = adds, removes = removes, replaces = replaces, total = adds + removes + replaces}
 
-# has_changes: return true if the diff list is non-empty.
 has_changes: bool = (diffs: any)
     diffs:len() > 0

@@ -1,24 +1,17 @@
-# path.filepath — cross-platform path manipulation (mirrors Go's path/filepath package)
 
-# Separator is the OS-specific path separator.
 separator = "/"
 
-# ListSeparator is the OS-specific path list separator.
 list_separator = ":"
 
-# IsSeparator reports whether c is a directory separator.
 sep: bool = (c: str)
   if c == "/" or c == "\\"
     return true
   false
 
-# Clean returns the shortest path name equivalent of path.
 clean: str = (path: str)
   if path == ""
     return "."
-  # Normalize separators.
   result = path:gsub("\\", "/")
-  # Handle . and ..
   parts = {}
   i = 1
   len = result:len()
@@ -41,14 +34,12 @@ clean: str = (path: str)
     return "."
   stack:concat("/")
 
-# Ext returns the file name extension.
 ext: str = (path: str)
   dot = path:find("%.")
   if dot == nil
     return ""
   path:sub(dot)
 
-# Base returns the last element of path.
 base: str = (path: str)
   dot = path:len()
   while dot > 1 and path:sub(dot, dot) == "/"
@@ -58,7 +49,6 @@ base: str = (path: str)
     dot = dot - 1
   path:sub(dot, last)
 
-# Dir returns the directory part of path.
 dir: str = (path: str)
   dot = path:len()
   while dot > 1 and path:sub(dot, dot) == "/"
@@ -69,7 +59,6 @@ dir: str = (path: str)
     return "."
   path:sub(1, dot - 1)
 
-# IsAbs reports whether path is absolute.
 abs: bool = (path: str)
   if path:sub(1, 1) == "/"
     return true

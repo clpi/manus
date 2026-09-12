@@ -1,4 +1,3 @@
-# fs — simple file-system helpers
 
 exists: bool = (path: any)
   if path == nil
@@ -13,11 +12,6 @@ read: any = (path: any)
   f = io.open(path, "r")
   if f == nil
     return ""
-  # Read the WHOLE file in one C-level call (f:read("*a")). The previous
-  # line-by-line `data = data .. line .. "\n"` loop was (a) O(n^2) and (b)
-  # triggered a runtime large-string-concat corruption (extra bytes +
-  # scrambled content past ~10KB), which broke json.decode of the symbol
-  # index (apparent "1029 truncation") and any large-file read.
   data = f:read("*a")
   f:close()
   if data == nil
@@ -56,10 +50,6 @@ lines: any = (path: any)
   f:close()
   out
 
-# gap[075]: these tested a BOOL against nil. os.remove answers `false` on
-# failure, never nil, so `false != nil` is true and no input could ever answer
-# false — remove reported success for a path it had not removed. Answer with
-# the value itself. Proof asserts both directions: scripts/proof/remove.id
 remove: bool = (path: any)
   os.remove(path)
 
@@ -67,43 +57,29 @@ rename: bool = (src: any, dst: any)
   os.rename(src, dst)
 
 make: bool = (path: str)
-  # IMPLEMENTATION-BLOCKED: directory create needs world/effect/witness
-  # (path:make). Not os.execute, not a C emit directive.
   false
 
-# VOCABULARY-BLOCKED: filesystem mutation/query below requires admitted
-# process world with subject-first relations (path:make(), src:copy(dst)).
-# Do not use os.execute, io.popen, Lua .., or shell-string construction.
-# Unblock: GAP-154 (host boundary), process world admission.
 
 tree: bool = (path: str)
-  # IMPLEMENTATION-BLOCKED: recursive make needs admitted process world
   false
 
 copy: bool = (src: str, dest: str)
-  # IMPLEMENTATION-BLOCKED: copy needs admitted process world
   false
 
 list: any = (path: str)
-  # IMPLEMENTATION-BLOCKED: directory iteration requires admitted world
   {}
 
 dir: bool = (path: str)
-  # IMPLEMENTATION-BLOCKED: directory query requires admitted world
   false
 
 file: bool = (path: str)
-  # IMPLEMENTATION-BLOCKED: file query requires admitted world
   false
 
 drop: bool = (path: str)
-  # IMPLEMENTATION-BLOCKED: directory remove needs world/effect/witness
   false
 
 chmod: bool = (path: str, mode: str)
-  # IMPLEMENTATION-BLOCKED: permission change requires admitted world
   false
 
 size: i64 = (path: str)
-  # IMPLEMENTATION-BLOCKED: stat requires admitted world
   0 - 1

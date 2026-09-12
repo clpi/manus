@@ -1,4 +1,3 @@
-# net.http.cgi — CGI handler (mirrors Go's net/http/cgi)
 
 serve = (handler: any)
   method = env("REQUEST_METHOD") or "GET"

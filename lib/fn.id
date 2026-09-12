@@ -1,20 +1,12 @@
-# fn — functional programming utilities
-# Higher-order functions and data transformations.
-# Note: closure-returning combinators are not supported by the compiler;
-# this module focuses on functions that compose without creating new closures.
 
-# identity: return its argument unchanged.
 identity: any = (x: any)
   x
 
-# constant: return the value (for use as a function body).
 constant: any = (v: any)
   v
 
-# noop: a function that does nothing.
 noop: void = {}
 
-# foldl: left fold over a list.
 foldl: any = (list: any, init: any, fn_ref: any)
   acc = init
   if list == nil
@@ -25,7 +17,6 @@ foldl: any = (list: any, init: any, fn_ref: any)
     i = i + 1
   acc
 
-# foldr: right fold over a list.
 foldr: any = (list: any, init: any, fn_ref: any)
   acc = init
   if list == nil
@@ -36,7 +27,6 @@ foldr: any = (list: any, init: any, fn_ref: any)
     i = i - 1
   acc
 
-# map_filter: apply fn and keep only non-nil results.
 map_filter: any = (list: any, fn_ref: any)
   out = {}
   if list == nil
@@ -49,7 +39,6 @@ map_filter: any = (list: any, fn_ref: any)
     i = i + 1
   out
 
-# group_by: partition list into groups keyed by fn's return value.
 group_by: any = (list: any, fn_ref: any)
   groups = {}
   if list == nil
@@ -63,7 +52,6 @@ group_by: any = (list: any, fn_ref: any)
     i = i + 1
   groups
 
-# unique_by: deduplicate list by fn's return value (first occurrence wins).
 unique_by: any = (list: any, fn_ref: any)
   seen = {}
   out = {}
@@ -78,7 +66,6 @@ unique_by: any = (list: any, fn_ref: any)
     i = i + 1
   out
 
-# take_while: take elements from the front while predicate holds.
 take_while: any = (list: any, fn_ref: any)
   out = {}
   if list == nil
@@ -91,7 +78,6 @@ take_while: any = (list: any, fn_ref: any)
     i = i + 1
   out
 
-# drop_while: drop elements from the front while predicate holds.
 drop_while: any = (list: any, fn_ref: any)
   out = {}
   if list == nil
@@ -101,13 +87,11 @@ drop_while: any = (list: any, fn_ref: any)
   while i <= list:len()
     if dropping and fn_ref(list[i])
     else
-      # skip
       dropping = false
       out[out:len() + 1] = list[i]
     i = i + 1
   out
 
-# chunk: split list into sub-lists of size n.
 chunk: any = (list: any, n: i64)
   out = {}
   if list == nil or n == nil or n < 1
@@ -123,7 +107,6 @@ chunk: any = (list: any, n: i64)
     i = i + n
   out
 
-# interleave: weave elements from two lists alternately.
 interleave: any = (a: any, b: any)
   out = {}
   if a == nil
@@ -142,7 +125,6 @@ interleave: any = (a: any, b: any)
     i = i + 1
   out
 
-# transpose: transpose a list of lists (rows to columns).
 transpose: any = (matrix: any)
   if matrix == nil or matrix:len() == 0
     return {}
@@ -160,7 +142,6 @@ transpose: any = (matrix: any)
     c = c + 1
   out
 
-# count_by: count elements grouped by fn's return value.
 count_by: any = (list: any, fn_ref: any)
   counts = {}
   if list == nil
@@ -174,7 +155,6 @@ count_by: any = (list: any, fn_ref: any)
     i = i + 1
   counts
 
-# flatten: flatten a list of lists one level deep.
 flatten: any = (list: any)
   out = {}
   if list == nil
@@ -192,7 +172,6 @@ flatten: any = (list: any)
     i = i + 1
   out
 
-# partition: split list into {matching, non_matching} by predicate.
 partition: any = (list: any, fn_ref: any)
   yes = {}
   no = {}
@@ -210,7 +189,6 @@ partition: any = (list: any, fn_ref: any)
   out[2] = no
   out
 
-# min_by: find the element that minimizes fn's return value.
 min_by: any = (list: any, fn_ref: any)
   if list == nil or list:len() == 0
     return nil
@@ -225,7 +203,6 @@ min_by: any = (list: any, fn_ref: any)
     i = i + 1
   best
 
-# max_by: find the element that maximizes fn's return value.
 max_by: any = (list: any, fn_ref: any)
   if list == nil or list:len() == 0
     return nil
@@ -240,8 +217,6 @@ max_by: any = (list: any, fn_ref: any)
     i = i + 1
   best
 
-# sort_by: sort list by fn's return value.
-# Bubble sort to avoid closure capture issues in the codegen.
 sort_by = (list: any, fn_ref: any)
   if list == nil
     return
@@ -262,22 +237,6 @@ sort_by = (list: any, fn_ref: any)
       j = j + 1
     i = i + 1
 
-# GAP: pipe/pipe3/negate/curry2 cannot be expressed in Duo today.
-# Each needs a returned lambda to CAPTURE the enclosing function's parameters
-# (f1/f2/fn_ref) and then CALL them. Two independent compiler gaps block that:
-#   1. a lambda does not capture an enclosing PARAMETER # the generated C says
-#      "use of undeclared identifier 'f2'";
-#   2. a function arriving as a parameter is not callable at all.
-# They were also written as NESTED BARE DECLARATIONS, which do not parse (GR-001
-# is file-scope), and pipe/pipe3 both named their inner function `composed`,
-# which collides at module scope ("redefinition of std_fn__composed__lua").
-#
-# Why they are stubbed rather than left as they were: while they failed to
-# PARSE, `emit_embedded_module` failed for the whole file, so std.fn was
-# unusable # and std.iter and std.go, which require it, were down purely as
-# collateral. Three modules were unreachable to protect four functions that
-# could not run under any spelling. They return nil until the capture gap
-# closes, so the rest of the module is reachable.
 pipe: any = (f1: any, f2: any)
   nil
 
@@ -290,7 +249,6 @@ negate: any = (fn_ref: any)
 curry2: any = (fn_ref: any)
   nil
 
-# clamp: clamp value between min and max.
 clamp: any = (v: any, lo: any, hi: any)
   if v < lo
     return lo

@@ -1,22 +1,14 @@
-# graphics.font — Font rendering and text layout
-# For rendering text in ward's graphics pipeline.
 
-# ═══════════════════════════════════════════════════════════════
-# Font Config
-# ═══════════════════════════════════════════════════════════════
 
 config_new: any = ()
     {
         path = "",
         size = 16,
         dpi = 72,
-        antialiasing = "gray",  # "none", "gray", "lcd"
-        hinting = "normal",  # "none", "slight", "normal"
+        antialiasing = "gray",
+        hinting = "normal",
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Glyph
-# ═══════════════════════════════════════════════════════════════
 
 glyph_new: any = (char: str)
     {
@@ -31,9 +23,6 @@ glyph_new: any = (char: str)
         bitmap = {},
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Font
-# ═══════════════════════════════════════════════════════════════
 
 font_new: any = (config: any)
     {
@@ -46,16 +35,13 @@ font_new: any = (config: any)
     }
 
 font_load: any = (font: any)
-    # Load font with proper metrics
     if font.config.size == nil font.config.size = 16 
     
-    # Standard font metrics (ascent/descent ratios)
     font.ascender = font.config.size * 0.8:floor()
     font.descender = -font.config.size * 0.2:floor()
     font.line_height = font.ascender - font.descender
     font.loaded = true
     
-    # Pre-cache common characters
     common_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;:!?-"
     i = 1
     while i <= common_chars:len()
@@ -70,27 +56,19 @@ font_get_glyph: any = (font: any, char: str)
     if font.glyphs[codepoint]
         return font.glyphs[codepoint]
 
-    # Generate glyph with character-appropriate metrics
     glyph = glyph_new(char)
     
-    # Character width varies by type
     if codepoint >= 65 and codepoint <= 90
-        # Uppercase A-Z: wider
         glyph.width = font.config.size * 0.7:floor()
     else(codepoint >= 97 and codepoint <= 122)
-        # Lowercase a-z: medium
         glyph.width = font.config.size * 0.55:floor()
     else(codepoint >= 48 and codepoint <= 57)
-        # Digits 0-9: medium-wide
         glyph.width = font.config.size * 0.6:floor()
     else(codepoint == 32)
-        # Space: half width
         glyph.width = font.config.size * 0.3:floor()
     else(codepoint == 46 or codepoint == 44 or codepoint == 39)
-        # Punctuation: narrow
         glyph.width = font.config.size * 0.2:floor()
     else
-        # Default: medium
         glyph.width = font.config.size * 0.5:floor()
     
     glyph.height = font.config.size
@@ -98,18 +76,15 @@ font_get_glyph: any = (font: any, char: str)
     glyph.bearing_x = 0
     glyph.bearing_y = font.ascender
 
-    # Generate bitmap with anti-aliased edges
     y = 1
     while y <= glyph.height
         x = 1
         while x <= glyph.width
             alpha = 255
-            # Anti-alias edges
             if x == 1 or x == glyph.width
                 alpha = 200
             if y == 1 or y == glyph.height
                 alpha = 180
-            # Corners
             if (x == 1 or x == glyph.width) and (y == 1 or y == glyph.height)
                 alpha = 128
             glyph.bitmap[(y - 1) * glyph.width + x] = alpha
@@ -138,9 +113,6 @@ font_measure_text: any = (font: any, text: str)
         height = max_y,
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Text Layout
-# ═══════════════════════════════════════════════════════════════
 
 layout_new: any = (font: any)
     {
@@ -193,9 +165,6 @@ layout_get_size: any = (layout: any)
         height = layout.cursor_y + layout.font.line_height,
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Text Rendering
-# ═══════════════════════════════════════════════════════════════
 
 render_text: any = (font: any, text: str, x: f64, y: f64, color: any)
     layout = layout_new(font)
@@ -215,12 +184,4 @@ render_text: any = (font: any, text: str, x: f64, y: f64, color: any)
         size = layout_get_size(layout),
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
-# Config
-# Glyph
-# Font
-# Layout
-# Rendering

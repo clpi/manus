@@ -1,34 +1,4 @@
-# SH-12 — object writers, seed: a Mach-O ARM64 relocatable object, in Duo.
-#
-# SH-12 is "Mach-O partial; ELF/COFF open" with no Duo implementation. This
-# writes a real `.o` — header, segment command, section, symbol table, string
-# table — that the SYSTEM LINKER accepts.
-#
-# THE ORACLE is the strongest one available for a container format and the
-# reason to build it in this order: the object is handed to `xcrun clang`,
-# linked against a C `main` that calls the symbol, and RUN. If any field is
-# wrong — a bad offset, a mis-sized load command, a symbol table the linker
-# cannot read — it does not link, or it links and crashes. There is no way for
-# a wrong object to print the right number.
-#
-# SH-11 proved the instruction encodings against the assembler and the lowering
-# against execution; this proves the CONTAINER. Together they are a native
-# backend with no assembler in the path.
-#
-# Layout, 64-bit little-endian throughout:
-#   mach_header_64        32 bytes
-#   LC_SEGMENT_64        72 + 80 (one section)
-#   LC_SYMTAB            24
-#   code
-#   nlist_64 per symbol  16
-#   string table
 
-# BYTES ARE HEX, not raw string bytes. A Duo `str` is a NUL-terminated C
-# string, so `0:char()` truncates it — a first attempt at this emitted 60
-# bytes of a 243-byte object and `nm` rejected the result. Binary data cannot
-# travel through `str`, and there is no byte-buffer-to-file API, so the writer
-# produces lowercase hex and the caller converts it (`xxd -r -p`). Filed as the
-# gap it is; the layout below is the deliverable and it is unaffected.
 
 _u8: str = (v: i64)
   digits = "0123456789abcdef"
@@ -46,7 +16,6 @@ _u32: str = (v: i64)
 _u64: str = (v: i64)
   _u32(v) .. _u32(v >> 32)
 
-# A fixed-width, NUL-padded name field (segname/sectname are char[16]).
 _name16: str = (s: str)
   out = ""
   i: i64 = 1
@@ -58,31 +27,6 @@ _name16: str = (s: str)
     i = i + 1
   out
 
-# Build a complete relocatable object exporting one global symbol at offset 0.
-#
-# Offsets are computed, never hardcoded: header 32 + segment 152 + symtab 24
-# gives the code offset, and every later offset follows from the code size.
-# Hardcoding them is exactly the bug the link step would catch, so the code
-# says how they are derived.
-#
-# THE STRING-TABLE LOOP WAS CORRUPTED IN THE COMMITTED TREE and this relation
-# did not compile on ANY backend. A rename had eaten the leading `s` of two
-# names and pushed the remainder onto its own line, twice:
-#
-#     while si <= s:len()          <- `symbol:len()`; `s` is not in scope here
-#       ymbol                      <- the orphan tail
-#     ...
-#     str_len: i64 = s:len()       <- `strtab:len() // 2`
-#     trtab // 2                   <- the orphan tail
-#
-# NOTHING CAUGHT IT, because the native-scalar precheck refused this file one
-# relation earlier on `param-type:any` and never reached the corruption. The
-# `any` went, the corruption surfaced, and the module's OWN oracle — stated at
-# the top of this file — settled the repair: `object_hex("answer",
-# "40058052c0035fd6")` now emits 241 bytes that `xxd -r -p` turns into an
-# object `nm` reads as `T _answer`, that `xcrun clang` links against a C
-# `main`, and that RUNS and prints 42. Before the repair the same driver did
-# not compile on the direct backend or through `--backend=c`.
 object_hex: str = (symbol: str, code: str)
   hdr: i64 = 32
   seg: i64 = 72 + 80
@@ -93,8 +37,6 @@ object_hex: str = (symbol: str, code: str)
   sym_off: i64 = code_off + code_len
   nsyms: i64 = 1
   str_off: i64 = sym_off + 16 * nsyms
-  # string table: leading NUL, then "_symbol", then NUL
-  # string table bytes: leading NUL, "_symbol", trailing NUL
   strtab = _u8(0)
   si: i64 = 1
   strtab = strtab .. _u8(95)
@@ -105,94 +47,53 @@ object_hex: str = (symbol: str, code: str)
   str_len: i64 = strtab:len() // 2
 
   out = ""
-  # mach_header_64
-  # magic
   out = out .. _u32(4277009103)
-  # CPU_TYPE_ARM64
   out = out .. _u32(16777228)
-  # CPU_SUBTYPE_ARM64_ALL
   out = out .. _u32(0)
-  # MH_OBJECT
   out = out .. _u32(1)
-  # ncmds
   out = out .. _u32(2)
   out = out .. _u32(sizeofcmds)
-  # flags
   out = out .. _u32(0)
-  # reserved
   out = out .. _u32(0)
 
-  # LC_SEGMENT_64
-  # LC_SEGMENT_64
   out = out .. _u32(25)
-  # cmdsize
   out = out .. _u32(seg)
-  # segname: empty in an object
   out = out .. _name16("")
-  # vmaddr
   out = out .. _u64(0)
-  # vmsize
   out = out .. _u64(code_len)
-  # fileoff
   out = out .. _u64(code_off)
-  # filesize
   out = out .. _u64(code_len)
-  # maxprot rwx
   out = out .. _u32(7)
-  # initprot
   out = out .. _u32(7)
-  # nsects
   out = out .. _u32(1)
-  # flags
   out = out .. _u32(0)
 
-  # section_64 __text,__TEXT
   out = out .. _name16("__text")
   out = out .. _name16("__TEXT")
-  # addr
   out = out .. _u64(0)
-  # size
   out = out .. _u64(code_len)
-  # offset
   out = out .. _u32(code_off)
-  # align 2^2 = 4
   out = out .. _u32(2)
-  # reloff
   out = out .. _u32(0)
-  # nreloc
   out = out .. _u32(0)
-  # PURE_INSTRUCTIONS|SOME_INSTRUCTIONS
   out = out .. _u32(2147484672)
-  # reserved1
   out = out .. _u32(0)
-  # reserved2
   out = out .. _u32(0)
-  # reserved3
   out = out .. _u32(0)
 
-  # LC_SYMTAB
-  # LC_SYMTAB
   out = out .. _u32(2)
-  # cmdsize
   out = out .. _u32(sym)
   out = out .. _u32(sym_off)
   out = out .. _u32(nsyms)
   out = out .. _u32(str_off)
   out = out .. _u32(str_len)
 
-  # code
   out = out .. code
 
-  # nlist_64: the exported symbol, defined in section 1 at offset 0
-  # n_strx: past the leading NUL
   out = out .. _u32(1)
-  # n_type: N_SECT | N_EXT
   out = out .. _u8(15)
-  # n_sect: 1-based
   out = out .. _u8(1)
-  # n_desc
   out = out .. _u16(0)
-  # n_value
   out = out .. _u64(0)
 
   out .. strtab

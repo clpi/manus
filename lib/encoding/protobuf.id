@@ -1,22 +1,9 @@
-# encoding.protobuf — Protocol Buffers encoding/decoding
-# Minimal implementation for wire format (varint, length-delimited, fixed32/64)
 
-# Wire types
 WIRE_VARINT = 0
 WIRE_64BIT = 1
 WIRE_LENGTH_DELIMITED = 2
-# WIRE_START_GROUP (3) and WIRE_END_GROUP (4) are not defined as bare
-# constants: nothing in this module uses them, and once MOD-1 removes the
-# explicit export table EVERY top-level binding becomes the surface — an
-# UNUSED file-scope constant then gets REFERENCED by the emitted surface
-# without being DEFINED ("use of undeclared identifier
-# 'std_encoding_protobuf__WIRE_START_GROUP'"). Both values remain public
-# through the WIRE table below, which is where callers read them.
 WIRE_32BIT = 5
 
-# ═══════════════════════════════════════════════════════════════
-# Writer
-# ═══════════════════════════════════════════════════════════════
 
 writer_new: any = ()
   { bytes = {} }
@@ -62,11 +49,8 @@ write_field_fixed64 = (w: any, field: i64, value: i64)
     i = i + 1
 
 write_field_float = (w: any, field: i64, value: f64)
-  # IEEE 754 single-precision float encoding
   write_tag(w, field, WIRE_32BIT)
-  # Convert to IEEE 754 float32 bytes
   if value != value
-    # NaN
     w.bytes(w.bytes:len() + 1) = 127
     w.bytes(w.bytes:len() + 1) = 192
     w.bytes(w.bytes:len() + 1) = 0
@@ -94,7 +78,6 @@ write_field_float = (w: any, field: i64, value: f64)
     w.bytes(w.bytes:len() + 1) = 0
     w.bytes(w.bytes:len() + 1) = 0
     return
-  # Decompose
   exp = 0
   while value >= 2
     value = value / 2
@@ -114,7 +97,6 @@ write_field_float = (w: any, field: i64, value: f64)
   w.bytes(w.bytes:len() + 1) = b3
 
 read_field_float: f64 = (r: any)
-  # Read IEEE 754 single-precision float
   if r.pos + 3 > r.len
     return 0.0
   b0 = r.data(r.pos)
@@ -139,9 +121,6 @@ read_field_float: f64 = (r: any)
 writer_bytes: any = (w: any)
   w.bytes
 
-# ═══════════════════════════════════════════════════════════════
-# Reader
-# ═══════════════════════════════════════════════════════════════
 
 reader_new: any = (data: any)
   { data = data, pos = 1, len = data:len() }
@@ -216,9 +195,6 @@ reader_field_fixed64: any = (r: any, wire_type: i64)
   r.pos = r.pos + 8
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Helper functions
-# ═══════════════════════════════════════════════════════════════
 
 string_to_bytes: any = (s: str)
   out = {}
@@ -236,21 +212,16 @@ bytes_to_string: str = (bytes: any)
     i = i + 1
   parts:concat()
 
-# ═══════════════════════════════════════════════════════════════
-# Schema definition helpers
-# ═══════════════════════════════════════════════════════════════
 
 message_new: any = (fields: any)
   {
     type = "protobuf_message",
     fields = fields
   }
-# {name = {field_num, wire_type, type}}
 
 field_def: any = (field_num: i64, wire_type: i64, type_name: str)
   { field_num = field_num, wire_type = wire_type, type = type_name }
 
-# Encode a message from a table of field values
 message_encode: any = (schema: any, values: any)
   w = writer_new()
   for name, field_def in schema.fields
@@ -268,22 +239,7 @@ message_encode: any = (schema: any, values: any)
         write_field_fixed64(w, field_def.field_num, value)
   writer_bytes(w)
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
-# MOD-1: the file IS the module. Identity re-exports deleted; the few
-# exports that carried real content are ordinary top-level bindings now.
-# Writer
-# Reader
-# Helpers
-# Schema
-# Wire type constants
-# Literals, not references to the WIRE_* constants above. Referencing a
-# file-scope constant from inside a nested table emits a bare, UNDECLARED
-# identifier when the module is EMBEDDED ("use of undeclared identifier
-# 'WIRE_START_GROUP'"), though it resolves fine standalone. Same compiler gap
-# as lib/net/ws.id's opcode table; reduced there to a two-file repro.
 WIRE =
   VARINT = 0
   FIXED64 = 1

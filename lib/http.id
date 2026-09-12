@@ -1,6 +1,4 @@
-# http — high-level HTTP client and server (wraps net.id)
 
-# Projections for HTTP operations
 get = net.get
 post = net.post
 request = net.request

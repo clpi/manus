@@ -1,10 +1,4 @@
-# ml.attention — Multi-head attention with KV cache for LLM inference
-# Full implementation of scaled dot-product attention with causal masking,
-# grouped-query attention (GQA), and KV cache for autoregressive generation.
 
-# ═══════════════════════════════════════════════════════════════
-# Multi-Head Attention Layer
-# ═══════════════════════════════════════════════════════════════
 
 mha_layer: any = (dim: i64, heads: i64, head_dim: i64, max_seq_len: i64)
   if head_dim == nil
@@ -24,14 +18,7 @@ mha_layer: any = (dim: i64, heads: i64, head_dim: i64, max_seq_len: i64)
     kv_cache = nil,
     cache_pos = 0
   }
-# Projection weights (dim x 3*dim for Q,K,V fused)
-# Output projection
-# KV cache: {key = [seq x dim], value = [seq x dim]} per layer
-# Position counter for KV cache
 
-# ═══════════════════════════════════════════════════════════════
-# KV Cache management
-# ═══════════════════════════════════════════════════════════════
 
 kv_cache_new: any = (max_seq_len: i64, heads: i64, head_dim: i64)
   {
@@ -50,7 +37,6 @@ kv_cache_append = (cache: any, key: any, value: any)
     pos = cache.length + i + 1
     if pos > cache.max_len
       break
-    # Copy key/value into cache
     for j = 1, key.cols
       cache.keys.data[(pos - 1) * key.cols + j] = key.data(i * key.cols + j)
       cache.values.data[(pos - 1) * value.cols + j] = value.data(i * value.cols + j)
@@ -66,9 +52,6 @@ kv_cache_get_values: any = (cache: any)
 kv_cache_reset = (cache: any)
   cache.length = 0
 
-# ═══════════════════════════════════════════════════════════════
-# Core attention computation
-# ═══════════════════════════════════════════════════════════════
 
 @hot
 mha_forward: any = (layer: any, x: any, use_cache: bool)
@@ -77,10 +60,8 @@ mha_forward: any = (layer: any, x: any, use_cache: bool)
   heads = layer.heads
   head_dim = layer.head_dim
 
-  # Project to Q, K, V
   qkv = ml.tensor.matmul(x, layer.wqkv)
 
-  # Split into Q, K, V
   q_size = dim
   k_size = dim
   v_size = dim
@@ -95,37 +76,30 @@ mha_forward: any = (layer: any, x: any, use_cache: bool)
       k.data[(i - 1) * dim + j] = qkv.data((i - 1) * dim * 3 + dim + j)
       v.data[(i - 1) * dim + j] = qkv.data((i - 1) * dim * 3 + dim * 2 + j)
 
-  # Apply KV cache
   if use_cache and layer.kv_cache != nil
     kv_cache_append(layer.kv_cache, k, v)
     k = kv_cache_get_keys(layer.kv_cache)
     v = kv_cache_get_values(layer.kv_cache)
 
-  # Compute attention scores: Q @ K^T / sqrt(head_dim)
   scores = ml.tensor.matmul(q, ml.tensor.transpose(k))
   scores = ml.tensor.mul_scalar(scores, layer.scale)
 
-  # Apply causal mask
   kv_len = k.rows
   for i = 1, seq_len
     for j = 1, kv_len
       if j > i
         scores.data[(i - 1) * kv_len + j] = -1000000000000000000000000000000.0
 
-  # Softmax
   attn_weights = softmax_2d(scores)
 
-  # Attention output: weights @ V
   attn_out = ml.tensor.matmul(attn_weights, v)
 
-  # Concatenate heads and project
   output = ml.tensor.matmul(attn_out, layer.wo)
 
   if use_cache
     return output, layer.kv_cache
   output
 
-# 2D softmax (per row)
 softmax_2d: any = (t: any)
   result = ml.tensor.zeros(t.rows, t.cols)
   for i = 1, t.rows
@@ -143,9 +117,6 @@ softmax_2d: any = (t: any)
       result.data[(i - 1) * t.cols + j] = result.data((i - 1) * t.cols + j) / sum
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Grouped-Query Attention (GQA) — used in LLaMA 2+
-# ═══════════════════════════════════════════════════════════════
 
 gqa_layer: any = (dim: i64, heads: i64, kv_heads: i64, max_seq_len: i64)
   head_dim = dim / heads:floor()
@@ -172,27 +143,22 @@ gqa_forward: any = (layer: any, x: any, use_cache: bool)
   kv_heads = layer.kv_heads
   head_dim = layer.head_dim
 
-  # Project Q, K, V
   q = ml.tensor.matmul(x, layer.wq)
   k = ml.tensor.matmul(x, layer.wk)
   v = ml.tensor.matmul(x, layer.wv)
 
-  # Apply KV cache
   if use_cache and layer.kv_cache != nil
     kv_cache_append(layer.kv_cache, k, v)
     k = kv_cache_get_keys(layer.kv_cache)
     v = kv_cache_get_values(layer.kv_cache)
 
-  # Repeat KV heads to match Q heads
   repeat_factor = heads / kv_heads:floor()
   k_expanded = repeat_kv(k, repeat_factor, head_dim)
   v_expanded = repeat_kv(v, repeat_factor, head_dim)
 
-  # Compute attention
   scores = ml.tensor.matmul(q, ml.tensor.transpose(k_expanded))
   scores = ml.tensor.mul_scalar(scores, layer.scale)
 
-  # Causal mask
   kv_len = k_expanded.rows
   for i = 1, seq_len
     for j = 1, kv_len
@@ -207,7 +173,6 @@ gqa_forward: any = (layer: any, x: any, use_cache: bool)
     return output, layer.kv_cache
   output
 
-# Repeat KV heads: [seq, kv_heads*head_dim] -> [seq, heads*head_dim]
 repeat_kv: any = (k: any, n_repeat: i64, head_dim: i64)
   seq_len = k.rows
   kv_heads = k.cols / head_dim:floor()
@@ -222,9 +187,6 @@ repeat_kv: any = (k: any, n_repeat: i64, head_dim: i64)
           result.data[dst_idx] = k.data(src_idx)
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Flash-Attention style tiling (for long sequences)
-# ═══════════════════════════════════════════════════════════════
 
 flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
   if block_size == nil
@@ -233,7 +195,6 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
   head_dim = q.cols
   kv_len = k.rows
 
-  # Tiled computation
   output = ml.tensor.zeros(seq_len, head_dim)
   row_max = {}
   row_sum = {}
@@ -241,14 +202,11 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
     row_max[i] = -1000000000000000000000000000000.0
     row_sum[i] = 0
 
-  # Process K,V in blocks
   col = 1
   while col <= kv_len
     block_end = col + block_size - 1:min(kv_len)
 
-    # Compute Q @ K_block^T
     for i = 1, seq_len
-      # Compute scores for this block
       new_max = row_max[i]
       for j = col, block_end
         score = 0
@@ -258,7 +216,6 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
         if score > new_max
           new_max = score
 
-      # Update output with rescaling
       scale = row_max[i] - new_max:exp()
       row_sum[i] = row_sum[i] * scale
 
@@ -275,13 +232,9 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
       row_max[i] = new_max
     col = col + block_size
 
-  # Normalize
   for i = 1, seq_len
     if row_sum[i] > 0
       for d = 1, head_dim
         output.data[(i - 1) * head_dim + d] = output.data((i - 1) * head_dim + d) / row_sum[i]
 
   output
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════

@@ -1,10 +1,5 @@
-# mime — MIME type detection (mirrors Go's mime package)
-# Uses a module-level table for persistence across calls.
 
-# MOD-1: the file IS the module. Identity re-exports deleted; exports
-# carrying real content are ordinary top-level bindings.
 
-# Initialize defaults
 defaults = {
   [".txt"] = "text/plain",
   [".html"] = "text/html",
@@ -31,13 +26,11 @@ defaults = {
   [".wasm"] = "application/wasm"
 }
 
-# TypeByExtension returns the MIME type for the extension.
 type_by_extension: str = (ext: str)
   t = defaults[ext]
   if t == nil
     return "application/octet-stream"
   t
 
-# AddExtension adds a MIME type for an extension (persists across calls).
 add_extension = (ext: str, mime: str)
   defaults[ext] = mime

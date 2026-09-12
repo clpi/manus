@@ -1,4 +1,3 @@
-# html — basic HTML escaping and unescaping
 
 string = string
 escape: str = (s: str)

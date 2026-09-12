@@ -1,45 +1,28 @@
-# context — cancellation and timeout (mirrors Go's context package)
-# In Duo (single-threaded with cooperative async), context is a table carrying
-# a deadline, a cancellation flag, and a parent chain. There are no real
-# OS-level cancellation signals; cancellation propagates by checking the flag.
-#
-# Note: `background` and `todo` are not module-level locals because the duo
-# codegen does not yet expose module-level locals/globals to function bodies
-# (it emits "use of undeclared identifier"). The root contexts are defined
-# inline where they are needed.
 
-# background: the root context (never cancelled, no deadline).
 background_ctx: any = ()
   { deadline = nil, cancelled = false, parent = nil, key = "background", done = false }
 
-# todo: a placeholder context for when no context is decided yet.
 todo_ctx: any = ()
   { deadline = nil, cancelled = false, parent = nil, key = "todo", done = false }
 
-# with_cancel: create a child context that can be cancelled.
 with_cancel: any = (parent: any)
   if parent == nil
     parent = background_ctx()
   { deadline = parent.deadline, cancelled = false, parent = parent, done = false }
 
-# with_deadline: create a child context with a specific deadline (epoch seconds).
 with_deadline: any = (parent: any, deadline: any)
   if parent == nil
     parent = background_ctx()
-  # inherit the earlier deadline
   d = deadline
   if has(.deadline)(parent) and parent.deadline < d
     d = parent.deadline
   { deadline = d, cancelled = false, parent = parent, done = false }
 
-# with_timeout: create a child context that times out after `timeout` seconds.
 with_timeout: any = (parent: any, timeout: any)
-  # get current time
   t = time
   now = t.now()
   with_deadline(parent, now + timeout)
 
-# with_value: create a child context carrying a key-value pair.
 with_value: any = (parent: any, key: any, value: any)
   if parent == nil
     parent = background_ctx()
@@ -51,14 +34,12 @@ with_value: any = (parent: any, key: any, value: any)
   child[key] = value
   child
 
-# cancel: cancel a context (and all its children via propagation).
 cancel = (ctx: any)
   if ctx == nil
     return
   ctx.cancelled = true
   ctx.done = true
 
-# is_cancelled: report whether ctx (or any ancestor) has been cancelled.
 is_cancelled: bool = (ctx: any)
   if ctx == nil
     return false
@@ -69,7 +50,6 @@ is_cancelled: bool = (ctx: any)
     cur = cur.parent
   false
 
-# deadline: return the deadline (epoch seconds) or nil if none.
 deadline: any = (ctx: any)
   if ctx == nil
     return nil
@@ -80,7 +60,6 @@ deadline: any = (ctx: any)
     cur = cur.parent
   nil
 
-# done: report whether the context's work is done (cancelled or deadline expired).
 done: any = (ctx: any)
   if ctx == nil
     return false
@@ -93,7 +72,6 @@ done: any = (ctx: any)
       return true
   false
 
-# err: return a description of why the context was done, or nil.
 err: any = (ctx: any)
   if ctx == nil
     return nil
@@ -106,7 +84,6 @@ err: any = (ctx: any)
       return "context deadline exceeded"
   nil
 
-# value: look up key in the context chain.
 value: any = (ctx: any, key: any)
   if ctx == nil
     return nil

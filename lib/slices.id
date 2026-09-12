@@ -1,4 +1,3 @@
-# slices — slice helper utilities (mirrors Go 1.21 slices package)
 
 clip: any = (arr: any, n: i64)
   if arr == nil

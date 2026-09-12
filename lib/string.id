@@ -1,4 +1,3 @@
-# string — string helper utilities
 
 std_string_is_empty: bool = (s: any)
   s == nil or s:len() == 0
@@ -303,31 +302,6 @@ M.is_alpha = std_string_is_alpha
 M.is_digit = std_string_is_digit
 M.is_alphanumeric = std_string_is_alphanumeric
 
-# The Lua-builtin surface, which this module never exposed. `string.byte`
-# and friends therefore resolved to a MISSING MEMBER and returned nil — no
-# error, no diagnostic, just nil where a byte should be. There are 431 such
-# calls across lib/: byte 130, len 103, sub 102, gsub 36, char 22, find 7,
-# upper/lower 4 each, rep 1. Every one of them was silently reading nil, which
-# is how lib/image/gif.id could load cleanly and still decode nothing.
-#
-# These are projections, not reimplementations: one edge, and `string.*`
-# remains the thing that actually runs. Exposing them here is what makes the
-# ambient spelling `string.byte` mean what every caller already assumed.
-# `char` and `rep` are FORWARDING FUNCTIONS, not value aliases like the rest.
-# Aliasing a host function with VARIADIC or OPTIONAL arity through a module
-# produces wrong results: `104:char()` returned a value that
-# table.concat could not join past the first element (base32 decode returned
-# "h" for an 8-character group whose five bytes were all computed correctly),
-# and `"x":rep(2)` returned "xnil" # the missing optional third
-# argument materialising as the literal text. Same root as the documented
-# variadic-module-export gap.
-#
-# Both forwarders are SINGLE-SHAPE on purpose. A 4-parameter `char` with nil
-# guards does NOT work: every parameter is always passed, so the missing ones
-# never compare equal to nil and `a:char(b, c, d)` runs regardless #
-# `104:char()` came back four bytes long, printing as "h" because C
-# stops at the first null. The multi-argument call sites (all in
-# lib/image/png.id) use the host `string.char` directly instead.
 char: any = (c: any)
   c:char()
 
@@ -348,8 +322,6 @@ M.upper = string.upper
 M.lower = string.lower
 M.reverse_raw = string.reverse
 
-# Names the module defines under a std_string_ prefix but never published
-# under the short spelling callers actually write.
 M.trim = std_string_trim
 M.split = std_string_split
 M.join = std_string_join

@@ -1,9 +1,4 @@
-# graphics — color, geometry, and render pipeline primitives
-# Targets: game engines, visualization, ML result rendering, image processing
 
-# ═══════════════════════════════════════════════════════════════
-# Color
-# ═══════════════════════════════════════════════════════════════
 
 color_rgb: any = (r: f64, g: f64, b: f64)
   { r = r, g = g, b = b, a = 1.0 }
@@ -56,7 +51,6 @@ color_clamp: any = (c: any)
     a = math.clamp(c.a, 0, 1)
   }
 
-# Convert RGB to HSV
 color_to_hsv: any = (c: any)
   r, g, b = c.r, c.g, c.b
   max_val = r:max(g:max(b))
@@ -79,7 +73,6 @@ color_to_hsv: any = (c: any)
     h = h / 6
   { h = h, s = s, v = v }
 
-# Convert HSV to RGB
 color_from_hsv: any = (h: f64, s: f64, v: f64)
   i = h * 6:floor()
   f = h * 6 - i
@@ -99,7 +92,6 @@ color_from_hsv: any = (h: f64, s: f64, v: f64)
     return { r = t, g = p, b = v, a = 1.0 }
   { r = v, g = p, b = q, a = 1.0 }
 
-# Named colors
 COLORS =
   red =
     r = 1
@@ -162,9 +154,6 @@ COLORS =
     b = 0
     a = 0
 
-# ═══════════════════════════════════════════════════════════════
-# Geometry: 2D vectors and shapes
-# ═══════════════════════════════════════════════════════════════
 
 vec2: any = (x: f64, y: f64)
   { x = x, y = y }
@@ -196,7 +185,6 @@ vec2_distance: f64 = (a: any, b: any)
 vec2_lerp: any = (a: any, b: any, t: f64)
   { x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t }
 
-# 2D Rectangle
 rect: any = (x: f64, y: f64, w: f64, h: f64)
   { x = x, y = y, w = w, h = h }
 
@@ -212,7 +200,6 @@ rect_area: f64 = (r: any)
 rect_center: any = (r: any)
   { x = r.x + r.w / 2, y = r.y + r.h / 2 }
 
-# Circle
 circle: any = (cx: f64, cy: f64, r: f64)
   { cx = cx, cy = cy, r = r }
 
@@ -227,9 +214,6 @@ circle_area: f64 = (c: any)
 circle_perimeter: f64 = (c: any)
   2 * math.pi * c.r
 
-# ═══════════════════════════════════════════════════════════════
-# Transform (2D affine: translation + rotation + scale)
-# ═══════════════════════════════════════════════════════════════
 
 transform_new: any = ()
   { tx = 0, ty = 0, sx = 1, sy = 1, rotation = 0 }
@@ -258,9 +242,6 @@ transform_apply: any = (t: any, px: f64, py: f64)
     y = rx * sin_r + ry * cos_r + t.ty
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Canvas (simple rasterizer for ML visualization / image gen)
-# ═══════════════════════════════════════════════════════════════
 
 canvas_new: any = (width: i64, height: i64)
   pixels = {}
@@ -292,7 +273,6 @@ canvas_get_pixel: any = (canvas: any, x: i64, y: i64)
     return nil
   canvas.pixels(y * canvas.width + x + 1)
 
-# Draw a filled rectangle
 canvas_fill_rect = (canvas: any, x: i64, y: i64, w: i64, h: i64, color: any)
   dy = 0
   while dy < h
@@ -302,7 +282,6 @@ canvas_fill_rect = (canvas: any, x: i64, y: i64, w: i64, h: i64, color: any)
       dx = dx + 1
     dy = dy + 1
 
-# Draw a line (Bresenham's algorithm)
 canvas_line = (canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any)
   dx = x1 - x0:abs()
   dy = -y1 - y0:abs()
@@ -326,7 +305,6 @@ canvas_line = (canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any)
       err = err + dx
       y = y + sy
 
-# Draw a circle (Midpoint circle algorithm)
 canvas_circle = (canvas: any, cx: i64, cy: i64, r: i64, color: any)
   x = r
   y = 0
@@ -347,7 +325,6 @@ canvas_circle = (canvas: any, cx: i64, cy: i64, r: i64, color: any)
       x = x - 1
       err = err + 2 * (y - x) + 1
 
-# Convert canvas to PPM format (for easy viewing)
 canvas_to_ppm: str = (canvas: any)
   out = "P6\n" .. canvas.width:to(str) .. " " .. canvas.height:to(str) .. "\n255\n"
   i = 1
@@ -356,11 +333,3 @@ canvas_to_ppm: str = (canvas: any)
     out = out .. c.r * 255:floor():char() .. c.g * 255:floor():char() .. c.b * 255:floor():char()
     i = i + 1
   out
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Color
-# Vec2
-# Shapes
-# Transform
-# Canvas

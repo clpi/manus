@@ -1,4 +1,3 @@
-# base64 — Base64 encoding and decoding utilities
 
 encode: str = (s: str)
   crypto.base64_encode(s)

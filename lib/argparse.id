@@ -1,4 +1,3 @@
-# argparse — Command-line argument parser
 
 argparse_key: str = (s: str)
   s or "":gsub("^%-+", "")

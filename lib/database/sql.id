@@ -1,6 +1,3 @@
-# database.sql — Generic SQL interface (mirrors Go's database/sql)
-# Provides a registry of drivers and a generic DB handle.
-# Actual drivers (sqlite, postgres, mysql) register themselves.
 
 new = ()
   return { drivers = {} }

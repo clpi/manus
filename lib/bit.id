@@ -1,13 +1,4 @@
-# bit — bit manipulation primitives for WASM, low-level, and cryptographic work
 
-# Population count (Hamming weight)
-#
-# Two silent wrong answers lived here. `count = (count + n) & 1` accumulated
-# nothing — it returned the parity of the last step, so popcount(255) was 0.
-# And `while n > 0` never entered for a negative x, so popcount(-1) was 0;
-# `>>` is ARITHMETIC here (-1 >> 1 is -1), so the guard was really an
-# infinite-loop brake. Clearing the sign bit after the shift makes it the
-# logical shift the count actually needs, and `n != 0` then terminates.
 popcount: i64 = (x: i64)
   n = x
   count = 0
@@ -16,7 +7,6 @@ popcount: i64 = (x: i64)
     n = (n >> 1) & 9223372036854775807
   count
 
-# Count leading zeros
 clz: i64 = (x: i64)
   if x == 0
     return 64
@@ -27,7 +17,6 @@ clz: i64 = (x: i64)
     mask = mask >> 1
   n
 
-# Count trailing zeros
 ctz: i64 = (x: i64)
   if x == 0
     return 64
@@ -37,32 +26,23 @@ ctz: i64 = (x: i64)
     x = x >> 1
   n
 
-# Bit length (position of highest set bit + 1)
 bit_length: i64 = (x: i64)
   if x == 0
     return 0
   64 - clz(x)
 
-# Rotate left (for hash functions, ciphers)
-#
-# The wrapped-around half has to be a LOGICAL shift. `>>` here is arithmetic,
-# so for any x with the sign bit set it dragged copies of that bit into the
-# result: rotl(min_i64, 1) answered -1 instead of 1. Masking to the k bits the
-# rotation is allowed to carry is what makes it a rotation.
 rotl: i64 = (x: i64, k: i64)
   k = k & 63
   if k == 0
     return x
   x << k | (x >> (64 - k)) & ((1 << k) - 1)
 
-# Rotate right — same arithmetic-shift defect, on the other half.
 rotr: i64 = (x: i64, k: i64)
   k = k & 63
   if k == 0
     return x
   (x >> k) & ((1 << (64 - k)) - 1) | x << (64 - k)
 
-# Reverse all bits (for bitfield encoding)
 reverse: i64 = (x: i64)
   r = 0
   i = 0
@@ -71,16 +51,9 @@ reverse: i64 = (x: i64)
     i = i + 1
   r
 
-# Reverse bytes (endianness conversion)
 reverse_bytes: i64 = (x: i64)
   (x & 255) << 56 | (x & 65280) << 40 | (x & 16711680) << 24 | (x & 4278190080) << 8 | x >> 8 & 4278190080 | x >> 24 & 16711680 | x >> 40 & 65280 | x >> 56 & 255
 
-# Extract a bitfield: extract bits [hi:lo] from x (inclusive, 0-indexed)
-#
-# `mask = 1 << (width - 1)` is not a width-bit mask, it is a single bit at the
-# TOP of the field: for width 8 it was 128, never 255. So extract(255, 7, 0)
-# answered 128. A width-bit mask is `(1 << width) - 1`; at width 64 the shift
-# is out of range, and the whole word is the field.
 mask_of: i64 = (width: i64)
   if width >= 64
     return -1
@@ -89,35 +62,26 @@ mask_of: i64 = (width: i64)
 extract: i64 = (x: i64, hi: i64, lo: i64)
   (x >> lo) & mask_of(hi - lo + 1)
 
-# Insert a bitfield: insert value into bits [hi:lo] of x
 insert: i64 = (x: i64, hi: i64, lo: i64, value: i64)
   mask = mask_of(hi - lo + 1)
   cleared = x & ~(mask << lo)
   cleared | (value & mask) << lo
 
-# Set a single bit
 set_bit: i64 = (x: i64, pos: i64)
   x | 1 << pos
 
-# Clear a single bit
 clear_bit: i64 = (x: i64, pos: i64)
   x & ~(1 << pos)
 
-# Toggle a single bit
 toggle_bit: i64 = (x: i64, pos: i64)
-  # `~` is XOR; `^` is exponentiation and yields f64, which made this fail
-  # to typecheck against the declared i64 return.
   x ~ 1 << pos
 
-# Test if bit at pos is set
 test_bit: bool = (x: i64, pos: i64)
   x & 1 << pos != 0
 
-# Count set bits in range [hi:lo]
 popcount_range: i64 = (x: i64, hi: i64, lo: i64)
   popcount(extract(x, hi, lo))
 
-# Next power of two
 next_pow2: i64 = (x: i64)
   if x <= 1
     return 1
@@ -130,13 +94,11 @@ next_pow2: i64 = (x: i64)
   x = x | x >> 32
   x + 1
 
-# Previous power of two
 prev_pow2: i64 = (x: i64)
   if x <= 1
     return 1
   1 << (bit_length(x) - 1)
 
-# LEB128 unsigned encode (used in WASM binary format)
 leb128_encode_u: any = (value: i64)
   bytes = {}
   repeat
@@ -148,7 +110,6 @@ leb128_encode_u: any = (value: i64)
   until value == 0
   bytes
 
-# LEB128 unsigned decode
 leb128_decode_u: any = (bytes: any, pos: i64)
   result = 0
   shift = 0
@@ -162,7 +123,6 @@ leb128_decode_u: any = (bytes: any, pos: i64)
     i = i + 1
   { value = result, next = i + 1 }
 
-# LEB128 signed encode
 leb128_encode_s: any = (value: i64)
   bytes = {}
   more = true
@@ -176,7 +136,6 @@ leb128_encode_s: any = (value: i64)
     bytes[bytes:len() + 1] = byte
   bytes
 
-# LEB128 signed decode
 leb128_decode_s: any = (bytes: any, pos: i64)
   result = 0
   shift = 0
@@ -192,7 +151,6 @@ leb128_decode_s: any = (bytes: any, pos: i64)
     i = i + 1
   { value = result, next = i + 1 }
 
-# Binary AND/OR/XOR arrays element-wise (for SIMD-like ops on byte arrays)
 and_bytes: any = (a: any, b: any)
   out = {}
   n = a:len()
@@ -234,11 +192,6 @@ not_bytes: any = (a: any)
     i = i + 1
   out
 
-# ── IEEE-754 bit reinterpretation ─────────────────────────────────────
-# Reinterpret (not convert) between floats and their bit patterns. Needed by
-# any lane-wise float work (wasm SIMD, serialization, hashing) and expressible
-# only as a primitive, so it lives here in the stdlib rather than in callers.
-# This is the sanctioned home for C-level primitives; callers stay pure Duo.
 
 f64_to_bits: i64 = (x: f64)
 

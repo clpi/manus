@@ -1,12 +1,6 @@
-# mem — Enhanced memory primitives: ring buffer, mmap wrapper, virtual memory arena
-# Extends the existing mem.id with advanced memory management for runtime and networking.
 
-# ═══════════════════════════════════════════════════════════════
-# Ring Buffer (lock-free SPSC for producer-consumer patterns)
-# ═══════════════════════════════════════════════════════════════
 
 ring_new: any = (capacity: i64)
-    # Round up to power of two for efficient modulo
     actual = 1
     while actual < capacity
         actual *= 2
@@ -21,7 +15,6 @@ ring_new: any = (capacity: i64)
 ring_push: bool = (rb: any, value: any)
     wp = rb.write_pos
     rp = rb.read_pos
-    # Check if full
     if wp - rp >= rb.capacity return false 
     rb.buf[(wp & rb.mask) + 1] = value
     rb.write_pos = wp + 1
@@ -31,7 +24,7 @@ ring_pop: any = (rb: any)
     rp = rb.read_pos
     if rp >= rb.write_pos return nil 
     val = rb.buf[(rp & rb.mask) + 1]
-    rb.buf[(rp & rb.mask) + 1] = nil  # help GC
+    rb.buf[(rp & rb.mask) + 1] = nil
     rb.read_pos = rp + 1
     val
 
@@ -67,15 +60,12 @@ ring_clear = (rb: any)
     rb.read_pos = 0
     rb.write_pos = 0
 
-# ═══════════════════════════════════════════════════════════════
-# Double Buffer (swap between read/write buffers)
-# ═══════════════════════════════════════════════════════════════
 
 double_buffer_new: any = ()
     {
         front = {},
         back = {},
-        read_idx = 1,  # 1 = front, 2 = back
+        read_idx = 1,
     }
 
 double_buffer_swap = (db: any)
@@ -95,9 +85,6 @@ double_buffer_read: any = (db: any)
         return db.front
     db.back
 
-# ═══════════════════════════════════════════════════════════════
-# Memory Pool (pre-allocated fixed-size blocks)
-# ═══════════════════════════════════════════════════════════════
 
 mem_pool_new: any = (block_size: i64, block_count: i64)
     blocks = {}
@@ -122,7 +109,7 @@ mem_pool_alloc: any = (pool: any)
             pool.alloc_count += 1
             return pool.blocks[i]
         i += 1
-    nil  # out of blocks
+    nil
 
 mem_pool_free = (pool: any, block: any)
     if block == nil return 
@@ -139,9 +126,6 @@ mem_pool_stats: any = (pool: any)
         utilization = pool.alloc_count / pool.block_count,
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Slab Allocator (size-segregated pools for different object sizes)
-# ═══════════════════════════════════════════════════════════════
 
 slab_allocator_new: any = ()
     {
@@ -164,9 +148,6 @@ slab_stats: any = (sa: any)
         stats[size_class] = mem_pool_stats(pool)
     stats
 
-# ═══════════════════════════════════════════════════════════════
-# Virtual Memory Arena (bump allocator with commit/decommit)
-# ═══════════════════════════════════════════════════════════════
 
 vmem_arena_new: any = (initial_pages: i64, max_pages: i64)
     page_size = 4096
@@ -180,10 +161,8 @@ vmem_arena_new: any = (initial_pages: i64, max_pages: i64)
     }
 
 vmem_arena_alloc: any = (arena: any, size: i64)
-    # Align to 8 bytes
     aligned = size / 8:ceil() * 8
 
-    # Check if we need more pages
     if arena.used_bytes + aligned > arena.total_bytes
         needed = (arena.used_bytes + aligned - arena.total_bytes) / arena.page_size:ceil()
         arena.committed_pages = arena.committed_pages + needed
@@ -207,12 +186,4 @@ vmem_arena_stats: any = (arena: any)
         utilization = arena.used_bytes / arena.total_bytes,
     }
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
-# Ring Buffer
-# Double Buffer
-# Memory Pool
-# Slab Allocator
-# Virtual Memory Arena

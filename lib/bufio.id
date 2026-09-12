@@ -1,14 +1,9 @@
-# bufio — buffered I/O utilities (mirrors Go's bufio package)
-# Provides buffered readers/writers/scanners on top of std.io file handles.
 
-# reader: wrap a file handle in a buffered reader.
-# Fields: fh (file handle), buf (string), pos (1-based cursor), err
 reader: any = (fh: any, size: i64)
   if size == nil or size <= 0
     size = 4096
   { fh = fh, buf = "", pos = 1, size = size, err = nil }
 
-# fill: read more data from the underlying handle into the buffer.
 fill: any = (r: any)
   chunk = r.fh:read(r.size)
   if chunk == nil
@@ -18,24 +13,19 @@ fill: any = (r: any)
   r.pos = 1
   r
 
-# line: read one line (without trailing newline). Returns (line, ok).
 line: any = (r: any)
   while true
-    # look for newline in remaining buffer
     remaining = r.buf:sub(r.pos)
     nl = remaining:find("\n", 1, true)
     if nl != nil
       line = remaining:sub(1, nl - 1)
-      # strip trailing \r
       if line:len() > 0 and line:sub(line:len(), line:len()) == "\r"
         line = line:sub(1, line:len() - 1)
       r.pos = r.pos + nl
       return line, true
-    # no newline yet, try to fill
     was = r.buf:sub(r.pos):len()
     fill(r)
     if has(.err)(r)
-      # return whatever is left
       left = r.buf:sub(r.pos)
       if left:len() > 0
         r.pos = r.buf:len() + 1
@@ -43,7 +33,6 @@ line: any = (r: any)
       return "", false
   return "", false
 
-# read: read n bytes. Returns (bytes, ok).
 read: any = (r: any, n: i64)
   while r.buf:sub(r.pos):len() < n
     fill(r)
@@ -57,11 +46,9 @@ read: any = (r: any, n: i64)
   r.pos = r.pos + n
   return data, true
 
-# text: alias for read (same semantics in Duo).
 text: any = (r: any, n: i64)
   read(r, n)
 
-# byte: read a single byte value. Returns (byte, ok).
 byte: any = (r: any)
   while r.pos > r.buf:len()
     fill(r)
@@ -71,13 +58,11 @@ byte: any = (r: any)
   r.pos = r.pos + 1
   return b, true
 
-# unread: move cursor back one byte.
 unread: any = (r: any)
   if r.pos > 1
     r.pos = r.pos - 1
   r
 
-# peek: peek n bytes without consuming them.
 peek: any = (r: any, n: i64)
   while r.buf:sub(r.pos):len() < n
     fill(r)
@@ -85,15 +70,12 @@ peek: any = (r: any, n: i64)
       break
   r.buf:sub(r.pos, r.pos + n - 1)
 
-# ----- Scanner -----
 
-# scanner: create a scanner that splits input on a delimiter (default "\n").
 scanner: any = (fh: any, delim: str)
   if delim == nil
     delim = "\n"
   { fh = fh, buf = "", pos = 1, delim = delim, done = false, size = 4096 }
 
-# scan: advance to the next token. Returns true if a token is available.
 scan: bool = (s: any)
   if s.done
     return false
@@ -104,7 +86,6 @@ scan: bool = (s: any)
       s.token = remaining:sub(1, pos - 1)
       s.pos = s.pos + pos + s.delim:len() - 1
       return true
-    # need more data
     chunk = s.fh:read(s.size)
     if chunk == nil
       s.done = true
@@ -118,44 +99,36 @@ scan: bool = (s: any)
     s.pos = 1
   false
 
-# token: return the current token.
 token: str = (s: any)
   s.token
 
-# bytes: alias for token (strings ARE byte sequences in Duo).
 bytes: str = (s: any)
   s.token
 
-# ----- Writer -----
 
-# writer: create a buffered writer wrapping a file handle.
 writer: any = (fh: any, size: i64)
   if size == nil or size <= 0
     size = 4096
   { fh = fh, buf = "", size = size }
 
-# flush: write all buffered data to the underlying handle.
 flush: any = (w: any)
   if w.buf:len() > 0
     w.fh:write(w.buf)
     w.buf = ""
   w
 
-# write: buffer a string for later flushing.
 write: any = (w: any, s: str)
   w.buf = w.buf .. s
   if w.buf:len() >= w.size
     flush(w)
   w
 
-# put: buffer a single byte.
 put: any = (w: any, b: i64)
   w.buf = w.buf .. b:char()
   if w.buf:len() >= w.size
     flush(w)
   w
 
-# close: flush and close.
 close: any = (w: any)
   flush(w)
   w.fh:close()

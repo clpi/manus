@@ -1,10 +1,4 @@
-# base32 — Base32 encoding and decoding (RFC 4648)
 
-# Note: base32 lookup tables (alphabets and decode tables) are constructed
-# inside the functions that use them. The duo codegen does not yet expose
-# module-level locals/globals to function bodies, so defining them at the
-# top of the module produces "use of undeclared identifier" errors in the
-# emitted C. Keeping them function-local is the minimal fix.
 
 encode_with_alphabet: str = (data: str, tab: str)
   if data == nil
@@ -34,16 +28,6 @@ encode_with_alphabet: str = (data: str, tab: str)
     c6 = b4 >> 2 & (31 + 1)
     c7 = (b4 & 3) << 3 | b5 >> (5 + 1)
     c8 = b5 & (31 + 1)
-    # RFC 4648 s6: a 5-byte group is always EIGHT characters, and how many
-    # of them are data depends on how many bytes are present:
-    #   1 byte -> 2 data + 6 '='      4 bytes -> 7 data + 1 '='
-    #   2      -> 4 data + 4 '='      5       -> 8 data, no padding
-    #   3      -> 5 data + 3 '='
-    #
-    # This emitted c1..c3 unconditionally and then branched, so EVERY
-    # partial group came out seven characters instead of eight, with the
-    # wrong data count for the 1- and 4-byte tails: encode("h") gave
-    # "NAA====" where the correct answer is "NA======".
     rem = len - i + 1
     res[res:len() + 1] = tab:sub(c1, c1)
     res[res:len() + 1] = tab:sub(c2, c2)

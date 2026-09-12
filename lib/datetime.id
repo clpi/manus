@@ -1,8 +1,4 @@
-# datetime — date and time parsing, formatting, and arithmetic
-# Uses Lua's os.date/os.time as the underlying engine.
-# A datetime is a table: {year, month, day, hour, min, sec, wday, yday, isdst}
 
-# ---- Constants ----
 
 global DT_MONTH_NAMES = {}
 DT_MONTH_NAMES[1] = "January"
@@ -69,7 +65,6 @@ global SECS_PER_HOUR = 3600
 global SECS_PER_DAY = 86400
 global SECS_PER_WEEK = 604800
 
-# ---- Constructors ----
 new: any = (year: any, month: any, day: any, hour: any, min: any, sec: any)
     d = {}
     d.year = year
@@ -104,7 +99,6 @@ from_timestamp: any = (ts: int)
 to_timestamp: int = (d: any)
     os.time(d)
 
-# ---- Queries ----
 
 is_leap_year: bool = (year: i64)
     if year % 400 == 0 return true 
@@ -135,7 +129,6 @@ month_abbr: str = (d: any)
 weekend: bool = (d: any)
     d.wday == 1 or d.wday == 7
 
-# ---- Arithmetic ----
 
 add: any = (d: any, secs: int)
     ts = os.time(d)
@@ -184,7 +177,6 @@ diff_days: i64 = (a: any, b: any)
 diff_hours: i64 = (a: any, b: any)
     diff(a, b) // SECS_PER_HOUR
 
-# ---- Formatting ----
 dt_pad2: str = (n: i64)
     if n < 10 return "0" .. n:to(str) 
     n:to(str)
@@ -262,10 +254,6 @@ human_relative: str = (d: any)
     if future return "in " .. years:to(str) .. " years" 
     years:to(str) .. " years ago"
 
-# ---- Parsing ----
-# Parse helpers return two values via Duo multi-return.
-# The codegen handles multi-return for direct call sites.
-# We pre-declare variables so the codegen emits proper C declarations.
 
 dt_parse_digit2: any = (s: str, pos: any)
     val = s:sub(pos, pos):to(i64) * 10 + s:sub(pos + 1, pos + 1):to(i64)
@@ -317,7 +305,6 @@ parse_time: any = (s: str)
         second, pos = dt_parse_digit2(s, pos + 1)
     new(0, 1, 1, hour, minute, second)
 
-# ---- Comparison ----
 
 before: bool = (a: any, b: any)
     os.time(a) < os.time(b)
@@ -336,7 +323,6 @@ max: any = (a: any, b: any)
     if after(a, b) return a 
     b
 
-# ---- Range & Truncation ----
 start_of_day: any = (d: any)
     new(d.year, d.month, d.day, 0, 0, 0)
 

@@ -1,10 +1,4 @@
-# graphics.audio — Audio playback and spatial audio
-# For sound effects and music in ward's runtime.
-# Supports WAV file loading (PCM format) and procedural waveform generation.
 
-# ═══════════════════════════════════════════════════════════════
-# Audio Config
-# ═══════════════════════════════════════════════════════════════
 
 config_new: any = ()
   {
@@ -14,9 +8,6 @@ config_new: any = ()
     format = "f32"
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Audio Buffer
-# ═══════════════════════════════════════════════════════════════
 
 buffer_new: any = (config: any)
   {
@@ -30,22 +21,18 @@ buffer_load: any = (buffer: any, path: str)
   if f == nil
     return { ok = false, error = "Cannot open file: " .. path }
 
-  # Read RIFF header
   riff = f:read(4)
   if riff != "RIFF"
     f:close()
     return { ok = false, error = "Not a WAV file (missing RIFF header)" }
 
-  # File size (skip)
   f:read(4)
 
-  # WAVE marker
   wave = f:read(4)
   if wave != "WAVE"
     f:close()
     return { ok = false, error = "Not a WAV file (missing WAVE marker)" }
 
-  # Parse chunks
   sample_rate = 44100
   channels = 1
   bits_per_sample = 16
@@ -56,7 +43,6 @@ while true
   if chunk_id == nil or chunk_id:len() < 4
     break
 
-  # Read chunk size (little-endian u32)
   size_bytes = f:read(4)
   if size_bytes == nil or size_bytes:len() < 4
     break
@@ -67,7 +53,6 @@ while true
     i = i + 1
 
 if chunk_id == "fmt "
-  # Format chunk
   fmt_data = f:read(chunk_size)
   if fmt_data and fmt_data:len() >= 16
     audio_format = fmt_data:byte(1) + fmt_data:byte(2) * 256
@@ -75,7 +60,6 @@ if chunk_id == "fmt "
     sample_rate = fmt_data:byte(5) + fmt_data:byte(6) * 256 + fmt_data:byte(7) * 65536 + fmt_data:byte(8) * 16777216
     bits_per_sample = fmt_data:byte(15) + fmt_data:byte(16) * 256
 else(chunk_id == "data")
-  # Data chunk — read raw PCM samples
   raw = f:read(chunk_size)
   if raw
     samples = {}
@@ -83,7 +67,6 @@ else(chunk_id == "data")
     num_samples = raw:len() / bytes_per_sample:floor()
     i = 1
     while i <= num_samples
-      # Read little-endian sample (16-bit signed)
       if bits_per_sample == 16
         lo = raw:byte(i * 2 - 1) or 0
         hi = raw:byte(i * 2) or 0
@@ -99,7 +82,6 @@ else(chunk_id == "data")
       i = i + 1
     data = samples
 else
-  # Skip unknown chunk
   f:read(chunk_size)
 
 f:close()
@@ -116,9 +98,6 @@ buffer.duration = data:len() / sample_rate * channels
 buffer_get_duration: f64 = (buffer: any)
   buffer.duration
 
-# ═══════════════════════════════════════════════════════════════
-# Audio Source
-# ═══════════════════════════════════════════════════════════════
 
 source_new: any = (buffer: any)
   {
@@ -164,9 +143,6 @@ source_set_position: void = (source: any, x: f64, y: f64, z: f64)
 source_set_spatial: void = (source: any, spatial: bool)
   source.spatial = spatial
 
-# ═══════════════════════════════════════════════════════════════
-# Audio Listener
-# ═══════════════════════════════════════════════════════════════
 
 listener_new: any = ()
   {
@@ -187,9 +163,6 @@ listener_set_orientation: void = (listener: any, direction: any, up: any)
 listener_set_gain: void = (listener: any, gain: f64)
   listener.gain = 0:max(1:min(gain))
 
-# ═══════════════════════════════════════════════════════════════
-# Audio System
-# ═══════════════════════════════════════════════════════════════
 
 system_new: any = (config: any)
   {
@@ -219,9 +192,6 @@ system_set_master_volume: void = (system: any, volume: f64)
 system_set_mute: void = (system: any, muted: bool)
   system.muted = muted
 
-# ═══════════════════════════════════════════════════════════════
-# Audio Mixing
-# ═══════════════════════════════════════════════════════════════
 
 audio_mix_sources: any = (sources: any, master_volume: f64, muted: bool)
   if muted
@@ -230,7 +200,6 @@ audio_mix_sources: any = (sources: any, master_volume: f64, muted: bool)
 mixed = {}
 max_samples = 0
 
-# Find the longest source
 for source in sources
   if source.playing and source.buffer
     len = source.buffer.data:len()
@@ -240,29 +209,24 @@ for source in sources
 if max_samples == 0
   return {}
 
-# Initialize output buffer
 i = 1
 while i <= max_samples
   mixed[i] = 0
   i = i + 1
 
-# Mix all playing sources
 for source in sources
   if source.playing and source.buffer
     vol = (source.current_volume or source.volume) * master_volume
     pitch = source.pitch or 1.0
 
-    # Mix samples with volume and pitch adjustment
     i = 1
     while i <= max_samples
-      # Get sample index with pitch adjustment
       sample_idx = (i - 1) * pitch:floor() + 1
       if sample_idx <= source.buffer.data:len()
         sample = source.buffer.data[sample_idx]
         mixed[i] = mixed[i] + sample * vol
       i = i + 1
 
-# Clamp output to [-1, 1]
 i = 1
 while i <= max_samples
   if mixed[i] > 1
@@ -274,44 +238,33 @@ while i <= max_samples
 mixed
 
 system_update: void = (system: any, delta_time: f64)
-  # Process audio sources and apply spatial effects
   for source in system.sources
     if source.playing and not source.paused
-      # Update playback position
       source.position = source.position + delta_time
 
-      # Apply volume falloff based on distance (if spatial)
       if source.spatial and source.listener
         dx = source.x - source.listener.x
         dy = source.y - source.listener.y
         dz = source.z - source.listener.z
         distance = dx * dx + dy * dy + dz * dz:sqrt()
 
-        # Simple inverse distance falloff
         if distance > 1
           source.current_volume = source.volume / distance
         else
           source.current_volume = source.volume
 
-        # Apply Doppler effect (simplified)
         relative_velocity = (source.vx or 0) * dx + (source.vy or 0) * dy + (source.vz or 0) * dz
-        # Speed of sound
         doppler_factor = 1.0 - relative_velocity / 343.0
         source.pitch = source.base_pitch * doppler_factor
 
-      # Check if source has finished playing
       if source.duration > 0 and source.position >= source.duration
         if source.loop
           source.position = 0
         else
           source.playing = false
 
-  # Update mixer output
   system.output = audio_mix_sources(system.sources, system.master_volume, system.muted)
 
-# ═══════════════════════════════════════════════════════════════
-# Sound Generation
-# ═══════════════════════════════════════════════════════════════
 
 generate_sine: any = (frequency: f64, duration: f64, sample_rate: i64)
   samples = {}
@@ -357,12 +310,3 @@ generate_noise: any = (duration: f64, sample_rate: i64)
     sample_rate = sample_rate,
     duration = duration
   }
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Config
-# Buffer
-# Source
-# Listener
-# System
-# Generation

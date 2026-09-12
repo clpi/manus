@@ -1,4 +1,3 @@
-# net.http — HTTP utilities (mirrors Go's net/http subpackages)
 
 cgi = cgi
 httputil = httputil

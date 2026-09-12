@@ -1,15 +1,7 @@
-# timer — performance measurement, timing, and benchmarking
-# Provides high-resolution timers, lap tracking, and benchmark
-# utilities for measuring code performance.
 
-# Internal: round a number to nearest integer.
-# `math.floor` yields f64, so the declared `: i64` was a return-type mismatch
-# that took the whole module down. The conversion is written explicitly through
-# the canonical `to` edge rather than left to an implicit narrowing.
 std_timer_round: i64 = (x: any)
   to(i64)(x + 0.5:floor())
 
-# Internal: round a number to `places` decimal places.
 std_timer_round_dec: any = (x: any, places: any)
   factor = 1
   i = 0
@@ -18,13 +10,10 @@ std_timer_round_dec: any = (x: any, places: any)
     i = i + 1
   std_timer_round(x * factor) / factor
 
-# ===== Timer type =====
 
-# new: create a new timer, started immediately.
 new: any = ()
   { start = os.clock(), laps = {}, running = true, stopped_at = nil }
 
-# elapsed: return seconds since timer was created or last lap.
 elapsed: any = (t: any)
   if t == nil
     return 0
@@ -32,7 +21,6 @@ elapsed: any = (t: any)
     return t.stopped_at - t.start
   os.clock() - t.start
 
-# lap: record a lap time and return the elapsed time since start.
 lap: any = (t: any)
   if t == nil
     return 0
@@ -41,7 +29,6 @@ lap: any = (t: any)
   t.laps[t.laps:len() + 1] = lap_time
   lap_time
 
-# lap_elapsed: return time since the last lap (or start if first lap).
 lap_elapsed: any = (t: any)
   if t == nil
     return 0
@@ -50,7 +37,6 @@ lap_elapsed: any = (t: any)
     return now - t.start
   now - t.laps(t.laps:len())
 
-# stop: stop the timer and return total elapsed time.
 stop: any = (t: any)
   if t == nil
     return 0
@@ -58,7 +44,6 @@ stop: any = (t: any)
   t.running = false
   t.stopped_at - t.start
 
-# reset: reset the timer to zero and restart.
 reset = (t: any)
   if t == nil
     return
@@ -67,27 +52,22 @@ reset = (t: any)
   t.running = true
   t.stopped_at = nil
 
-# is_running: check if the timer is still running.
 is_running: bool = (t: any)
   if t == nil
     return false
   t.running
 
-# get_laps: return the list of recorded lap times.
 get_laps: any = (t: any)
   if t == nil
     return {}
   t.laps
 
-# lap_count: return the number of recorded laps.
 lap_count: i64 = (t: any)
   if t == nil
     return 0
   t.laps:len()
 
-# ===== Formatting =====
 
-# format: format seconds into a human-readable string.
 format: str = (seconds: any)
   if seconds == nil
     return "0s"
@@ -103,7 +83,6 @@ format: str = (seconds: any)
   secs = seconds - mins * 60
   return mins:to(str) .. "m" .. to(str)(std_timer_round_dec(secs, 1)) .. "s"
 
-# summary: return a summary table of all lap times.
 summary: any = (t: any)
   if t == nil
     return {}
@@ -124,9 +103,7 @@ summary: any = (t: any)
     i = i + 1
   { count = n, total = total, min = min_val, max = max_val, avg = total / n }
 
-# ===== Benchmarking =====
 
-# measure: run fn and return {result, elapsed_seconds}.
 measure: any = (fn_ref: any)
   t = new()
   r = fn_ref()
@@ -136,7 +113,6 @@ measure: any = (fn_ref: any)
   out.elapsed = d
   out
 
-# time_it: run fn `n` times and return {total, avg, min, max}.
 time_it: any = (n: i64, fn_ref: any)
   if n == nil or n < 1
     n = 1
@@ -168,7 +144,6 @@ time_it: any = (n: i64, fn_ref: any)
   out.times = times
   out
 
-# bench: run fn until at least `min_seconds` have elapsed, report stats.
 bench: any = (fn_ref: any, min_seconds: float)
   if min_seconds == nil
     min_seconds = 0.1
@@ -201,7 +176,6 @@ bench: any = (fn_ref: any, min_seconds: float)
   out.ops_per_sec = count / total
   out
 
-# compare: run two functions and report which is faster.
 compare: any = (name_a: str, fn_a: any, name_b: str, fn_b: any, n: i64)
   if n == nil
     n = 1000

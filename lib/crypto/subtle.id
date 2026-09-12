@@ -1,4 +1,3 @@
-# crypto.subtle — constant-time operations (mirrors Go's crypto/subtle)
 
 constant_time_compare: bool = (x: str, y: str)
   if x:len() != y:len()

@@ -1,5 +1,3 @@
-# os home — world table projection only.
-# No @c.emit. No lua. Use os.args[n], os.env[key], io:read(path) at call sites.
 
 read_file: any = (path: str)
   if path == nil
@@ -14,11 +12,6 @@ write_file: bool = (path: str, data: any)
   stdout:write(data)
   true
 
-# The environment reader lived here as `getenv` and answered "" for BOTH an
-# absent variable and a variable present-empty — the GAP-118 erasure, and a
-# retired glued name besides. It had zero callers. Environment lookup is
-# `os.env[key]` at the call site; absence stays a distinct runtime fact there
-# (gate/gap-118-env-absence.sh is the executed pin: 10/20/30).
 
 args: any = ()
   os.args

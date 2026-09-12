@@ -1,5 +1,3 @@
-# compress.zlib — Zlib decompression (mirrors Go's compress/zlib)
-# Uses the flate module for actual DEFLATE data
 
 decompress = (data: any)
   if data == nil or data:len() < 2

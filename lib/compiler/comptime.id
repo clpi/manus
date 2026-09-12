@@ -1,38 +1,3 @@
-# SH-08 — the compile-time evaluator, seed.
-#
-# The evaluator's first obligation is constant folding: a closed expression of
-# literals must evaluate, at compile time, to what the language says it means.
-# This does that for the integer subset, on the same precedence ladder the
-# parser uses.
-#
-# HOW IT IS CHECKED, and why that matters more than the code. The expected
-# values in the comptime proof are not numbers I typed — each
-# is the SAME expression, written in Duo, evaluated by the host compiler:
-#
-#     check("2 + 3 * 4", 2 + 3 * 4)
-#
-# So a fixture cannot encode my arithmetic mistakes, only a real disagreement
-# between this evaluator and the host. That is a differential oracle, the same
-# instrument that proved the Duo lexer token-for-token equal to src/lexer.zig,
-# and it is worth more than a hand-written table here because precedence is
-# exactly where a hand-written table agrees with the bug.
-#
-# WHY IT SCANS BYTES rather than using std.compiler.lexer. Two attempts went
-# through the lexer and neither survived the module boundary: a
-# `{ lx = lexer.new(...) }` state table passed as `any` crashed at startup
-# (exit 128, no output — a typed record does not survive being boxed into an
-# untyped field), and threading `lx: lexer` directly compiled the parameter as
-# `int64_t`, because that type does not resolve in this module. Both are real
-# findings; neither is worth blocking a folder on. A closed integer expression
-# needs digits, operators and parens, so it scans them.
-#
-# Cursor state is module-level: folding is not reentrant, and threading an
-# index through nine mutually recursive levels is the only alternative without
-# multi-value returns.
-#
-# Scope: integer literals (decimal and 0x hex), + - * / % ^ & | ~ << >>, unary
-# minus and `~`, and parentheses. No names and no calls — folding a name needs
-# the binder's scope model, which is SH-06's increment, not this one's.
 
 global _src: str = ""
 global _pos: i64 = 1
@@ -67,9 +32,6 @@ _hex_val: i64 = (c: i64)
     return c - 55
   0 - 1
 
-# Consume the operator at the cursor. `b == 0` means a one-byte operator, and
-# it refuses when the byte actually begins a two-byte one, so `<` never eats
-# the first half of `<<`.
 _eat: bool = (a: i64, b: i64)
   _skip_ws()
   if _at() != a
@@ -144,7 +106,6 @@ _prim: i64 = ()
     return v
   _number()
 
-# `^` binds tighter than unary minus and is right-associative
 _pow: i64 = ()
   base: i64 = _prim()
   if _eat(94, 0)
@@ -209,8 +170,6 @@ _band: i64 = ()
 
 _bxor: i64 = ()
   left: i64 = _band()
-  # `~` here is INFIX xor; the prefix form is handled in _prim, and position
-  # separates them exactly as it does in the parser.
   while true
     _skip_ws()
     if _at() != 126
@@ -224,9 +183,6 @@ _expr: i64 = ()
     left = left | _bxor()
   left
 
-# Reset is its own function because a `bool` assignment inside a body whose
-# declared return is `i64` is reported as a return-type mismatch — the last
-# statement is not the last expression, but the check reads it that way.
 _reset = (src: str)
   _src = src
   _pos = 1
@@ -236,8 +192,6 @@ fold: i64 = (src: str)
   _reset(src)
   _expr()
 
-# Did the last fold consume the whole input without failing? Lets a caller tell
-# a legitimate 0 from a refusal.
 foldable: bool = (src: str)
   _reset(src)
   _v: i64 = _expr()

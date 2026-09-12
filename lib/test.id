@@ -40,7 +40,6 @@ assert_not_nil = (val: any, msg: str)
 done = ()
   stdout:write("=== tests done ===\n")
 
-# Supported @test.* / @bench / @time attributes (see also bench.attrs).
 attrs =
   test = { "test", "test.unit", "test.integration", "test.e2e", "test.skip", "test.only", "test.flaky", "test.should_panic", "test.bench", "test.time" }
   args = { "name", "tag", "message", "timeout", "timeout_ms", "iterations", "warmup" }

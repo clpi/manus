@@ -1,22 +1,10 @@
-# net_smtp — SMTP client (mirrors Go's net/smtp)
-# Provides a minimal SMTP client for sending plain-text email.
-# Uses io.popen to invoke the system `sendmail` or `curl` as a transport.
 
-# Sanitize email addresses and arguments for shell safety
 escape: str = (s: str)
-  # Replace dangerous shell characters
   s:gsub("[;&|`$(){}]", "")
 
-# mail: send a plain-text email.
-# addr: "host:port" of the SMTP server (or just "host" for port 25).
-# from: sender address.
-# to: array of recipient addresses.
-# msg: full RFC 5322 message string (headers + blank line + body).
-# Returns true on success, false + error on failure.
 mail: any = (addr: str, from: str, to: any, msg: str)
   if addr == nil or from == nil or to == nil or msg == nil
     return false, "missing arguments"
-  # build a sendmail command with sanitized arguments
   from = escape(from)
   recipients = ""
   i = 1
@@ -31,27 +19,22 @@ mail: any = (addr: str, from: str, to: any, msg: str)
   f:close()
   return true, nil
 
-# plain: create a PLAIN SMTP auth credential.
 plain: any = (username: str, password: str)
   return { mechanism = "PLAIN", username = username, password = password }
 
-# send: send email with SMTP AUTH (using curl as transport).
 send: any = (addr: str, auth: any, from: str, to: any, msg: str)
   if addr == nil or from == nil or to == nil or msg == nil
     return false, "missing arguments"
-  # use curl #url smtp://host:port #mail-from ... #mail-rcpt ...
   host = addr
   port = 25
   colon = addr:find(":", 1, true)
   if colon != nil
     host = addr:sub(1, colon - 1)
     port = addr:sub(colon + 1):to[i64]
-  # Sanitize host to prevent shell injection
   host = escape(host)
   url = "smtp://" .. host .. ":" .. port:to[str]
   cmd = "curl -s --url " .. url
   if auth != nil and auth.username != nil
-    # Sanitize credentials
     user = escape(auth.username)
     pass = escape(auth.password)
     cmd = cmd .. " --user " .. user .. ":" .. pass
@@ -69,9 +52,6 @@ send: any = (addr: str, auth: any, from: str, to: any, msg: str)
   result = f:close()
   return true, nil
 
-# message: build an RFC 5322 message from parts.
-# headers: table of header name -> value.
-# body: message body string.
 message: str = (headers: any, body: str)
   if headers == nil
     headers = {}

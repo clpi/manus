@@ -1,15 +1,8 @@
-# mcp — Model Context Protocol SDK for Duo.
-# Provides a pure Duo implementation of the MCP stdio transport (JSON-RPC 2.0).
 
 global M = {}
 M.tools = {}
 
 mcp_read_message: any = ()
-    # MCP stdio transport = newline-delimited JSON-RPC: one JSON object per
-    # line, no embedded newlines (Model Context Protocol spec). This is NOT
-    # LSP Content-Length framing — every real MCP client (Claude Code, Cursor,
-    # …) sends newline-delimited JSON, so the prior framed transport never
-    # completed a handshake. Blank lines are skipped; EOF (nil) terminates.
     while true
         line = io:read_line(io:input())
         if line == nil return nil 
@@ -18,8 +11,6 @@ mcp_read_message: any = ()
     json:decode(line)
 
 mcp_send_message = (obj: any)
-    # MCP stdio: one compact JSON object per line. json.encode emits no
-    # embedded newlines, so the trailing "\n" is the sole delimiter.
     body = json:encode(obj)
     io:write_bytes(io:output(), body .. "\n")
     io:flush(io:output())
@@ -45,8 +36,6 @@ mcp_handle_initialize = (msg: any)
     mcp_send_response(msg.id, {
         protocolVersion = "2024-11-05",
         capabilities = {
-            # MCP requires `capabilities.tools` to be an OBJECT. A bare `{}`
-            # would encode as `[]` and clients reject the handshake shape.
             tools = json:empty_object
         },
         serverInfo = {
@@ -58,10 +47,6 @@ mcp_handle_initialize = (msg: any)
 mcp_handle_tools_list = (msg: any)
     tools_list = {}
     for name, tool in M.tools
-        # JSON Schema requires `properties` to be an object. A tool declaring
-        # `properties = {}` would encode as `[]` and fail client-side schema
-        # validation, so the tool never surfaces. Normalize here rather than
-        # at every tool definition.
         schema = tool.inputSchema
         if schema != nil and schema.properties != nil and next(schema.properties) == nil
             schema.properties = json:empty_object
@@ -125,19 +110,12 @@ mcp_serve = ()
         else(msg.method == "tools/call")
             mcp_handle_tools_call(msg)
         else(msg.method == "notifications/initialized")
-            # nothing to do
         else(msg.method == "ping")
             mcp_send_response(msg.id, {})
         else(has(.id)(msg))
             mcp_send_error(msg.id, -32601, "Method not found: " .. msg.method:to(str))
 
 mcp_register_tool = (name: str, p2: any, p3: any, p4: any)
-    # Accept two calling conventions:
-    #   3-arg: register_tool(name, inputSchema_with_description, handler)
-    #   4-arg: register_tool(name, description, inputSchema, handler)
-    # Distinguish by type, not nil: Duo codegen leaves missing trailing args as
-    # non-nil garbage, so `p4 != nil` misfires on the 3-arg form and stores garbage
-    # as the handler (tools/call then crashes). `type(p4)=="function"` is unambiguous.
     if type(p4) == "function"
         M.tools[name] = { name = name, description = p2 or "", inputSchema = p3, handler = p4 }
     else

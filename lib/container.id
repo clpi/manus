@@ -1,16 +1,10 @@
-# container — container types (mirrors Go's container/heap, list, ring)
-# Provides a binary min-heap, a doubly-linked list, and a circular ring.
 
-# ===== Heap (min-heap) =====
 
-# new_heap: create an empty min-heap. `less` defines the priority order.
-# less(a, b) => true when a should be popped before b (higher priority).
 new_heap: any = (less: any)
     if less == nil
         less = (a: any, b: any) a < b
     {data = {}, less = less}
 
-# heap_up: sift up the element at index i.
 heap_up = (h: any, i: any)
     while i > 1
         parent = i / 2
@@ -22,7 +16,6 @@ heap_up = (h: any, i: any)
         else
             break
 
-# heap_down: sift down the element at index i.
 heap_down = (h: any, i: any)
     n = h.data:len()
     while true
@@ -39,12 +32,10 @@ heap_down = (h: any, i: any)
         h.data[smallest] = tmp
         i = smallest
 
-# heap_push: insert a value into the heap.
 heap_push = (h: any, v: any)
     h.data[h.data:len() + 1] = v
     heap_up(h, h.data:len())
 
-# heap_pop: remove and return the minimum element. Returns nil if empty.
 heap_pop: any = (h: any)
     n = h.data:len()
     if n == 0 return nil 
@@ -54,21 +45,16 @@ heap_pop: any = (h: any)
     if n > 1 heap_down(h, 1) 
     min
 
-# heap_peek: return the minimum element without removing it.
 heap_peek: any = (h: any)
     h.data[1]
 
-# heap_len: return the number of elements in the heap.
 heap_len: i64 = (h: any)
     h.data:len()
 
-# ===== Doubly-linked list =====
 
-# new_list: create an empty doubly-linked list.
 new_list: any = ()
     {head = nil, tail = nil, len = 0}
 
-# list_push_back: insert value at the tail. Returns the new node.
 list_push_back: any = (l: any, v: any)
     node = {value = v, prev = l.tail, next = nil}
     if l.tail == nil
@@ -80,7 +66,6 @@ list_push_back: any = (l: any, v: any)
     l.len = l.len + 1
     node
 
-# list_push_front: insert value at the head. Returns the new node.
 list_push_front: any = (l: any, v: any)
     node = {value = v, prev = nil, next = l.head}
     if l.head == nil
@@ -92,7 +77,6 @@ list_push_front: any = (l: any, v: any)
     l.len = l.len + 1
     node
 
-# list_remove: remove a node from the list.
 list_remove: any = (l: any, node: any)
     if node == nil return nil 
     if has(.prev)(node)
@@ -106,38 +90,31 @@ list_remove: any = (l: any, node: any)
     l.len = l.len - 1
     node.value
 
-# list_pop_back: remove and return the tail value.
 list_pop_back: any = (l: any)
     if l.tail == nil return nil 
     list_remove(l, l.tail)
 
-# list_pop_front: remove and return the head value.
 list_pop_front: any = (l: any)
     if l.head == nil return nil 
     list_remove(l, l.head)
 
-# list_front: return the head value without removing.
 list_front: any = (l: any)
     if l.head == nil return nil 
     l.head.value
 
-# list_back: return the tail value without removing.
 list_back: any = (l: any)
     if l.tail == nil return nil 
     l.tail.value
 
-# list_len: return the number of elements.
 list_len: i64 = (l: any)
     l.len
 
-# list_foreach: iterate over all elements, calling fn(value).
 list_foreach = (l: any, fn: any)
     node = l.head
     while node != nil
         fn(node.value)
         node = node.next
 
-# list_insert_before: insert value before the given node.
 list_insert_before: any = (l: any, mark: any, v: any)
     if mark == nil return list_push_back(l, v) 
     node = {value = v, prev = mark.prev, next = mark}
@@ -149,7 +126,6 @@ list_insert_before: any = (l: any, mark: any, v: any)
     l.len = l.len + 1
     node
 
-# list_insert_after: insert value after the given node.
 list_insert_after: any = (l: any, mark: any, v: any)
     if mark == nil return list_push_front(l, v) 
     node = {value = v, prev = mark, next = mark.next}
@@ -161,12 +137,9 @@ list_insert_after: any = (l: any, mark: any, v: any)
     l.len = l.len + 1
     node
 
-# ===== Ring (circular buffer) =====
 
-# new_ring: create a ring with n slots.
 new_ring: any = (n: any)
     if n == nil or n < 1 n = 1 
-    # create n linked nodes
     head = {value = nil, next = nil}
     cur = head
     i = 1
@@ -174,25 +147,20 @@ new_ring: any = (n: any)
         cur.next = {value = nil, next = nil}
         cur = cur.next
         i += 1
-    cur.next = head  # close the circle
+    cur.next = head
     {current = head, len = n}
 
-# ring_set: set the value of the current ring position.
 ring_set = (r: any, v: any)
     r.current.value = v
 
-# ring_value: get the value of the current ring position.
 ring_value: any = (r: any)
     r.current.value
 
-# ring_next: advance the ring to the next position.
 ring_next: any = (r: any)
     r.current = r.current.next
     r.current
 
-# ring_prev: move the ring to the previous position.
 ring_prev: any = (r: any)
-    # since it is singly linked, traverse the full circle
     start = r.current
     cur = r.current.next
     while cur.next != start
@@ -200,7 +168,6 @@ ring_prev: any = (r: any)
     r.current = cur
     r.current
 
-# ring_do: call fn on each position in the ring.
 ring_do = (r: any, fn: any)
     start = r.current
     fn(r.current.value)
@@ -209,10 +176,6 @@ ring_do = (r: any, fn: any)
         fn(cur.value)
         cur = cur.next
 
-# ring_len: return the number of slots in the ring.
 ring_len: i64 = (r: any)
     r.len
 
-# Heap exports
-# List exports
-# Ring exports

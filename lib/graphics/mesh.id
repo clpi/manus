@@ -1,9 +1,4 @@
-# graphics.mesh — 3D mesh, scene graph, camera, lighting
-# For ward's graphics output and 3D rendering pipeline.
 
-# ═══════════════════════════════════════════════════════════════
-# Vector Math (3D)
-# ═══════════════════════════════════════════════════════════════
 
 vec3_new: any = (x: f64, y: f64, z: f64)
   { x = x, y = y, z = z }
@@ -46,9 +41,6 @@ vec3_lerp: any = (a: any, b: any, t: f64)
     z = a.z + (b.z - a.z) * t
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Matrix 4x4 (column-major)
-# ═══════════════════════════════════════════════════════════════
 
 mat4_identity: any = ()
   {
@@ -196,9 +188,6 @@ mat4_transform_point: any = (m: any, v: any)
   z = v.x * m.m(3) + v.y * m.m(7) + v.z * m.m(11) + m.m(15)
   { x = x, y = y, z = z }
 
-# ═══════════════════════════════════════════════════════════════
-# Camera
-# ═══════════════════════════════════════════════════════════════
 
 camera_new: any = ()
   {
@@ -229,7 +218,6 @@ camera_set_near_far = (cam: any, near: f64, far: f64)
   cam.far = far
 
 camera_update = (cam: any)
-  # View matrix (lookAt)
   f = vec3_normalize(vec3_sub(cam.target, cam.position))
   s = vec3_normalize(vec3_cross(f, cam.up))
   u = vec3_cross(s, f)
@@ -253,7 +241,6 @@ camera_update = (cam: any)
     1
   }
 
-  # Projection matrix (perspective)
   tan_half_fov = cam.fov * math.pi / 360.0:tan()
   cam.projection_matrix.m = {
     1.0 / cam.aspect * tan_half_fov,
@@ -274,9 +261,6 @@ camera_update = (cam: any)
     0
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Mesh
-# ═══════════════════════════════════════════════════════════════
 
 mesh_new: any = ()
   {
@@ -310,7 +294,6 @@ mesh_add_uv = (mesh: any, u: f64, v: f64)
   mesh.uvs[mesh.uvs:len() + 1] = v
 
 mesh_compute_normals = (mesh: any)
-  # Initialize normals to zero
   num_verts = mesh.vertices:len() / 3
   mesh.normals = {}
   i = 0
@@ -318,7 +301,6 @@ mesh_compute_normals = (mesh: any)
     mesh.normals[mesh.normals:len() + 1] = 0
     i = i + 1
 
-  # Accumulate face normals
   i = 1
   while i <= mesh.indices:len()
     i0 = mesh.indices(i)
@@ -347,7 +329,6 @@ mesh_compute_normals = (mesh: any)
 
     i = i + 3
 
-  # Normalize
   i = 0
   while i < num_verts
     nx = mesh.normals(i * 3 + 1)
@@ -360,15 +341,11 @@ mesh_compute_normals = (mesh: any)
       mesh.normals[i * 3 + 3] = nz / len
     i = i + 1
 
-# ═══════════════════════════════════════════════════════════════
-# Primitive Meshes
-# ═══════════════════════════════════════════════════════════════
 
 mesh_cube: any = (size: f64)
   mesh = mesh_new()
   s = size / 2
 
-  # 8 vertices
   mesh_add_vertex(mesh, -s, -s, -s)
   mesh_add_vertex(mesh, s, -s, -s)
   mesh_add_vertex(mesh, s, s, -s)
@@ -378,23 +355,16 @@ mesh_cube: any = (size: f64)
   mesh_add_vertex(mesh, s, s, s)
   mesh_add_vertex(mesh, -s, s, s)
 
-  # 6 faces (12 triangles)
-  # Front
   mesh_add_triangle(mesh, 0, 1, 2)
   mesh_add_triangle(mesh, 0, 2, 3)
-  # Back
   mesh_add_triangle(mesh, 4, 6, 5)
   mesh_add_triangle(mesh, 4, 7, 6)
-  # Left
   mesh_add_triangle(mesh, 0, 3, 7)
   mesh_add_triangle(mesh, 0, 7, 4)
-  # Right
   mesh_add_triangle(mesh, 1, 5, 6)
   mesh_add_triangle(mesh, 1, 6, 2)
-  # Top
   mesh_add_triangle(mesh, 3, 2, 6)
   mesh_add_triangle(mesh, 3, 6, 7)
-  # Bottom
   mesh_add_triangle(mesh, 0, 4, 5)
   mesh_add_triangle(mesh, 0, 5, 1)
 
@@ -404,7 +374,6 @@ mesh_cube: any = (size: f64)
 mesh_sphere: any = (radius: f64, segments: i64, rings: i64)
   mesh = mesh_new()
 
-  # Generate vertices
   phi = 0
   while phi <= rings
     theta = 0
@@ -421,7 +390,6 @@ mesh_sphere: any = (radius: f64, segments: i64, rings: i64)
       theta = theta + 1
     phi = phi + 1
 
-  # Generate indices
   i = 0
   while i < rings
     j = 0
@@ -470,9 +438,6 @@ mesh_plane: any = (size: f64, segments: i64)
   mesh_compute_normals(mesh)
   mesh
 
-# ═══════════════════════════════════════════════════════════════
-# Scene Graph
-# ═══════════════════════════════════════════════════════════════
 
 scene_node_new: any = (name: str)
   {
@@ -511,9 +476,6 @@ scene_traverse = (node: any, callback: any)
     for child in node.children
       scene_traverse(child, callback)
 
-# ═══════════════════════════════════════════════════════════════
-# Lighting
-# ═══════════════════════════════════════════════════════════════
 
 light_new: any = (light_type: str)
   {
@@ -525,22 +487,17 @@ light_new: any = (light_type: str)
     range = 100.0,
     cutoff = 45.0
   }
-# "point", "directional", "spot"
 
 light_calculate: any = (light: any, point: any, normal: any)
   if light.type == "point"
     light_dir = vec3_normalize(vec3_sub(light.position, point))
     distance = vec3_length(vec3_sub(light.position, point))
 
-    # Attenuation
     attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance)
 
-    # Diffuse
     diff = vec3_dot(normal, light_dir):max(0)
     diffuse = vec3_scale(light.color, diff * light.intensity * attenuation)
 
-    # Specular (Blinn-Phong)
-    # Simplified
     view_dir = vec3_new(0, 0, 1)
     half_dir = vec3_normalize(vec3_add(light_dir, view_dir))
     spec = vec3_dot(normal, half_dir):max(0):pow(32)
@@ -564,9 +521,6 @@ light_calculate: any = (light: any, point: any, normal: any)
 
     { diffuse = vec3_new(0, 0, 0), specular = vec3_new(0, 0, 0) }
 
-# ═══════════════════════════════════════════════════════════════
-# Material
-# ═══════════════════════════════════════════════════════════════
 
 material_new: any = (name: str)
   {
@@ -579,13 +533,7 @@ material_new: any = (name: str)
     normal_map = nil
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
-# MOD-1: the file IS the module. Identity re-exports deleted; the few
-# exports that carried real content are ordinary top-level bindings now.
-# Vector 3
 vec3 =
   new = vec3_new
   add = vec3_add
@@ -597,7 +545,6 @@ vec3 =
   normalize = vec3_normalize
   lerp = vec3_lerp
 
-# Matrix 4x4
 mat4 =
   identity = mat4_identity
   translate = mat4_translate
@@ -607,8 +554,3 @@ mat4 =
   rotate_z = mat4_rotate_z
   multiply = mat4_multiply
   transform_point = mat4_transform_point
-# Camera
-# Mesh
-# Scene
-# Lighting
-# Material

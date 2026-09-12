@@ -1,4 +1,3 @@
-# image — Image root module (mirrors Go's image)
 
 pt: any = (x: any, y: any)
   { x = x, y = y, kind = "point" }

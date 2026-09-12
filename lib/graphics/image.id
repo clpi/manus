@@ -1,12 +1,6 @@
-# graphics.image — Image loading, saving, and manipulation
-# For loading PNG/JPEG/etc. in ward's rendering pipeline.
-# Delegates I/O to std.image.png and std.io.
 
 png_mod = png
 
-# ═══════════════════════════════════════════════════════════════
-# Image I/O
-# ═══════════════════════════════════════════════════════════════
 
 load: any = (path: str)
   f = io.open(path, "rb")
@@ -71,9 +65,6 @@ set_pixel = (image: any, x: i64, y: i64, pixel: any)
     image.data[idx + i] = pixel[i + 1] or 0
     i = i + 1
 
-# ═══════════════════════════════════════════════════════════════
-# Image Conversion
-# ═══════════════════════════════════════════════════════════════
 
 to_rgba: any = (image: any)
   if image.channels == 4
@@ -92,7 +83,6 @@ to_rgba: any = (image: any)
         result.data[dst_idx + i] = image.data(src_idx + i)
         i = i + 1
 
-      # Add alpha if RGB
       if image.channels == 3
         result.data[dst_idx + 3] = 255
       x = x + 1
@@ -116,9 +106,6 @@ to_grayscale: any = (image: any)
     y = y + 1
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Image Resize
-# ═══════════════════════════════════════════════════════════════
 
 resize_nearest: any = (image: any, new_width: i64, new_height: i64)
   result = new(new_width, new_height, image.channels)
@@ -173,9 +160,6 @@ resize_bilinear: any = (image: any, new_width: i64, new_height: i64)
     y = y + 1
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Image Filters
-# ═══════════════════════════════════════════════════════════════
 
 blur: any = (image: any, radius: i64)
   result = new(image.width, image.height, image.channels)
@@ -216,7 +200,6 @@ blur: any = (image: any, radius: i64)
   result
 
 sharpen: any = (image: any, strength: f64)
-  # Sharpen kernel: [0, -1, 0; -1, 5, -1; 0, -1, 0]
   result = new(image.width, image.height, image.channels)
   kernel = {
     { 0, -1 * strength, 0 },
@@ -273,6 +256,3 @@ adjust_contrast: any = (image: any, factor: f64)
     result.data[i] = 0:max(255:min((value - 128) * factor + 128:floor()))
     i = i + 1
   result
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════

@@ -1,54 +1,41 @@
-# sync_mutex — Mutex and RWMutex (mirrors Go's sync)
-# In Duo (cooperative single-thread), a Mutex is a simple flag. Since there
-# is no true OS-level preemption, these are advisory locks for coordinating
-# coroutines rather than threads.
 
-# mutex: create a new Mutex.
 mutex: any = ()
   { locked = false }
 
-# lock: acquire the mutex. If already locked, yield until available.
 lock = (m: any)
   while m.locked
     co = coroutine
     co.yield()
   m.locked = true
 
-# unlock: release the mutex.
 unlock = (m: any)
   m.locked = false
 
-# probe: attempt to acquire the mutex without blocking. Returns true if acquired.
 probe: bool = (m: any)
   if m.locked
     return false
   m.locked = true
   true
 
-# rwmutex: create a new RWMutex.
 rwmutex: any = ()
   { writers = 0, readers = 0, writing = false }
 
-# rlock: acquire a read lock.
 rlock = (m: any)
   while m.writing
     co = coroutine
     co.yield()
   m.readers = m.readers + 1
 
-# runlock: release a read lock.
 runlock = (m: any)
   m.readers = m.readers - 1
   if m.readers < 0
     m.readers = 0
 
-# wlock: acquire a write lock.
 wlock = (m: any)
   while m.writing or m.readers > 0
     co = coroutine
     co.yield()
   m.writing = true
 
-# wunlock: release a write lock.
 wunlock = (m: any)
   m.writing = false

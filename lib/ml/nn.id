@@ -1,14 +1,8 @@
-# ml.nn — Neural network layers and training
 
-# ═══════════════════════════════════════════════════════════════
-# Layer definitions
-# ═══════════════════════════════════════════════════════════════
 
 linear: any = (in_features: i64, out_features: i64)
-  # Xavier initialization
   scale = 1.0 / in_features:sqrt()
   weight = ml.tensor.rand(in_features, out_features)
-  # Apply Xavier scaling
   r = 0
   while r < in_features
     c = 0
@@ -26,8 +20,6 @@ linear: any = (in_features: i64, out_features: i64)
     grad_bias = nil,
     input_cache = nil
   }
-# Gradient storage (allocated on first backward)
-# Cache for backward pass
 
 relu: any = ()
   return {
@@ -51,9 +43,6 @@ dropout: any = (rate: f64)
     training = true
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Model construction
-# ═══════════════════════════════════════════════════════════════
 
 sequential: any = (...)
   layers = { ... }
@@ -63,22 +52,15 @@ sequential: any = (...)
     n_layers = layers:len()
   }
 
-# Alias for `nn { ... }` design doc syntax (varargs table today)
 build = sequential
 
-# MNIST classifier preset
 mnist_classifier: any = ()
   return sequential(linear(784, 256), relu(), linear(256, 128), relu(), linear(128, 10), softmax())
 
-# ═══════════════════════════════════════════════════════════════
-# Forward pass
-# ═══════════════════════════════════════════════════════════════
 
 @hot
 forward_linear: any = (layer, x)
-  # Cache input for backward pass
   layer.input_cache = x
-  # y = x @ W + b
   y = ml.tensor.matmul(x, layer.weight)
   return ml.tensor.add(y, layer.bias)
 
@@ -98,21 +80,18 @@ forward_softmax: any = (layer, x)
   return out
 
 forward_dropout: any = (layer, x)
-  # During training, randomly zero out elements
   if not layer.training
     return x
 
   rate = layer.rate or 0.5
   scale = 1.0 / (1.0 - rate)
 
-  # Use CSPRNG for truly random dropout mask each call
   crypto_rand = rand
   mask_bytes = crypto_rand.bytes(x.rows * x.cols / 8:ceil())
 
   result = ml.tensor.zeros(x.rows, x.cols)
   i = 0
   while i < x.rows * x.cols
-    # Extract bit from mask bytes
     byte_idx = i / 8:floor()
     bit_idx = i % 8
     mask_byte = mask_bytes:byte(byte_idx + 1) or 0
@@ -141,12 +120,8 @@ forward: any = (model, x)
     h = forward_layer(model.layers(i), h)
   return h
 
-# ═══════════════════════════════════════════════════════════════
-# Loss functions
-# ═══════════════════════════════════════════════════════════════
 
 cross_entropy: f64 = (pred, target)
-  # Simplified: assumes pred is softmax output, target is class index per row
   loss = 0.0
   for i = 1, pred.rows
     idx = ml.tensor.get(target, i, 1)
@@ -164,9 +139,6 @@ mse_loss: f64 = (pred, target)
     sum = sum + v * v
   return sum / diff.size
 
-# ═══════════════════════════════════════════════════════════════
-# Optimizer (SGD with momentum)
-# ═══════════════════════════════════════════════════════════════
 
 sgd = (lr: any, momentum: any)
   if momentum == nil
@@ -195,6 +167,3 @@ adam = (lr: any, beta1: any, beta2: any, eps: any)
     m = {},
     v = {}
   }
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════

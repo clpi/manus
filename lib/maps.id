@@ -1,4 +1,3 @@
-# maps — map (table) helper utilities (mirrors Go 1.21 maps package)
 
 clone: any = (m: any)
     if m == nil return {} 

@@ -1,9 +1,4 @@
-# math.noise — Perlin and Simplex noise
-# For procedural generation, terrain, textures, and ML data augmentation.
 
-# ═══════════════════════════════════════════════════════════════
-# Permutation Table
-# ═══════════════════════════════════════════════════════════════
 
 permutation_new: any = (seed: i64)
   perm = {}
@@ -12,7 +7,6 @@ permutation_new: any = (seed: i64)
     perm[i] = i
     i = i + 1
 
-  # Shuffle with seed
   rng = seed
   i = 255
   while i > 0
@@ -23,7 +17,6 @@ permutation_new: any = (seed: i64)
     perm[j] = temp
     i = i - 1
 
-  # Duplicate
   p = {}
   i = 0
   while i < 512
@@ -31,9 +24,6 @@ permutation_new: any = (seed: i64)
     i = i + 1
   p
 
-# ═══════════════════════════════════════════════════════════════
-# Perlin Noise (2D)
-# ═══════════════════════════════════════════════════════════════
 
 perlin_fade: f64 = (t: f64)
   t * t * t * (t * (t * 6 - 15) + 10)
@@ -69,9 +59,6 @@ perlin_2d: f64 = (perm: any, x: f64, y: f64)
   x2 = perlin_lerp(perlin_grad_2d(ab, xf, yf - 1), perlin_grad_2d(bb, xf - 1, yf - 1), u)
   perlin_lerp(x1, x2, v)
 
-# ═══════════════════════════════════════════════════════════════
-# Perlin Noise (3D)
-# ═══════════════════════════════════════════════════════════════
 
 perlin_grad_3d: f64 = (hash: i64, x: f64, y: f64, z: f64)
   h = hash & 15
@@ -118,9 +105,6 @@ perlin_3d: f64 = (perm: any, x: f64, y: f64, z: f64)
 
   perlin_lerp(y1, y2, w)
 
-# ═══════════════════════════════════════════════════════════════
-# Simplex Noise (2D)
-# ═══════════════════════════════════════════════════════════════
 
 SIMPLEX_GRAD2 = {
   { 1, 1 },
@@ -134,21 +118,17 @@ SIMPLEX_GRAD2 = {
 }
 
 simplex_2d: f64 = (perm: any, x: f64, y: f64)
-  # Skewing factors
   F2 = 0.5 * (3:sqrt() - 1)
   G2 = (3 - 3:sqrt()) / 6
 
-  # Skew input space
   s = (x + y) * F2
   i = x + s:floor()
   j = y + s:floor()
 
-  # Unskew
   t = (i + j) * G2
   x0 = x - i - t
   y0 = y - j - t
 
-  # Determine simplex
   if x0 > y0
     i1 = 1
     j1 = 0
@@ -156,20 +136,17 @@ simplex_2d: f64 = (perm: any, x: f64, y: f64)
     i1 = 0
     j1 = 1
 
-  # Offsets
   x1 = x0 - i1 + G2
   y1 = y0 - j1 + G2
   x2 = x0 - 1 + 2 * G2
   y2 = y0 - 1 + 2 * G2
 
-  # Hash
   ii = i & 255
   jj = j & 255
   gi0 = perm(ii + perm[jj]) % 8
   gi1 = perm(ii + i1 + perm[jj + j1]) % 8
   gi2 = perm(ii + 1 + perm[jj + 1]) % 8
 
-  # Contributions
   n0 = 0
   n1 = 0
   n2 = 0
@@ -191,9 +168,6 @@ simplex_2d: f64 = (perm: any, x: f64, y: f64)
 
   70 * (n0 + n1 + n2)
 
-# ═══════════════════════════════════════════════════════════════
-# Fractal Brownian Motion (fBM)
-# ═══════════════════════════════════════════════════════════════
 
 fbm_2d: f64 = (perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64)
   if octaves == nil
@@ -241,9 +215,6 @@ fbm_3d: f64 = (perm: any, x: f64, y: f64, z: f64, octaves: i64, lacunarity: f64,
 
   value / max_value
 
-# ═══════════════════════════════════════════════════════════════
-# Ridged Noise
-# ═══════════════════════════════════════════════════════════════
 
 ridged_2d: f64 = (perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64)
   if octaves == nil
@@ -270,9 +241,6 @@ ridged_2d: f64 = (perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain
 
   value / max_value
 
-# ═══════════════════════════════════════════════════════════════
-# Domain Warping
-# ═══════════════════════════════════════════════════════════════
 
 domain_warp_2d: f64 = (perm: any, x: f64, y: f64, strength: f64)
   if strength == nil
@@ -281,9 +249,6 @@ domain_warp_2d: f64 = (perm: any, x: f64, y: f64, strength: f64)
   qy = fbm_2d(perm, x + 5.2, y + 1.3, 4)
   fbm_2d(perm, x + strength * qx, y + strength * qy, 4)
 
-# ═══════════════════════════════════════════════════════════════
-# Voronoi Noise
-# ═══════════════════════════════════════════════════════════════
 
 voronoi_2d: any = (x: f64, y: f64, seed: i64)
   xi = x:floor()
@@ -302,7 +267,6 @@ voronoi_2d: any = (x: f64, y: f64, seed: i64)
       cx = xi + dx
       cy = yi + dy
 
-      # Hash for cell
       h = (cx * 374761393 + cy * 668265263 + seed) & 2147483647
       px = cx + h % 1000 / 1000
       h = (h * 1103515245 + 12345) & 2147483647
@@ -328,9 +292,6 @@ voronoi_2d: any = (x: f64, y: f64, seed: i64)
     edge = second_min - min_dist
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Worley Noise
-# ═══════════════════════════════════════════════════════════════
 
 worley_2d: f64 = (x: f64, y: f64, seed: i64)
   result = voronoi_2d(x, y, seed)
@@ -339,14 +300,3 @@ worley_2d: f64 = (x: f64, y: f64, seed: i64)
 worley_edge_2d: f64 = (x: f64, y: f64, seed: i64)
   result = voronoi_2d(x, y, seed)
   result.edge
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Permutation
-# Perlin
-# Simplex
-# FBM
-# Ridged
-# Domain Warping
-# Voronoi
-# Worley

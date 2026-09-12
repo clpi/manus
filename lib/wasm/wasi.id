@@ -1,7 +1,4 @@
-# wasm.wasi — WASI (WebAssembly System Interface) type definitions and bindings
-# Maps WASI preview1/preview2 types to Duo-native types for WASM targets.
 
-# WASI errno constants
 errno_success: u16 = ()
     0
 
@@ -26,7 +23,6 @@ errno_notdir: u16 = ()
 errno_overflow: u16 = ()
     61
 
-# WASI file descriptor types
 fd_stdin: i32 = ()
     0
 
@@ -36,7 +32,6 @@ fd_stdout: i32 = ()
 fd_stderr: i32 = ()
     2
 
-# WASI rights (capability flags)
 right_fd_read: u64 = ()
     1
 
@@ -55,11 +50,9 @@ right_poll_oneoff: u64 = ()
 right_sock_accept: u64 = ()
     65536
 
-# WASI lookup flags
 lookupflags_symlink_follow: u32 = ()
     1
 
-# WASI oflags (open flags)
 oflags_creat: u16 = ()
     1
 
@@ -72,7 +65,6 @@ oflags_excl: u16 = ()
 oflags_trunc: u16 = ()
     8
 
-# WASI filetype constants
 filetype_unknown: u8 = ()
     0
 
@@ -97,11 +89,9 @@ filetype_socket_stream: u8 = ()
 filetype_symlink: u8 = ()
     7
 
-# WASI dircookie (directory entry cookie)
 dircookie_start: u64 = ()
     0
 
-# WASI clockid constants
 clockid_realtime: u32 = ()
     0
 
@@ -114,7 +104,6 @@ clockid_process_cputime_id: u32 = ()
 clockid_thread_cputime_id: u32 = ()
     3
 
-# WASI event types for poll_oneoff
 eventtype_clock: u8 = ()
     0
 
@@ -124,7 +113,6 @@ eventtype_fd_read: u8 = ()
 eventtype_fd_write: u8 = ()
     2
 
-# WASI advice constants
 advice_normal: u8 = ()
     0
 
@@ -143,7 +131,6 @@ advice_dontneed: u8 = ()
 advice_noreuse: u8 = ()
     5
 
-# WASI whence (seek origin)
 whence_set: u8 = ()
     0
 
@@ -153,7 +140,6 @@ whence_cur: u8 = ()
 whence_end: u8 = ()
     2
 
-# WASI signal constants
 signal_hup: u8 = ()
     1
 
@@ -175,37 +161,26 @@ signal_kill: u8 = ()
 signal_term: u8 = ()
     15
 
-# WASI exit code type
 exit_success: u32 = ()
     0
 
 exit_failure: u32 = ()
     1
 
-# WASI dirent type (directory entry)
 dirent_type: i64 = (buf: any, offset: i64)
-    # dirent structure: u64 d_next, u64 d_ino, u32 d_namlen, u8 d_type, [namlen]u8 name
-    # d_type is at offset 16 from start of dirent
     if buf == nil return 0 
     buf[offset + 16] or 0
 
-# d_namlen is at offset 12 from the start of the dirent. The declaration was
-# `dirent_name_buf: any, offset: i64:len(): i64` — a signature mangled into a
-# subject-`len` application, which meant this whole file did not parse and no
-# consumer could `req` it.
 dirent_name_len: i64 = (buf: any, offset: i64)
     if buf == nil return 0
     buf[offset + 12] or 0
 
-# WASI iovec structure helpers
 iovec_new: any = (buf: any, buf_len: i64)
     { buf = buf, buf_len = buf_len }
 
-# WASI ciovec structure helpers
 ciovec_new: any = (buf: str)
     { buf = buf, buf_len = buf:len() }
 
-# WASI timestamp (nanosecond) utilities
 timestamp_now: u64 = ()
     0
 
@@ -218,12 +193,10 @@ timestamp_millisecond: u64 = ()
 timestamp_microsecond: u64 = ()
     1000
 
-# WASI prestat helpers (preopened directory descriptor)
 prestat_dir_fd: i32 = (prestat: any)
     if prestat == nil return -1 
     prestat.fd or -1
 
-# WASI subscription helpers
 subscription_clock: any = (id: u64, timeout: u64, precision: u64, flags: u16)
     {
         userdata = id,
@@ -241,4 +214,3 @@ subscription_fd_read: any = (fd: i32)
         fd = fd,
     }
 
-# Module table

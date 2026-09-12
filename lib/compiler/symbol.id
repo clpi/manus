@@ -1,61 +1,4 @@
-# SH-10 — the idol-native owner of SYMBOL emission.
-#
-# WHY THIS FILE EXISTS. Three separate canonical repairs — gap[083] name
-# mangling, gap[087] bare-identity resolution, gap[088] constructor rung (a) —
-# all terminate at ONE missing capability: there is no idol-native owner of
-# code emission. `lib/compiler/` has a lexer, a parser and a projection.
-# Nothing here owns a symbol.
-#
-# WHAT IT IS NOT. Not a code generator. It emits no declarations, no bodies, no
-# records. It answers exactly one question — what symbol does this idol relation
-# take — and that is the question gap[083] is about.
-#
-# THE DEFECT IT CLOSES, measured 2026-08-08: a idol function named `read`,
-# `write`, `open` or `abs` emitted its name UNMANGLED, where libc had already
-# declared it. `abs(21)` compiled clean and printed **21** — libc's answer, not
-# idol's. Not a build failure. A wrong number.
-#
-# WHY UNCONDITIONAL RATHER THAN A KEYWORD LIST. libc's namespace is OPEN: any
-# symbol it declares next release can capture a idol name, so the colliding set
-# is unknowable from inside the compiler. A list is a census that goes stale and
-# reports a confident zero. Mangling every relation needs no list and cannot go
-# stale.
-#
-# ============================================================================
-# THIS FILE IMPLEMENTED A RETIRED SCHEME, AND IT BUILT THE WHOLE TIME
-# ============================================================================
-# Measured 2026-08-16 by reading it: `root("f")` answered `duo_fn_f`,
-# `module("compiler","lexer")` answered `compiler__lexer`, `entry()` answered
-# `duo_entry_main`. That is `codegen.zig`'s C-path scheme, and `codegen.zig` is
-# the RETIRED emitter.
-#
-# The host now answers `_idol_<home>__<name>`, and `main` bare. So the
-# self-hosted compiler, on the day it emitted anything, would have produced
-# symbols the host cannot meet — every cross-module call an `undefined symbol`
-# at link.
-#
-# IT NEVER APPEARED AS A BLOCKED ROW. `gate/selfhost.sh` reads 8 of 18 and this
-# file is one of the 8: it BUILDS. A row that is green and wrong is worth more
-# attention than a row that is red, because nothing is going to trip over it.
-#
-# THE LAW, from `home_resolve.relationSymbol` — the host's single authority:
-#
-#   foreign declared  ->  that name        the declaration IS the name
-#   name == "main"    ->  "main"           belongs to the C runtime
-#   no home           ->  name
-#   otherwise         ->  "idol_" + home + "__" + name, over the symbol alphabet
-#
-# `docs/cross-home-identity.md` is the ruling. The two exemptions are the whole
-# list; "the program has one file" is deliberately NOT one, because a law with a
-# special case for small programs stops being true exactly when a second file
-# arrives.
 
-# The symbol alphabet. Every byte outside `[A-Za-z0-9_]` becomes `_`, which is
-# what `home_resolve.appendSymbolBytes` does and why it exists: a home is a
-# DOTTED path (`compiler.lexer`) and a file name may hold anything the file
-# system allows. A hyphenated file emitted `.globl _idol_odd-name__f` once, and
-# the assembler refuses that — the law is stated over the alphabet, not over the
-# spelling.
 safe: str = (text: str)
   out = ""
   i = 1
@@ -70,32 +13,17 @@ safe: str = (text: str)
     i += 1
   out
 
-# `main` is the one relation that may NOT take the home prefix: the process
-# entry's name belongs to the C runtime, and a collision there is a link error
-# rather than a silent bind. It is also the collision the law deliberately
-# KEEPS — two programs cannot share a process entry.
 entry: str = ()
   "main"
 
-# Whether a relation takes the home prefix at all. Everything does except the
-# entry — that IS the rule — and this exists so a caller states the decision
-# rather than assuming it, and so the exception has somewhere to live.
 mangles: bool = (name: str)
   if name == "main"
     return false
   true
 
-# THE LAW ITSELF, and it is a function of home AND name. The host's own test
-# says so in those words (`home_resolve: the symbol is a function of home AND
-# name`), and the previous shape here — a `root(name)` taking only a name — is
-# what let a scheme with no home in it look complete.
 module: str = (home: str, name: str)
   "idol_{safe(home)}__{safe(name)}"
 
-# The symbol for a relation, with both exemptions applied. A foreign boundary
-# declares its own name and is not routed through here at all; that arm lives in
-# the host beside this one, because two copies of an exemption list is how a
-# definer and a caller stop agreeing.
 symbol: str = (home: str, name: str)
   if mangles(name)
     return module(home, name)

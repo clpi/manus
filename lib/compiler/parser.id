@@ -1,66 +1,4 @@
-# compiler.parser — SH-04: a recursive-descent parser in Duo.
-#
-# Three layers, in increasing fidelity to the production `src/parser.zig`:
-#
-#   L1  Character-driven expression parser (precedence climbing, mutual
-#       recursion, ABI-register record result). This is the part the direct
-#       ARM64 backend can lower today, and `eval` (below) is its exported
-#       proof entry point — keep it pristine.
-#   L2  Token-driven expression parser over the `compiler.lexer` token
-#       stream (`next`/`peek`), the interface `src/parser.zig` itself uses.
-#   L3  Statement-level recursive descent over the same token stream that
-#       produces s-expression syntax-graph projections (the spine of P16-WS5,
-#       the syntax graph). This layer moved SH-04 off seed_only.
-#
-# Bounded-subset grammar (L3), documented against `docs/GRAMMAR_SPEC.md`:
-#
-#   program := stmt*
-#   stmt    := 'fun' NAME '(' params ')' (':' type)? (('=' expr)? block | block)
-#            |  NAME '(' params ')' ...            (bare decl — requires a ':'
-#            |                                     annotation in params/return;
-#            |                                     untyped bare decls need 'fun')
-#            |  'if' expr (stmt|elseif|else)* 'end'
-#            |  'while' expr stmt* 'end'
-#            |  'return' expr?
-#            |  '@' directive                       (prefix @)
-#            |  NAME ('='|'+='|'-='|'*='|'/='|'%='|'^=') expr
-#            |  expr
-#   params  := (param (',' param)*)?
-#   param   := NAME (':' type)?
-#   type    := (NAME | i8..u64 | f32|f64|bool|void|str) ('.' ...)*
-#   expr    := or | or 'or' or ...
-#            | and 'and' and | cmp (('=='|'!='|'<='|'>='|'<'|'>') cmp)?
-#            | add (('+'|'-'|'..') add)* | term (('*'|'/'|'//'|'%') term)*
-#            | unary ('-'|'not') unary | postfix
-#            | primary ( '(' args ')' | '.' NAME | '@' NAME | STRING )*
-#   primary := INT | FLOAT | STRING | NAME | true|false|nil
-#            | '(' expr ')' | '{' desc '}' | 'if' expr ... 'end'
-#
-# s-expression projections (the syntax-graph spine):
-#
-#   program := (program <stmt>...)
-#   name    := <source text>
-#   literal := <source text>                 42, 3.5, "hi", true, false, nil
-#   binop   := (+ l r) (- l r) (* l r) (/ l r) (// l r) (% l r) (.. l r)
-#              (= l r) (!= l r) (< l r) (<= l r) (> l r) (>= l r)
-#              (and l r) (or l r) (!x)    (== and != both project as '=')
-#   call    := (call <callee> <arg>...)      string-literal sugar included
-#   dot     := (dot <base> <name>)
-#   assign  := (assign <name> <expr>)        (+= etc.) → (assign-op <op> ...)
-#   fun     := (fun <name> (params (param n t)...) (ret <type>)? <body>...)
-#   if      := (if <cond> <stmt>... (elseif <cond> <stmt>...)* (else <stmt>...)?)
-#   while   := (while <cond> <stmt>...)
-#   return  := (return) | (return <expr>)
-#   at      := (at <name> <name-or-literal>...)      @comp.c.export("x")
-#   anchor  := (anchor <expr> <name>)                postfix foo@bar
-#   desc    := (desc <key> <value>...)               { x = 1, y = 2 }
-#
-# Errors: any grammar violation sets `lx.has_error` and projects a `(error)`
-# marker; `parse_status` reports 0 (clean) vs 1 (rejected) so the compile-fail
-# corpus is a binary differential. Unsupported-but-valid Duo (match, enum,
-# type, @comp.define...) rejects too — that is the bounded-subset boundary.
 
-# A parse result: the value produced, and the position after it.
 Res: { val: i64, pos: i64 }
 
 is_digit: i64 = (c: i64)
@@ -75,12 +13,6 @@ skip_spaces: i64 = (src: str, pos: i64)
         i += 1
     i
 
-# factor := NUMBER | '(' expr ')'
-#
-# Mutual recursion with parse_expr: `factor` calls `expr` for a parenthesised
-# group, and `expr` calls `factor` through `term`. Proving that mutual recursion
-# lowers natively is half the point of this file — a recursive-descent parser is
-# nothing but a cycle of such calls.
 parse_factor: Res = (src: str, pos: i64)
     n = src:len()
     i = skip_spaces(src, pos)
@@ -100,7 +32,6 @@ parse_factor: Res = (src: str, pos: i64)
         k += 1
     { val = acc, pos = k }
 
-# term := factor (('*' | '/') factor)*
 parse_term: Res = (src: str, pos: i64)
     n = src:len()
     left: Res = parse_factor(src, pos)
@@ -120,7 +51,6 @@ parse_term: Res = (src: str, pos: i64)
             return { val = acc, pos = i }
     { val = acc, pos = i }
 
-# expr := term (('+' | '-') term)*
 parse_expr: Res = (src: str, pos: i64)
     n = src:len()
     left: Res = parse_term(src, pos)
@@ -141,47 +71,13 @@ parse_expr: Res = (src: str, pos: i64)
     { val = acc, pos = i }
 
 
-# Native entry point. `parse_expr` returns a record, and a cross-module record
-# return has no C ABI export form yet, so a direct-backend caller cannot use it.
-# Returning just the value keeps the whole parser reachable from natively
-# lowered code: the caller gets an i64 through x0 and the record never crosses
-# the module boundary.
-# GAP (FF-1): this one declaration stays in the bare form because
-# `@comp.c.export` does not attach to a value-form binding — it degrades into a
-# runtime call to an undefined `__c_export`. Minimal repro and status in
-# the gap register (GAP-12). Every other declaration in this file is
-# canonical `name = (params): ret`.
 eval: i64 = (src: str)
     r = parse_expr(src, 1)
     return r.val
 
 
-# ── SH-04 step 2: the same grammar, driven by the TOKEN STREAM ──────────────
-#
-# Everything above parses characters. That is what kept SH-04 at seed_only:
-# a real parser consumes the lexer's tokens, and `std.compiler.lexer` is
-# already proven token-for-token equal to `src/lexer.zig` (SH-03). These
-# functions are the same precedence-climbing grammar re-expressed over
-# `lexer.next` / `lexer.peek`, which is the interface `src/parser.zig` itself
-# uses (`pk` / `adv`).
-#
-#   expr := term (('+' | '-') term)*
-#   term := factor (('*' | '/') factor)*
-#   factor := INT_LIT | '(' expr ')'
-#
-# Operator dispatch is on `token.KIND_*` rather than on raw bytes, so adding a
-# grammar level is a token-kind edit, not a character comparison.
 
-# `lx: lexer` RESOLVES and `t: token` DOES NOT, and the difference is the whole
-# remaining gap. This comment used to claim both failed and that `any` was the
-# workaround; re-measured at 2843fad3, `lx: lexer` reaches the emitter and only
-# `token` (used by `is_member_name` below) is still an unknown name. `any` is
-# never made explicit — inference resolves to a concrete representation or the
-# precheck refuses — so the three relations below now say `lexer`, and the one
-# genuinely-unresolved cross-home type name is what the ledger reports.
 
-# factor := INT_LIT | '(' expr ')'
-# Mutual recursion with parse_expr_tok, exactly as in the character version.
 parse_factor_tok: i64 = (lx: lexer)
     t = lexer.next(lx)
     if t.kind == token.kindintlit
@@ -194,7 +90,6 @@ parse_factor_tok: i64 = (lx: lexer)
         return v
     0
 
-# term := factor (('*' | '/') factor)*
 parse_term_tok: i64 = (lx: lexer)
     acc = parse_factor_tok(lx)
     cont = 1
@@ -212,7 +107,6 @@ parse_term_tok: i64 = (lx: lexer)
             cont = 0
     acc
 
-# expr := term (('+' | '-') term)*
 parse_expr_tok: i64 = (lx: lexer)
     acc = parse_term_tok(lx)
     cont = 1
@@ -228,20 +122,11 @@ parse_expr_tok: i64 = (lx: lexer)
             cont = 0
     acc
 
-# Token-driven entry point: lex, then parse the token stream.
 eval_tokens: i64 = (src: str, family: i64)
     lx = lexer.new(src, "<expr>", family)
     parse_expr_tok(lx)
 
 
-# ── SH-04 step 3 (L3): statement-level descent + s-expression projections ──
-#
-# Grammar and projection formats are documented at the top of this file. The
-# functions below are a single mutually recursive family: `proj_stmt` dispatches
-# on the token kind, block parsers (`proj_body` / `proj_body_until_else`) loop
-# `proj_stmt` until a block terminator, and `proj_expr` climbs precedence.
-# Everything rides `lexer.next` / `lexer.peek` — no token array, no allocation
-# beyond the strings being built.
 
 is_assign_kind: bool = (k: i64)
     if k == token.kindassign or k == token.kindplusassign or k == token.kindminusassign
@@ -262,37 +147,11 @@ is_type_kind: bool = (k: i64)
 is_string_kind: bool = (k: i64)
     k == token.kindtextlit or k == token.kindbyteslit or k == token.kindcompattextlit or k == token.kindcompatlongtextlit
 
-# Mark the parse failed. `lx` is the lexer (a table on this path), so the flag
-# persists through the recursion and is readable by `parse_status`.
-# A parser must terminate on ANY input, including truncated and malformed
-# source. Every loop below calls a sub-parser that is *supposed* to consume a
-# token; when one does not # at EOF, or on a token no arm handles # the loop
-# spins forever with no diagnostic and no output. Comparing the cursor across
-# the call makes termination structural instead of depending on every arm being
-# right, which is the assumption that actually failed: parsing lib/trace.id
-# did not finish in 10 minutes and no single construct reproduced it in
-# isolation.
-# Progress is `pos` AND `has_peeked` together, never `pos` alone.
-#
-# `lexer.peek` lexes ahead: it advances `pos` and sets `has_peeked`. Consuming
-# that token then clears `has_peeked` WITHOUT moving `pos` again. So a
-# one-token statement — `break`, a bare name — leaves `pos` untouched and a
-# pos-only check calls it a stall. That fired on every `break` in the corpus
-# and cost 33 files when I put the same check in proj_if.
 stalled: bool = (lx: lexer, before: i64, peeked: bool)
-    # Never at EOF. There the peek cannot advance `pos` and there is no token
-    # left to clear `has_peeked`, so a FINAL one-token statement looks stalled
-    # and gets dropped: a file whose last line is a bare name and which lacks a
-    # trailing newline lost that statement. Every enclosing loop already
-    # terminates on EOF, so refusing to fire here cannot reintroduce a spin.
     if token_view.kindat(lx) == token.kindeof
         return false
     lx.pos == before and lx.has_peeked == peeked
 
-# A member name is an ordinary identifier even when the lexer classes it as a
-# keyword: `a:match(p)`, `t.type`, `x:next()`. Data always wins the name, so the
-# check is spelling, not token class — `match` lexes as its own kind and every
-# `:match(...)` call in the corpus was rejected because of it.
 is_member_name: bool = (t: token)
     if t.text:len() == 0
         return false
@@ -303,17 +162,10 @@ is_ident_start_byte: bool = (c: i64)
     (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
 
 markerr = (lx: lexer)
-    # Record WHERE the parse first went wrong, not just that it did. A bare
-    # boolean makes `parse_status` a yes/no oracle, which is enough to gate a
-    # 55-case corpus and useless for driving coverage up: with 201 of 245
-    # lib/std files rejected, the only question that matters is which construct
-    # stopped each one. Only the first is kept — later marks are downstream of
-    # the first and would just name recovery noise.
     if !lx.has_error
         lx.error_loc = lexer.peek(lx).loc
     lx.has_error = true
 
-# Line of the first parse failure, or 0 when the source parses clean.
 parse_error_line: i64 = (src: str, file: str, family: i64)
     lx: lexer = lexer.new(src, file, family)
     _p = proj_program_lx(lx)
@@ -321,14 +173,10 @@ parse_error_line: i64 = (src: str, file: str, family: i64)
         return lx.error_loc.line
     0
 
-# `;` is a separator, not a statement. Skipped by the block loops rather than
-# by proj_stmt: proj_stmt returns "" to mean "end of block", so a trailing `x =
-# 1;` would consume the `;`, hit EOF, return "" and be reported as an error.
 skipsemi = (lx: lexer)
     while token_view.kindat(lx) == token.kindsemi
         _s = lexer.next(lx)
 
-# Two-token lookahead, via the lexer's own save/restore state.
 peek2: token = (lx: lexer)
     st = lexer.save_state(lx)
     _a = lexer.next(lx)
@@ -336,8 +184,6 @@ peek2: token = (lx: lexer)
     lexer.restore_state(lx, st)
     t
 
-# GAP-134 callable/header slice. The production entry below observes the compact
-# producer pack; the cursor relation is retained only as the artifact oracle.
 is_infix_kind: bool = (k: i64)
     token.grammarrole.roleassoc(k) != 0
 
@@ -348,11 +194,7 @@ is_descriptor_kind: bool = (k: i64)
     token.grammarrole.roledescriptor(k) or is_type_kind(k)
 
 
-# Cursor immediately after `:`. True when the next two identities are `name (`
-# — a subject face call rather than a type slot.
 colon_is_method_call_lx: bool = (lx: lexer)
-    # `paren_header_signal_lx` has consumed the colon; observe the member and the token
-    # after it, then restore the exact post-colon cursor.
     st = lexer.save_state(lx)
     m = lexer.peek(lx)
     p2 = peek2(lx)
@@ -361,10 +203,6 @@ colon_is_method_call_lx: bool = (lx: lexer)
     lexer.restore_state(lx, st)
     is_ty and is_call
 
-# Production callable-header recognition over the immutable producer pack.
-# Each token contributes metadata (kind[8], line[28], column[27]) followed by a
-# raw short-lexeme fact. `start` is the zero-based producer coordinate; one
-# physical padding slot preserves Idol's one-based sequence projection at C ABI.
 header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offside: i64, before: i64)
     if start < 0 or start >= count
         return false
@@ -502,19 +340,6 @@ header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offs
         return false
     token.grammarrole.rolebodystart(after)
 
-# Production return-value decision over the immutable producer pack.
-# `start` is the zero-based producer coordinate of the token immediately
-# after the `return` keyword. `return_line` is the line of the `return`
-# keyword itself. Returns:
-#   0 — no value (the next kind is a line-terminator, or `.id` mode saw a
-#       cross-line next token, or `start` is past the pack)
-#   1 — a value expression follows
-#   2 — the next kind cannot begin an expression in `.id` mode; the host
-#       carries that into a diagnostic
-# The 0/1/2 split lets the host emit its own diagnostic on the 2 path
-# without re-decoding the producer pack; the 0 path is silent because
-# `return` followed by `end` / `else` / `elseif` / `until` / `catch` /
-# `eof` / `semi` is the bare `return` form and not an error.
 return_starts_value_lx: i64 = (fact: []i64, count: i64, start: i64, return_line: i64, idol_mode: bool)
     if start < 0 or start >= count
         return 0
@@ -529,24 +354,13 @@ return_starts_value_lx: i64 = (fact: []i64, count: i64, start: i64, return_line:
         return 2
     1
 
-# Production match-arm classification over the immutable producer pack.
-# Each token contributes metadata followed by one raw short-lexeme fact. The
-# host copies at most six producer bytes and a length marker; it assigns no word
-# role. This relation owns contextual `case` as well as nesting/separator rules.
-# Returns 0 (not an arm), 1 (ordinary pattern), 2 (`case` face), or 3 (`else`).
 _clause: i64 = (fact: []i64, count: i64, start: i64)
     if start < 0 or start >= count
         return 0
     encoded = fact[start * 2 + 1]
     kind = encoded & 255
     lexeme = fact[start * 2 + 2]
-    # Physical short-word encoding: length 4, then the producer bytes c/a/s/e.
-    # 435727459076 = 4 | 99<<8 | 97<<16 | 115<<24 | 101<<32.
-    # The artifact derives this fact by tokenizing `case`; a producer change
-    # therefore fails the executable clause probe rather than silently drifting.
     face = 435727459076
-    # Contextual `case` precedes rolepattern deliberately: its token identity is
-    # `name`, while the parser relation — not Zig — assigns the contextual face.
     if kind == token.kindname and lexeme == face
         return 2
     if kind == token.kindelse
@@ -577,8 +391,6 @@ _clause: i64 = (fact: []i64, count: i64, start: i64)
                 return 1
     0
 
-# Owner-projected ordinal row. `.` is absence; `A` is ordinal zero. The row is
-# a physical projection of token.id's one relation order, not another order.
 _ordinal: i64 = (row: str, kind: i64)
     if kind < 0 or kind >= row:len()
         return -1
@@ -589,23 +401,6 @@ _ordinal: i64 = (row: str, kind: i64)
         return -1
     code - 65
 
-# Layout verdict at a statement boundary — keep the body open, close the
-# block, or refuse the line as a mis-indent. The relation consumes the
-# physical frame the opener left behind plus the event's settled terminator
-# fact and current line/column, and returns a packed i64:
-#
-#     bits 0..1   verdict (0 = keep, 1 = close, 2 = misindent)
-#     bits 8..35  body_col (only meaningful when verdict = keep and the
-#                 block's body column was not yet established; the host
-#                 `layout_verdict` mutated `f.body_col` on that path, and
-#                 the relation returns the updated value so the Zig frame
-#                 can adopt it without re-deciding)
-#
-# The rule sequence is: no offside frame ⇒ always keep; column left of
-# the opener ⇒ close; body column not yet established ⇒ set it from this
-# token and keep; exact body column ⇒ keep; terminator identity ⇒ close;
-# ordinary identity ⇒ misindent. The host `layout_verdict` carried the
-# same sequence; the whole-pack event now supplies the terminator bit.
 _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator: bool, line: i64, col: i64)
     if !offside
         return 0
@@ -619,60 +414,6 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
         return 1
     2
 
-# Static parser facts for the complete immutable producer pack. One output word
-# per token: bits 0..4 direct statement face; bits 5..8 source-family admission;
-# bit 9 member; bit 10 boundary; bits 11..12 branch face (1 elseif, 2 else);
-# bit 13 return; bit 14 end; bit 15 layout terminator; bit 16 empty terminator.
-# Lane two carries clause bits 0..1, return bits 2..3, callable-header bits 4..5,
-# and the contextual `type` alias head in bit 6. Static-lane bit 61 carries the
-# type-primary face, including the generic `<` identity; its existing infix
-# facts distinguish that face without another lane. The array type-primary
-# face is delimiter 19 at the plain `[` identity (33 after a `{` entry), so
-# the host never re-reads token kind in type position. Declaration bit 12
-# also carries the record face at `{`; declaration faces occur only at a name. A qualifying
-# callable header
-# propagates the bare declaration head to bit 7 on its starting name coordinate.
-# Header bit 4 also carries the applied-width type-primary face at its mutually
-# exclusive name coordinate.
-# Bit 8 carries assignment-body recognition, bits 9..12 carry the attributed
-# declaration face. Faces thirteen and fourteen settle the contextual
-# `@const` and `@comptime` refusals at the `@` coordinate, so the host does not
-# advance and re-read the following keyword identity. Bits 13..63 carry the primary face: one selects a
-# closure, two selects an integer, three selects a float, while any value at
-# `(` is the exclusive matching-parenthesis boundary. Four selects nil at its
-# mutually exclusive identity, five selects compatibility text, and six selects
-# canonical text, seven selects bytes, eight selects compatibility long text,
-# nine and ten select booleans, eleven selects vararg, twelve selects a
-# function expression, thirteen selects an if expression, and fourteen selects
-# a match expression. Fifteen selects field projection; its existing prefix
-# fact distinguishes that face from a matching-parenthesis coordinate. Sixteen
-# selects a leading subject-method reference, seventeen selects the anchor
-# primary whose existing parser path distinguishes bare anchor from macro, and
-# eighteen selects the reserved backtick rejection. Nineteen selects an array
-# pattern or index suffix at its shared `[` identity, twenty selects an else
-# pattern, and twenty-one selects a negative literal pattern; those latter two
-# faces are consumed only in pattern position. Twenty-four and twenty-five
-# select the postfix try and unwrap faces. Twenty-six selects a colon whose
-# following applied descriptor closes immediately before assignment.
-# Twenty-seven and twenty-eight select the await and comptime expression-prefix
-# variants (both are owner prefix identities with no unary relation), and
-# twenty-nine selects the `not` keyword so its deprecation warning stays
-# distinct from the canonical `!` negation, whose unary relation is the same
-# `.not`. The host no longer replays token identity at expression head. Thirty
-# selects the `by` range-step keyword, which demands an operand without applying
-# a relation: after the concat operator closes `a..b`, a following `by` unwraps
-# the concat binop into a ranged expression carrying the step operand. The
-# delimiter face is keyed by producer identity, not by the concat that preceded
-# it, so the host never reconstructs `kw_by` beside the settled relation.
-# Thirty-one selects the match-arm separator: `then`, `do`, and `=>` all close
-# a pattern and open its arm body, and the host previously replayed three
-# producer identities (`kw_then`, `kw_do`, `fat_arrow`) to make that one
-# selection. The face is keyed by producer identity, so the consumer reads the
-# settled face and never reconstructs token kind at the pattern/body seam.
-# Lane-two
-# bit 5 carries the exact name face at its mutually exclusive coordinate; at
-# `(` it remains the comma-header face.
-# Capacity refusal precedes every mutation.
 event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
     if count < 0 or capacity < 0 or count > capacity / 2
         return -1
@@ -789,10 +530,6 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             first = (word >> 8) & 255
             if first >= 65 and first <= 90
                 layouttype = 1
-        # The try-body consumer has three actions: parse an ordinary statement,
-        # stop at one of the six layout terminators, or parse return and stop.
-        # Preserve the settled action in the existing return/terminator bits so
-        # no third event lane or downstream token-kind switch is needed.
         attempt = 0
         if terminator == 1
             attempt = 1
@@ -800,17 +537,11 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             attempt = 2
         returns = attempt >> 1
         terminator = attempt & 1
-        # Argument entry composes this parenthesized-call face with the exact
-        # brace face in lane two and the quoted role above. The three choices
-        # are mutually exclusive, so the consumer never asks token kind.
         callface: i64 = 0
         if kind == token.kindlparen
             callface = 1
         out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57) | (primary << 61) | (layouttype << 62) | (callface << 63)
         clauseface = _clause(fact, count, index)
-        # This is the complete return-value-entry answer. Match-arm return
-        # materialization consumes the same face for every admitted value;
-        # token subtype does not select a second parsing path.
         returnface = return_starts_value_lx(fact, count, index, before, idol)
         braceface = 0
         if kind == token.kindlbrace
@@ -897,9 +628,6 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 3
         elseif kind == token.kindnil
             delimiter = 4
-        # Faces five through eight are also the exact quoted-source form. A
-        # consumer that needs text/bytes/compatibility identity reads this
-        # settled face; it never switches on the producer token kind again.
         elseif kind == token.kindcompattextlit
             delimiter = 5
         elseif kind == token.kindtextlit
@@ -934,8 +662,6 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 20
         elseif kind == token.kindminus
             delimiter = 21
-        # Descriptor-table entry selection is contextual materialization over
-        # two exact producer identities. The consumer does not re-read kind.
         elseif kind == token.kindconcat
             delimiter = 22
         elseif kind == token.kindname and index + 1 < count and (fact[(index + 1) * 2 + 1] & 255) == token.kindassign
@@ -1021,14 +747,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                     if openline == startline and opencol == startcol + 1
                         widthface = 1
         out[count + index] = clauseface | (returnface << 2) | (headerplain << 4) | (headercomma << 5) | (nameface << 5) | (widthface << 4) | (head << 6) | (bare << 7) | (assignment << 8) | (declaration << 9) | (braceface << 12) | (delimiter << 13)
-        # A brace at expression-statement head is either a table value or a
-        # destructuring target. Settle the first inner token here so the host
-        # does not replay token identity plus a name/assign lookahead. Face 23
-        # is local to the non-parenthesis delimiter space and therefore does
-        # not collide with a matching-delimiter coordinate.
         if prior == token.kindlbrace or prior == token.kindcomma
-            # Spread already owns exact face 22. Preserve it rather than
-            # replacing it with the table-versus-destructure aggregate face.
             entry = kind == token.kindlbracket and prior == token.kindlbrace
             if (kind == token.kindintlit or quoted == 1) and index + 1 < count
                 entry = (fact[(index + 1) * 2 + 1] & 255) == token.kindassign
@@ -1053,12 +772,6 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
         index += 1
     count
 
-# One complete block-boundary relation. With `opening`, it returns the physical
-# layout frame: bit 0 offside, bit 2 inline, bits 8..35 opener column, and bits
-# 36..63 body column. Otherwise bits 0..1 are the loop action (0 parse statement,
-# 1 close, 2 misindent, 3 parse return and close); bits 2..3 carry the clause face;
-# bits 4..6 carry written closure; bits 8..35 carry the possibly established body
-# column. Static token facts travel in the one whole-pack `event` output.
 boundary: i64 = (opening: bool, count: i64, offside: bool, open_line: i64, open: i64, body: i64, edge: i64, line: i64, before: i64, col: i64, idol: bool)
     if opening
         if !idol
@@ -1111,10 +824,6 @@ boundary: i64 = (opening: bool, count: i64, offside: bool, open_line: i64, open:
         return 3 | sealed | (column << 8)
     sealed | (column << 8)
 
-# Cursor on `(`. `offside_col` 0 disables layout discrimination for the
-# single-name `(a)` shape; otherwise it is the statement-line opener column.
-# `prev_before_lp` is the token kind immediately before this `(`, or EOF when
-# unknown — used to exclude `if (flag)` / `while (flag)` condition groups.
 paren_header_signal_lx: bool = (lx: lexer, allow: bool, offside: i64, before: i64)
     if token_view.kindat(lx) != token.kindlparen
         return false
@@ -1255,7 +964,6 @@ paren_header_signal_lx: bool = (lx: lexer, allow: bool, offside: i64, before: i6
     lexer.restore_state(lx, st)
     false
 
-# Bare declaration path: NAME '(' ... — cursor on NAME.
 statement_header_signal_lx: bool = (lx: lexer, name: token, allow_untyped_comma: bool)
     st = lexer.save_state(lx)
     _n = lexer.next(lx)
@@ -1266,38 +974,18 @@ statement_header_signal_lx: bool = (lx: lexer, name: token, allow_untyped_comma:
     lexer.restore_state(lx, st)
     found
 
-# Join two projection fragments with a space, omitting empty fragments so no
-# trailing-space artifacts leak into the sexpr.
 join: str = (a: str, b: str)
     if a == "" return b
     if b == "" return a
     a .. " " .. b
 
-# Re-quote a string-literal token text (the lexer strips the quotes).
 quote: str = (s: str)
     "\"" .. s .. "\""
 
-# Lookahead scan: does the parenthesised group at the cursor contain a `:`
-# at depth 1 (a type annotation)? That is what separates a declaration
-# `f(a: i64)` from a call `f(x)`.
-# Does the group at the cursor open a value-form function (FF-1) rather than a
-# parenthesised expression? Cursor is on `(`.
-#
-# Two signals, the same pair the declaration discriminator uses: a parameter
-# annotation inside the group, or a `:` immediately after the closing paren.
-# `(a + b) * c` has neither and stays an expression.
 is_lambda_head: bool = (lx: lexer)
-    # Typed/untyped-annotation signals only — not the full header recognizer.
-    # Keeps `(a, b)` in the bare-lambda arm separate from `(x: t): r`.
     lp = lexer.peek(lx)
     paren_header_signal_lx(lx, false, lp.loc.col, token.kindeof)
 
-# The unannotated value-form: `() f(1)` and `(a, b) a < b`.
-#
-# Neither spelling is a legal parenthesised expression — `()` is empty and
-# `(a, b)` has a top-level comma — so recognising them costs no ambiguity.
-# `(a)` deliberately stays an expression: it is a real parenthesised value and
-# guessing lambda there would break arithmetic everywhere.
 is_bare_lambda_head: bool = (lx: lexer)
     st = lexer.save_state(lx)
     _lp = lexer.next(lx)
@@ -1339,23 +1027,6 @@ is_bare_lambda_head: bool = (lx: lexer)
         return true
     plain and commas > 0 and names == commas + 1
 
-# Is the parenthesised group after the name a PARAMETER LIST (a declaration)
-# rather than an argument list (a call)? GR-001 says the discriminator is a
-# type annotation on a parameter.
-#
-# Two wrong versions preceded this one, and both were found by the corpus
-# number rather than by reading:
-#
-#   * The original arrived with the cursor on the NAME and consumed it as if it
-#     were the `(`, so every parameter colon sat at depth 2 and only a RETURN
-#     colon was ever seen. `f(d: i64): i64` was recognised; `f(d: i64)` — no
-#     return type — parsed as a call and swallowed its whole body.
-#   * Fixing only the off-by-one made ANY depth-1 colon count, so a call whose
-#     argument is a typed lambda, `f(x, (y: i64): i64 ...)`, matched on the
-#     lambda's return colon. Coverage went 58 -> 46.
-#
-# So match the shape precisely: a colon directly after a NAME that sits at the
-# start of a parameter slot — right after `(` or after a `,` at depth 1.
 params_have_colon: bool = (lx: lexer)
     st = lexer.save_state(lx)
     _n = lexer.next(lx)
@@ -1377,23 +1048,6 @@ params_have_colon: bool = (lx: lexer)
         elseif t.kind == token.kindname and depth == 1 and at_slot_start
             if token_view.kindat(lx) == token.kindcolon
                 _c = lexer.next(lx)
-                # gap[046]: a FACE CALL in argument position spells the same
-                # three tokens a typed parameter does — NAME ':' NAME — so
-                # `f(a:b(1))` matched here and was projected as a declaration
-                # of `f`, which then failed. It only ever showed up as a
-                # REJECTED FILE, never as a wrong projection, and lib/std has
-                # no statement-level call carrying a face argument, so the
-                # 257/257 ratchet was blind to it while ward's
-                # `assert(data:sub(1, 4) == "GGUF", ...)` was one of its three
-                # rejections.
-                #
-                # What follows the colon separates them: a parameter's type is
-                # a type name (`a: i64`, `a: point`), while a face call's
-                # method name is immediately applied (`a:b(`). Only the
-                # applied form is excluded, and it is excluded by CONTINUING
-                # the scan rather than by answering false — a bare declaration
-                # whose first parameter type is applied still matches on its
-                # return colon below.
                 if token_view.kindat(lx) == token.kindname and peek2(lx).kind == token.kindlparen
                     at_slot_start = false
                 else
@@ -1403,12 +1057,6 @@ params_have_colon: bool = (lx: lexer)
                 at_slot_start = false
         else
             at_slot_start = false
-    # GR-001 needs at least ONE type annotation, and a RETURN type counts:
-    # `f(a, b): i64 ... end` is a declaration with unannotated parameters. The
-    # original predicate matched this by accident (its off-by-one only ever saw
-    # return colons); dropping it cost 12 files, so it is explicit now. The
-    # colon must follow the CLOSING paren, which is why a call carrying a typed
-    # lambda does not match — that colon is inside the group.
     if !found and depth == 0
         rk = token_view.kindat(lx)
         if rk == token.kindcolon or rk == token.kindarrow
@@ -1416,7 +1064,6 @@ params_have_colon: bool = (lx: lexer)
     lexer.restore_state(lx, st)
     found
 
-# One parameter: NAME (':' type)?.
 proj_param: str = (lx: lexer)
     n = lexer.next(lx)
     p = "(param " .. n.text
@@ -1425,7 +1072,6 @@ proj_param: str = (lx: lexer)
         p = p .. " " .. proj_type(lx)
     p .. ")"
 
-# Comma-separated parameter list, consuming the closing ')'.
 proj_params: str = (lx: lexer)
     acc = ""
     while true
@@ -1445,30 +1091,12 @@ proj_params: str = (lx: lexer)
         if token_view.kindat(lx) == token.kindcomma
             _c = lexer.next(lx)
 
-# Type reference: primitive keyword kinds or a NAME (record type).
-# ONE type, optionally dotted: `i64`, `lexer`, `str`.
-#
-# This used to loop while the next token was a type kind, and `is_type_kind`
-# accepts kindname — so a return type ran on into the body and swallowed its
-# first token. `add(a: i64): i64 a end` projected `(ret i64 a)` with the body
-# gone. It survived because the only typed cases in the corpus used the
-# `= expr` body form, where `=` is not a type kind and stopped the run; every
-# block-bodied typed function was mis-parsed.
-# proj_params expects the `(` already consumed; this is the entry for callers
-# holding the cursor on it.
 proj_params_from_lparen: str = (lx: lexer)
     _lp = lexer.next(lx)
     proj_params(lx)
 
-# One type ATOM: a dotted name (`str`, `str`, `lexer`) or a parenthesised
-# tuple (`(str, i64)`). No `|` here — the union level is above, so the
-# recursion cannot make `|` bind tighter than a comma.
 proj_type_atom: str = (lx: lexer)
     t = lexer.peek(lx)
-    # A TUPLE return type. `gguf.read(string)` in tools/wasm/src/nn/init.id is
-    # spelled `(str, i64)` and was the next production-parser-accepts /
-    # self-hosted-parser-rejects file after `then`, so this closes the last
-    # `tools` divergence that is not a deny-list construct.
     if t.kind == token.kindlparen
         lexer.next(lx)
         acc = "(tuple"
@@ -1503,22 +1131,6 @@ proj_type_atom: str = (lx: lexer)
         acc = acc .. "." .. seg.text
     acc
 
-# type := atom ('|' atom)*
-#
-# `: t | error` is the result discipline the whole language is
-# built on — and gap[046] measured it at ZERO: no uses in lib/std, and no
-# production in either half of the self-hosted parser. It is written here and
-# nowhere else because `|` reads two ways and POSITION is the only thing that
-# separates them: infix `|` in expression space is bitwise-or (proj_bor), and
-# `|` in TYPE space is the union edge. proj_type is only ever entered from a
-# type position — after a `:` copula, inside a tuple, after a parameter name —
-# so consuming `|` here cannot reach an expression. That is H-1 stated as a
-# parser rule: the colour follows the EDGE, not the glyph.
-#
-# Projected `(union t error)` rather than `(| t error)` on purpose. Sharing the
-# binop spelling would make `f(): i64 | error` and `f(): i64` .. `| error`
-# project identically, and the whole point of writing the production is that a
-# failure position is structurally visible.
 proj_type: str = (lx: lexer)
     acc = proj_type_atom(lx)
     if acc != "" and token_view.kindat(lx) == token.kindpipe
@@ -1535,33 +1147,6 @@ proj_type: str = (lx: lexer)
         acc = "{s})"
     acc
 
-# Statements until 'end' (consumed). 'else'/'elseif' do not terminate here.
-# A body ends at `end` OR at a DEDENT, and `end` is the retired half.
-#
-# This used to end only at `end`, which made the self-hosted parser require the
-# form §0.7 DELETED and reject the form the law mandates. Measured before the
-# repair, and the asymmetry is the tell:
-#
-#     f = (x: i64): i64      + offside body    status 1   REJECTED
-#     f = (x: i64): i64      + `end`           status 0
-#     f = (x)                + offside body    status 0
-#     f = (x: i64): i64 | error  either form   status 1   REJECTED
-#
-# So the canonical spelling of a typed callable — the commonest shape in
-# idiomatic idol, and the only one `: t | error` can be written in — did not
-# parse. lib/std reported 257/257 the whole time because lib/std still writes
-# `end`: the ratchet was green on a corpus written in the retired dialect.
-#
-# The repair is NNS (A2): no new token, no lexer change. The parser already
-# carries `loc.line` and `loc.col` on every token and already uses them for the
-# bodiless-declaration rule above. A body is the run of statements indented
-# past its opener, so the first body token's column IS the base, and a later
-# token left of it has dedented out.
-#
-# EOF closes an end-less body rather than erroring — with `end` deleted there is
-# no other terminator at the end of a file. The `acc == ""` guard keeps a
-# genuinely truncated body an error: a body that parsed nothing before EOF is
-# still a defect, and that is what `mark_error` is for.
 proj_body: str = (lx: lexer)
     acc = ""
     base: i64 = 0
@@ -1586,18 +1171,6 @@ proj_body: str = (lx: lexer)
             markerr(lx)
             return acc
 
-# A block that MUST close with `end`, so EOF is a REJECTION rather than a
-# terminator.
-#
-# proj_body treats EOF as a close, which is right for an offside body: with
-# `end` deleted (§0.7) the last body in a file has no other terminator. `do`
-# is not that shape. It is an explicit Lua-form block whose only terminator is
-# `end`, and routing it through proj_body meant `do x = 1` — truncated,
-# unterminated — parsed CLEAN. That is a P1 `zigrej` divergence: the
-# production parser rejects it, this one accepted it, and over-acceptance
-# moves the coverage ratchet the good way so nothing was watching. It was
-    # already convicting the parser corpus proof (exit 117, its
-# seventeenth compile-fail row) at HEAD before this session touched anything.
 proj_block: str = (lx: lexer)
     acc = ""
     more = true
@@ -1619,7 +1192,6 @@ proj_block: str = (lx: lexer)
                 more = false
     acc
 
-# Statements until 'end', 'else' or 'elseif' — for if/else block parsing.
 proj_body_until_else: str = (lx: lexer)
     acc = ""
     while true
@@ -1634,9 +1206,6 @@ proj_body_until_else: str = (lx: lexer)
             markerr(lx)
             return acc
 
-# fun NAME '(' params ')' (':' type)? (('=' expr) | body) ...
-# `first` is the peeked token: either the 'fun'/'function' keyword (consumed,
-# then the NAME is read) or the bare-declaration NAME itself.
 proj_fun_decl: str = (lx: lexer, first: token)
     if first.kind == token.kindfun or first.kind == token.kindfunction
         _k = lexer.next(lx)
@@ -1658,15 +1227,6 @@ proj_fun_decl: str = (lx: lexer, first: token)
         if t.kind != token.kindend
             markerr(lx)
         return s .. " " .. e .. ")"
-    # A BODILESS declaration: `@ffi("SSL_CTX_new")` then
-    # `ssl_ctx_new(method: any): any` and nothing else. It has no body and no
-    # `end`, so calling proj_body sent it hunting to EOF and took the rest of
-    # the file with it — four modules (tls, onnx, sqlite, regex) failed
-    # entirely on this.
-    #
-    # Layout is the signal, as everywhere else: a body is indented, so a token
-    # on a later line at column 1 is the next top-level construct, not this
-    # declaration's body.
     nxt = lexer.peek(lx)
     if nxt.kind == token.kindeof
         return s .. ")"
@@ -1674,7 +1234,6 @@ proj_fun_decl: str = (lx: lexer, first: token)
         return s .. ")"
     s .. " " .. proj_body(lx) .. ")"
 
-# fun '(' params ')' (':' type)? body 'end' — anonymous, expression position.
 proj_fun_expr: str = (lx: lexer)
     _f = lexer.next(lx)
     if token_view.kindat(lx) != token.kindlparen
@@ -1693,50 +1252,10 @@ proj_fun_expr: str = (lx: lexer)
         return s .. " " .. body .. ")"
     s .. ")"
 
-# `then` is optional exactly the way `do` is, and for a stronger reason than
-# tolerance: `duo fmt` EMITS it. `do_fmt` in src/main.zig is
-# `Parser.parse_module` fed to `PrettyPrinter.printModule` and nothing else, so
-# the formatter's output is the production AST's own canonical rendering — and
-# it renders `if ready run() end` as `if ready then / run() / end`. A parser
-# that means to REPLACE src/parser.zig cannot reject what src/parser.zig's own
-# printer writes.
-#
-# gap[046] §3 filed `then` under "the parser is right and the source is stale"
-# because §1 deny-lists it. That reading is wrong and the two-oracle
-# differential is what overturned it: deny-list status governs what a human
-# should type, not what a parser must read. Measured — `then` alone was 6 of
-# the 9 files where the production parser accepted and this one rejected.
 skipthen = (lx: lexer)
     if token_view.kindat(lx) == token.kindthen
         lexer.next(lx)
 
-# The RETURN-TYPE introducer, either spelling, consumed. `:` is the copula and
-# the canonical form; `->` is §1 deny-listed and is read anyway, for the same
-# reason `then` is.
-#
-# The evidence is stronger here than for `then`, and it is the single biggest
-# number this session produced. P2 CANONICAL CLOSURE measured across the repo
-# said the self-hosted parser could read 258/258 lib/std files but could NOT
-# read `duo fmt`'s rendering of 249 of them. One construct accounts for
-# essentially all of it: src/pretty.zig prints every return type as `-> T`,
-# and it does so in `--canonical` mode too —
-#
-#     $ duo fmt #canonical hex.id
-#     encode(s: str) -> str
-#
-# so the production toolchain's own canonical output is unreadable by its
-# intended replacement. Both spellings project `(ret T)` with no marker of
-# which was written, because they name the SAME edge and a projection that
-# distinguished them would make the formatter's output a different tree from
-# its input.
-#
-# This is NOT a licence to write `->`. §1 governs what goes in a .id file and
-# the deny list still holds there; it has never governed what a parser must
-# READ, and conflating the two is what left gap[046] recording `->` as "the
-# source is stale" when the source in question was machine-generated. The
-# other repair — teaching src/pretty.zig to print `: T` under `--canonical` —
-# is the right one long-term and is src/**, so it is specified rather than
-# made. Both should land; only one of them is mine.
 ret_intro: bool = (lx: lexer)
     k = token_view.kindat(lx)
     hit = k == token.kindcolon or k == token.kindarrow
@@ -1744,7 +1263,6 @@ ret_intro: bool = (lx: lexer)
         lexer.next(lx)
     hit
 
-# if expr ... ('elseif' expr ...)* ('else' ...)? 'end'
 proj_if: str = (lx: lexer)
     _i = lexer.next(lx)
     cond = proj_expr(lx)
@@ -1776,22 +1294,11 @@ proj_if: str = (lx: lexer)
             markerr(lx)
             return s .. ")"
         else
-            # No `stalled` guard here, deliberately. `lexer.peek` lexes ahead
-            # and advances `pos`, so for a one-token statement the cursor has
-            # already moved before proj_stmt runs and the check fires
-            # spuriously — it cost 33 files (184 -> 151) when I added it. The
-            # arms above already consume or return on every terminator, so this
-            # loop cannot spin the way the accumulating loops could.
             s = s .. " " .. proj_stmt(lx)
 
-# while expr ... 'end'
 proj_while: str = (lx: lexer)
     _w = lexer.next(lx)
     cond = proj_expr(lx)
-    # `while c do ... end` — proj_for already tolerated the optional `do`;
-    # proj_while did not, so one `do` swallowed the loop's `end` and left the
-    # enclosing function unterminated to the end of the file. That is why so
-    # many blockers reported at EOF with nothing wrong at the reported line.
     skipdo(lx)
     body = proj_body(lx)
     s = "(while " .. cond
@@ -1799,19 +1306,10 @@ proj_while: str = (lx: lexer)
         s = s .. " " .. body
     s .. ")"
 
-# `do` is optional in .id and mandatory in .lua; the lexer feeds both, so the
-# loop forms accept it and drop it rather than projecting it.
 skipdo = (lx: lexer)
     if token_view.kindat(lx) == token.kinddo
         _d = lexer.next(lx)
 
-# for NAME '=' expr ',' expr (',' expr)? body 'end'   # numeric
-# for NAME (',' NAME)* 'in' expr body 'end'           # generic
-#
-# Projected as '(for NAME (range A B [S]) body...)' and
-# '(forin (names N...) EXPR body...)'. The `range` grouping is what keeps an
-# optional step unambiguous: without it, a three-expression header and a
-# two-expression header followed by a body statement project identically.
 proj_for: str = (lx: lexer)
     _f = lexer.next(lx)
     n1 = lexer.next(lx)
@@ -1856,21 +1354,17 @@ proj_for: str = (lx: lexer)
         s = s .. " " .. body
     s .. ")"
 
-# return expr?
 proj_return: str = (lx: lexer)
     _r = lexer.next(lx)
     t = lexer.peek(lx)
     if t.kind == token.kindend or t.kind == token.kindelse or t.kind == token.kindelseif or t.kind == token.kindeof
         return "(return)"
-    # `return nil, Error.Truncated` — correlated packs are the error idiom, so
-    # a single-value return would reject most failure paths in the stdlib.
     vals = proj_expr(lx)
     while token_view.kindat(lx) == token.kindcomma
         _c = lexer.next(lx)
         vals = vals .. " " .. proj_expr(lx)
     "(return " .. vals .. ")"
 
-# NAME ('=' | op-assign) expr
 proj_assign: str = (lx: lexer, t: token)
     _n = lexer.next(lx)
     op = lexer.next(lx)
@@ -1879,7 +1373,6 @@ proj_assign: str = (lx: lexer, t: token)
         return "(assign " .. t.text .. " " .. rhs .. ")"
     "(assign-op " .. op.text .. " " .. t.text .. " " .. rhs .. ")"
 
-# ('local'|'global') NAME (':' type)? ('=' expr)?
 proj_decl: str = (lx: lexer)
     kw = lexer.next(lx)
     n = lexer.next(lx)
@@ -1895,11 +1388,6 @@ proj_decl: str = (lx: lexer)
         s = s .. " " .. proj_expr(lx)
     s .. ")"
 
-# repeat body 'until' expr
-#
-# The body is read with proj_stmt rather than proj_body because `repeat` closes
-# on `until`, not `end`. proj_stmt returns "" at `end`/`else`/`elseif`, which
-# would spin here, so an empty projection is treated as the error it is.
 proj_repeat: str = (lx: lexer)
     _r = lexer.next(lx)
     acc = ""
@@ -1921,19 +1409,7 @@ proj_repeat: str = (lx: lexer)
             return "(repeat (error))"
         acc = join(acc, st)
 
-# A statement starting with a NAME whose target is not a bare name:
-# `t[i] = v`, `t.f = v`, `a, b = 1, 2`, or a plain expression statement.
-#
-# The target is parsed as a postfix expression and the assignment operator is
-# checked afterwards, rather than being predicted from lookahead — the target
-# grammar is exactly the postfix grammar, so duplicating it would be the only
-# other option and the two copies would drift.
 proj_target_or_expr: str = (lx: lexer)
-    # Save first: if no assignment operator follows, this was never a target,
-    # it was the head of an ordinary expression statement. Returning the
-    # postfix alone truncated it — `a.x * b.x + a.y * b.y` as a statement
-    # projected `(dot a x)` and dropped the rest. Rewind and let proj_expr
-    # parse the whole thing rather than trying to resume mid-expression.
     st = lexer.save_state(lx)
     first = proj_postfix(lx)
     if token_view.kindat(lx) == token.kindcomma
@@ -1942,23 +1418,6 @@ proj_target_or_expr: str = (lx: lexer)
             _c = lexer.next(lx)
             targets = targets .. " " .. proj_postfix(lx)
         if !is_assign_kind(token_view.kindat(lx))
-            # A trailing `buf:sub(1, n), nil` is a demand-returned PACK.
-            # My first attempt projected EVERY comma list as one, which also
-            # accepted a bare `a, b` mid-body — a corpus rejection — and coverage
-            # fell 184 -> 151. The tail test is local after all: a pack is the
-            # body's value, so `end` must follow it. A top-level `a, b` (EOF
-            # follows, no consumer) stays rejected.
-            #
-            # REWIND before projecting the pack, rather than reusing `targets`.
-            # The list above was read with proj_postfix because it was
-            # SPECULATED to be an assignment target list, and a pack's elements
-            # are full expressions: `s, pos + 8 + len` — the return of
-            # `gguf.read(string)` in tools/wasm/src/nn/init.id — parsed `pos`
-            # as the second target, met `+`, and rejected. Reusing `targets`
-            # would be resuming mid-expression, which is the same defect the
-            # save at the top of this function exists to avoid; tail_pack
-            # re-reads the whole list under the expression grammar and keeps
-            # the `end` requirement that makes a bare `a, b` still reject.
             lexer.restore_state(lx, st)
             return tail_pack(lx, proj_expr(lx))
         op = lexer.next(lx)
@@ -1979,15 +1438,9 @@ proj_target_or_expr: str = (lx: lexer)
     lexer.restore_state(lx, st)
     proj_expr(lx)
 
-# '@' directive: dotted names, then optional parenthesised arguments.
 proj_directive: str = (lx: lexer)
     at = lexer.next(lx)
     s = "(at"
-    # A directive ends with its line. Without this the loop kept eating NAMEs
-    # and swallowed the declaration it annotates: `@comp.c.export("duo_str_sub")`
-    # on one line and `sub(s: str, ...)` on the next parsed as ONE directive,
-    # taking the whole function with it. Every attribute-carrying declaration in
-    # lib/std failed this way.
     line = at.loc.line
     while true
         t = lexer.peek(lx)
@@ -2006,7 +1459,6 @@ proj_directive: str = (lx: lexer)
         else
             return s .. ")"
 
-# '(' arg (',' arg)* ')'
 proj_arglist: str = (lx: lexer)
     _lp = lexer.next(lx)
     acc = ""
@@ -2027,7 +1479,6 @@ proj_arglist: str = (lx: lexer)
         if token_view.kindat(lx) == token.kindcomma
             _c = lexer.next(lx)
 
-# '{' key (('=' | value)) (',' ...)* '}' — descriptor / table literal.
 proj_desc_body: str = (lx: lexer)
     s = "(desc"
     while true
@@ -2038,29 +1489,16 @@ proj_desc_body: str = (lx: lexer)
         if t.kind == token.kindeof
             markerr(lx)
             return s .. ")"
-        # A NAME is only a key when `=` or `:` follows it; `{ a, b }` is two
-        # positional elements that happen to be names. Deciding on the NAME
-        # alone consumed the name and then projected the *next* element as its
-        # value, silently shifting every entry.
         keyed = false
         if t.kind == token.kindname
             k2 = peek2(lx)
             if k2.kind == token.kindassign or k2.kind == token.kindcolon
                 keyed = true
-        # A STRING-literal key in the unbracketed `k = v` slot:
-        # `{ "what is metaprogramming" = [[ ... ]] }`. Not Lua-legal and not
-        # how the corpus usually spells a computed key, but the production
-        # parser accepts it and tools/mcp/duo_shared.id uses it, so the
-        # self-hosted parser has to read it too — P1 acceptance agreement is
-        # about the incumbent's grammar, not about the one I would design. It
-        # projects as `(key "..." v)`, identical to the bracketed spelling,
-        # because they denote the same edge.
         strkey = false
         if is_string_kind(t.kind)
             k2 = peek2(lx)
             if k2.kind == token.kindassign
                 strkey = true
-        # `{ [0] = "trace", [k] = v }` — a computed key.
         if t.kind == token.kindlbracket
             _lb = lexer.next(lx)
             k = proj_expr(lx)
@@ -2094,7 +1532,6 @@ proj_desc_body: str = (lx: lexer)
         if token_view.kindat(lx) == token.kindcomma
             _c = lexer.next(lx)
 
-# Precedence-climbing expression projection, highest level first.
 proj_expr: str = (lx: lexer)
     left = proj_and(lx)
     while true
@@ -2115,36 +1552,11 @@ proj_and: str = (lx: lexer)
         else
             return left
 
-# A CHAIN of comparisons, left-associated, not a single non-associative one.
-#
-# The level used to read exactly one comparison and return, so
-# `a > b != c > d` — the XOR-of-two-tests idiom, and the shape of the
-# point-in-polygon test in lib/math/geometry.id and the sign compare in
-# tools/wasm/src/engine.id — parsed `(> a b)` and left `!=` unconsumed for the
-# statement level to reject. Both files parse under `src/parser.zig`, so it was
-# a P2 CANONICAL CLOSURE divergence found by re-reading the formatter's output.
-#
-# HONEST LIMIT, recorded rather than papered over: §0a CHAIN-CMP rules that
-# `a < b < c` is ONE fact — a conjunctive chain evaluating its shared operands
-# once — and this projection does not carry that. It emits the incumbent's
-# left-associated tree, `(< (< a b) c)`, because matching the incumbent is what
-# the differential measures and because a `(chain ...)` node would move every
-# comparison row already pinned in the corpus proof. The conjunctive reading is
-# a SEMANTIC ruling that belongs to the layer above the projection, and naming
-# it here is cheaper than discovering later that the parser silently decided
-# it. The two files above are genuine boolean-XOR uses, where left association
-# is also the intended meaning.
-# The comparison operator a token kind names, or "" for every other kind.
-# Split out so the level below is a plain `while`: with the ladder inline the
-# loop needed a mid-body `return` to escape, and the escape was the only thing
-# the ladder's `else` arm did.
 cmp_op: str = (k: i64)
     op = ""
     if k == token.kindeq
         op = "="
     elseif k == token.kindneq
-        # `!=` used to fold into `=` here, so `a != b` and `a == b` projected
-        # to the identical s-expression and no proof could tell them apart.
         op = "!="
     elseif k == token.kindleq
         op = "<="
@@ -2166,10 +1578,6 @@ proj_cmp: str = (lx: lexer)
         op = cmp_op(token_view.kindat(lx))
     left
 
-# Bitwise levels, Lua precedence: `|` < `~` < `&` < shift < `..`/`+`.
-# Four levels rather than one because a single level would left-associate
-# `a & b | c` as `(a & b) | c` only by luck of token order; Ward's decoders are
-# full of mixed masks and shifts and would be silently mis-parsed.
 proj_bor: str = (lx: lexer)
     left = proj_bxor(lx)
     while token_view.kindat(lx) == token.kindpipe
@@ -2250,17 +1658,11 @@ proj_unary: str = (lx: lexer)
     if t.kind == token.kindhash
         _o = lexer.next(lx)
         return "(len " .. proj_unary(lx) .. ")"
-    # Prefix `~` is bitwise NOT. It shares a token with the infix XOR handled in
-    # proj_bxor; position decides, which is why the infix level cannot simply
-    # consume it.
     if t.kind == token.kindtilde
         _o = lexer.next(lx)
         return "(bnot " .. proj_unary(lx) .. ")"
     proj_pow(lx)
 
-# '^' binds tighter than unary minus and is right-associative, so `-a ^ b`
-# is `-(a ^ b)` and `a ^ b ^ c` is `a ^ (b ^ c)`. Recursing into proj_unary on
-# the right gives both.
 proj_pow: str = (lx: lexer)
     base = proj_postfix(lx)
     if token_view.kindat(lx) == token.kindcaret
@@ -2290,9 +1692,6 @@ proj_postfix: str = (lx: lexer)
                 return "(error)"
             base = "(index " .. base .. " " .. idx .. ")"
         elseif t.kind == token.kindcolon
-            # `obj:m(args)`. The receiver is projected separately from the
-            # name so a later pass can see the implicit self without
-            # re-deriving it from a dotted path.
             _c = lexer.next(lx)
             m = lexer.next(lx)
             if !is_member_name(m)
@@ -2306,8 +1705,6 @@ proj_postfix: str = (lx: lexer)
                 if token_view.kindat(lx) != token.kindlparen
                     markerr(lx)
                     return "(error)"
-                # `join`, not concatenation: a no-argument call must project as
-                # `(method obj m)`, not `(method obj m )`.
                 base = join(head, proj_arglist(lx)) .. ")"
         elseif t.kind == token.kindat
             _a = lexer.next(lx)
@@ -2327,10 +1724,6 @@ proj_primary: str = (lx: lexer)
     if t.kind == token.kindname or t.kind == token.kindtrue or t.kind == token.kindfalse or t.kind == token.kindnil
         _n = lexer.next(lx)
         return t.text
-    # Type names are ordinary values. LAW-STRATA spells specialization as
-    # `store(i32)("x")`, so `i32` has to parse in expression position like any
-    # other binding; lexing it as a keyword is a tokenization detail, not a
-    # semantic category.
     if is_type_kind(t.kind)
         _n = lexer.next(lx)
         return t.text
@@ -2339,11 +1732,8 @@ proj_primary: str = (lx: lexer)
     if t.kind == token.kinddots
         _d = lexer.next(lx)
         return "(varargs)"
-    # `@` directives appear in expression position too: `return @c.emit(...)`,
-    # `@as(i64, x)`. Same projection as the statement form.
     if t.kind == token.kindat
         return proj_directive(lx)
-    # A leading `.` is a lens on the ambient subject: `.pos`, `map(.name)`.
     if t.kind == token.kinddot
         _d = lexer.next(lx)
         n = lexer.next(lx)
@@ -2353,20 +1743,9 @@ proj_primary: str = (lx: lexer)
         return "(lens " .. n.text .. ")"
     if t.kind == token.kindfun or t.kind == token.kindfunction
         return proj_fun_expr(lx)
-    # The compact value form has a single-expression body and NO `end`:
-    # `f = (x) g(x)`, `spawn(() run(c))`. The annotated form is a block that
-    # closes with `end`. Same construct, two body shapes, so they are parsed
-    # separately rather than by guessing where the body stops.
-    # Annotated first: `(): void` has empty parens, so the bare test matches it
-    # too, and taking the bare path meant the `: void` was never read and the
-    # body was parsed as a single expression instead of a block.
     if t.kind == token.kindlparen and is_bare_lambda_head(lx) and !is_lambda_head(lx)
         head_line = t.loc.line
         params = proj_params_from_lparen(lx)
-        # Layout decides the body shape, which is the canon's own rule: a
-        # one-liner is a single expression and closes at the newline; a body
-        # that starts on the next line is a block and closes with `end`.
-        # `create(()\n    fn(1)\nend)` is the block form.
         if lexer.peek(lx).loc.line != head_line
             body = proj_body(lx)
             if params != ""
@@ -2379,9 +1758,6 @@ proj_primary: str = (lx: lexer)
             return "(lambda (params " .. params .. ") " .. body .. ")"
         return "(lambda (params) " .. body .. ")"
     if t.kind == token.kindlparen and is_lambda_head(lx)
-        # FF-1: `(x: t): r ... end` with no keyword. This is the canonical
-        # function form, and the parser could not read it — including in
-        # lib/compiler/parser.id itself after its own FF-1 migration.
         head_line = t.loc.line
         params = proj_params_from_lparen(lx)
         s2 = "(lambda (params"
@@ -2390,22 +1766,8 @@ proj_primary: str = (lx: lexer)
         s2 = s2 .. ")"
         if ret_intro(lx)
             s2 = s2 .. " (ret " .. proj_type(lx) .. ")"
-        # LAYOUT picks the body shape here too, not the presence of
-        # annotations. `fh.close = (self: any) nil` is annotated AND a
-        # one-liner; assuming annotated implied a block made proj_body hunt an
-        # `end` that is not there, consume to EOF, and leave the enclosing
-        # function unterminated — while still projecting a correct-looking
-        # lambda, so only the error flag showed it.
         if lexer.peek(lx).loc.line == head_line
             e2 = proj_expr(lx)
-            # The one-line form appears both ways: `(self: any) nil` with no
-            # terminator and `(a: i64): i64 a end` with one. Take the `end` when
-            # it is there rather than leaving it to dangle into the enclosing
-            # block.
-            # ...but only an `end` on the SAME line. `less = (a: any, b: any) a < b`
-            # sits inside an `if`, and its terminator is on the next line and
-            # belongs to the `if`. Eating that closed the wrong block and ran the
-            # enclosing function to EOF.
             if token_view.kindat(lx) == token.kindend and lexer.peek(lx).loc.line == head_line
                 _e = lexer.next(lx)
             return s2 .. " " .. e2 .. ")"
@@ -2424,7 +1786,6 @@ proj_primary: str = (lx: lexer)
     if t.kind == token.kindlbrace
         _lb = lexer.next(lx)
         return proj_desc_body(lx)
-    # `[float]` — a sequence type in field position, e.g. `wq: [float]`.
     if t.kind == token.kindlbracket
         _lb = lexer.next(lx)
         inner = proj_expr(lx)
@@ -2433,12 +1794,6 @@ proj_primary: str = (lx: lexer)
             markerr(lx)
             return "(error)"
         return "(seq " .. inner .. ")"
-    # LAST refusal: an identifier-spelled keyword in CALL position is a name —
-    # `type(nv)`, `error(msg)`. `type` has its own token kind because of
-    # `type X = { ... }`, so every call to the builtin was a parse failure.
-    #
-    # It must come after every keyword-specific arm above, not before: placed
-    # earlier it swallowed `fun(a) a end` as a call to `fun` and cost 3 files.
     if is_member_name(t) and peek2(lx).kind == token.kindlparen
         _n = lexer.next(lx)
         return t.text
@@ -2446,12 +1801,6 @@ proj_primary: str = (lx: lexer)
     markerr(lx)
     "(error)"
 
-# One statement. Returns "" only for block terminators (which the block
-# parsers consume) and EOF.
-# After an expression statement, a comma list that closes at `end` is a
-# demand-returned pack: `buf:sub(1, n), nil`. The `end` is what makes it
-# a tail — a comma list anywhere else is an error, which keeps a bare `a, b`
-# rejected.
 tail_pack: str = (lx: lexer, first: str)
     if token_view.kindat(lx) != token.kindcomma
         return first
@@ -2464,9 +1813,6 @@ tail_pack: str = (lx: lexer, first: str)
     markerr(lx)
     "(error)"
 
-# concept NAME <signature>* end — a protocol's required surface. Each entry is
-# a declaration HEADER with no body, so it cannot go through proj_fun_decl: the
-# bodiless rule there keys on column 1, and these are indented.
 proj_concept: str = (lx: lexer)
     _c = lexer.next(lx)
     n = lexer.next(lx)
@@ -2482,12 +1828,6 @@ proj_concept: str = (lx: lexer)
         if t.kind == token.kindeof
             markerr(lx)
             return s .. ")"
-        # A `fun`-prefixed signature. The corpus writes concept members bare
-        # (`alloc(self, bytes: i64): any`), but `duo fmt` re-emits every one of
-        # them as `fun alloc(self, bytes: i64) -> any`, so the printer's own
-        # output for lib/mem.id was unreadable here — a P2 CANONICAL
-        # CLOSURE failure with the identical shape as `->` itself. Skipping the
-        # keyword costs nothing: the signature grammar after it is the same.
         if token_view.kindat(lx) == token.kindfun or token_view.kindat(lx) == token.kindfunction
             lexer.next(lx)
         nm = lexer.next(lx)
@@ -2533,29 +1873,14 @@ proj_stmt: str = (lx: lexer)
         return proj_repeat(lx)
     if t.kind == token.kindconcept
         return proj_concept(lx)
-    # Retired: statement-initial `type X = …` and `(typedecl … (type …))` alias
-    # projections (GAP-049; law.md descriptor axis). `type` is an ordinary name;
-    # descriptors declare as `Name: { … }` or nominal `Name: T` once parser hole
-    # gap[097] closes. Do not reintroduce typedecl or `(type …)` wrappers here.
     if t.kind == token.kinddo
         _d = lexer.next(lx)
         body = proj_block(lx)
         if body != ""
             return "(do " .. body .. ")"
         return "(do)"
-    # `const` rides proj_decl with `local`/`global` because the three have one
-    # shape — binder NAME (':' type)? ('=' expr)? — and proj_decl already names
-    # the projection after `kw.text`, so `const k = 5` projects `(const k 5)`
-    # with no new arm. gap[046] §6 ranked const and defer last on cheapness
-    # grounds and that was right: this is the whole change.
     if t.kind == token.kindlocal or t.kind == token.kindglobal or t.kind == token.kindconst
         return proj_decl(lx)
-    # `defer <stmt>` — one statement, deferred to scope exit. Projected with the
-    # deferred statement NESTED rather than flattened, because a flat
-    # `(defer) (call close h)` is the same two top-level statements as an
-    # undeferred call and the whole meaning of the construct is the edge
-    # between them. That is the same defect class as the `nn { }` tear-off in
-    # gap[046] §3: acceptance with the structure thrown away.
     if t.kind == token.kinddefer
         lexer.next(lx)
         inner = proj_stmt(lx)
@@ -2563,32 +1888,9 @@ proj_stmt: str = (lx: lexer)
     if t.kind == token.kindname
         t2 = peek2(lx)
         if t2.kind == token.kindcolon
-            # `n: i64 = 5` — a binding carrying its shape. `:` is IS, `=` is
-            # HOLDS, and the statement level has to read both.
-            #
-            # Speculative, because `obj:m(1, 2)` starts identically: NAME then
-            # `:`. Only the `=` after the type tells them apart, so commit to
-            # the binding reading only once it appears and otherwise rewind to
-            # the expression path. Committing early turned every method-call
-            # statement into a broken binding.
             bst = lexer.save_state(lx)
             _n = lexer.next(lx)
             _c = lexer.next(lx)
-            # `span: { start: u32, ... }`. `:` is IS, so a brace on the right
-            # is a DESCRIPTOR declaration, not a typed binding — this is the
-            # primary data-declaration form and the parser had no production
-            # for it at all.
-            #
-            # It USED TO ACCEPT A STAGED `@{ ... }` in the same slot, peeking
-            # for `kindat` and swallowing it before the brace test, so both
-            # spellings projected the identical `(descriptor ...)`.
-            # `law.injection.only` rules the sigil EXCLUSIVELY world-deriving
-            # and fd85e7b8 made the Zig parser refuse the descriptor reading —
-            # which left the two frontiers disagreeing about the law, with this
-            # one silently accepting what the other names as a world injection.
-            # The sigil is not consumed here any more; `@` in this slot falls
-            # to `proj_type` and the statement fails, which is the answer the
-            # other frontier already gives.
             dt = lexer.peek(lx)
             if dt.kind == token.kindlbrace
                 _lb = lexer.next(lx)
@@ -2598,16 +1900,6 @@ proj_stmt: str = (lx: lexer)
                 _a = lexer.next(lx)
                 return "(bind " .. t.text .. " " .. ty .. " " .. proj_expr(lx) .. ")"
             lexer.restore_state(lx, bst)
-            # tail_pack, not a bare proj_expr. This is the rewind path, taken
-            # when NAME `:` turned out to be a receiver face rather than a
-            # binding shape, and it was the ONE arm of the NAME dispatch that
-            # did not offer the comma continuation the other three do. So
-            # `b:sub(1, n), nil` — a demand-returned pack whose first element
-            # is a face — parsed `b:sub(1, n)`, returned with the comma still
-            # unread, and the block loop rejected the statement. `b, nil` and
-            # `b:sub(1, n), nil` were accepted the whole time, which is
-            # why this read as a face defect rather than a missing production
-            # (gap[029]).
             return tail_pack(lx, proj_expr(lx))
         if t2.kind == token.kindlparen
             if statement_header_signal_lx(lx, t, false)
@@ -2620,7 +1912,6 @@ proj_stmt: str = (lx: lexer)
         return tail_pack(lx, proj_expr(lx))
     tail_pack(lx, proj_expr(lx))
 
-# Whole-program projection: '(program <stmt>...)'.
 proj_program_lx: str = (lx: lexer)
     acc = ""
     while true
@@ -2638,7 +1929,6 @@ proj_program_lx: str = (lx: lexer)
             return "(program " .. acc .. ")"
         acc = join(acc, s)
 
-# Public entries: s-expression projection and a clean/reject differential.
 proj_program: str = (src: str, file: str, family: i64)
     lx: lexer = lexer.new(src, file, family)
     proj_program_lx(lx)

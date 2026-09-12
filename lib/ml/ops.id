@@ -1,6 +1,4 @@
-# ml.ops — High-level ML ops; hot paths delegate to ml.* intrinsics
 
-# Native kernels (zero-arg checksum benchmarks / fused paths)
 gemm: f64 = ()
   return ml.matmul_256()
 
@@ -28,7 +26,6 @@ inner: f64 = ()
 corr: f64 = ()
   return ml.conv1d()
 
-# User-facing tensor ops (stdlib path; compiler may fuse later)
 @hot
 matmul: any = (a, b)
   return ml.tensor.matmul(a, b)

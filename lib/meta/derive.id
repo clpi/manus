@@ -1,8 +1,3 @@
-# meta.derive — derivable concept descriptors for the Duo standard library
-# These descriptors are ordinary Lua-shaped meta tables, not `concept`
-# declarations. They are suitable for runtime reflection and
-# meta.satisfies_concept checks today, while compile-time @implements support
-# still uses parser-level concept declarations.
 
 Clone = meta.make_concept("Clone", {
   methods = { "clone" }
@@ -147,4 +142,3 @@ Deserialize = meta.make_concept("Deserialize", {
 DeepClone = meta.make_concept("DeepClone", {
   methods = { "deep_clone" }
 })
-# Derive module table

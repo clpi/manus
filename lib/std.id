@@ -1,7 +1,2 @@
-# Compiler vocabulary layout entry (historical filename: id).
-#
-# NO std namespace. NO std table. NO std.* spellings in Idol source.
-# Vocabulary homes reach through layout/world projection only.
-# See GAP-157 and docs/spec/world.md.
 
 0

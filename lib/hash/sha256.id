@@ -1,4 +1,3 @@
-# hash.sha256 — SHA-256 hash (re-exports from crypto.sha)
 
 crypto_sha = sha
 

@@ -1,7 +1,4 @@
-# io_util — I/O utilities (mirrors Go's io/ioutil)
-# Provides convenience functions for reading all data from files/streams.
 
-# all: read all data from a file handle until EOF.
 all: str = (fh: any)
     if fh == nil return ""
     out = {}
@@ -11,7 +8,6 @@ all: str = (fh: any)
         out[out:len() + 1] = chunk
     out:concat()
 
-# read: read the entire contents of a file path.
 read: str = (path: str)
     if path == nil return ""
     f = io.open(path, "r")
@@ -20,7 +16,6 @@ read: str = (path: str)
     f:close()
     return data, nil
 
-# write: write data to a file path (truncating if it exists).
 write: any = (path: str, data: str)
     if path == nil return false, "nil path"
     if data == nil data = ""
@@ -30,7 +25,6 @@ write: any = (path: str, data: str)
     f:close()
     return true, nil
 
-# append: append data to a file path (creating if it doesn't exist).
 append: any = (path: str, data: str)
     if path == nil return false, "nil path"
     if data == nil data = ""
@@ -40,7 +34,6 @@ append: any = (path: str, data: str)
     f:close()
     return true, nil
 
-# list: list directory entries.
 list: any = (dir: str)
     if dir == nil return {}
     f = io.popen("ls -1 " .. dir .. " 2>/dev/null", "r")
@@ -51,7 +44,6 @@ list: any = (dir: str)
     f:close()
     out
 
-# temp: create a temporary file and return its handle and path.
 temp: any = ()
     rng = rand
     hex = ""
@@ -64,18 +56,15 @@ temp: any = ()
     f = io.open(path, "w+")
     return {fh = f, path = path}
 
-# scratch: temp directory. IMPLEMENTATION-BLOCKED until process world admits make.
 scratch: str = ()
     ""
 
-# discard: a writer that discards all data (returns count written).
 discard: any = ()
     return {n = 0, write: any = (self: any, s: str)
         self.n = self.n + s:len()
         self
     }
 
-# wrap: a reader with a no-op close method.
 wrap: any = (fh: any)
     fh.close = (self: any) nil
     fh

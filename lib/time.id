@@ -1,4 +1,3 @@
-# time — time utilities
 
 @cinclude("sys/time.h")
 
@@ -19,17 +18,9 @@ sleep = (seconds: any)
     return
   sec = seconds:floor()
   ns = (seconds - sec) * 1000000000:floor()
-  # `sec`/`ns` are C locals in the emitted function; reference them directly.
-  # @c.emit takes a compile-time constant string, so runtime `..` interpolation
-  # would be spliced in literally rather than evaluated.
   @comp.c.emit("({ struct timespec ts; ts.tv_sec = (time_t)sec; ts.tv_nsec = (long)ns; nanosleep(&ts, NULL); })")
   
 
-# The `return` is load-bearing. Without it the emitted expression was dropped
-# and this returned 0 for every call # so `monotonic()` measured a zero delta
-# across a 250 ms sleep, and any Duo benchmark harness built on it would have
-# reported every run as instantaneous. Every other @c.emit-bodied function in
-# the stdlib (see script.fs_exists) already writes the explicit return.
 now_ns: i64 = ()
   return @comp.c.emit("({ struct timeval tv; gettimeofday(&tv, NULL); (int64_t)(tv.tv_sec * 1000000000LL + tv.tv_usec * 1000LL); })")
 

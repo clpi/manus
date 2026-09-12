@@ -1,11 +1,5 @@
-# net.ws — WebSocket client and server (RFC 6455)
-# Used by ward for real-time communication and the WASM runtime's debug protocol.
 
-# ═══════════════════════════════════════════════════════════════
-# WebSocket frame encoding/decoding
-# ═══════════════════════════════════════════════════════════════
 
-# Opcodes
 OP_CONTINUATION = 0
 OP_TEXT = 1
 OP_BINARY = 2
@@ -13,16 +7,12 @@ OP_CLOSE = 8
 OP_PING = 9
 OP_PONG = 10
 
-# Frame types
 FRAME_TEXT = 1
 FRAME_BINARY = 2
 FRAME_CLOSE = 8
 FRAME_PING = 9
 FRAME_PONG = 10
 
-# ═══════════════════════════════════════════════════════════════
-# Base64 utilities (must be defined before use)
-# ═══════════════════════════════════════════════════════════════
 
 base64_encode: str = (data: any)
   chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -52,9 +42,7 @@ i = i + 3
 result
 
 base64_sha1: str = (data: str)
-  # WebSocket handshake requires base64(SHA-1(data + magic))
   sha1_hex = std.hash.sha1.sha1(data)
-  # Convert hex string to bytes
   sha1_bytes = {}
   i = 1
   while i <= sha1_hex:len()
@@ -71,16 +59,11 @@ base64_encode_string: str = (s: str)
     i = i + 1
   base64_encode(bytes)
 
-# ═══════════════════════════════════════════════════════════════
-# Frame encoding
-# ═══════════════════════════════════════════════════════════════
 
 ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
   bytes = {}
-  # First byte: FIN bit + opcode
   bytes[1] = 128 | opcode
 
-  # Payload length
   len = payload:len()
   if len < 126
     bytes[2] = len
@@ -101,7 +84,6 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
       bytes[3 + i] = len >> (56 - i * 8) & 255
       i = i + 1
 
-  # Masking key (if client->server) using CSPRNG
   mask_key = nil
   if mask
     key_data = std.crypto.rand.bytes(4)
@@ -112,7 +94,6 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
       bytes[bytes:len() + 1] = mask_key[i]
       i = i + 1
 
-  # Payload
   i = 1
   while i <= payload:len()
     if mask
@@ -123,9 +104,6 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
 
 bytes
 
-# ═══════════════════════════════════════════════════════════════
-# Frame decoding
-# ═══════════════════════════════════════════════════════════════
 
 ws_decode_frame: any = (data: any, pos: i64)
   if pos > data:len()
@@ -141,7 +119,6 @@ payload_len = byte2 & 127
 
 offset = pos + 2
 
-# Extended payload length
 if payload_len == 126
   payload_len = data[offset] << 8 | data[offset + 1]
   offset = offset + 2
@@ -153,13 +130,11 @@ else(payload_len == 127)
     i = i + 1
   offset = offset + 8
 
-# Masking key
 mask_key = nil
 if masked
   mask_key = { data[offset], data[offset + 1], data[offset + 2], data[offset + 3] }
   offset = offset + 4
 
-# Payload
 payload = {}
 i = 0
 while i < payload_len
@@ -177,12 +152,8 @@ while i < payload_len
   next = offset + payload_len
 }
 
-# ═══════════════════════════════════════════════════════════════
-# WebSocket handshake (client side)
-# ═══════════════════════════════════════════════════════════════
 
 ws_client_handshake: str = (host: str, port: i64, path: str)
-  # Generate random key (16 bytes base64 encoded) using CSPRNG
   key_bytes = {}
   key_data = std.crypto.rand.bytes(16)
   i = 1
@@ -193,25 +164,17 @@ ws_client_handshake: str = (host: str, port: i64, path: str)
 
 "GET " .. path .. " HTTP/1.1\r\n" .. "Host: " .. host .. ":" .. port:to(str) .. "\r\n" .. "Upgrade: websocket\r\n" .. "Connection: Upgrade\r\n" .. "Sec-WebSocket-Key: " .. key .. "\r\n" .. "Sec-WebSocket-Version: 13\r\n" .. "Origin: http://" .. host .. ":" .. port:to(str) .. "\r\n" .. "\r\n"
 
-# ═══════════════════════════════════════════════════════════════
-# WebSocket handshake (server side)
-# ═══════════════════════════════════════════════════════════════
 
 ws_server_handshake: str = (request: str)
-  # Extract Sec-WebSocket-Key
   key = string("match")(request, "Sec%-WebSocket%-Key: ([%w%+/=]+)")
   if key == nil
     return "HTTP/1.1 400 Bad Request\r\n\r\n"
 
-  # Compute accept hash
   magic = "258EAFA5-E914-47DA-95CA-5AB9FC1B5B09"
   accept = base64_sha1(key .. magic)
 
 "HTTP/1.1 101 Switching Protocols\r\n" .. "Upgrade: websocket\r\n" .. "Connection: Upgrade\r\n" .. "Sec-WebSocket-Accept: " .. accept .. "\r\n" .. "\r\n"
 
-# ═══════════════════════════════════════════════════════════════
-# WebSocket message helpers
-# ═══════════════════════════════════════════════════════════════
 
 ws_text_frame: any = (text: str)
   bytes = {}
@@ -245,12 +208,8 @@ ws_pong_frame: any = (data: any)
     data = {}
   ws_encode_frame(OP_PONG, data, false)
 
-# ═══════════════════════════════════════════════════════════════
-# WebSocket connection state machine
-# ═══════════════════════════════════════════════════════════════
 
 ws_connection_new: any = (role: str)
-  # role: "client" or "server"
   {
     role = role,
     state = "connecting",
@@ -265,18 +224,15 @@ ws_connection_send: any = (conn: any, opcode: i64, payload: any)
   ws_encode_frame(opcode, payload, mask)
 
 ws_connection_receive: any = (conn: any, data: any)
-  # Append to buffer
   for b in data
     conn.buffer[conn.buffer:len() + 1] = b
 
-  # Try to decode
   if conn.buffer:len() < 2
     return nil
   frame = ws_decode_frame(conn.buffer, 1)
   if frame == nil
     return nil
 
-  # Remove consumed bytes
   new_buf = {}
   i = frame.next
   while i <= conn.buffer:len()
@@ -284,7 +240,6 @@ ws_connection_receive: any = (conn: any, data: any)
     i = i + 1
   conn.buffer = new_buf
 
-  # Handle control frames
   if frame.opcode == OP_PING
     conn.state = "connected"
     return { type = "ping", payload = frame.payload }
@@ -296,7 +251,6 @@ ws_connection_receive: any = (conn: any, data: any)
       conn.close_code = frame.payload(1) << 8 | frame.payload(2)
     return { type = "close", code = conn.close_code }
   else(frame.opcode == OP_TEXT)
-    # Convert payload to string
     parts = {}
     i = 1
     while i <= frame.payload:len()
@@ -308,9 +262,6 @@ ws_connection_receive: any = (conn: any, data: any)
 
 nil
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
 M = {}
 M.encode_frame = ws_encode_frame
@@ -325,20 +276,6 @@ M.pong_frame = ws_pong_frame
 M.connection_new = ws_connection_new
 M.connection_send = ws_connection_send
 M.connection_receive = ws_connection_receive
-# The opcode literals are written directly here rather than referencing the
-# file-scope constants above.
-#
-# Referencing them emitted bare, UNDECLARED identifiers in the generated C
-# ("use of undeclared identifier 'OP_CONTINUATION'") when this module is
-# EMBEDDED. The same constants resolve fine in a standalone program, so the
-# gap is in the embed path: a file-scope constant referenced from inside a
-# nested table of a module's export table is not resolved.
-#
-# Reduced to a two-file repro, and note the correction — my first reading was
-# that only the 0x00 entry failed and that the folder treated a zero-valued
-# constant as absent. That is WRONG: a module with `ZERO = 0x00` and
-# `ONE = 0x01` referenced from `M.T = { z = ZERO, o = ONE }` fails on BOTH.
-# The value is irrelevant; the nesting and the embed path are what matter.
 M.OP =
   CONTINUATION = 0
   TEXT = 1

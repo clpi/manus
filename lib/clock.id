@@ -1,5 +1,3 @@
-# clock home — epoch and formatted observation at clock world boundary.
-# os.time / os.date are foreign ingress (origin/provenance) until clock world executes.
 
 now: i64 = ()
   os.time()

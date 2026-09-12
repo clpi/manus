@@ -1,4 +1,3 @@
-# package — package utilities
 
 loadlib: any = (libname: str, funcname: str)
   package.loadlib(libname, funcname)

@@ -1,27 +1,17 @@
-# graph — Graph data structure and algorithms
-# Adjacency-list representation with BFS, DFS, topological sort,
-# shortest path, cycle detection, and strongly connected components.
-# Critical for: ML computation graphs, build systems, dependency
-# resolution, network routing, and workflow orchestration.
 
-# DFS visit colours. File scope: dfs_topo_visit reads them but does not
-# declare them, and a sibling function's locals are not in scope there.
 white = 0
 gray = 1
 black = 2
 
-# new: create an empty directed graph.
 new: any = ()
   { adj = {}, nodes = {}, in_degree = {} }
 
-# add_node: add a node with optional value.
 add_node = (g: any, id: any, val: any)
   if g.adj(id) == nil
     g.adj[id] = {}
     g.in_degree[id] = 0
   g.nodes[id] = val
 
-# add_edge: add a directed edge from -> to with optional weight.
 add_edge = (g: any, from: any, to: any, weight: any)
   if g.adj(from) == nil
     add_node(g, from, nil)
@@ -32,7 +22,6 @@ add_edge = (g: any, from: any, to: any, weight: any)
     weight = weight or 1
   g.in_degree[to] = (g.in_degree(to) or 0) + 1
 
-# remove_node: remove a node and all its edges.
 remove_node = (g: any, id: any)
   if g.adj(id) == nil
     return
@@ -48,7 +37,6 @@ remove_node = (g: any, id: any)
       i = i + 1
     g.adj[n] = new_edges
 
-# neighbors: return the list of outgoing neighbors.
 neighbors: any = (g: any, id: any)
   if g.adj(id) == nil
     return {}
@@ -59,32 +47,27 @@ neighbors: any = (g: any, id: any)
     i = i + 1
   out
 
-# nodes_: return all node IDs.
 nodes_: any = (g: any)
   out = {}
   for k, _ in g.nodes
     out[out:len() + 1] = k
   out
 
-# node_count: return the number of nodes.
 node_count: i64 = (g: any)
   n = 0
   for _ in g.nodes
     n = n + 1
   n
 
-# edge_count: return the number of edges.
 edge_count: i64 = (g: any)
   n = 0
   for _, edges in g.adj
     n = n + edges:len()
   n
 
-# has_node: check if a node exists.
 has_node: bool = (g: any, id: any)
   g.nodes(id) != nil
 
-# has_edge: check if an edge from -> to exists.
 has_edge: bool = (g: any, from: any, to: any)
   if g.adj(from) == nil
     return false
@@ -95,7 +78,6 @@ has_edge: bool = (g: any, from: any, to: any)
     i = i + 1
   false
 
-# get_weight: return the weight of edge from -> to, or nil.
 get_weight: any = (g: any, from: any, to: any)
   if g.adj(from) == nil
     return nil
@@ -106,9 +88,6 @@ get_weight: any = (g: any, from: any, to: any)
     i = i + 1
   nil
 
-# ═══════════════════════════════════════════════════════════════
-# BFS: breadth-first traversal
-# ═══════════════════════════════════════════════════════════════
 
 bfs = (g: any, start: any, visit: any)
   visited = {}
@@ -125,7 +104,6 @@ bfs = (g: any, start: any, visit: any)
         queue[queue:len() + 1] = nb
       i = i + 1
 
-# bfs_shortest_path: return the shortest path (fewest edges) from start to goal.
 bfs_shortest_path: any = (g: any, start: any, goal: any)
   if start == goal
     return { start }
@@ -157,9 +135,6 @@ bfs_shortest_path: any = (g: any, start: any, goal: any)
       i = i + 1
   nil
 
-# ═══════════════════════════════════════════════════════════════
-# DFS: depth-first traversal
-# ═══════════════════════════════════════════════════════════════
 
 dfs = (g: any, start: any, visit: any)
   visited = {}
@@ -176,7 +151,6 @@ dfs = (g: any, start: any, visit: any)
           stack[stack:len() + 1] = nb
         i = i - 1
 
-# dfs_topological: DFS-based topological sort (returns nil if cycle exists).
 dfs_topological: any = (g: any)
   color = {}
   order = {}
@@ -208,9 +182,6 @@ dfs_topo_visit: bool = (g: any, id: any, color: any, order: any)
   order[order:len() + 1] = id
   true
 
-# ═══════════════════════════════════════════════════════════════
-# Kahn's topological sort (BFS-based)
-# ═══════════════════════════════════════════════════════════════
 
 topological_sort: any = (g: any)
   in_deg = {}
@@ -240,9 +211,6 @@ topological_sort: any = (g: any)
     return nil
   order
 
-# ═══════════════════════════════════════════════════════════════
-# Cycle detection
-# ═══════════════════════════════════════════════════════════════
 
 has_cycle: bool = (g: any)
   color = {}
@@ -268,9 +236,6 @@ cycle_dfs: bool = (g: any, id: any, color: any)
   color[id] = black
   false
 
-# ═══════════════════════════════════════════════════════════════
-# Dijkstra: shortest weighted path
-# ═══════════════════════════════════════════════════════════════
 
 dijkstra: any = (g: any, start: any)
   dist = {}
@@ -303,7 +268,6 @@ dijkstra: any = (g: any, start: any)
         i = i + 1
   { dist = dist, prev = prev }
 
-# dijkstra_path: reconstruct path from dijkstra result.
 dijkstra_path: any = (result: any, goal: any)
   if result.dist(goal) >= 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
     return nil
@@ -319,9 +283,6 @@ dijkstra_path: any = (result: any, goal: any)
     i = i - 1
   out
 
-# ═══════════════════════════════════════════════════════════════
-# Connected components (undirected)
-# ═══════════════════════════════════════════════════════════════
 
 connected_components: any = (g: any)
   visited = {}
@@ -346,15 +307,12 @@ connected_components: any = (g: any)
       components[components:len() + 1] = comp
   components
 
-# indegree: return in-degree of a node.
 indegree: i64 = (g: any, id: any)
   g.in_degree(id) or 0
 
-# outdegree: return out-degree of a node.
 outdegree: i64 = (g: any, id: any)
   g.adj(id) or {}:len()
 
-# transpose: return the transpose (reverse all edges).
 transpose: any = (g: any)
   g2 = new()
   for n, v in g.nodes
@@ -367,7 +325,6 @@ transpose: any = (g: any)
       i = i + 1
   g2
 
-# subgraph: return the induced subgraph on the given node set.
 subgraph: any = (g: any, node_ids: any)
   g2 = new()
   set = {}

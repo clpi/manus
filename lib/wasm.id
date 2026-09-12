@@ -1,12 +1,7 @@
-# wasm — WebAssembly binary format decoder/encoder
-# This module provides WASM module parsing, validation, and manipulation.
-# Used by ward (Duo's WASM runtime) and tools that generate/transform WASM.
 
-# WASM magic and version
 WASM_MAGIC = 0x0061736D
 WASM_VERSION = 0x01000000
 
-# Section IDs
 SECTION_CUSTOM = 0
 SECTION_TYPE = 1
 SECTION_IMPORT = 2
@@ -21,7 +16,6 @@ SECTION_CODE = 10
 SECTION_DATA = 11
 SECTION_DATA_COUNT = 12
 
-# Value types
 TYPE_I32 = 0x7F
 TYPE_I64 = 0x7E
 TYPE_F32 = 0x7D
@@ -30,16 +24,12 @@ TYPE_V128 = 0x7B
 TYPE_FUNC = 0x60
 TYPE_EMPTY = 0x40
 
-# External kinds
 IMPORT_FUNC = 0
 IMPORT_TABLE = 1
 IMPORT_MEMORY = 2
 IMPORT_GLOBAL = 3
 IMPORT_TAG = 4
 
-# ═══════════════════════════════════════════════════════════════
-# Binary reader
-# ═══════════════════════════════════════════════════════════════
 
 reader_new: any = (data: any)
     {data = data, pos = 1, len = data:len()}
@@ -61,18 +51,6 @@ reader_u32: any = (r: any)
         if (b & 0x80) == 0 break 
     result
 
-# Unsigned LEB128, 64-bit. Called by reader_init_expr for the F64 case and
-# defined NOWHERE — `use of undeclared identifier 'reader_u64'` took down
-# std.wasm and, with it, every std.wasm.* module (decode, instruction,
-# opcode_lookup, opcodes, ward_mvp_opcodes, wasi): seven of the thirty-eight
-# unreachable modules, one missing function.
-#
-# Mirrors reader_u32 deliberately. NOTE the pre-existing discrepancy this does
-# NOT change: both call sites are commented "read raw bits", but the WASM
-# binary format stores f32/f64 constants as FIXED-WIDTH IEEE bytes, while
-# reader_u32 (and now this) decode LEB128. Fixing that is a semantic change
-# needing a real WASM fixture to validate, so it stays a separate concern from
-# the missing definition.
 reader_u64: any = (r: any)
     result = 0
     shift = 0
@@ -94,7 +72,6 @@ reader_i32: any = (r: any)
         result |= ((b & 0x7F) << shift)
         shift += 7
         if (b & 0x80) == 0 break 
-    # Sign extend
     if shift < 32 and (b & 0x40) != 0
         result |= (~0 << shift)
     result
@@ -140,14 +117,10 @@ reader_skip = (r: any, n: i64)
 reader_remaining: i64 = (r: any)
     r.len - r.pos + 1
 
-# ═══════════════════════════════════════════════════════════════
-# Module parsing
-# ═══════════════════════════════════════════════════════════════
 
 module_decode: any = (data: any)
     r = reader_new(data)
 
-    # Read header
     magic = reader_u32(r)
     if magic != WASM_MAGIC
         return nil, "invalid WASM magic number"
@@ -170,7 +143,6 @@ module_decode: any = (data: any)
         data_count = nil,
     }
 
-    # Parse sections
     while reader_remaining(r) > 0
         section_id = reader_u8(r)
         if section_id == nil break 
@@ -182,7 +154,7 @@ module_decode: any = (data: any)
             count = reader_u32(r)
             i = 0
             while i < count
-                func_type = reader_u8(r)  # should be TYPE_FUNC (0x60)
+                func_type = reader_u8(r)
                 param_count = reader_u32(r)
                 params = {}
                 j = 0
@@ -272,13 +244,12 @@ module_decode: any = (data: any)
                     val_type = reader_u8(r)
                     locals[locals:len() + 1] = {count = n, type = val_type}
                     j += 1
-                # Read bytecode until end marker (0x0B)
                 bytecode = {}
                 while r.pos < body_start + body_size
                     opcode = reader_u8(r)
                     if opcode == nil break 
                     bytecode[bytecode:len() + 1] = opcode
-                    if opcode == 0x0B break # end marker
+                    if opcode == 0x0B break
                 mod.codes[mod.codes:len() + 1] = {
                     locals = locals,
                     bytecode = bytecode,
@@ -302,12 +273,10 @@ module_decode: any = (data: any)
         else(section_id == SECTION_DATA_COUNT)
             mod.data_count = reader_u32(r)
 
-        # Skip to end of section (if size was given)
         r.pos = section_start + section_size
 
     mod
 
-# Read limits (flags + min + max)
 reader_limits(r: any): any
     flags = reader_u8(r)
     min = reader_u32(r)
@@ -316,7 +285,6 @@ reader_limits(r: any): any
         max = reader_u32(r)
     {min = min, max = max, has_max = (flags & 1) == 1}
 
-# Read init expression (constant expression)
 reader_init_expr: any = (r: any)
     opcode = reader_u8(r)
     value = nil
@@ -325,15 +293,12 @@ reader_init_expr: any = (r: any)
     else(opcode == TYPE_I64)
         value = reader_i64(r)
     else(opcode == TYPE_F32)
-        value = reader_u32(r)  # read raw bits
+        value = reader_u32(r)
     else(opcode == TYPE_F64)
-        value = reader_u64(r)  # read raw bits
-    reader_u8(r)  # END opcode (0x0B)
+        value = reader_u64(r)
+    reader_u8(r)
     {opcode = opcode, value = value}
 
-# ═══════════════════════════════════════════════════════════════
-# Module inspection
-# ═══════════════════════════════════════════════════════════════
 
 module_func_count: i64 = (mod: any)
     mod.functions:len()
@@ -363,14 +328,10 @@ module_code_size: i64 = (mod: any)
         i += 1
     total
 
-# ═══════════════════════════════════════════════════════════════
-# Module validation
-# ═══════════════════════════════════════════════════════════════
 
 module_validate: any = (mod: any)
     errors = {}
 
-    # Check type indices
     i = 1
     while i <= mod.functions:len()
         idx = mod.functions[i].type_idx
@@ -378,7 +339,6 @@ module_validate: any = (mod: any)
             errors[errors:len() + 1] = "function " .. i:to(str) .. " references invalid type index " .. idx:to(str)
         i += 1
 
-    # Check export names are unique
     seen = {}
     i = 1
     while i <= mod.exports:len()
@@ -388,7 +348,6 @@ module_validate: any = (mod: any)
         seen[name] = true
         i += 1
 
-    # Check memory limits
     i = 1
     while i <= mod.memories:len()
         mem = mod.memories[i]
@@ -398,18 +357,13 @@ module_validate: any = (mod: any)
 
     {valid = errors:len() == 0, errors = errors}
 
-# ═══════════════════════════════════════════════════════════════
-# Module serialization (encode to binary)
-# ═══════════════════════════════════════════════════════════════
 
 module_encode: any = (mod: any)
     writer = {}
 
-    # Header
     writer_bytes(writer, std.bit.leb128_encode_u(WASM_MAGIC))
     writer_bytes(writer, std.bit.leb128_encode_u(WASM_VERSION))
 
-    # Type section
     if mod.types:len() > 0
         section = {}
         writer_bytes(section, std.bit.leb128_encode_u(mod.types:len()))
@@ -440,9 +394,6 @@ write_section = (writer: any, id: i64, content: any)
     writer_bytes(writer, std.bit.leb128_encode_u(content:len()))
     writer_bytes(writer, content)
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
 M = {}
 M.decode = module_decode
@@ -456,12 +407,6 @@ M.type_count = module_type_count
 M.code_size = module_code_size
 M.MAGIC = WASM_MAGIC
 M.VERSION = WASM_VERSION
-# Literals, not references to the SECTION_* constants above. A file-scope
-# constant referenced from inside a NESTED TABLE of the export table emits a
-# bare undeclared identifier when the module is embedded — third instance of
-# this compiler gap today, after lib/net/ws.id's opcode table and
-# lib/encoding/protobuf.id's WIRE table, where it is reduced to a
-# two-file repro.
 M.SECTION = {
     CUSTOM = 0,
     TYPE = 1,

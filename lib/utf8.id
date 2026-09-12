@@ -1,4 +1,3 @@
-# utf8 — utf-8 utilities
 
 char: str = (codepoint: int)
     utf8.char(codepoint)
@@ -15,6 +14,4 @@ len: any = (s: str, i: int, j: int)
 offset: any = (s: str, n: int, i: int)
     utf8.offset(s, n, i)
 
-# The only export that was not already a top-level binding: an alias onto the
-# host's pattern constant.
 charpattern = utf8.charpattern

@@ -1,16 +1,4 @@
-# schema_gen — Schema-Driven Code Generation
-# Read JSON Schema, OpenAPI, or Protobuf definitions at compile time
-# and generate strongly-typed Duo code with validation and serialization.
-#
-# Usage at module scope:
-#   local sg = schema_gen
-#   local json = @run("cat schemas/user.json 2>/dev/null")
-#   local code = sg.from_json_schema_string(json, { name = "User" })
-#   # code contains generated C struct + validation + serialization
 
-# ═══════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════
 
 str_join: str = (parts: any, sep: str)
   result = ""
@@ -20,12 +8,7 @@ str_join: str = (parts: any, sep: str)
     result = result .. part
   result
 
-# ═══════════════════════════════════════════════════════════════
-# JSON Schema → Duo code generation
-# ═══════════════════════════════════════════════════════════════
 
-# from_json_schema_string: parse a JSON Schema string and generate code.
-# The caller should use @run at module scope to read the file, then pass the content here.
 from_json_schema_string: str = (schema_json: str, opts: any)
   if opts == nil
     opts = {}
@@ -44,11 +27,7 @@ from_json_schema_string: str = (schema_json: str, opts: any)
   code_parts[code_parts:len() + 1] = emit_json_serializers(record_name, fields)
   str_join(code_parts, "\n")
 
-# ═══════════════════════════════════════════════════════════════
-# Protobuf → Duo code generation
-# ═══════════════════════════════════════════════════════════════
 
-# from_protobuf_string: parse a .proto file string and generate Duo code.
 from_protobuf_string: str = (proto_src: str)
   if proto_src == nil or proto_src == ""
     return "/* schema_gen: empty proto source */"
@@ -68,9 +47,6 @@ from_protobuf_string: str = (proto_src: str)
     code_parts[code_parts:len() + 1] = emit_protobuf_decode(name, duo_fields)
   str_join(code_parts, "\n")
 
-# ═══════════════════════════════════════════════════════════════
-# Code emission helpers (return strings, don't call @c.emit)
-# ═══════════════════════════════════════════════════════════════
 
 emit_record_type: str = (name: str, fields: any, required: any)
   parts = {}
@@ -127,9 +103,6 @@ emit_protobuf_decode: str = (name: str, fields: any)
   parts[parts:len() + 1] = "}"
   str_join(parts, "\n")
 
-# ═══════════════════════════════════════════════════════════════
-# Helper functions
-# ═══════════════════════════════════════════════════════════════
 
 parse_json_properties: any = (json: str)
   fields = {}

@@ -1,13 +1,5 @@
-# meta — reflection, type introspection, and meta utilities
-# Derivable concept descriptors live in meta.derive, and macro helpers live
-# in meta.macros. Import those submodules directly when needed so the core
-# reflection module stays lightweight.
 
-# ─────────────────────────────────────────────────────────────
-# Reflection: runtime type introspection
-# ─────────────────────────────────────────────────────────────
 
-# Get the type kind of a value as a string
 std_meta_typeof: str = (x)
     if x == nil return "nil" 
     if type(x) != "table" return type(x) 
@@ -16,7 +8,6 @@ std_meta_typeof: str = (x)
         if has(.type)(mt) return mt.type 
     "table"
 
-# Check if a value is of a specific type kind
 is: bool = (x, kind: str)
     std_meta_typeof(x) == kind
 
@@ -46,18 +37,13 @@ is_float: bool = (x)
     if type(x) != "number" return false 
     x != x:floor()
 
-# ─────────────────────────────────────────────────────────────
-# Reflection: field and method introspection
-# ─────────────────────────────────────────────────────────────
 
-# Get all keys of a table (both array and hash parts)
 fields(t: any)
     ks = {}
     for k, _ in t
         ks[ks:len() + 1] = k
     ks
 
-# Get field names (string keys only)
 field_names(t: any)
     ks = {}
     for k, _ in t
@@ -65,7 +51,6 @@ field_names(t: any)
             ks[ks:len() + 1] = k
     ks
 
-# Get method names (function-valued fields)
 method_names(t: any)
     ms = {}
     for k, v in t
@@ -73,29 +58,21 @@ method_names(t: any)
             ms[ms:len() + 1] = k
     ms
 
-# Check if a table has a field
 has_field: bool = (t: any, name: str)
     if type(t) != "table" return false 
     t[name] != nil
 
-# Check if a table has a method (function-valued field)
 has_method: bool = (t: any, name: str)
     if type(t) != "table" return false 
     return type(t[name]) == "function"
 
-# Get the metatable type name
 type_name: str = (t: any)
     if t == nil return "nil" 
     mt = getmetatable(t)
     if mt != nil and mt.type != nil return mt.type 
     return type(t)
 
-# ─────────────────────────────────────────────────────────────
-# Reflection: callable and concept introspection
-# ─────────────────────────────────────────────────────────────
 
-# Check if a value satisfies a concept (has required fields/methods)
-# concept_def is a concept table with required_methods and required_fields
 concept_member_name: any = (member: any)
     if type(member) == "string" return member 
     if type(member) == "table" return member.name 
@@ -146,9 +123,6 @@ make_concept: any = (name: str, spec: any)
     })
     return desc
 
-# ─────────────────────────────────────────────────────────────
-# General table utilities
-# ─────────────────────────────────────────────────────────────
 
 len: i64 = (t: any)
     return t:len()
@@ -191,7 +165,6 @@ deep_clone(t: any)
             c[k] = v
     c
 
-# Compare two tables for shallow equality
 shallow_eq: bool = (a: any, b: any)
     if a == b return true 
     if type(a) != "table" or type(b) != "table" return false 
@@ -201,23 +174,16 @@ shallow_eq: bool = (a: any, b: any)
         if a[k] == nil return false 
     true
 
-# Collect garbage (if available) — triggers cycle collector in ARC mode
 collect = ()
     collectgarbage("collect")
 
-# Get memory usage stats
 memory_stats: any = ()
     return {
         total = collectgarbage("count"),
         step = collectgarbage("step"),
     }
 
-# ─────────────────────────────────────────────────────────────
-# Derive helpers: check/bind concept satisfaction
-# ─────────────────────────────────────────────────────────────
 
-# Verify that a table-type binding satisfies a concept
-# returns true if satisfied, errors with details if not
 derive_clone: any = (val: any)
     if type(val) != "table" return val 
     clone(val)
@@ -314,11 +280,7 @@ derive_iter: any = (val: any)
         return empty
     val
 
-# ─────────────────────────────────────────────────────────────
-# Functional programming: higher-order collection transforms
-# ─────────────────────────────────────────────────────────────
 
-# map: transform each element of an array
 map: any = (t: any, f: any)
     out = {}
     i = 1
@@ -327,14 +289,12 @@ map: any = (t: any, f: any)
         i += 1
     out
 
-# mapk: transform each key-value pair
 mapk: any = (t: any, f: any)
     out = {}
     for k, v in t
         out[k] = f(v, k)
     out
 
-# filter: keep elements where predicate returns true
 filter: any = (t: any, pred: any)
     out = {}
     n = 0
@@ -346,7 +306,6 @@ filter: any = (t: any, pred: any)
         i += 1
     out
 
-# filterk: keep entries where predicate(value, key) returns true
 filterk: any = (t: any, pred: any)
     out = {}
     for k, v in t
@@ -354,7 +313,6 @@ filterk: any = (t: any, pred: any)
             out[k] = v
     out
 
-# reduce: fold array left-to-right with accumulator
 reduce: any = (t: any, f: any, init: any)
     acc = init
     i = 1
@@ -363,26 +321,22 @@ reduce: any = (t: any, f: any, init: any)
         i += 1
     acc
 
-# reducek: fold table with (accumulator, value, key)
 reducek: any = (t: any, f: any, init: any)
     acc = init
     for k, v in t
         acc = f(acc, v, k)
     acc
 
-# each: call side-effecting function on each element
 each = (t: any, f: any)
     i = 1
     while i <= t:len()
         f(t[i], i)
         i += 1
 
-# eachk: call side-effecting function on each key-value pair
 eachk = (t: any, f: any)
     for k, v in t
         f(v, k)
 
-# find: return first element matching predicate, or nil
 find: any = (t: any, pred: any)
     i = 1
     while i <= t:len()
@@ -390,13 +344,11 @@ find: any = (t: any, pred: any)
         i += 1
     nil
 
-# findk: return first key whose value matches predicate
 findk: any = (t: any, pred: any)
     for k, v in t
         if pred(v, k) return k 
     nil
 
-# find_index: return 1-based index of first matching element, or 0
 find_index: i64 = (t: any, pred: any)
     i = 1
     while i <= t:len()
@@ -404,7 +356,6 @@ find_index: i64 = (t: any, pred: any)
         i += 1
     0
 
-# count: count elements matching predicate
 count: i64 = (t: any, pred: any)
     n = 0
     i = 1
@@ -413,7 +364,6 @@ count: i64 = (t: any, pred: any)
         i += 1
     n
 
-# all: true if every element matches predicate
 all: bool = (t: any, pred: any)
     i = 1
     while i <= t:len()
@@ -421,11 +371,7 @@ all: bool = (t: any, pred: any)
         i += 1
     true
 
-# ─────────────────────────────────────────────────────────────
-# Functional: collection builders
-# ─────────────────────────────────────────────────────────────
 
-# flatten: one-level flatten of array of arrays
 flatten: any = (t: any)
     out = {}
     n = 0
@@ -444,11 +390,9 @@ flatten: any = (t: any)
         i += 1
     out
 
-# flat_map: map then flatten one level
 flat_map: any = (t: any, f: any)
     flatten(map(t, f))
 
-# zip: combine N arrays into array of tuples
 zip: any = (...)
     args = {...}
     if args:len() == 0 return {} 
@@ -469,7 +413,6 @@ zip: any = (...)
         j += 1
     out
 
-# enumerate: array to array of {index, value} pairs
 enumerate: any = (t: any)
     out = {}
     i = 1
@@ -478,7 +421,6 @@ enumerate: any = (t: any)
         i += 1
     out
 
-# take: first n elements
 take: any = (t: any, n: i64)
     out = {}
     limit = n
@@ -489,7 +431,6 @@ take: any = (t: any, n: i64)
         i += 1
     out
 
-# drop: skip first n elements
 drop: any = (t: any, n: i64)
     out = {}
     start = n + 1
@@ -502,7 +443,6 @@ drop: any = (t: any, n: i64)
         j += 1
     out
 
-# reverse: return new reversed array
 reverse: any = (t: any)
     out = {}
     n = t:len()
@@ -512,7 +452,6 @@ reverse: any = (t: any)
         i += 1
     out
 
-# unique: remove duplicate elements (preserves first occurrence)
 unique: any = (t: any)
     seen = {}
     out = {}
@@ -528,7 +467,6 @@ unique: any = (t: any)
         i += 1
     out
 
-# partition: split array into {matching, rest} based on predicate
 partition: any = (t: any, pred: any)
     yes = {}
     no = {}
@@ -545,11 +483,7 @@ partition: any = (t: any, pred: any)
         i += 1
     { yes, no }
 
-# ─────────────────────────────────────────────────────────────
-# Functional: sorting
-# ─────────────────────────────────────────────────────────────
 
-# sort: return new sorted array (ascending)
 sort: any = (t: any)
     out = {}
     i = 1
@@ -567,7 +501,6 @@ sort: any = (t: any)
         i += 1
     out
 
-# sort_by: sort by key function
 sort_by: any = (t: any, key_fn: any)
     indexed = {}
     i = 1
@@ -590,15 +523,10 @@ sort_by: any = (t: any, key_fn: any)
         i += 1
     out
 
-# sort_desc: descending order
 sort_desc: any = (t: any)
     return reverse(sort(t))
 
-# ─────────────────────────────────────────────────────────────
-# Functional: grouping and aggregation
-# ─────────────────────────────────────────────────────────────
 
-# group_by: group array elements by key function
 group_by: any = (t: any, key_fn: any)
     groups = {}
     i = 1
@@ -609,7 +537,6 @@ group_by: any = (t: any, key_fn: any)
         i += 1
     groups
 
-# count_by: count elements grouped by key function
 count_by: any = (t: any, key_fn: any)
     counts = {}
     i = 1
@@ -620,7 +547,6 @@ count_by: any = (t: any, key_fn: any)
         i += 1
     counts
 
-# sum_by: sum numeric values extracted by key function
 sum_by: any = (t: any, key_fn: any)
     total = 0
     i = 1
@@ -629,7 +555,6 @@ sum_by: any = (t: any, key_fn: any)
         i += 1
     total
 
-# min_by / max_by: find element with min/max key
 min_by: any = (t: any, key_fn: any)
     if t:len() == 0 return nil 
     best = t[1]
@@ -656,11 +581,7 @@ max_by: any = (t: any, key_fn: any)
         i += 1
     best
 
-# ─────────────────────────────────────────────────────────────
-# Functional: composition and chaining
-# ─────────────────────────────────────────────────────────────
 
-# pipe: left-to-right function composition
 pipe: any = (...)
     funcs = {...}
     return function(x)
@@ -671,7 +592,6 @@ pipe: any = (...)
                         i += 1
                     return result
 
-# compose: right-to-left function composition
 compose: any = (...)
     funcs = {...}
     return function(x)
@@ -682,18 +602,6 @@ compose: any = (...)
                         i -= 1
                     return result
 
-# partial: partially apply a function with leading args.
-#
-# The obvious shape — an inner `apply = (...)` closing over `f` and the bound
-# args — does not lower: the C backend has no closure capture, so it emitted
-# `use of undeclared identifier 'f'` / `'partial_args'` and the whole module
-# failed to compile. The state therefore lives in a table and the callable is
-# a `__call` metamethod, which receives that table as its first argument and so
-# captures nothing.
-#
-# `partial_invoke` is `_`-prefixed and unexported: it is this module's
-# private surface, reachable only through the value `partial`
-# hands back.
 partial_invoke: any = (self: any, ...)
     joined = {}
     n = 0
@@ -715,14 +623,10 @@ partial: any = (f: any, ...)
     setmetatable(bound, { __call = partial_invoke })
     return bound
 
-# tap: side-effecting pass-through
 tap: any = (value: any, f: any)
     f(value)
     value
 
-# ─────────────────────────────────────────────────────────────
-# Functional: numeric aggregation
-# ─────────────────────────────────────────────────────────────
 
 sum: any = (t: any)
     total = 0
@@ -758,25 +662,19 @@ max: any = (t: any)
         i += 1
     best
 
-# ─────────────────────────────────────────────────────────────
-# Functional: key-value transforms
-# ─────────────────────────────────────────────────────────────
 
-# map_values: transform only values, keep keys
 map_values: any = (t: any, f: any)
     out = {}
     for k, v in t
         out[k] = f(v, k)
     out
 
-# map_keys: transform only keys, keep values
 map_keys: any = (t: any, f: any)
     out = {}
     for k, v in t
         out[f(v, k)] = v
     out
 
-# key_by: array to table keyed by extract function
 key_by: any = (t: any, key_fn: any)
     out = {}
     i = 1
@@ -786,22 +684,16 @@ key_by: any = (t: any, key_fn: any)
         i += 1
     out
 
-# invert: swap keys and values
 invert: any = (t: any)
     out = {}
     for k, v in t
         out[v:to(str)] = k
     out
 
-# ─────────────────────────────────────────────────────────────
-# Functional: predicate builders
-# ─────────────────────────────────────────────────────────────
 
-# eq: build equality predicate
 eq: any = (val: any)
     return (x: any): any x == val
 
-# gt / lt / gte / lte: comparison predicates
 gt: any = (val: any)
     return (x: any): any x > val
 
@@ -814,11 +706,9 @@ gte: any = (val: any)
 lte: any = (val: any)
     return (x: any): any x <= val
 
-# notf: negate a predicate
 notf: any = (pred: any)
     return (x: any): any not pred(x)
 
-# andf / orf: combine predicates
 andf: any = (...)
     preds = {...}
     return function(x)
@@ -837,27 +727,18 @@ orf: any = (...)
                         i += 1
                     return false
 
-# ─────────────────────────────────────────────────────────────
-# Functional: utility
-# ─────────────────────────────────────────────────────────────
 
-# identity: return value unchanged
 identity: any = (x: any)
     x
 
-# always / never: constant predicates
 always: bool = ()
     true
 
 never: bool = ()
     false
 
-# noop: do nothing
 noop = ()
 
-# ─────────────────────────────────────────────────────────────
-# Functional: numeric helpers
-# ─────────────────────────────────────────────────────────────
 
 clamp: any = (value: any, lo: any, hi: any)
     if value < lo return lo 
@@ -871,9 +752,7 @@ abs: any = (x: any)
     if x < 0 return -x 
     x
 
-# Module table — everything exported
 M = {}
-# Reflection
 M.typeof = std_meta_typeof
 M.is = is
 M.is_nil = is_nil
@@ -884,7 +763,6 @@ M.is_table = is_table
 M.is_func = is_func
 M.is_integer = is_integer
 M.is_float = is_float
-# Field introspection
 M.fields = fields
 M.field_names = field_names
 M.method_names = method_names
@@ -894,7 +772,6 @@ M.type_name = type_name
 M.satisfies_concept = satisfies_concept
 M.make_concept = make_concept
 M["concept"] = make_concept
-# Table utilities
 M.len = len
 M.keys = keys
 M.values = values
@@ -903,10 +780,8 @@ M.clone = clone
 M.merge = merge
 M.deep_clone = deep_clone
 M.shallow_eq = shallow_eq
-# Memory
 M.collect = collect
 M.memory_stats = memory_stats
-# Derive helpers
 M.derive_clone = derive_clone
 M.derive_eq = derive_eq
 M.derive_display = derive_display
@@ -918,7 +793,6 @@ M.derive_format = derive_format
 M.derive_len = derive_len
 M.derive_contains = derive_contains
 M.derive_iter = derive_iter
-# Functional: transforms
 M.map = map
 M.mapk = mapk
 M.map_values = map_values
@@ -936,7 +810,6 @@ M.includes = includes
 M.count = count
 M.all = all
 M.any = any
-# Functional: collection builders
 M.flatten = flatten
 M.flat_map = flat_map
 M.zip = zip
@@ -946,30 +819,24 @@ M.drop = drop
 M.reverse = reverse
 M.unique = unique
 M.partition = partition
-# Functional: sorting
 M.sort = sort
 M.sort_by = sort_by
 M.sort_desc = sort_desc
-# Functional: grouping
 M.group_by = group_by
 M.count_by = count_by
 M.sum_by = sum_by
 M.min_by = min_by
 M.max_by = max_by
-# Functional: composition
 M.pipe = pipe
 M.compose = compose
 M.partial = partial
 M.tap = tap
-# Functional: aggregation
 M.sum = sum
 M.product = product
 M.min = min
 M.max = max
-# Functional: key-value
 M.key_by = key_by
 M.invert = invert
-# Functional: predicates
 M.eq = eq
 M.gt = gt
 M.lt = lt
@@ -978,12 +845,10 @@ M.lte = lte
 M.notf = notf
 M.andf = andf
 M.orf = orf
-# Functional: utility
 M.identity = identity
 M.always = always
 M.never = never
 M.noop = noop
-# Functional: numeric
 M.clamp = clamp
 M.lerp = lerp
 M.abs = abs

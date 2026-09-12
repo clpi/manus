@@ -1,30 +1,21 @@
-# errors — error creation and wrapping (mirrors Go's errors package)
-# In Duo, errors are represented as tables with a `message` field and
-# optional `cause` chain. The `error` interface is just a callable returning
-# a string description.
 
-# new: create a new error with the given message.
 new: any = (message: any)
   return { message = message, cause = nil, kind = "error" }
 
-# newf: create a new error with formatted message.
 newf: any = (fmt: any)
   return { message = fmt:to(str), cause = nil, kind = "error" }
 
-# wrap: create a new error wrapping an existing one (adds context).
 wrap: any = (err: any, message: str)
   if err == nil
     return new(message)
   { message = message, cause = err, kind = "wrapped" }
 
-# wrapf: wrap with a formatted message.
 wrapf: any = (err: any, fmt: any)
   msg = fmt:to(str)
   if err == nil
     return new(msg)
   return { message = msg, cause = err, kind = "wrapped" }
 
-# is: report whether err (or any error in its cause chain) matches target.
 is: bool = (err: any, target: any)
   if err == nil
     return false
@@ -39,7 +30,6 @@ is: bool = (err: any, target: any)
     cur = cur.cause
   false
 
-# as: extract a specific error type from the chain (returns the error or nil).
 as: any = (err: any, kind: str)
   if err == nil
     return nil
@@ -50,13 +40,11 @@ as: any = (err: any, kind: str)
     cur = cur.cause
   nil
 
-# unwrap: return the cause of err, or nil if err has no cause.
 unwrap: any = (err: any)
   if err == nil
     return nil
   err.cause
 
-# message: get the message string of an error (or nil).
 message: any = (err: any)
   if err == nil
     return nil
@@ -64,7 +52,6 @@ message: any = (err: any)
     return err
   err.message
 
-# join: combine multiple errors into one.
 join: any = (...errs)
   parts = {}
   i = 1
@@ -80,7 +67,6 @@ join: any = (...errs)
     return nil
   { message = parts:concat("; "), cause = nil, kind = "joined" }
 
-# to_str: convert an error to a human-readable string.
 to_str: str = (err: any)
   if err == nil
     return ""

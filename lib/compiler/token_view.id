@@ -1,16 +1,6 @@
-# compiler.token_view
-# Immutable observation over a production token stream (GAP-134 / GAP-145).
-#
-# Two realizations of one observation face, the duality the host view carries
-# (`src/token_view.zig` fromPack / fromLexer): the PACK faces read a produced
-# token pack; the CURSOR face reads the stream head of the lexer the pack is
-# produced from. Consumers ask the question here; which realization answers is
-# not their fact. This is the token ABI the recognizer consumes: token identity
-# crosses as an observation, not as producer internals in every consumer.
 
 pack: { kinds: []i64, lines: []i64, cols: []i64, texts: []str, count: i64 }
 
-# Cursor identity: the kind at the stream head the lexer holds.
 kindat: i64 = (lx: lexer)
   lexer.peek(lx).kind
 

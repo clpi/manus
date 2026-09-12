@@ -1,5 +1,3 @@
-# math.cmplx — complex number support (mirrors Go's math/cmplx)
-# Complex numbers as tables {re, im}.
 
 new: any = (re: any, im: any)
   { re = re, im = im }

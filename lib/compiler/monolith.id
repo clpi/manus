@@ -1,10 +1,4 @@
-# compiler.monolith — single-file self-hosted compiler (capability probe only).
-# Cross-module references don't work, so everything is inlined.
-# NOT compiler-B architecture — do not expand toward composable self-host.
-#
-# v2: adds tokenizer, token-level parser, comparison operators.
 
-# ── Character classifiers ───────────────────────────────────────────────────
 
 is_digit: i64 = (c: i64)
     if c >= 48 and c <= 57
@@ -21,7 +15,6 @@ is_alnum: i64 = (c: i64)
         return 1
     0
 
-# ── Packed integer encoding ─────────────────────────────────────────────────
 
 BASE = 4294967296
 
@@ -39,7 +32,6 @@ val_of: i64 = (packed: i64)
 pos_of: i64 = (packed: i64)
     packed - val_of(packed) * BASE
 
-# ── Token kinds ─────────────────────────────────────────────────────────────
 
 kindeof = 0
 KIND_INT = 1
@@ -59,7 +51,6 @@ kindgeq = 14
 kindtrue = 26
 kindfalse = 27
 
-# ── Tokenizer ───────────────────────────────────────────────────────────────
 
 skip_spaces: i64 = (src: str, pos: i64)
     n = src:len()
@@ -96,7 +87,6 @@ classify_keyword: i64 = (src: str, start: i64, len: i64)
         if src:byte(start + 1) == 97 and src:byte(start + 2) == 108 and src:byte(start + 3) == 115 and src:byte(start + 4) == 101
             return 27
     2
-# Read the next token. Returns packed(kind, pos_after).
 next_tok: i64 = (src: str, pos: i64)
     i = skip_spaces(src, pos)
     n = src:len()
@@ -142,7 +132,6 @@ next_tok: i64 = (src: str, pos: i64)
         return pk(kw, name_end)
     pk(kindeof, i + 1)
 
-# ── Character-level expression parser (L1) ───────────────────────────────────
 
 parse_factor: i64 = (src: str, pos: i64)
     n = src:len()
@@ -203,9 +192,7 @@ parse_expr: i64 = (src: str, pos: i64)
             return pk(acc, i)
     pk(acc, i)
 
-# ── Token-level expression parser (L2) ──────────────────────────────────────
 
-# Parse a primary expression: INT | '(' expr ')' | TRUE | FALSE
 parse_primary: i64 = (src: str, pos: i64)
     tok = next_tok(src, pos)
     kind = val_of(tok)
@@ -227,8 +214,6 @@ parse_primary: i64 = (src: str, pos: i64)
         return pk(0, after)
     pk(0, after)
 
-# term := primary (('*' | '/') primary)*
-# Does NOT consume non-matching tokens — leaves them for parse_expr_tok.
 parse_term_tok: i64 = (src: str, pos: i64)
     left = parse_primary(src, pos)
     acc = val_of(left)
@@ -253,8 +238,6 @@ parse_term_tok: i64 = (src: str, pos: i64)
             cont = 0
     pk(acc, i)
 
-# expr := term (('+' | '-') term)*
-# Does NOT consume non-matching tokens.
 parse_expr_tok: i64 = (src: str, pos: i64)
     left = parse_term_tok(src, pos)
     acc = val_of(left)
@@ -277,9 +260,7 @@ parse_expr_tok: i64 = (src: str, pos: i64)
             cont = 0
     pk(acc, i)
 
-# ── Comparison operators ─────────────────────────────────────────────────────
 
-# cmp := expr (('==' | '!=' | '<' | '>' | '<=' | '>=') expr)?
 parse_cmp: i64 = (src: str, pos: i64)
     left = parse_expr_tok(src, pos)
     lv = val_of(left)
@@ -324,7 +305,6 @@ parse_cmp: i64 = (src: str, pos: i64)
         return pk(0, pos_of(rhs))
     pk(lv, pos_of(left))
 
-# ── Entry points ─────────────────────────────────────────────────────────────
 
 eval: i64 = (src: str)
     val_of(parse_expr(src, 1))
@@ -335,7 +315,6 @@ eval_tok: i64 = (src: str)
 eval_cmp: i64 = (src: str)
     val_of(parse_cmp(src, 1))
 
-# ── Self-tests ───────────────────────────────────────────────────────────────
 
 main: i64 = ()
     a = eval("1 + 2 * 3")

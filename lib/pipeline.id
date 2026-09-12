@@ -1,16 +1,4 @@
-# pipeline — Compile-Time Data Processing Pipeline Fusion
-# Chains of map/filter/reduce/collect are analyzed at compile time
-# and fused into a single, allocation-free C loop.
-#
-# Usage:
-#   local pipe = pipeline
-#   local fused_c = pipe.fuse_reduce("data", "double", "sum", "add", "0")
-#   # fused_c contains the generated C function as a string
-#   # Pass to @c.emit or @c.emit(@run(...)) at module scope
 
-# ═══════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════
 
 str_join: str = (parts: any, sep: str)
   result = ""
@@ -20,48 +8,25 @@ str_join: str = (parts: any, sep: str)
     result = result .. part
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Fused C code generators (return strings, don't call @c.emit)
-# ═══════════════════════════════════════════════════════════════
 
-# fuse_reduce: generate a single-loop reduce function.
-# data_name: name of the input array variable
-# elem_type: C element type (e.g. "double", "int64_t")
-# func_name: name of the generated C function
-# reduce_func: name of the reduction function (e.g. "add")
-# init: initial accumulator value (e.g. "0")
 fuse_reduce: str = (data_name: str, elem_type: str, func_name: str, reduce_func: str, init: str)
   "/* [pipeline.fused] reduce */\nstatic " .. elem_type .. " " .. func_name .. "(const " .. elem_type .. "* " .. data_name .. ", size_t len) {\n    " .. elem_type .. " acc = " .. init .. ";\n    for (size_t i = 0; i < len; ++i) {\n        acc = " .. reduce_func .. "(acc, " .. data_name .. "[i]);\n    }\n    return acc;\n}"
 
-# fuse_reduce_with_filter: generate a filtered reduce function.
 fuse_reduce_with_filter: str = (data_name: str, elem_type: str, func_name: str, reduce_func: str, pred_func: str, init: str)
   "/* [pipeline.fused] reduce + filter */\nstatic " .. elem_type .. " " .. func_name .. "(const " .. elem_type .. "* " .. data_name .. ", size_t len) {\n    " .. elem_type .. " acc = " .. init .. ";\n    for (size_t i = 0; i < len; ++i) {\n        " .. elem_type .. " elem = " .. data_name .. "[i];\n        if (!" .. pred_func .. "(elem)) continue;\n        acc = " .. reduce_func .. "(acc, elem);\n    }\n    return acc;\n}"
 
-# fuse_map_reduce: generate a map-then-reduce function.
 fuse_map_reduce: str = (data_name: str, elem_type: str, func_name: str, map_func: str, reduce_func: str, init: str)
   "/* [pipeline.fused] map + reduce */\nstatic " .. elem_type .. " " .. func_name .. "(const " .. elem_type .. "* " .. data_name .. ", size_t len) {\n    " .. elem_type .. " acc = " .. init .. ";\n    for (size_t i = 0; i < len; ++i) {\n        acc = " .. reduce_func .. "(acc, " .. map_func .. "(" .. data_name .. "[i]));\n    }\n    return acc;\n}"
 
-# fuse_collect: generate a filtered/mapped collect function.
-# Returns a struct with data and len.
 fuse_collect: str = (data_name: str, elem_type: str, func_name: str)
   "/* [pipeline.fused] collect */\ntypedef struct { " .. elem_type .. "* data; size_t len; } pipeline_result_t;\nstatic pipeline_result_t " .. func_name .. "(const " .. elem_type .. "* " .. data_name .. ", size_t src_len) {\n    " .. elem_type .. " out_buf[src_len > 0 ? src_len : 1];\n    size_t out_len = 0;\n    for (size_t i = 0; i < src_len; ++i) {\n        out_buf[out_len++] = " .. data_name .. "[i];\n    }\n    pipeline_result_t r = {out_buf, out_len};\n    return r;\n}"
 
-# fuse_map_collect: generate a map-then-collect function.
 fuse_map_collect: str = (data_name: str, elem_type: str, func_name: str, map_func: str)
   "/* [pipeline.fused] map + collect */\ntypedef struct { " .. elem_type .. "* data; size_t len; } pipeline_result_t;\nstatic pipeline_result_t " .. func_name .. "(const " .. elem_type .. "* " .. data_name .. ", size_t src_len) {\n    " .. elem_type .. " out_buf[src_len > 0 ? src_len : 1];\n    size_t out_len = 0;\n    for (size_t i = 0; i < src_len; ++i) {\n        out_buf[out_len++] = " .. map_func .. "(" .. data_name .. "[i]);\n    }\n    pipeline_result_t r = {out_buf, out_len};\n    return r;\n}"
 
-# fuse_filter_collect: generate a filter-then-collect function.
 fuse_filter_collect: str = (data_name: str, elem_type: str, func_name: str, pred_func: str)
   "/* [pipeline.fused] filter + collect */\ntypedef struct { " .. elem_type .. "* data; size_t len; } pipeline_result_t;\nstatic pipeline_result_t " .. func_name .. "(const " .. elem_type .. "* " .. data_name .. ", size_t src_len) {\n    " .. elem_type .. " out_buf[src_len > 0 ? src_len : 1];\n    size_t out_len = 0;\n    for (size_t i = 0; i < src_len; ++i) {\n        " .. elem_type .. " elem = " .. data_name .. "[i];\n        if (!" .. pred_func .. "(elem)) continue;\n        out_buf[out_len++] = elem;\n    }\n    pipeline_result_t r = {out_buf, out_len};\n    return r;\n}"
 
-# product_reduce: generate a cartesian family of typed fused reducers.
-# Axes use the same compact syntax as @pipeline table descriptors:
-#   types    = "i64:int64_t:0 | f64:double:0.0"
-#   takes    = "all: | first2:2"
-#   skips    = "from0: | from2:2"
-#   maps     = "id: | dbl:double_i64"
-#   filters  = "all: | pos:keep_pos_i64"
-#   reducers = "sum: | max:max_i64"
 product_reduce: str = (func_name: str, types: str, takes: str, skips: str, maps: str, filters: str, reducers: str)
   "@pipeline.product.reduce(" .. func_name .. ")"
 

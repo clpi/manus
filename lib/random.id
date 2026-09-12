@@ -1,36 +1,27 @@
-# random — Random number generation and utilities
 
-# seed: seed the random number generator.
 seed = (s: int)
   math.randomseed(s)
 
-# float: return a random float in [0, 1).
 float: float = ()
   math.random()
 
-# int: return a random integer in [min, max] (inclusive).
-# If only one argument, returns random int in [1, max].
 int: int = (min: int, max: int)
   if max == nil
     min:random()
   else
     min:random(max)
 
-# rand_bool: return a random boolean (50/50).
 rand_bool: bool = ()
   math.random() < 0.5
 
-# bool_weighted: return a random boolean with the given probability of true.
 bool_weighted: bool = (p: float)
   math.random() < p
 
-# choice: return a random element from a list.
 choice: any = (list: any)
   if list == nil or list:len() == 0
     return nil
   list(1:random(list:len()))
 
-# sample: return n unique random elements from a list (without replacement).
 sample: any = (list: any, n: i64)
   out = {}
   if list == nil or n <= 0
@@ -53,12 +44,9 @@ sample: any = (list: any, n: i64)
     picked = picked + 1
   out
 
-# pick_n: alias for sample (more idiomatic name).
 pick_n: any = (list: any, n: i64)
   sample(list, n)
 
-# weighted_choice: choose from items with corresponding weights.
-# items: list of values, weights: parallel list of numeric weights.
 weighted_choice: any = (items: any, weights: any)
   if items == nil or weights == nil
     return nil
@@ -82,7 +70,6 @@ weighted_choice: any = (items: any, weights: any)
     i = i + 1
   items[len]
 
-# range: return a list of integers from start to stop (exclusive), with optional step.
 range: any = (start: i64, stop: i64, step: i64)
   out = {}
   if step == nil
@@ -101,7 +88,6 @@ range: any = (start: i64, stop: i64, step: i64)
       i = i + step
   out
 
-# gauss: return a random number from a normal distribution (Box-Muller).
 gauss: float = (mean: float, stddev: float)
   if mean == nil
     mean = 0
@@ -114,7 +100,6 @@ gauss: float = (mean: float, stddev: float)
   z = -2 * u1:log():sqrt() * 2 * math.pi * u2:cos()
   mean + stddev * z
 
-# shuffle: shuffle a list in-place (Fisher-Yates).
 shuffle = (list: any)
   if list == nil
     return
@@ -126,13 +111,11 @@ shuffle = (list: any)
     list[k] = tmp
     n = n - 1
 
-# coin: flip a coin, return "heads" or "tails".
 coin: str = ()
   if math.random() < 0.5
     return "heads"
   "tails"
 
-# uuid_v4ish: generate a random UUID-like string (not cryptographically secure).
 uuid_v4ish: str = ()
   hex_chars = "0123456789abcdef"
   parts = {}
@@ -153,7 +136,6 @@ uuid_v4ish: str = ()
       else
         parts[i] = "b"
     else
-      # Use single random call to get one hex character
       idx = 1:random(16)
       parts[i] = hex_chars:sub(idx, idx)
     i = i + 1

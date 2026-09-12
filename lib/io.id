@@ -1,5 +1,3 @@
-# io home — subject-first handle relations only.
-# No @c.emit. No lua. Namespace io.method() is forbidden — use io:read / handle:read.
 
 read: any = (file: any, arg: any)
   file:read(arg)

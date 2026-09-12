@@ -1,18 +1,10 @@
-# net.rpc — Remote Procedure Call (RPC) framework
-# For ward's distributed communication and service mesh.
 
-# ═══════════════════════════════════════════════════════════════
-# RPC Message Types
-# ═══════════════════════════════════════════════════════════════
 
 REQUEST = 1
 RESPONSE = 2
 ERROR = 3
 NOTIFICATION = 4
 
-# ═══════════════════════════════════════════════════════════════
-# RPC Message
-# ═══════════════════════════════════════════════════════════════
 
 request_new: any = (id: i64, method: str, params: any)
   {
@@ -47,9 +39,6 @@ notification_new: any = (method: str, params: any)
     params = params or {}
   }
 
-# ═══════════════════════════════════════════════════════════════
-# RPC Server
-# ═══════════════════════════════════════════════════════════════
 
 server_new: any = ()
   {
@@ -65,16 +54,13 @@ server_add_middleware = (server: any, middleware: any)
   server.middleware[server.middleware:len() + 1] = middleware
 
 server_handle: any = (server: any, request: any)
-  # Validate JSON-RPC version
   if request.jsonrpc != "2.0"
     return error_new(request.id, -32600, "Invalid Request", "Invalid JSON-RPC version")
 
-  # Check if method exists
   handler = server.handlers(request.method)
   if handler == nil
     return error_new(request.id, -32601, "Method not found", request.method)
 
-  # Run middleware
   context = {
     request = request,
     server = server
@@ -84,7 +70,6 @@ server_handle: any = (server: any, request: any)
     if result
       return result
 
-  # Call handler
   ok, result = pcall(handler, request.params, context)
   if not ok
     return error_new(request.id, -32603, "Internal error", result:to(str))
@@ -96,9 +81,6 @@ server_next_id: i64 = (server: any)
   server.next_id = server.next_id + 1
   id
 
-# ═══════════════════════════════════════════════════════════════
-# RPC Client
-# ═══════════════════════════════════════════════════════════════
 
 client_new: any = (transport: any)
   {
@@ -113,12 +95,10 @@ client_call: any = (client: any, method: str, params: any)
 
   request = request_new(id, method, params)
 
-  # Send request
   result = client.transport.send(request)
   if result.error
     return result
 
-  # Store pending request
   client.pending[id] = {
     method = method,
     start_time = os.clock()
@@ -151,9 +131,6 @@ client_pending_count: i64 = (client: any)
     count = count + 1
   count
 
-# ═══════════════════════════════════════════════════════════════
-# Transport Layer (pluggable)
-# ═══════════════════════════════════════════════════════════════
 
 transport_http_new: any = (url: str)
   {
@@ -209,9 +186,6 @@ transport_tcp_send: any = (transport: any, message: any)
   std.net.send(transport.socket, payload)
   { ok = true }
 
-# ═══════════════════════════════════════════════════════════════
-# Error Codes
-# ═══════════════════════════════════════════════════════════════
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -231,9 +205,6 @@ error_code_name: str = (code: i64)
   }
   codes[code] or "Unknown error"
 
-# ═══════════════════════════════════════════════════════════════
-# Service Discovery
-# ═══════════════════════════════════════════════════════════════
 
 registry_new: any = ()
   {
@@ -263,13 +234,3 @@ registry_heartbeat = (registry: any, name: str)
   service = registry.services(name)
   if service
     service.last_heartbeat = os.clock()
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Constants
-# Messages
-# Server
-# Client
-# Transport
-# Error Codes
-# Registry

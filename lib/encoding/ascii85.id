@@ -1,4 +1,3 @@
-# encoding.ascii85 — Ascii85 (Adobe-style) encoding (mirrors Go's encoding/ascii85)
 
 alphabet = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
@@ -117,8 +116,5 @@ decode: str = (src: str)
     result = result .. b:char()
   result
 
-# `/` yields f64 even on two i64 operands, so this was a return-type mismatch
-# against the declared `: i64` and took the module down. The division is the
-# ceiling of n/4 in 4-byte groups; the truncation is intended, so it is stated.
 max_encoded_len: i64 = (n: i64)
   to(i64)((n + 3) / 4) * 5 + 4

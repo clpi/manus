@@ -1,21 +1,8 @@
-# str — native string primitives for compiler-grade Duo.
-#
-# `string.sub` cannot lower on the direct backend: it allocates a
-# NUL-terminated string, and native_backend emits only read-only __TEXT
-# sections (SH-03 / SH-11). Rather than teach the ARM64 backend a writable
-# __DATA arena, the allocation lives here as a `@comp.c.export` primitive: the
-# direct backend lowers a call to it as a relocation, and the compiler builds
-# and links this module automatically. No backend memory-model change.
 
-# 1-based inclusive slice with Lua's exact index rules, including negative
-# indices counting back from the end (`sub(s, 2, -1)` drops the first byte).
-# The lexer relies on that form, so a positive-only slice would silently
-# truncate rather than fail.
 @comp.c.export("duo_str_sub")
 sub: str = (s: str, i: i64, j: i64)
   return @comp.c.emit("({ size_t _n = strlen(s); long _i = (long)i, _j = (long)j; if (_i < 0) _i = (long)_n + _i + 1; if (_j < 0) _j = (long)_n + _j + 1; if (_i < 1) _i = 1; if (_j > (long)_n) _j = (long)_n; long _len = _j - _i + 1; if (_len < 0) _len = 0; char* _o = (char*)malloc((size_t)_len + 1); memcpy(_o, s + (_i - 1), (size_t)_len); _o[_len] = 0; (const char*)_o; })")
 
-# Byte length, so a caller need not reach for the boxed runtime.
 @comp.c.export("duo_str_len")
 len: i64 = (s: str)
   s:len()

@@ -1,12 +1,7 @@
-# flag — command-line flag parsing (mirrors Go's flag package)
-# Provides a simple flag parser supporting #name=value, #name value, and
-# boolean flags. Sub-arguments after # are treated as positional args.
 
-# new_flag_set: create a new flag set with the given name.
 new_flag_set: any = (name: str)
   { name = name, flags = {}, args = {}, parsed = false }
 
-# bool_flag: register a boolean flag.
 bool_flag: any = (fs: any, name: str, default_val: bool, usage: str)
   f =
     name = name
@@ -17,7 +12,6 @@ bool_flag: any = (fs: any, name: str, default_val: bool, usage: str)
   fs.flags[name] = f
   f
 
-# string_flag: register a string flag.
 string_flag: any = (fs: any, name: str, default_val: str, usage: str)
   f =
     name = name
@@ -29,7 +23,6 @@ string_flag: any = (fs: any, name: str, default_val: str, usage: str)
   fs.flags[name] = f
   f
 
-# int_flag: register an integer flag.
 int_flag: any = (fs: any, name: str, default_val: i64, usage: str)
   f =
     name = name
@@ -41,7 +34,6 @@ int_flag: any = (fs: any, name: str, default_val: i64, usage: str)
   fs.flags[name] = f
   f
 
-# float_flag: register a float flag.
 float_flag: any = (fs: any, name: str, default_val: f64, usage: str)
   f =
     name = name
@@ -53,7 +45,6 @@ float_flag: any = (fs: any, name: str, default_val: f64, usage: str)
   fs.flags[name] = f
   f
 
-# parse: parse the given argument array (1-based).
 parse: any = (fs: any, argv: any)
   if argv == nil
     argv = {}
@@ -64,13 +55,11 @@ parse: any = (fs: any, argv: any)
   while i <= n
     arg = argv[i]
     if arg == "--"
-      # all remaining are positional
       i = i + 1
       while i <= n
         fs.args[fs.args:len() + 1] = argv[i]
         i = i + 1
       break
-    # long flag: #name or #name=value
     if arg:sub(1, 2) == "--"
       rest = arg:sub(3)
       eq = rest:find("=", 1, true)
@@ -105,7 +94,6 @@ parse: any = (fs: any, argv: any)
             f.value = fval
     else
       if arg:sub(1, 1) == "-" and arg:len() > 1
-        # short flag: -name or -name=value
         rest = arg:sub(2)
         eq = rest:find("=", 1, true)
         if eq != nil
@@ -138,28 +126,23 @@ parse: any = (fs: any, argv: any)
             else
               f.value = fval
       else
-        # positional argument
         fs.args[fs.args:len() + 1] = arg
     i = i + 1
   fs.parsed = true
   return fs, true
 
-# get: return the value of a flag.
 get: any = (fs: any, name: str)
   f = fs.flags(name)
   if f == nil
     return nil
   f.value
 
-# lookup: return the flag descriptor.
 lookup: any = (fs: any, name: str)
   fs.flags(name)
 
-# args_: return the positional arguments (named args_ to avoid shadowing).
 args: any = (fs: any)
   fs.args
 
-# print_defaults: print usage information for all flags.
 print_defaults = (fs: any)
   for name, f in fs.flags
     prefix = "  -" .. name
@@ -167,11 +150,9 @@ print_defaults = (fs: any)
       prefix = prefix .. " value"
     stdout:write(prefix .. "\n        " .. f.usage:to(str) .. " (default: " .. f.default:to(str) .. ")\n")
 
-# ----- Global default flag set -----
 
 global default_fs = new_flag_set("")
 
-# global bool: register a bool on the default flag set.
 bool_global: any = (name: str, default_val: bool, usage: str)
   bool_flag(default_fs, name, default_val, usage)
 

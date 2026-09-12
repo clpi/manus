@@ -1,10 +1,4 @@
-# heap — specialized data structures: binary heap, priority queue, bloom filter, LRU cache
-# These are fundamental for networking (priority scheduling), ML (beam search),
-# and runtime (GC mark queues).
 
-# ═══════════════════════════════════════════════════════════════
-# Binary Min-Heap
-# ═══════════════════════════════════════════════════════════════
 
 heap_new: any = (cmp: any)
     {
@@ -58,9 +52,6 @@ heap_down = (h: any, i: i64)
         else
             break
 
-# ═══════════════════════════════════════════════════════════════
-# Priority Queue (keyed heap with decrease-key)
-# ═══════════════════════════════════════════════════════════════
 
 pq_new: any = (cmp: any)
     {
@@ -134,15 +125,10 @@ heap_down_pq = (pq: any, i: i64)
         else
             break
 
-# ═══════════════════════════════════════════════════════════════
-# Bloom Filter (probabilistic set membership)
-# ═══════════════════════════════════════════════════════════════
 
 bloom_new: any = (expected_items: i64, fp_rate: any)
     if fp_rate == nil fp_rate = 0.01 
-    # Optimal bit count: m = -n * ln(p) / (ln2)^2
     m = -expected_items * fp_rate:log() / (2:log() * 2:log()):ceil()
-    # Optimal hash count: k = (m/n) * ln2
     k = (m / expected_items) * 2:log():ceil()
     bits = {}
     num_words = m / 64:ceil()
@@ -157,7 +143,6 @@ bloom_new: any = (expected_items: i64, fp_rate: any)
         count = 0,
     }
 
-# FNV-1a hash for bloom filter
 bloom_hash: i64 = (data: any, seed: i64)
     h = 0xcbf29ce484222325 + seed
     i = 1
@@ -200,9 +185,6 @@ bloom_may_contain: bool = (bf: any, item: any)
 bloom_false_positive_rate: f64 = (bf: any)
     1 - -bf.num_hashes * bf.count / bf.num_bits:exp():pow(bf.num_hashes)
 
-# ═══════════════════════════════════════════════════════════════
-# LRU Cache (fixed-size, O(1) get/put via hash map + doubly-linked list)
-# ═══════════════════════════════════════════════════════════════
 
 lru_new: any = (capacity: i64)
     {
@@ -218,7 +200,6 @@ lru_get: any = (cache: any, key: any)
     if entry == nil
         cache.misses = cache.misses + 1
         return nil
-    # Move to front (most recently used)
     lru_touch(cache, key)
     cache.hits = cache.hits + 1
     entry.value
@@ -229,11 +210,9 @@ lru_put = (cache: any, key: any, value: any)
         entry.value = value
         lru_touch(cache, key)
         return
-    # Evict if at capacity
     if cache.list:len() >= cache.capacity
         oldest = cache.list:remove()
         cache.map[oldest] = nil
-    # Insert at front
     cache.list:insert(1, key)
     cache.map[key] = {key = key, value = value}
 
@@ -272,11 +251,4 @@ lru_clear = (cache: any)
     cache.hits = 0
     cache.misses = 0
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
-# Heap
-# Priority Queue
-# Bloom Filter
-# LRU Cache

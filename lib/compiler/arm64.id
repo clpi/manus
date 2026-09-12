@@ -1,178 +1,81 @@
-# SH-11 — the ARM64 encoder.
-#
-# SH-11 is the direct native backend row, host-implemented in
-# src/native.zig. This is its Duo side.
-#
-# This header used to say SH-11 "has no Duo implementation" and that ward's
-# encoder "is not reusable from here". Both were wrong, and the second one was
-# load-bearing: it is what kept 700 lines of working Duo ARM64 emission parked
-# in a downstream WASM runtime while this file stopped at arithmetic. The
-# encoders are not reusable as CODE — ward's are welded to its operand stack —
-# but the encodings transcribe fine, which is the whole of what was needed.
-# See the lift note below.
-#
-# WHAT MAKES THIS CHECKABLE, and it is the strongest oracle available anywhere
-# in this stack: the system assembler already knows every encoding. So the
-# proof assembles the SAME instruction with `xcrun clang` and compares the four
-# bytes it produces against the four bytes this encoder produces.
-#
-#     "add x0, x1, x2" -> clang -> object -> otool -> 0x8b020020
-#                      \
-#                       -> encode_add_reg(0, 1, 2) -> 0x8b020020
-#
-# Nothing about that comparison can be fudged by me. A hand-written table of
-# expected encodings is a transcription of the ARM manual by the same person
-# who transcribed it into the encoder, and it agrees with the transcription
-# error. The assembler does not.
-#
-# Scope: 46 encoders — the register-register integer forms, plus the loads,
-# stores, immediates, branches and frame pairs lifted from ward. Not yet here:
-# any floating-point or SIMD form, PC-relative addressing (adrp/adr, which a
-# real code emitter needs for constants and symbols), and the load/store pair
-# forms other than the pre/post-index stack push and pop.
-#
-# The proof lives in compiler.arm64check, not in this file: a stdlib module
-# that shells out to a C toolchain merely to be imported is a liability.
 
-# ARM64 is little-endian and fixed-width: every instruction is exactly 4 bytes.
-# The encoder returns the 32-bit word; byte order is the caller's concern, and
-# the proof handles it explicitly rather than burying it here.
 
-# Data-processing (register): sf=1 for the 64-bit forms.
-#   ADD Xd, Xn, Xm  =  0x8B000000 | Rm<<16 | Rn<<5 | Rd
 encode_add_reg: i64 = (d: i64, n: i64, m: i64)
   2332033024 | m << 16 | n << 5 | d
 
-#   SUB Xd, Xn, Xm  =  0xCB000000 | ...
 encode_sub_reg: i64 = (d: i64, n: i64, m: i64)
   3405774848 | m << 16 | n << 5 | d
 
-#   MUL Xd, Xn, Xm is MADD Xd, Xn, Xm, XZR — Ra=31 in bits 10..14
 encode_mul_reg: i64 = (d: i64, n: i64, m: i64)
   2600468480 | m << 16 | 31 << 10 | n << 5 | d
 
-#   AND Xd, Xn, Xm
 encode_and_reg: i64 = (d: i64, n: i64, m: i64)
   2315255808 | m << 16 | n << 5 | d
 
-#   ORR Xd, Xn, Xm
 encode_orr_reg: i64 = (d: i64, n: i64, m: i64)
   2852126720 | m << 16 | n << 5 | d
 
-#   EOR Xd, Xn, Xm
 encode_eor_reg: i64 = (d: i64, n: i64, m: i64)
   3388997632 | m << 16 | n << 5 | d
 
-# MOV Xd, Xm is ORR Xd, XZR, Xm — the alias the assembler prints back as `mov`
 encode_mov_reg: i64 = (d: i64, m: i64)
   encode_orr_reg(d, 31, m)
 
-#   MOVZ Xd, #imm16 (no shift)
 encode_movz: i64 = (d: i64, imm: i64)
   3531603968 | (imm & 65535) << 5 | d
 
-#   RET (Xn defaults to X30)
 encode_ret: i64 = ()
   3596550144 | 30 << 5
 
-# ─────────────────────────────────────────────────────────────────────────
-# LIFTED FROM ward's JIT (tools/wasm/src/wasm/jit_arm64.id), 2026-08-08.
-#
-# ward is a WASM runtime, not this compiler's backend, and its encoders are
-# entangled with its operand-stack layout — so nothing is *shared*, it is
-# transcribed. What transfers is the encoding knowledge, which ward earned by
-# executing the bytes: its JIT runs the wasm i32/i64 suites on real hardware,
-# so a wrong base word there is a wrong ANSWER, not a wrong-looking listing.
-#
-# Every form below is re-proved here against the system assembler anyway
-# (std.compiler.arm64check), because "ward runs it" and "this is the encoding
-# the assembler agrees with" are different claims and only the second one is
-# checkable from this file. 9 encoders became 46, checked by 50 cases, and all
-# 50 agreed on the first run — a statement about ward's encoders having been
-# executed, not about care taken transcribing them.
-#
-# The gap this closes: the register-register set above cannot express a
-# function. No loads, no stores, no immediates, no branches, no frame. Those
-# are the four layers between "an encoder" and "a backend", and they are
-# exactly what ward already has.
 
-# ── Immediates ──────────────────────────────────────────────────────────
-#   MOVZ Xd, #imm16, LSL #(16*hw)   —   hw in 0..3
 encode_movz_shift: i64 = (d: i64, imm: i64, hw: i64)
   3531603968 | hw << 21 | (imm & 65535) << 5 | d
 
-#   MOVK Xd, #imm16, LSL #(16*hw)  — keeps the other 48 bits
 encode_movk: i64 = (d: i64, imm: i64, hw: i64)
   4068474880 | hw << 21 | (imm & 65535) << 5 | d
 
-#   MOVN Xd, #imm16, LSL #(16*hw)  — the negative-constant form
 encode_movn: i64 = (d: i64, imm: i64, hw: i64)
   2457862144 | hw << 21 | (imm & 65535) << 5 | d
 
-#   ADD Xd, Xn, #imm12
 encode_add_imm: i64 = (d: i64, n: i64, imm: i64)
   2432696320 | (imm & 4095) << 10 | n << 5 | d
 
-#   SUB Xd, Xn, #imm12
 encode_sub_imm: i64 = (d: i64, n: i64, imm: i64)
   3506438144 | (imm & 4095) << 10 | n << 5 | d
 
-# ── Loads and stores ────────────────────────────────────────────────────
-# The unsigned-offset forms scale the immediate by the access size, so the
-# byte offset is shifted right by 3 for a 64-bit access. An unaligned offset
-# is not encodable in this form at all; the caller owns that.
-#   LDR Xt, [Xn, #off]
 encode_ldr_imm: i64 = (t: i64, n: i64, off: i64)
   4181721088 | off >> 3 << 10 | n << 5 | t
 
-#   STR Xt, [Xn, #off]
 encode_str_imm: i64 = (t: i64, n: i64, off: i64)
   4177526784 | off >> 3 << 10 | n << 5 | t
 
-#   LDR Xt, [Xn, Xm, LSL #3]  — the scaled index form an array read lowers to
 encode_ldr_reg: i64 = (t: i64, n: i64, m: i64)
   4167071744 | m << 16 | n << 5 | t
 
-#   STR Xt, [Xn, Xm, LSL #3]
 encode_str_reg: i64 = (t: i64, n: i64, m: i64)
   4162877440 | m << 16 | n << 5 | t
 
-#   LDRB Wt, [Xn, #off]  — string.byte lowers to exactly this
 encode_ldrb_imm: i64 = (t: i64, n: i64, off: i64)
   960495616 | (off & 4095) << 10 | n << 5 | t
 
-#   STRB Wt, [Xn, #off]
 encode_strb_imm: i64 = (t: i64, n: i64, off: i64)
   956301312 | (off & 4095) << 10 | n << 5 | t
 
-#   LDRB Wt, [Xn, Xm]  — unscaled register index; byte access needs no shift
 encode_ldrb_reg: i64 = (t: i64, n: i64, m: i64)
   945842176 | m << 16 | n << 5 | t
 
-# ── Frame ───────────────────────────────────────────────────────────────
-# imm7 counts 8-byte units and is signed, which is why the pre-index push
-# encodes -16 as 0x7E. `>>` on the negative offset happens to land on the
-# same seven bits either way; the assembler is what settles it.
-#   STP Xt, Xt2, [Xn, #imm]!
 encode_stp_pre: i64 = (t: i64, t2: i64, n: i64, imm: i64)
   2843738112 | (imm >> 3 & 127) << 15 | t2 << 10 | n << 5 | t
 
-#   LDP Xt, Xt2, [Xn], #imm
 encode_ldp_post: i64 = (t: i64, t2: i64, n: i64, imm: i64)
   2831155200 | (imm >> 3 & 127) << 15 | t2 << 10 | n << 5 | t
 
-# ── Compare and select ──────────────────────────────────────────────────
-#   CMP Xn, Xm is SUBS XZR, Xn, Xm
 encode_cmp_reg: i64 = (n: i64, m: i64)
   3942645760 | m << 16 | n << 5 | 31
 
-#   CMP Xn, #imm12 is SUBS XZR, Xn, #imm
 encode_cmp_imm: i64 = (n: i64, imm: i64)
   4043309056 | (imm & 4095) << 10 | n << 5 | 31
 
-# CSET Xd, <cond> is CSINC Xd, XZR, XZR, <inverted cond>. ward flips the low
-# bit with xor; spelled out here because the flip is the whole subtlety and a
-# reader should not have to know that condition codes are paired.
 _invert_cond: i64 = (cond: i64)
   if cond % 2 == 0
     return cond + 1
@@ -181,16 +84,12 @@ _invert_cond: i64 = (cond: i64)
 encode_cset: i64 = (d: i64, cond: i64)
   2594113504 | (_invert_cond(cond) & 15) << 12 | d
 
-#   CSEL Xd, Xn, Xm, <cond>
 encode_csel: i64 = (d: i64, n: i64, m: i64, cond: i64)
   2592079872 | m << 16 | cond << 12 | n << 5 | d
 
-# ── Branches (offsets are in INSTRUCTIONS, not bytes) ───────────────────
 encode_b: i64 = (off: i64)
   335544320 | off & 67108863
 
-# BL — the call. Neither emitter had one: ward never calls out of JIT-ed code,
-# and the encoder above stops at arithmetic. A self-hosted backend cannot.
 encode_bl: i64 = (off: i64)
   2483027968 | off & 67108863
 
@@ -206,24 +105,18 @@ encode_cbz: i64 = (n: i64, off: i64)
 encode_cbnz: i64 = (n: i64, off: i64)
   3036676096 | (off & 524287) << 5 | n
 
-# ── Remaining data-processing ───────────────────────────────────────────
-#   SDIV / UDIV Xd, Xn, Xm
 encode_sdiv: i64 = (d: i64, n: i64, m: i64)
   2596277248 | m << 16 | n << 5 | d
 
 encode_udiv: i64 = (d: i64, n: i64, m: i64)
   2596276224 | m << 16 | n << 5 | d
 
-#   MSUB Xd, Xn, Xm, Xa  =  Xa - Xn*Xm. Remainder is sdiv then msub.
 encode_msub: i64 = (d: i64, n: i64, m: i64, a: i64)
   2600501248 | m << 16 | a << 10 | n << 5 | d
 
-#   MADD Xd, Xn, Xm, Xa
 encode_madd: i64 = (d: i64, n: i64, m: i64, a: i64)
   2600468480 | m << 16 | a << 10 | n << 5 | d
 
-# Variable shifts. shr_s is ASRV and shr_u is LSRV — the pair ward's BIN table
-# maps in the order that reads backwards (0x87 -> ASRV, 0x88 -> LSRV).
 encode_lslv: i64 = (d: i64, n: i64, m: i64)
   2596282368 | m << 16 | n << 5 | d
 
@@ -236,30 +129,21 @@ encode_asrv: i64 = (d: i64, n: i64, m: i64)
 encode_rorv: i64 = (d: i64, n: i64, m: i64)
   2596285440 | m << 16 | n << 5 | d
 
-#   NEG Xd, Xm is SUB Xd, XZR, Xm. asm_for below already emits the mnemonic;
-#   until now there was no encoding behind it.
 encode_neg: i64 = (d: i64, m: i64)
   encode_sub_reg(d, 31, m)
 
-#   SXTW Xd, Wn — sign-extend a 32-bit value into 64 bits
 encode_sxtw: i64 = (d: i64, n: i64)
   2470476800 | n << 5 | d
 
-#   MOV Wd, Wm — a W-form move zero-extends, which IS the 32-bit widening
 encode_uxtw: i64 = (d: i64, m: i64)
   704644064 | m << 16 | d
 
-#   SXTB / SXTH Xd, Wn
 encode_sxtb: i64 = (d: i64, n: i64)
   2470452224 | n << 5 | d
 
 encode_sxth: i64 = (d: i64, n: i64)
   2470460416 | n << 5 | d
 
-# The instruction word as 8 lowercase hex digits, most significant first —
-# the form `otool -t` prints. The proof compares like with like rather than
-# reformatting one side into the other, because a formatting mismatch that
-# happens to cancel is exactly the kind of agreement that proves nothing.
 word_to_hex: str = (w: i64)
   digits = "0123456789abcdef"
   out = ""
@@ -270,20 +154,6 @@ word_to_hex: str = (w: i64)
     i = i - 1
   out
 
-# ─────────────────────────────────────────────────────────────────────────
-# Expression codegen: a whole function, not one instruction.
-#
-# Single-instruction encoding is only half a backend. This lowers a closed
-# integer expression to a complete ARM64 function body using a register stack
-# (x9..x15, all caller-saved), so the proof can ASSEMBLE, LINK AND RUN it and
-# compare the result to SH-08's folder — the same differential as SH-10, on the
-# other backend.
-#
-# Emitting assembly text rather than object bytes is deliberate at this stage:
-# the system assembler is a better oracle than a hand-rolled Mach-O writer is a
-# deliverable, and SH-12 (object writers) is where the byte layout belongs. The
-# encodings above are what a direct emitter would use; this proves the SHAPE of
-# the lowering is right before the container work starts.
 
 global _asm: str = ""
 global _reg: i64 = 9
@@ -316,7 +186,6 @@ _eat2: bool = (a: i64)
   _p2 = _p2 + 1
   true
 
-# Each level leaves its result in a freshly allocated register and returns it.
 _g_prim: i64 = ()
   _ws2()
   if _eat2(40)
@@ -385,8 +254,6 @@ _g_expr: i64 = ()
       else
         return left
 
-# A complete assembly unit exporting `_duo_eval`, returning the expression's
-# value in x0 per the ARM64 C ABI.
 asm_for: str = (expr: str)
   _asm = ""
   _reg = 9

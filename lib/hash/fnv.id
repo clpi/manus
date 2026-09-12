@@ -1,9 +1,7 @@
-# hash.fnv — FNV-1/FNV-1a hash (mirrors Go's hash/fnv)
 
 fnv_offset32 = 2166136261
 fnv_prime32 = 16777619
 
-# 64-bit values as {hi, lo} pairs
 fnv_offset64_hi = 3421674724
 fnv_offset64_lo = 2216829733
 fnv_prime64_hi = 256
@@ -32,7 +30,6 @@ update = (state: any, data: str)
       state.hash = (state.hash ~ b) % 2 ^ 32
 
 mul64: any = (hi: i64, lo: i64, m_hi: i64, m_lo: i64)
-  # Multiply two 64-bit numbers stored as {hi, lo}, return {hi, lo}
   lo_lo = lo * m_lo
   hi_lo = hi * m_lo
   lo_hi = lo * m_hi
@@ -55,9 +52,6 @@ update64 = (state: any, data: str)
       state.hash_lo = (state.hash_lo ~ b) % 2 ^ 32
 
 final: i64 = (state: any)
-  # `2^state.bits` is a dynamic exponent, so it lowers to a boxed lua_Value
-  # that integer modulo cannot take. `bits` is only ever 32 or 64, and at 64
-  # the wrap is the identity because i64 arithmetic already wraps mod 2^64.
   if state.bits == 32
     return state.hash % 4294967296
   state.hash

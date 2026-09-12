@@ -1,9 +1,4 @@
-# ml.vision — Image classification, data augmentation
-# For ward's vision model support and preprocessing pipeline.
 
-# ═══════════════════════════════════════════════════════════════
-# Image Utilities
-# ═══════════════════════════════════════════════════════════════
 
 new: any = (width: i64, height: i64, channels: i64)
     {
@@ -39,9 +34,6 @@ set_pixel = (img: any, x: i64, y: i64, pixel: any)
         img.data[idx + i + 1] = pixel[i + 1]
         i += 1
 
-# ═══════════════════════════════════════════════════════════════
-# Image Transforms
-# ═══════════════════════════════════════════════════════════════
 
 resize: any = (img: any, new_width: i64, new_height: i64)
     result = new(new_width, new_height, img.channels)
@@ -113,9 +105,6 @@ rotate90: any = (img: any, clockwise: bool)
         y += 1
     result
 
-# ═══════════════════════════════════════════════════════════════
-# Color Transforms
-# ═══════════════════════════════════════════════════════════════
 
 grayscale: any = (img: any)
     if img.channels == 1 return img 
@@ -167,9 +156,6 @@ to_float: any = (img: any)
         y += 1
     result
 
-# ═══════════════════════════════════════════════════════════════
-# Data Augmentation
-# ═══════════════════════════════════════════════════════════════
 
 augment_random_crop: any = (img: any, crop_size: i64)
     max_x = img.width - crop_size
@@ -185,7 +171,6 @@ augment_random_flip: any = (img: any, p: f64)
         img
 
 augment_random_rotation: any = (img: any, max_angle: f64)
-    # Simple 90-degree rotations for now
     rotations = 0:random(3)
     result = img
     i = 0
@@ -206,11 +191,8 @@ augment_color_jitter: any = (img: any, brightness: f64, contrast: f64, saturatio
             while c < img.channels
                 val = pixel[c + 1] / 255.0
 
-                # Brightness
                 val += (math.random() - 0.5) * brightness * 2
-                # Contrast
                 val = (val - 0.5) * (1 + (math.random() - 0.5) * contrast * 2) + 0.5
-                # Saturation (simplified)
                 if c > 0 and img.channels >= 3
                     gray = 0.299 * pixel[1] + 0.587 * pixel[2] + 0.114 * pixel[3]
                     gray /= 255.0
@@ -225,7 +207,6 @@ augment_color_jitter: any = (img: any, brightness: f64, contrast: f64, saturatio
     result
 
 augment_random_affine: any = (img: any, translate_range: f64, scale_range: f64)
-    # Simplified affine: just translate
     tx = (math.random() - 0.5) * translate_range * 2:floor()
     ty = (math.random() - 0.5) * translate_range * 2:floor()
 
@@ -243,9 +224,6 @@ augment_random_affine: any = (img: any, translate_range: f64, scale_range: f64)
         y += 1
     result
 
-# ═══════════════════════════════════════════════════════════════
-# Classification Helpers
-# ═══════════════════════════════════════════════════════════════
 
 softmax: any = (logits: any)
     max_logit = -1e30
@@ -268,7 +246,6 @@ top_k: any = (probs: any, k: i64)
     for i = 1, probs:len()
         indexed[indexed:len() + 1] = {index = i, prob = probs[i]}
 
-    # Simple selection sort for top-k
     result = {}
     i = 1
     while i <= k and i <= indexed:len()
@@ -290,12 +267,4 @@ accuracy: f64 = (predictions: any, labels: any)
             correct += 1
     correct / predictions:len()
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
-# Image
-# Transforms
-# Color
-# Augmentation
-# Classification

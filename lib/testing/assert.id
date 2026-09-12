@@ -1,9 +1,4 @@
-# testing.assert — Rich test assertions
-# Extends basic testing with more expressive assertion functions.
 
-# ═══════════════════════════════════════════════════════════════
-# Assertion Context
-# ═══════════════════════════════════════════════════════════════
 
 assert_context_new: any = (test_name: str)
   {
@@ -23,9 +18,6 @@ assert_context_report: any = (ctx: any)
     errors = ctx.errors
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Basic Assertions
-# ═══════════════════════════════════════════════════════════════
 
 assert_true = (ctx: any, value: bool, msg: str)
   if value
@@ -71,9 +63,6 @@ assert_not_equal = (ctx: any, got: any, expected: any, msg: str)
       expected = "not " .. expected:to(str)
       got = got
 
-# ═══════════════════════════════════════════════════════════════
-# Numeric Assertions
-# ═══════════════════════════════════════════════════════════════
 
 assert_near = (ctx: any, got: f64, expected: f64, tolerance: f64, msg: str)
   if tolerance == nil
@@ -122,9 +111,6 @@ assert_in_range = (ctx: any, got: f64, min: f64, max: f64, msg: str)
       expected = "[" .. min:to(str) .. ", " .. max:to(str) .. "]"
       got = got
 
-# ═══════════════════════════════════════════════════════════════
-# Type Assertions
-# ═══════════════════════════════════════════════════════════════
 
 assert_type = (ctx: any, got: any, expected_type: str, msg: str)
   actual_type = type(got)
@@ -160,12 +146,8 @@ assert_is_not_nil = (ctx: any, got: any, msg: str)
       expected = "not nil"
       got = got
 
-# ═══════════════════════════════════════════════════════════════
-# Collection Assertions
-# ═══════════════════════════════════════════════════════════════
 
 assert_table_equal = (ctx: any, got: any, expected: any, msg: str)
-  # Check length
   if got:len() != expected:len()
     ctx.failed = ctx.failed + 1
     ctx.errors[ctx.errors:len() + 1] =
@@ -175,7 +157,6 @@ assert_table_equal = (ctx: any, got: any, expected: any, msg: str)
       got = got:len()
     return
 
-  # Check elements
   i = 1
   while i <= got:len()
     if got[i] != expected[i]
@@ -213,9 +194,6 @@ assert_table_empty = (ctx: any, table: any, msg: str)
       expected = "empty table"
       got = table:len() .. " elements"
 
-# ═══════════════════════════════════════════════════════════════
-# String Assertions
-# ═══════════════════════════════════════════════════════════════
 
 assert_string_contains = (ctx: any, got: str, expected: str, msg: str)
   if got:find(expected, 1, true)
@@ -261,9 +239,6 @@ assert_string_matches = (ctx: any, got: str, pattern: str, msg: str)
       expected = pattern
       got = got
 
-# ═══════════════════════════════════════════════════════════════
-# Error Assertions
-# ═══════════════════════════════════════════════════════════════
 
 assert_errors = (ctx: any, func: any, msg: str)
   ok, err = pcall(func)
@@ -288,9 +263,6 @@ assert_errors_with = (ctx: any, func: any, expected_err: str, msg: str)
       expected = expected_err
       got = ok and "no error" or err
 
-# ═══════════════════════════════════════════════════════════════
-# Performance Assertions
-# ═══════════════════════════════════════════════════════════════
 
 assert_faster_than = (ctx: any, func: any, max_time: f64, iterations: i64, msg: str)
   if iterations == nil
@@ -314,40 +286,29 @@ assert_faster_than = (ctx: any, func: any, max_time: f64, iterations: i64, msg: 
       expected = "< " .. max_time:to(str) .. "s"
       got = avg_time:to(str) .. "s"
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
 M = {}
-# Context
 M.context_new = assert_context_new
 M.context_report = assert_context_report
-# Basic
 M.true = assert_true
 M.false = assert_false
 M.equal = assert_equal
 M.not_equal = assert_not_equal
-# Numeric
 M.near = assert_near
 M.greater = assert_greater
 M.less = assert_less
 M.in_range = assert_in_range
-# Type
 M.type = assert_type
 M.is_nil = assert_is_nil
 M.is_not_nil = assert_is_not_nil
-# Collection
 M.table_equal = assert_table_equal
 M.table_contains = assert_table_contains
 M.table_empty = assert_table_empty
-# String
 M.string_contains = assert_string_contains
 M.string_starts_with = assert_string_starts_with
 M.string_ends_with = assert_string_ends_with
 M.string_matches = assert_string_matches
-# Error
 M.errors = assert_errors
 M.errors_with = assert_errors_with
-# Performance
 M.faster_than = assert_faster_than
 M

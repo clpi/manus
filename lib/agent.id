@@ -1,6 +1,3 @@
-# lib/agent — hooks for agentic development on Idol (compiler dev + end-user apps)
-# Primary surface: @comp.* (@meta.* / @compiler.* are aliases). Comptime strings
-# fold to native C during bootstrap; prefer canonical Idol teaching under examples/.
 
 discover: str = ()
   "comp.map comp.sweep comp.derive comp.product comp.tensor comp.nfold comp.burst comp.power comp.choose comp.permute\n" .. "comp.template comp.generate comp.scheme comp.grammar comp.weave comp.each comp.pipeline\n" .. "comp.agent.catalog comp.agent.ladder comp.agent.hooks comp.agent.dedupe comp.agent.gaps comp.agent.grammar\n" .. "meta.* and compiler.* are compatibility aliases; prefer comp.*"
@@ -75,9 +72,6 @@ native_policy: str = ()
 recipes: str = ()
   "N types one macro: @comp.derive.all(\"Concept\", MyDerive)\n" .. "N×M type pairs: @comp.derive.product(\"A\", \"B\", MyDerive)\n" .. "Max file emit: @comp.burst(\"A\", MyDerive, \"B\")\n" .. "User macro: @comp.define.derive(\"Name\", fun generate(meta): str ... end)\n" .. "Bundle traits: @comp.derive.bundle(\"Numeric\") on type\n" .. "Fixed-size subsets: @comp.choose(\"Concept\", 2, fn) — controlled O(n choose k) expansion\n" .. "Pipeline family: @comp.pipeline({ variants = \"name:ctype:init | ...\" })\n" .. "Compose combinators: @comp.each(@comp.power(\"C\", fn), fn2) — chains two exponential stages\n" .. "Constraint cartesian: @comp.generate({ ops/types/template block }) — O(ops×types)\n" .. "Declarative scheme: @comp.scheme(\"type T {...} | fn f(...): T\", template)\n" .. "Generate→each: @comp.each(@comp.generate(spec, body), fn) — re-expand each cartesian fragment\n" .. "Scheme→each: @comp.each(@comp.scheme(decls, tmpl), fn) — declarative units → fragments\n" .. "Full stack: examples/parity/each.id — scheme/generate → each parity\n" .. "Parallel comptime: @comp.compile.thread\n" .. "Coordination: .agents/AGENT_COORDINATION.md; claim before edit\n" .. "Gaps ledger: .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; MCP idol_agent_gaps_*\n" .. "Coordination lock: scripts/idol_lock.id"
 
-# GAP-blocked teaching fixtures (idol check fails; owned by other gates):
-#   examples/pack/apply.id      — GAP-092 brace/descriptor rows
-#   examples/pack/merge.id      — correlated-pack syntax
 gap_blocked: any = ()
   {
     "examples/pack/apply.id",

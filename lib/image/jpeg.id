@@ -1,6 +1,3 @@
-# image.jpeg — JPEG image decoder
-# Parses JPEG headers for real dimensions, components, and quantization tables.
-# Pixel decoding uses a simplified IDCT approximation (not full ITU-T T.81).
 
 read_u16: i64 = (s: str, off: i64)
   (s:byte(off) * 256 + s:byte(off + 1)) % 65536
@@ -37,7 +34,6 @@ decode_header: any = (data: str)
         info.components = data:byte(off + 9)
         info.frame_marker = marker
       else(marker == 219)
-        # Quantization table
         table_id = data:byte(off + 4) & 15
         qt = {}
         qi = 1
@@ -46,14 +42,11 @@ decode_header: any = (data: str)
           qi = qi + 1
         info.quant_tables[table_id] = qt
       else(marker == 218)
-        # Start of scan — record offset for later decoding
         info.sos_data = off + 4
       off = off + 2 + seg_len
   info
 
-# Minimal IDCT approximation for 8x8 block
 idct_8x8: any = (block: any)
-  # Simple DCT-II inverse using direct formula (not optimized)
   result = {}
   for y = 0, 7
     for x = 0, 7
@@ -79,16 +72,10 @@ decode: any = (data: str)
     return nil
   img = image.new_rgba(image.rect(0, 0, info.width, info.height))
 
-  # Decode MCU blocks using simplified approach
-  # For baseline JPEG: try to extract entropy-coded data after SOS marker
   if info.sos_data and info.sos_data < data:len()
-    # Read entropy-coded segment (simplified: extract raw bytes as pseudo-pixels)
     entropy_start = info.sos_data
-    # minus EOI
     entropy_len = data:len() - entropy_start - 2
     if entropy_len > 0
-      # Generate a procedural decode from the entropy data
-      # This is a visual approximation — not a correct JPEG decode
       for y = 0, info.height - 1
         for x = 0, info.width - 1
           byte_off = entropy_start + (y * info.width + x) % entropy_len
@@ -98,13 +85,11 @@ decode: any = (data: str)
           c = image.color.rgba(r * 257, g * 257, b * 257, 65535)
           image.img_set(img, x, y, c)
     else
-      # No entropy data — fill with gray
       for y = 0, info.height - 1
         for x = 0, info.width - 1
           c = image.color.rgba(32768, 32768, 32768, 65335)
           image.img_set(img, x, y, c)
   else
-    # No SOS marker — fill with gray
     for y = 0, info.height - 1
       for x = 0, info.width - 1
         c = image.color.rgba(32768, 32768, 32768, 65335)

@@ -1,26 +1,16 @@
-# thread — OS-level threading primitives
-# Provides mutex, rwlock, condition variables, semaphore, barrier,
-# thread spawning/joining, and thread-local storage.
-# In single-threaded mode these use coroutine-based cooperative scheduling.
-# When @concurrent("threaded") is enabled, they map to pthread.
 
 
-# ─────────────────────────────────────────────────────────────
-# Mutex: blocking mutual exclusion lock
-# ─────────────────────────────────────────────────────────────
 
-# Create a new mutex.  Initially unlocked.
 mutex: any = ()
     {
         locked     = false,
-        waiting    = {},  # suspended coroutines waiting to acquire
-        holder     = nil, # the coroutine that currently holds the lock
+        waiting    = {},
+        holder     = nil,
     }
 
-# Acquire the lock, blocking if already held.
 lock = (m: any)
     if m.locked and m.holder == coroutine.running()
-        return  # recursive: already owned
+        return
     while m.locked
         co = coroutine.running()
         m.waiting[m.waiting:len() + 1] = co
@@ -28,7 +18,6 @@ lock = (m: any)
     m.locked = true
     m.holder = coroutine.running()
 
-# Try to acquire the lock without blocking.  Returns true on success.
 probe: bool = (m: any)
     if m.locked and m.holder == coroutine.running()
         return true
@@ -37,7 +26,6 @@ probe: bool = (m: any)
     m.holder = coroutine.running()
     true
 
-# Release the lock, waking one waiter if any.
 unlock = (m: any)
     if m.holder != coroutine.running()
         error("thread: unlock called by non-owner")
@@ -47,21 +35,16 @@ unlock = (m: any)
         co = m.waiting:remove(1)
         sync.spawn(() coroutine.resume(co))
 
-# ─────────────────────────────────────────────────────────────
-# RwLock: readers-writer lock
-# ─────────────────────────────────────────────────────────────
 
-# Create a readers-writer lock.
 rwlock: any = ()
     {
         readers    = 0,
         writing    = false,
-        rwait      = {},  # readers waiting
-        wwait      = {},  # writers waiting
+        rwait      = {},
+        wwait      = {},
         wholder    = nil,
     }
 
-# Acquire for reading.  Multiple readers allowed; blocks if writing.
 rlock = (rw: any)
     while rw.writing
         co = coroutine.running()
@@ -69,14 +52,12 @@ rlock = (rw: any)
         coroutine.yield()
     rw.readers = rw.readers + 1
 
-# Release a read lock.
 runlock = (rw: any)
     rw.readers = rw.readers - 1
     if rw.readers == 0 and rw.wwait:len() > 0
         co = rw.wwait:remove(1)
         sync.spawn(() coroutine.resume(co))
 
-# Acquire for writing.  Blocks if anyone holds the lock.
 wlock = (rw: any)
     if rw.wholder == coroutine.running() return 
     while rw.writing or rw.readers > 0
@@ -86,7 +67,6 @@ wlock = (rw: any)
     rw.writing = true
     rw.wholder = coroutine.running()
 
-# Release a write lock.
 wunlock = (rw: any)
     if rw.wholder != coroutine.running()
         error("thread: wunlock called by non-owner")
@@ -100,19 +80,13 @@ wunlock = (rw: any)
             sync.spawn(() coroutine.resume(co))
         rw.rwait = {}
 
-# ─────────────────────────────────────────────────────────────
-# Condition variable
-# ─────────────────────────────────────────────────────────────
 
-# Create a condition variable associated with a mutex.
 cond(m: any): any
     {
         guard  = m,
         waiting = {},
     }
 
-# Wait on the condition (mutex must be held).  Atomically unlocks the
-# mutex and suspends; re-acquires the lock before returning.
 wait = (c: any)
     m = c.guard
     if m.holder != coroutine.running()
@@ -123,30 +97,23 @@ wait = (c: any)
     coroutine.yield()
     lock(m)
 
-# Wake one waiter on the condition.
 signal = (c: any)
     if c.waiting:len() > 0
         co = c.waiting:remove(1)
         sync.spawn(() coroutine.resume(co))
 
-# Wake all waiters on the condition.
 broadcast = (c: any)
     for _, co in c.waiting
         sync.spawn(() coroutine.resume(co))
     c.waiting = {}
 
-# ─────────────────────────────────────────────────────────────
-# Once: run a function exactly once
-# ─────────────────────────────────────────────────────────────
 
-# Create a Once guard.
 once: any = ()
     {
         done = false,
         guard   = mutex(),
     }
 
-# Call fn exactly once; subsequent calls are no-ops.
 run = (o: any, fn: any)
     lock(o.guard)
     if not o.done
@@ -156,11 +123,7 @@ run = (o: any, fn: any)
     else
         unlock(o.guard)
 
-# ─────────────────────────────────────────────────────────────
-# Semaphore
-# ─────────────────────────────────────────────────────────────
 
-# Create a counting semaphore with n permits.
 semaphore: any = (n: i64)
     {
         permits = n,
@@ -168,7 +131,6 @@ semaphore: any = (n: i64)
         guard      = mutex(),
     }
 
-# Acquire a permit, blocking if none available.
 acquire = (s: any)
     lock(s.guard)
     while s.permits <= 0
@@ -180,7 +142,6 @@ acquire = (s: any)
     s.permits = s.permits - 1
     unlock(s.guard)
 
-# Try to acquire a permit without blocking.
 probe: bool = (s: any)
     lock(s.guard)
     if s.permits > 0
@@ -190,7 +151,6 @@ probe: bool = (s: any)
     unlock(s.guard)
     false
 
-# Release a permit.
 release = (s: any)
     lock(s.guard)
     s.permits = s.permits + 1
@@ -199,21 +159,16 @@ release = (s: any)
         sync.spawn(() coroutine.resume(co))
     unlock(s.guard)
 
-# ─────────────────────────────────────────────────────────────
-# Barrier: synchronize N threads at a point
-# ─────────────────────────────────────────────────────────────
 
-# Create a barrier for n participants.
 barrier: any = (n: i64)
     {
         count   = n,
         total   = n,
         gen     = 0,
         guard      = mutex(),
-        cond      = nil,  # will be set below
+        cond      = nil,
     }
 
-# Wait at the barrier until all participants arrive.
 wait = (b: any)
     if b.cond == nil
         b.cond = cond(b.guard)
@@ -221,24 +176,16 @@ wait = (b: any)
     gen = b.gen
     b.count = b.count - 1
     if b.count == 0
-        # Last one through: reset and wake everyone
         b.count = b.total
         b.gen = b.gen + 1
         broadcast(b.cond)
         unlock(b.guard)
         return
-    # Wait until generation changes
     while b.gen == gen
         wait(b.cond)
     unlock(b.guard)
 
-# ─────────────────────────────────────────────────────────────
-# Thread spawning and joining
-# ─────────────────────────────────────────────────────────────
 
-# Spawn a function in a new thread.  Returns a thread handle.
-# In cooperative mode this creates a coroutine and yields to the scheduler.
-# In threaded mode this creates a real OS thread.
 spawn: any = (fn: any, ...args)
     args = {args}
     chan = sync.channel(1)
@@ -255,53 +202,35 @@ spawn: any = (fn: any, ...args)
         result = chan,
     }
 
-# Wait for a thread to complete, returning its result.  Raises on error.
 join: any = (h: any)
     r = h.result:recv()
     if r == nil return nil 
     if r.ok return r.val 
     error(r.err, 2)
 
-# Detach a thread, allowing it to run independently.  Resources are
-# released automatically when the thread finishes.
 detach = (h: any)
     h.detached = true
 
-# ─────────────────────────────────────────────────────────────
-# Thread identity and introspection
-# ─────────────────────────────────────────────────────────────
 
-# Return a unique identifier for the current thread/coroutine.
 id: i64 = ()
     co = coroutine.running()
     if co == nil return 0 
-    # Hash the coroutine pointer for a stable id
     s = co:to(str)
     h = 5381
     for i = 1, s:len()
         h = (h * 33 + s:byte(i)) % 4294967296
     h
 
-# Return the number of hardware threads available (for parallelism).
-# In single-threaded mode, returns 1.
 count: i64 = ()
     1
 
-# Sleep the current thread for the given number of milliseconds.
-# In cooperative mode this yields without rescheduling.
 sleep = (ms: i64)
-    # In cooperative mode, yield to let other tasks run
     sync.yield()
 
-# Yield execution to the scheduler, allowing other threads to run.
 yield = ()
     sync.yield()
 
-# ─────────────────────────────────────────────────────────────
-# Thread-safe wrapper around concurrent channels
-# ─────────────────────────────────────────────────────────────
 
-# Create a thread-safe channel.
 channel: any = (capacity: i64)
     sync.channel(capacity)
 
@@ -317,12 +246,7 @@ peek: any = (ch: any)
 close = (ch: any)
     ch:close()
 
-# ─────────────────────────────────────────────────────────────
-# Parallel execution helpers
-# ─────────────────────────────────────────────────────────────
 
-# Run the function for each element in parallel (cooperative by default).
-# Returns a table of results in order.
 each: any = (items: any, fn: any)
     handles = {}
     for _, item in items
@@ -332,7 +256,6 @@ each: any = (items: any, fn: any)
         results[results:len() + 1] = join(h)
     results
 
-# Run the function n times in parallel (cooperative by default).
 range: any = (n: i64, fn: any)
     handles = {}
     for i = 0, n - 1
@@ -342,22 +265,16 @@ range: any = (n: i64, fn: any)
         results[results:len() + 1] = join(h)
     results
 
-# ─────────────────────────────────────────────────────────────
-# Thread-local storage
-# ─────────────────────────────────────────────────────────────
 
-# Internal registry keyed by thread/coroutine id
 registry = {}
 stores = {}
 seed = 0
 
-# Create a new thread-local key with an optional default value factory.
 key: i64 = (default: any)
     seed += 1
     registry[seed] = default
     seed
 
-# Set the value for a thread-local key in the current thread.
 set = (key: i64, value: any)
     tid = to(str)(id())
     if stores == nil
@@ -367,8 +284,6 @@ set = (key: i64, value: any)
     store = stores[tid]
     store[key] = value
 
-# Get the value for a thread-local key in the current thread.
-# If not set and a default was provided, initialises it.
 get: any = (key: i64)
     tid = to(str)(id())
     store = stores and stores[tid] or nil
@@ -382,7 +297,6 @@ get: any = (key: i64)
         return val
     nil
 
-# Remove the value for a thread-local key.  Returns the old value.
 del: any = (key: i64)
     tid = to(str)(id())
     if stores == nil return nil 
@@ -392,18 +306,4 @@ del: any = (key: i64)
     store[key] = nil
     val
 
-# ─────────────────────────────────────────────────────────────
-# Module table
-# ─────────────────────────────────────────────────────────────
 
-# Mutex
-# RwLock
-# Condition variable
-# Once
-# Semaphore
-# Barrier
-# Thread lifecycle
-# Introspection
-# Channels
-# Parallel helpers
-# TLS

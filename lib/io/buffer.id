@@ -1,10 +1,4 @@
-# io.buffer — Buffered I/O operations
-# For efficient file and network I/O.
-# Sources: file handles (io.open), stdin, or raw byte-table sources.
 
-# ═══════════════════════════════════════════════════════════════
-# Buffered Reader
-# ═══════════════════════════════════════════════════════════════
 
 reader_new: any = (source: any, buffer_size: i64)
   if buffer_size == nil
@@ -27,7 +21,6 @@ buffered_reader_fill: any = (br: any)
   br.buffer_pos = 1
   br.buffer_len = 0
 
-  # Read from Lua file handle
   if type(br.source) != "table"
     chunk = br.source:read(br.buffer_size)
     if chunk == nil or chunk == ""
@@ -40,7 +33,6 @@ buffered_reader_fill: any = (br: any)
     br.buffer_len = chunk:len()
     return { ok = true, bytes = chunk:len() }
 
-  # Read from raw byte table (source.pos tracks read cursor)
   pos = br.source.pos or 1
   src = br.source.data or br.source
   avail = src:len() - pos + 1
@@ -105,16 +97,12 @@ reader_read_line: any = (br: any)
       return { ok = false, reason = result.reason }
 
     byte = result.byte
-    # newline
     if byte == 10
       return { ok = true, line = line, eof = false }
     else
-      # carriage return
       if byte == 13
-        # Check for \r\n — if next byte is not \n, push it back
         peek = reader_read_byte(br)
         if peek.ok and peek.byte != 10
-          # Push back the non-newline byte
           reader_unread(br, peek.byte)
         return { ok = true, line = line, eof = false }
       else
@@ -140,9 +128,6 @@ reader_is_eof: bool = (br: any)
 reader_bytes_read: i64 = (br: any)
   br.bytes_read
 
-# ═══════════════════════════════════════════════════════════════
-# Buffered Writer
-# ═══════════════════════════════════════════════════════════════
 
 writer_new: any = (destination: any, buffer_size: i64)
   if buffer_size == nil
@@ -160,14 +145,12 @@ writer_flush: any = (bw: any)
   if bw.buffer_pos == 1
     return { ok = true }
 
-  # Build chunk from buffered bytes
   chunk = ""
   i = 1
   while i < bw.buffer_pos
     chunk = chunk .. bw.buffer(i):char()
     i = i + 1
 
-  # Write to Lua file handle
   if type(bw.destination) != "table"
     bw.destination:write(chunk)
 
@@ -207,9 +190,6 @@ writer_write_string: any = (bw: any, s: str)
 writer_bytes_written: i64 = (bw: any)
   bw.bytes_written
 
-# ═══════════════════════════════════════════════════════════════
-# Ring Buffer I/O (for streaming)
-# ═══════════════════════════════════════════════════════════════
 
 ring_new: any = (capacity: i64)
   actual = 1
@@ -255,9 +235,3 @@ ring_free: i64 = (rio: any)
   if rio.full
     return 0
   rio.capacity - rio.write_pos - rio.read_pos
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Buffered Reader
-# Buffered Writer
-# Ring Buffer I/O

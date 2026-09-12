@@ -1,9 +1,4 @@
-# runtime.memory — Memory management for ward runtime
-# Heap management, GC tuning, memory arenas for isolate isolation.
 
-# ═══════════════════════════════════════════════════════════════
-# Memory Stats
-# ═══════════════════════════════════════════════════════════════
 
 stats_new: any = ()
   {
@@ -42,9 +37,6 @@ stats_summary: any = (stats: any)
     gc_avg_pause = stats.gc_count > 0 and stats.gc_paused / stats.gc_count or 0
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Memory Arena (per-isolate)
-# ═══════════════════════════════════════════════════════════════
 
 arena_new: any = (initial_size: i64)
   {
@@ -55,9 +47,7 @@ arena_new: any = (initial_size: i64)
   }
 
 arena_alloc: any = (arena: any, size: i64)
-  # Check if current block has enough space
   if arena.blocks:len() == 0 or arena.blocks(arena.blocks:len()).used + size > arena.block_size
-    # Allocate new block
     block_size = arena.block_size:max(size)
     arena.blocks[arena.blocks:len() + 1] =
       data = {}
@@ -87,9 +77,6 @@ arena_stats: any = (arena: any)
     utilization = arena.total_size > 0 and arena.used / arena.total_size or 0
   }
 
-# ═══════════════════════════════════════════════════════════════
-# GC Configuration
-# ═══════════════════════════════════════════════════════════════
 
 gc_config_new: any = ()
   {
@@ -102,10 +89,6 @@ gc_config_new: any = ()
     marking_threshold = 0.8,
     sweep_threshold = 0.5
   }
-# "incremental", "generational", "concurrent"
-# ms
-# 1MB
-# 256MB
 
 gc_config_set_mode: any = (config: any, mode: str)
   config.mode = mode
@@ -125,9 +108,6 @@ gc_config_set_growth: any = (config: any, factor: f64, heap_growth: f64)
   config.heap_growth = heap_growth
   config
 
-# ═══════════════════════════════════════════════════════════════
-# GC State
-# ═══════════════════════════════════════════════════════════════
 
 gc_state_new: any = (config: any)
   {
@@ -140,7 +120,6 @@ gc_state_new: any = (config: any)
     collections = 0,
     bytes_since_gc = 0
   }
-# "idle", "marking", "sweeping", "compact"
 
 gc_state_should_collect: bool = (gc: any)
   gc.allocated >= gc.threshold
@@ -176,9 +155,6 @@ gc_state_stats: any = (gc: any)
     avg_pause = gc.collections > 0 and gc.pause_total / gc.collections or 0
   }
 
-# ═══════════════════════════════════════════════════════════════
-# Memory Pressure Monitor
-# ═══════════════════════════════════════════════════════════════
 
 pressure_new: any = (low_threshold: f64, high_threshold: f64)
   {
@@ -213,9 +189,6 @@ pressure_level: str = (pressure: any)
 pressure_should_gc: bool = (pressure: any)
   pressure.current_pressure > pressure.high_threshold
 
-# ═══════════════════════════════════════════════════════════════
-# Object Pool (for frequently allocated objects)
-# ═══════════════════════════════════════════════════════════════
 
 pool_new: any = (factory: any, initial_size: i64)
   {
@@ -256,12 +229,3 @@ pool_stats: any = (pool: any)
     reused = pool.stats.reused,
     returned = pool.stats.returned
   }
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
-# Stats
-# Arena
-# GC Config
-# GC State
-# Pressure
-# Object Pool

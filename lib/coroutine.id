@@ -1,4 +1,3 @@
-# coroutine — coroutine utilities
 
 create: any = (f: any)
   coroutine.create(f)

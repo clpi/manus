@@ -1,8 +1,4 @@
-# inspect — deep inspection, formatting, and debugging of values
-# Provides rich pretty-printing, table diffing, and deep comparison
-# for debugging complex data structures.
 
-# Internal: sort string array in-place.
 std_inspect_sort_strings = (arr: any)
     if arr == nil return 
     n = arr:len()
@@ -16,7 +12,6 @@ std_inspect_sort_strings = (arr: any)
             j -= 1
         i += 1
 
-# Internal: recursive deep hash.
 std_inspect_hash: str = (value: any)
     if value == nil return "nil" 
     t = type(value)
@@ -27,23 +22,14 @@ std_inspect_hash: str = (value: any)
         ks[ks:len() + 1] = k:to(str)
     std_inspect_sort_strings(ks)
     i = 1
-    # `key`/`val`, not `k`/`v`: those two names are the LOOP VARIABLES of the
-    # `for k, v in value` above, and reusing them here emits an assignment with
-    # no declaration ("use of undeclared identifier 'k'"). A for-loop variable
-    # is not re-introducible in the enclosing scope after the loop ends.
     while i <= ks:len()
         key = ks[i]
         val = value[key:to(i64)]
         if val == nil val = value[key] 
-        # `=` not `..`: this line was a concat EXPRESSION with no assignment,
-        # so `parts` never grew and std_inspect_hash returned "{}" for every
-        # input. It compiled, and it produced a plausible-looking empty table
-        # rather than an error.
         parts[parts:len() + 1] = key .. "=" .. std_inspect_hash(val)
         i += 1
     "{" .. parts:concat(",") .. "}"
 
-# Internal: recursive to_str with cycle detection.
 std_inspect_to_str: str = (value: any, indent: any, seen: any)
     if indent == nil indent = 0 
     if seen == nil seen = {} 
@@ -95,7 +81,6 @@ std_inspect_to_str: str = (value: any, indent: any, seen: any)
         return "{" .. parts:concat(", ") .. "}"
     return "{\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "}"
 
-# Internal: recursive diff helper.
 std_inspect_diff = (a: any, b: any, prefix: any, diffs: any)
     if a == nil and b == nil return 
     if a == nil or b == nil
@@ -124,7 +109,6 @@ std_inspect_diff = (a: any, b: any, prefix: any, diffs: any)
             if prefix != "" path = prefix .. "." .. k:to(str) 
             diffs[diffs:len() + 1] = {path = path, kind = "added", new = v}
 
-# deep_equal: recursively compare two values for structural equality.
 deep_equal: bool = (a: any, b: any)
     if a == b return true 
     if a == nil or b == nil return false 
@@ -150,18 +134,15 @@ deep_equal: bool = (a: any, b: any)
         if a[kd] == nil return false 
     true
 
-# deep_hash: produce a consistent hash of any value.
 deep_hash: str = (value: any)
     std_inspect_hash(value)
 
-# diff: compare two tables and return a list of differences.
 diff: any = (a: any, b: any, prefix: any)
     if prefix == nil prefix = "" 
     diffs = {}
     std_inspect_diff(a, b, prefix, diffs)
     diffs
 
-# diff_summary: return a human-readable summary of differences.
 diff_summary: str = (a: any, b: any)
     diffs = diff(a, b)
     if diffs:len() == 0 return "no differences" 
@@ -180,7 +161,6 @@ diff_summary: str = (a: any, b: any)
         i += 1
     to(str)(diffs:len()) .. " difference(s):\n" .. parts:concat("\n")
 
-# type_name: get a descriptive type name for a value.
 type_name(value: any): str
     if value == nil return "nil" 
     t = type(value)
@@ -194,7 +174,6 @@ type_name(value: any): str
         return "table"
     return t
 
-# size: return the "size" of a value.
 size: i64 = (value: any)
     if value == nil return 0 
     t = type(value)
@@ -208,7 +187,6 @@ size: i64 = (value: any)
         return count
     return 1
 
-# keys_of: return sorted list of keys of a table.
 keys_of: any = (t: any)
     out = {}
     if t == nil or type(t) != "table" return out 
@@ -217,7 +195,6 @@ keys_of: any = (t: any)
     std_inspect_sort_strings(out)
     out
 
-# summary: return a compact summary of a value's structure.
 summary: str = (value: any)
     if value == nil return "nil" 
     t = type(value)
@@ -235,7 +212,6 @@ summary: str = (value: any)
         return "table(" .. count:to(str) .. " keys: " .. first_key .. " ...)"
     return "table(" .. count:to(str) .. " keys)"
 
-# caller_info: return info about the calling function.
 caller_info: any = (level: any)
     if level == nil level = 2 
     info = debug.getinfo(level)
@@ -248,10 +224,6 @@ caller_info: any = (level: any)
         what = info.what
     }
 
-# stack_trace: return a formatted stack trace string.
-#   stack_trace(level?, max_depth?, pretty?)
-#   pretty = true => ANSI-colored, icon-signed frames (cyan-underlined
-#   locations, magenta-italic function names, dim caller meta).
 stack_trace: str = (level: any, max_depth: any, pretty: any)
     if level == nil level = 2 
     if max_depth == nil max_depth = 20 

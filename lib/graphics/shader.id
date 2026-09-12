@@ -1,19 +1,9 @@
-# graphics.shader — Shader compilation and management
-# Data-structure API for WebGPU/Vulkan/Metal shaders.
-# compile/link/use are no-ops in pure Duo — actual GPU compilation
-# happens in the rendering backend (wgpu, Metal, Vulkan driver).
 
-# ═══════════════════════════════════════════════════════════════
-# Shader Types
-# ═══════════════════════════════════════════════════════════════
 
 M.SHADER_VERTEX = "vertex"
 M.SHADER_FRAGMENT = "fragment"
 M.SHADER_COMPUTE = "compute"
 
-# ═══════════════════════════════════════════════════════════════
-# Shader
-# ═══════════════════════════════════════════════════════════════
 
 shader_new: any = (shader_type: str, source: str)
   {
@@ -24,16 +14,12 @@ shader_new: any = (shader_type: str, source: str)
   }
 
 shader_compile: any = (shader: any)
-  # In production, would compile via WebGPU/Vulkan/Metal
   shader.compiled = true
   { ok = true }
 
 shader_get_error: str = (shader: any)
   ""
 
-# ═══════════════════════════════════════════════════════════════
-# Shader Program
-# ═══════════════════════════════════════════════════════════════
 
 shader_program_new: any = ()
   {
@@ -54,12 +40,10 @@ shader_program_attach = (program: any, shader: any)
     program.compute_shader = shader
 
 shader_program_link: any = (program: any)
-  # In production, would link shader program
   program.linked = true
   { ok = true }
 
 shader_program_use = (program: any)
-  # In production, would bind program
   void
 
 shader_program_get_uniform: any = (program: any, name: str)
@@ -68,9 +52,6 @@ shader_program_get_uniform: any = (program: any, name: str)
 shader_program_set_uniform = (program: any, name: str, value: any)
   program.uniforms[name] = value
 
-# ═══════════════════════════════════════════════════════════════
-# Built-in Shaders
-# ═══════════════════════════════════════════════════════════════
 
 shader_basic_vertex: str = ()
   "        @vertex\n        fn vs_main(@location(0) position: vec3f) -> @builtin(position) vec4f {\n            return vec4f(position, 1.0);\n        }\n    "
@@ -84,9 +65,6 @@ shader_pbr_vertex: str = ()
 shader_pbr_fragment: str = ()
   "        struct Material {\n            albedo: vec4f,\n            metallic: f32,\n            roughness: f32,\n            ao: f32,\n            emissive: vec3f,\n        }\n        @group(1) @binding(0) var<uniform> material: Material;\n        @group(1) @binding(1) var albedo_texture: texture_2d<f32>;\n        @group(1) @binding(2) var albedo_sampler: sampler;\n\n        struct Light {\n            position: vec3f,\n            color: vec3f,\n            intensity: f32,\n        }\n        @group(2) @binding(0) var<uniform> light: Light;\n\n        @fragment\n        fn fs_main(\n            @location(0) world_position: vec3f,\n            @location(1) world_normal: vec3f,\n            @location(2) uv: vec2f,\n        ) -> @location(0) vec4f {\n            let albedo = textureSample(albedo_texture, albedo_sampler, uv).rgb * material.albedo.rgb;\n            let n = normalize(world_normal);\n            let v = normalize(-world_position);\n            let l = normalize(light.position - world_position);\n            let h = normalize(v + l);\n\n            let n_dot_l = max(dot(n, l), 0.0);\n\n            return vec4f(albedo * light.color * light.intensity * n_dot_l, material.albedo.a);\n        }\n    "
 
-# ═══════════════════════════════════════════════════════════════
-# Shader Presets
-# ═══════════════════════════════════════════════════════════════
 
 shader_preset_basic: any = ()
   program = shader_program_new()
@@ -102,9 +80,6 @@ shader_preset_pbr: any = ()
   shader_program_link(program)
   program
 
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════
 
 M.new = shader_new
 M.compile = shader_compile

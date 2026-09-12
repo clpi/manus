@@ -1,21 +1,5 @@
-# foreign — Cross-Language AST Bridge
-# Transpile snippets from Python, Rust, Zig, and other languages into C
-# at compile time via @run, then inject the result with @c.emit.
-#
-# Usage:
-#   @foreign("zig", "fn add(a: i64, b: i64) i64 { return a + b; }")
-#   @foreign("python", "def add(a, b): return a + b")
-#
-#   local foreign = foreign
-#   local c_code = foreign.zig_to_c("fn add(a: i64, b: i64) i64 { return a + b; }")
-#   # c_code = "int64_t add(int64_t a, int64_t b) { return a + b; }"
 
-# ═══════════════════════════════════════════════════════════════
-# Zig → C transpilation
-# ═══════════════════════════════════════════════════════════════
 
-# zig_to_c: translate common Zig patterns to C.
-# Returns the C equivalent as a string.
 zig_to_c: str = (code: str)
   result = code
   result = result:gsub(": u64", ": uint64_t")
@@ -35,12 +19,7 @@ zig_to_c: str = (code: str)
   result = result:gsub("*const u8", "const char*")
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Rust → C transpilation
-# ═══════════════════════════════════════════════════════════════
 
-# rust_to_c: translate common Rust patterns to C.
-# Returns the C equivalent as a string.
 rust_to_c: str = (code: str)
   result = code
   result = result:gsub("pub fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
@@ -63,12 +42,7 @@ rust_to_c: str = (code: str)
   result = result:gsub("*mut u8", "uint8_t*")
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Python → C helper
-# ═══════════════════════════════════════════════════════════════
 
-# python_func: generate a C function declaration from Python-style metadata.
-# Returns the C function as a string (caller can pass to @c.emit).
 python_func: str = (name: str, params: any, body: str, ret_type: str)
   parts = {}
   parts[parts:len() + 1] = "/* [foreign.python] " .. name .. " */"
@@ -88,9 +62,6 @@ python_func: str = (name: str, params: any, body: str, ret_type: str)
   parts[parts:len() + 1] = "}"
   str_join(parts, "\n")
 
-# ═══════════════════════════════════════════════════════════════
-# String joining helper
-# ═══════════════════════════════════════════════════════════════
 
 str_join: str = (parts: any, sep: str)
   result = ""

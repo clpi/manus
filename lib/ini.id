@@ -1,4 +1,3 @@
-# ini — INI file parser
 
 parse: any = (data: str)
   lines = data:split("\n")

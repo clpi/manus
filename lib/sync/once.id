@@ -1,18 +1,13 @@
-# sync_once — Once (mirrors Go's sync.Once)
-# Ensures a function is called exactly once, even across concurrent calls.
 
-# once: create a new Once.
 once: any = ()
   { done = false, f = nil }
 
-# run: call fn exactly once. Subsequent calls are no-ops.
 run: any = (o: any, fn: any)
   if o.done
     return nil
   o.done = true
   fn()
 
-# call: call fn once and cache its result.
 call: any = (o: any, fn: any)
   if o.done
     return o.result
@@ -20,7 +15,6 @@ call: any = (o: any, fn: any)
   o.result = fn()
   o.result
 
-# reset: reset the Once so it can fire again.
 reset = (o: any)
   o.done = false
   o.result = nil

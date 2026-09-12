@@ -1,9 +1,4 @@
-# ml.rnn — Recurrent neural network layers (SimpleRNN, GRU, LSTM)
-# For sequence modeling tasks: time series, speech, NLP.
 
-# ═══════════════════════════════════════════════════════════════
-# Simple RNN
-# ═══════════════════════════════════════════════════════════════
 
 simple_rnn: any = (input_size: i64, hidden_size: i64, activation: str)
   if activation == nil
@@ -23,13 +18,11 @@ simple_rnn: any = (input_size: i64, hidden_size: i64, activation: str)
 
 @hot
 simple_rnn_forward: any = (layer: any, x: any, state: any)
-  # x: [seq_len, input_size]
   seq_len = x.rows
   h = state or ml.tensor.zeros(1, layer.hidden_size)
   outputs = ml.tensor.zeros(seq_len, layer.hidden_size)
 
   for t = 1, seq_len
-    # h = activation(x_t @ W_ih + b_ih + h_{t-1} @ W_hh + b_hh)
     input_gate = ml.tensor.zeros(1, layer.hidden_size)
     for j = 1, layer.hidden_size
       s = layer.b_ih.data(j) + layer.b_hh.data(j)
@@ -50,9 +43,6 @@ simple_rnn_forward: any = (layer: any, x: any, state: any)
   layer.state = h
   outputs
 
-# ═══════════════════════════════════════════════════════════════
-# GRU (Gated Recurrent Unit)
-# ═══════════════════════════════════════════════════════════════
 
 gru: any = (input_size: i64, hidden_size: i64)
   scale = 1.0 / hidden_size:sqrt()
@@ -74,9 +64,6 @@ gru: any = (input_size: i64, hidden_size: i64)
     b_hn = ml.tensor.zeros(1, hidden_size),
     state = nil
   }
-# Update gate: W_z, U_z, b_z
-# Reset gate: W_r, U_r, b_r
-# New gate: W_n, U_n, b_n
 
 @hot
 gru_forward: any = (layer: any, x: any, state: any)
@@ -88,7 +75,6 @@ gru_forward: any = (layer: any, x: any, state: any)
     z = sigmoid_vec(gru_gate(x, t, h, layer.w_iz, layer.w_hz, layer.b_iz, layer.b_hz, layer.input_size, layer.hidden_size))
     r = sigmoid_vec(gru_gate(x, t, h, layer.w_ir, layer.w_hr, layer.b_ir, layer.b_hr, layer.input_size, layer.hidden_size))
 
-    # New gate: tanh(W_in * x + U_in * (r * h) + b_in + b_hn)
     h_candidate = ml.tensor.zeros(1, layer.hidden_size)
     for j = 1, layer.hidden_size
       s = layer.b_in.data(j) + layer.b_hn.data(j)
@@ -98,7 +84,6 @@ gru_forward: any = (layer: any, x: any, state: any)
         s = s + r.data(k) * h.data(k) * layer.w_hn.data((k - 1) * layer.hidden_size + j)
       h_candidate.data[j] = s:tanh()
 
-    # h = (1 - z) * h_candidate + z * h
     for j = 1, layer.hidden_size
       h.data[j] = (1 - z.data(j)) * h_candidate.data(j) + z.data(j) * h.data(j)
       outputs.data[(t - 1) * layer.hidden_size + j] = h.data(j)
@@ -122,9 +107,6 @@ sigmoid_vec: any = (v: any)
     result.data[i] = 1.0 / (1.0 + -v.data(i):exp())
   result
 
-# ═══════════════════════════════════════════════════════════════
-# LSTM (Long Short-Term Memory)
-# ═══════════════════════════════════════════════════════════════
 
 lstm: any = (input_size: i64, hidden_size: i64)
   scale = 1.0 / hidden_size:sqrt()
@@ -151,10 +133,6 @@ lstm: any = (input_size: i64, hidden_size: i64)
     state = nil,
     cell = nil
   }
-# Input gate
-# Forget gate
-# Cell gate
-# Output gate
 
 @hot
 lstm_forward: any = (layer: any, x: any, state: any, cell: any)
@@ -164,11 +142,8 @@ lstm_forward: any = (layer: any, x: any, state: any, cell: any)
   outputs = ml.tensor.zeros(seq_len, layer.hidden_size)
 
   for t = 1, seq_len
-    # Input gate
     i_gate = sigmoid_vec(lstm_gate(x, t, h, layer.w_ii, layer.w_hi, layer.b_ii, layer.b_hi, layer.input_size, layer.hidden_size))
-    # Forget gate
     f_gate = sigmoid_vec(lstm_gate(x, t, h, layer.w_if, layer.w_hf, layer.b_if, layer.b_hf, layer.input_size, layer.hidden_size))
-    # Cell gate (candidate)
     c_gate = ml.tensor.zeros(1, layer.hidden_size)
     for j = 1, layer.hidden_size
       s = layer.b_ic.data(j) + layer.b_hc.data(j)
@@ -177,14 +152,11 @@ lstm_forward: any = (layer: any, x: any, state: any, cell: any)
       for k = 1, layer.hidden_size
         s = s + h.data(k) * layer.w_hc.data((k - 1) * layer.hidden_size + j)
       c_gate.data[j] = s:tanh()
-    # Output gate
     o_gate = sigmoid_vec(lstm_gate(x, t, h, layer.w_io, layer.w_ho, layer.b_io, layer.b_ho, layer.input_size, layer.hidden_size))
 
-    # Update cell state: c = f * c + i * c_gate
     for j = 1, layer.hidden_size
       c.data[j] = f_gate.data(j) * c.data(j) + i_gate.data(j) * c_gate.data(j)
 
-    # Update hidden state: h = o * tanh(c)
     for j = 1, layer.hidden_size
       h.data[j] = o_gate.data(j) * c.data(j):tanh()
       outputs.data[(t - 1) * layer.hidden_size + j] = h.data(j)
@@ -203,9 +175,6 @@ lstm_gate: any = (x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any
     result.data[j] = s
   result
 
-# ═══════════════════════════════════════════════════════════════
-# Bidirectional RNN
-# ═══════════════════════════════════════════════════════════════
 
 bidirectional: any = (rnn_layer: any)
   {
@@ -215,25 +184,17 @@ bidirectional: any = (rnn_layer: any)
     hidden_size = rnn_layer.hidden_size,
     output_size = rnn_layer.hidden_size * 2
   }
-# separate weights needed in practice
 
 bidirectional_forward: any = (layer: any, x: any)
-  # Forward pass
   fwd = simple_rnn_forward(layer.forward, x, nil)
-  # Backward pass (reverse input)
   seq_len = x.rows
   rev = ml.tensor.zeros(seq_len, x.cols)
   for t = 1, seq_len
     for j = 1, x.cols
       rev.data[(t - 1) * x.cols + j] = x.data((seq_len - t) * x.cols + j)
   bwd = simple_rnn_forward(layer.backward, rev, nil)
-  # Reverse bwd to align with fwd
   bwd_rev = ml.tensor.zeros(seq_len, bwd.cols)
   for t = 1, seq_len
     for j = 1, bwd.cols
       bwd_rev.data[(t - 1) * bwd.cols + j] = bwd.data((seq_len - t) * bwd.cols + j)
-  # Concatenate
   ml.tensor.hstack({ fwd, bwd_rev })
-# ═══════════════════════════════════════════════════════════════
-# Module exports
-# ═══════════════════════════════════════════════════════════════

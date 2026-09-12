@@ -1,6 +1,4 @@
-# net_mail — email address and message parsing (mirrors Go's net/mail)
 
-# address: parse a single email address string.
 address: any = (s: str)
   if s == nil or s == ""
     return nil
@@ -23,7 +21,6 @@ address: any = (s: str)
     return nil
   { name = "", address = s }
 
-# list: parse a comma-separated list of addresses.
 list: any = (s: str)
   if s == nil or s == ""
     return {}
@@ -51,7 +48,6 @@ list: any = (s: str)
     i = i + 1
   out
 
-# format: format an address table as "Name <addr>" or "addr".
 format: str = (addr: any)
   if addr == nil
     return ""
@@ -59,7 +55,6 @@ format: str = (addr: any)
     return "\"" .. addr.name .. "\" <" .. addr.address .. ">"
   addr.address
 
-# split: helper to split a string on newlines.
 split: any = (s: str)
   if s == nil
     return {}
@@ -78,7 +73,6 @@ split: any = (s: str)
     out[out:len() + 1] = s:sub(start)
   out
 
-# read: parse an RFC 5322 message into {headers = {...}, body = "..."}.
 read: any = (raw: str)
   if raw == nil
     return { headers = {}, body = "" }
