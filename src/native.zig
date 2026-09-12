@@ -1089,6 +1089,17 @@ const Arm64Compiler = struct {
     probe_census_call_non0: u32 = 0,
     probe_census_leaf_plan0: u32 = 0,
     probe_census_leaf_non0: u32 = 0,
+    probe_census_singlepass: u32 = 0,
+    probe_census_fallback: u32 = 0,
+    /// Sites of callee-saved `str`/`ldr` pairs from the current single-pass
+    /// attempt, so the pairs for untouched registers can be nop'd once
+    /// `callee_touched` is known. Cleared at each attempt; read only on the
+    /// fast path. Recorded in `emitSaveCalleeRegs`/`emitRestoreCalleeRegs`.
+    callee_save_sites: std.ArrayList(CalleeSaveSite) = .empty,
+    /// When set, `compileDnirFunction` skips recording the function symbol;
+    /// the single-pass driver records it after a successful attempt, so a
+    /// rewound attempt leaves no stale symbol behind.
+    defer_func_symbol: bool = false,
     /// SEVERING CONTROL for §12 `error.depth`. `IDOL_NO_DEPTH=1` restores the
     /// unmetered prologue — and with it the SIGSEGV — for every function.
     /// Read the same way and for the same reason as `tailcall`.
@@ -1449,6 +1460,7 @@ const Arm64Compiler = struct {
     }
 
     fn deinit(self: *Arm64Compiler) void {
+        self.callee_save_sites.deinit(self.alloc);
         self.code.deinit(self.alloc);
         self.asm_text.deinit(self.alloc);
         for (self.symbols.items) |sym| self.alloc.free(sym.name);
@@ -1858,36 +1870,11 @@ const Arm64Compiler = struct {
         // different function.
         try self.computeDepthMeteredSet(m.functions);
         for (m.functions) |f| {
-            // `dnirNeedsCalleeSave` decides whether to MEASURE, and it is a census
-            // of DNIR names -- the same census `probeCalleeSaveUse`'s own comment
-            // says "is not a bound on it in either direction". The emitter's
-            // `ret_record` parallel move stages n field values into fresh scratch
-            // registers before committing them to x0..x7, a demand for ~2n
-            // registers that no census of names counts; at six fields the staging
-            // reaches x19 and the check below refuses a correct program. Measure
-            // every function: the probe already answers `callee_save_all` when it
-            // cannot compile, and a leaf that touches nothing still plans 0.
+            // Single-pass codegen: the attempt IS the measurement. See
+            // `compileDnirFunctionSinglePass`.
             self.next_func_metered = self.depth_metered_names.contains(f.name);
             self.probe_census_functions += 1;
-            const plan = self.probeFunctionPlan(f);
-            if (plan.callee_save == 0) self.probe_census_plan_zero += 1;
-            const pc_has_call = dnirFunctionHasCall(f);
-            if (pc_has_call and plan.callee_save == 0) self.probe_census_call_plan0 += 1;
-            if (pc_has_call and plan.callee_save != 0) self.probe_census_call_non0 += 1;
-            if (!pc_has_call and plan.callee_save == 0) self.probe_census_leaf_plan0 += 1;
-            if (!pc_has_call and plan.callee_save != 0) self.probe_census_leaf_non0 += 1;
-            if (plan.callee_save == callee_save_all) self.probe_census_plan_all += 1;
-            if (plan.callee_save != 0 and plan.callee_save != callee_save_all) self.probe_census_plan_partial += 1;
-            self.callee_save_plan = plan.callee_save;
-            self.gp_call_home_budget = plan.home_budget;
-            try self.compileDnirFunction(f);
-            // The plan was measured, not guessed, so a body that reached outside
-            // it means the measurement and the emission disagreed — and the
-            // artifact just written would hand the CALLER back a register it
-            // clobbered. That is invisible to any test of this function. Refuse
-            // instead. Auto preserves this refusal; the explicit C99 source
-            // realizer is orthogonal and never rescues a direct-native claim.
-            if (self.callee_touched & ~self.callee_save_plan != 0) return self.refuse(@src());
+            try self.compileDnirFunctionSinglePass(f);
         }
         for (m.externs) |ext| {
             try self.ensureExternalSymbol(ext.symbol);
@@ -1979,6 +1966,126 @@ const Arm64Compiler = struct {
             }
         }
         return .{ .callee_save = callee_save_all, .home_budget = 0 };
+    }
+
+    /// Compile one function in a SINGLE pass.
+    ///
+    /// The old driver compiled every function twice: once into a throwaway
+    /// probe compiler to measure `callee_touched`, once for real with the
+    /// measured plan. But the measurement IS the compilation —
+    /// `callee_touched` is whatever the allocator claimed while emitting —
+    /// so the first pass's bytes are already the right body. This compiles
+    /// once, with `callee_save_plan = callee_save_all` (or 0 for a predicted
+    /// leaf), then nops the `str`/`ldr` pairs for registers the allocator
+    /// never touched. Positions never move, so every recorded offset stays
+    /// valid: no branch, patch, or relocation needs rebasing.
+    ///
+    /// The predicted shape comes from `dnirFunctionHasCall`: leaves almost
+    /// always plan 0, calls almost always need the save area. A mispredict
+    /// rewinds the attempt's bytes and retries with the other shape; a failed
+    /// first rung rewinds and falls back to the two-pass ladder. The worst
+    /// case is today's cost, never worse.
+    const CalleeSaveSite = struct { offset: u32, reg: u5 };
+    fn compileDnirFunctionSinglePass(self: *Arm64Compiler, f: dnir.Function) Error!void {
+        var want_save_area = dnirFunctionHasCall(f);
+        while (true) {
+            self.callee_save_plan = if (want_save_area) callee_save_all else 0;
+            self.gp_call_home_budget = callee_save_count;
+            if (homeBudgetOverride()) |cap| {
+                if (cap < self.gp_call_home_budget) self.gp_call_home_budget = cap;
+            }
+
+            const mark_code = self.code.items.len;
+            const mark_asm = self.asm_text.items.len;
+            const mark_patches = self.call_patches.items.len;
+            const mark_relocs = self.relocations.items.len;
+            self.callee_save_sites.clearRetainingCapacity();
+            self.defer_func_symbol = true;
+            var attempt_diag: Diagnostic = .{};
+            const saved_diag = self.diagnostic;
+            self.diagnostic = &attempt_diag;
+
+            var ok = true;
+            self.compileDnirFunction(f) catch {
+                ok = false;
+            };
+
+            self.diagnostic = saved_diag;
+            self.defer_func_symbol = false;
+
+            if (!ok) {
+                // First rung failed: rewind, fall back to the two-pass ladder.
+                self.rewindFunctionAttempt(mark_code, mark_asm, mark_patches, mark_relocs);
+                self.probe_census_fallback += 1;
+                return self.compileDnirFunctionTwoPass(f);
+            }
+
+            const touched = self.callee_touched;
+            if (!want_save_area and touched != 0) {
+                // Mispredicted leaf: rewind and retry with the save area.
+                self.rewindFunctionAttempt(mark_code, mark_asm, mark_patches, mark_relocs);
+                want_save_area = true;
+                continue;
+            }
+            if (want_save_area) {
+                self.patchUnusedCalleeSaves(touched);
+                self.callee_save_plan = touched;
+            }
+            self.probe_census_singlepass += 1;
+            self.countPlanCensus(touched, dnirFunctionHasCall(f));
+            const link_name = try linkerSymbolName(self.alloc, f.name);
+            try self.symbols.append(self.alloc, .{ .name = link_name, .offset = @intCast(mark_code), .defined = true });
+            return;
+        }
+    }
+
+    /// Today's two-pass path, kept as the fallback: probe the ladder, then
+    /// compile for real with the measured plan.
+    fn compileDnirFunctionTwoPass(self: *Arm64Compiler, f: dnir.Function) Error!void {
+        const plan = self.probeFunctionPlan(f);
+        self.countPlanCensus(plan.callee_save, dnirFunctionHasCall(f));
+        self.callee_save_plan = plan.callee_save;
+        self.gp_call_home_budget = plan.home_budget;
+        try self.compileDnirFunction(f);
+        // The plan was measured, not guessed, so a body that reached outside
+        // it means the measurement and the emission disagreed — and the
+        // artifact just written would hand the CALLER back a register it
+        // clobbered. That is invisible to any test of this function. Refuse
+        // instead.
+        if (self.callee_touched & ~self.callee_save_plan != 0) return self.refuse(@src());
+    }
+
+    /// Classify a measured plan for `IDOL_PROBE_CENSUS`.
+    fn countPlanCensus(self: *Arm64Compiler, plan: u32, has_call: bool) void {
+        if (plan == 0) self.probe_census_plan_zero += 1;
+        if (plan == callee_save_all) self.probe_census_plan_all += 1;
+        if (plan != 0 and plan != callee_save_all) self.probe_census_plan_partial += 1;
+        if (has_call and plan == 0) self.probe_census_call_plan0 += 1;
+        if (has_call and plan != 0) self.probe_census_call_non0 += 1;
+        if (!has_call and plan == 0) self.probe_census_leaf_plan0 += 1;
+        if (!has_call and plan != 0) self.probe_census_leaf_non0 += 1;
+    }
+
+    /// Truncate the attempt's bytes, leaving interned strings/constants (and
+    /// their dedup maps) valid. The function symbol was deferred, so nothing
+    /// defined is left behind.
+    fn rewindFunctionAttempt(self: *Arm64Compiler, mark_code: usize, mark_asm: usize, mark_patches: usize, mark_relocs: usize) void {
+        self.code.items.len = mark_code;
+        self.asm_text.items.len = mark_asm;
+        self.call_patches.items.len = mark_patches;
+        self.relocations.items.len = mark_relocs;
+        self.callee_save_sites.clearRetainingCapacity();
+    }
+
+    /// Replace the save/restore pairs for untouched registers with NOPs.
+    /// Positions never move: each pair was one 4-byte instruction, so recorded
+    /// offsets stay valid and nothing needs rebasing.
+    fn patchUnusedCalleeSaves(self: *Arm64Compiler, touched: u32) void {
+        for (self.callee_save_sites.items) |site| {
+            if (touched & (@as(u32, 1) << site.reg) == 0) {
+                std.mem.writeInt(u32, self.code.items[site.offset..][0..4], 0xd503201f, .little);
+            }
+        }
     }
 
     /// Null when the function does not compile at `home_budget` homes.
@@ -3217,7 +3324,9 @@ const Arm64Compiler = struct {
 
         const offset: u32 = @intCast(self.code.items.len);
         const link_name = try linkerSymbolName(self.alloc, f.name);
-        try self.symbols.append(self.alloc, .{ .name = link_name, .offset = offset, .defined = true });
+        if (!self.defer_func_symbol) {
+            try self.symbols.append(self.alloc, .{ .name = link_name, .offset = offset, .defined = true });
+        }
         try self.asm_text.appendSlice(self.alloc, "\n.globl _");
         try self.asm_text.appendSlice(self.alloc, link_name);
         try self.asm_text.appendSlice(self.alloc, "\n.p2align 2\n_");
@@ -7899,6 +8008,7 @@ const Arm64Compiler = struct {
         while (reg <= callee_save_last) : (reg += 1) {
             if (self.callee_save_plan & (@as(u32, 1) << reg) == 0) continue;
             try self.emitStrSp(reg, (@as(u16, reg) - callee_save_first) * 8);
+            try self.callee_save_sites.append(self.alloc, .{ .offset = @intCast(self.code.items.len - 4), .reg = reg });
         }
         self.callee_save_bytes = callee_save_span;
     }
@@ -7909,6 +8019,7 @@ const Arm64Compiler = struct {
         while (reg <= callee_save_last) : (reg += 1) {
             if (self.callee_save_plan & (@as(u32, 1) << reg) == 0) continue;
             try self.emitLdrSp(reg, (@as(u16, reg) - callee_save_first) * 8);
+            try self.callee_save_sites.append(self.alloc, .{ .offset = @intCast(self.code.items.len - 4), .reg = reg });
         }
         try self.emitAddSp(self.callee_save_bytes);
     }
@@ -12293,8 +12404,8 @@ fn emitArm64FromDnirLicensed(
     }
     if (std.c.getenv("IDOL_PROBE_CENSUS") != null) {
         std.debug.print(
-            "probe functions={d} probe_compiles={d} descents={d} plan0={d} planAll={d} planPart={d} call0={d} callN0={d} leaf0={d} leafN0={d}\n",
-            .{ compiler.probe_census_functions, compiler.probe_census_probes, compiler.probe_census_descents, compiler.probe_census_plan_zero, compiler.probe_census_plan_all, compiler.probe_census_plan_partial, compiler.probe_census_call_plan0, compiler.probe_census_call_non0, compiler.probe_census_leaf_plan0, compiler.probe_census_leaf_non0 },
+            "probe functions={d} probe_compiles={d} descents={d} singlepass={d} fallback={d} plan0={d} planAll={d} planPart={d} call0={d} callN0={d} leaf0={d} leafN0={d}\n",
+            .{ compiler.probe_census_functions, compiler.probe_census_probes, compiler.probe_census_descents, compiler.probe_census_singlepass, compiler.probe_census_fallback, compiler.probe_census_plan_zero, compiler.probe_census_plan_all, compiler.probe_census_plan_partial, compiler.probe_census_call_plan0, compiler.probe_census_call_non0, compiler.probe_census_leaf_plan0, compiler.probe_census_leaf_non0 },
         );
     }
     var output = try compiler.finish();
