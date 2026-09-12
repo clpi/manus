@@ -1,0 +1,35 @@
+span: i64 = (s: str)
+  b = s:byte(1)
+  r = s:sub(2, s:len())
+  b >= 97 and b <= 122 and 1 or
+  (b == 62 or b == 38 or b == 124) and r:binary() or
+  b >= 49 and b <= 57 and 1 or
+  b == 33 and scan(s, 2) or
+  (b == 76 or b == 70 or b == 83) and 1 + r:span() or
+  (b == 65 or b == 80 or b == 73 or b == 74) and r:binary() or
+  b == 67 and r:triple() or
+  0
+
+binary: i64 = (r: str)
+  1 + r:span() + r:rest():span()
+
+triple: i64 = (r: str)
+  1 + r:span() + r:rest():span() + r:rest():rest():span()
+
+scan: i64 = (s: str, i: i64)
+  (i > s:len() or s:byte(i) == 33) and i or scan(s, i + 1)
+
+first: str = (s: str)
+  s:sub(1, s:span())
+
+rest: str = (s: str)
+  s:sub(s:span() + 1, s:len())
+
+num: i64 = (t: str)
+  digits(t, 2, 0)
+
+digits: i64 = (t: str, k: i64, n: i64)
+  ((k > t:len() or t:byte(k) == 33 or t:byte(k) < 48 or t:byte(k) > 57) and n + 1 or digits(t, k + 1, n * 10 + t:byte(k) - 48) + 1) - 1
+
+find: i64 = (s: str, i: i64, b: i64)
+  (i > s:len() or s:byte(i) == b) and i or find(s, i + 1, b)

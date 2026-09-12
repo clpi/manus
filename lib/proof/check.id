@@ -1,0 +1,69 @@
+nth: str = (c: str, n: i64)
+  e = find(c, 1, 59)
+  n == 1 and c:sub(1, e - 1) or n < 1 and "" or nth(c:sub(e + 1, c:len()), n - 1)
+
+push: str = (c: str, p: str)
+  c == "" and p or p .. ";" .. c
+
+of: str = (t: str, c: str)
+  b = t:byte(1)
+  r = t:sub(2, t:len())
+  b >= 49 and b <= 57 and c:nth(b - 48) or
+  b == 33 and c:nth(t:num()) or
+  b == 65 and app(c, r) or
+  b == 80 and pair(c, r) or
+  b == 70 and fst(c, r) or
+  b == 83 and snd(c, r) or
+  b == 73 and inl(c, r) or
+  b == 74 and inr(c, r) or
+  b == 67 and elim(c, r) or
+  ""
+
+app: str = (c: str, r: str)
+  f = r:first():of(c)
+  qr = f:sub(2, f:len())
+  x = r:rest():of(c)
+  f == "" or f:byte(1) != 62 and "" or x != qr:first() and "" or qr:rest()
+
+pair: str = (c: str, r: str)
+  l = r:first():of(c)
+  rr = r:rest():of(c)
+  l == "" or rr == "" and "" or "&" .. l .. rr
+
+fst: str = (c: str, r: str)
+  x = r:of(c)
+  xr = x:sub(2, x:len())
+  x == "" or x:byte(1) != 38 and "" or xr:first()
+
+snd: str = (c: str, r: str)
+  x = r:of(c)
+  xr = x:sub(2, x:len())
+  x == "" or x:byte(1) != 38 and "" or xr:rest()
+
+inl: str = (c: str, r: str)
+  x = r:first():of(c)
+  x == "" and "" or "|" .. x .. r:rest()
+
+inr: str = (c: str, r: str)
+  x = r:first():of(c)
+  x == "" and "" or "|" .. r:rest() .. x
+
+elim: str = (c: str, r: str)
+  x = r:first():of(c)
+  xr = x:sub(2, x:len())
+  f = r:rest():first():of(c)
+  fr = f:sub(2, f:len())
+  g = r:rest():rest():of(c)
+  gr = g:sub(2, g:len())
+  x == "" or x:byte(1) != 124 or f == "" or f:byte(1) != 62 or fr:first() != xr:first() or g == "" or g:byte(1) != 62 or gr:first() != xr:rest() or fr:rest() != gr:rest() and "" or fr:rest()
+
+lam: bool = (t: str, c: str, p: str)
+  pr = p:sub(2, p:len())
+  p:byte(1) == 62 and t:sub(2, t:len()):check(c:push(pr:first()), pr:rest()) or false
+
+infer: bool = (t: str, c: str, p: str)
+  q = t:of(c)
+  q != "" and q == p
+
+check: bool = (t: str, c: str, p: str)
+  t:byte(1) == 76 and lam(t, c, p) or infer(t, c, p)

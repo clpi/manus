@@ -1,0 +1,62 @@
+term: str = (st: str)
+  st:sub(1, find(st, 1, 10) - 1)
+
+holes: str = (st: str)
+  st:sub(find(st, 1, 10) + 1, st:len())
+
+head: str = (h: str)
+  h:sub(1, find(h, 1, 10) - 1)
+
+tail: str = (h: str)
+  h:sub(find(h, 1, 10) + 1, h:len())
+
+ctx: str = (h: str)
+  h:sub(1, find(h, 1, 9) - 1)
+
+prop: str = (h: str)
+  h:sub(find(h, 1, 9) + 1, h:len())
+
+plug: str = (t: str, u: str)
+  i = find(t, 1, 63)
+  i > t:len() and t or t:sub(1, i - 1) .. u .. t:sub(i + 1, t:len())
+
+goal: str = (p: str)
+  "?" .. "\n" .. "\t" .. p
+
+intro: str = (st: str)
+  h = st:holes():head()
+  hp = h:prop()
+  pr = hp:sub(2, hp:len())
+  hp:byte(1) == 62 and st:term():plug("L?") .. "\n" .. h:ctx():push(pr:first()) .. "\t" .. pr:rest() .. "\n" .. st:holes():tail() or ""
+
+exact: str = (st: str, u: str)
+  h = st:holes():head()
+  u:check(h:ctx(), h:prop()) and st:term():plug(u) .. "\n" .. st:holes():tail() or ""
+
+apply: str = (st: str, u: str)
+  h = st:holes():head()
+  hc = h:ctx()
+  q = u:of(hc)
+  qr = q:sub(2, q:len())
+  q == "" or q:byte(1) != 62 or qr:rest() != h:prop() and "" or st:term():plug("A" .. u .. "?") .. "\n" .. hc .. "\t" .. qr:first() .. "\n" .. st:holes():tail()
+
+split: str = (st: str)
+  h = st:holes():head()
+  hc = h:ctx()
+  pr = h:prop():sub(2, h:prop():len())
+  h:prop():byte(1) == 38 and st:term():plug("P??") .. "\n" .. hc .. "\t" .. pr:first() .. "\n" .. hc .. "\t" .. pr:rest() .. "\n" .. st:holes():tail() or ""
+
+left: str = (st: str)
+  h = st:holes():head()
+  hc = h:ctx()
+  pr = h:prop():sub(2, h:prop():len())
+  h:prop():byte(1) == 124 and st:term():plug("I?" .. pr:rest()) .. "\n" .. hc .. "\t" .. pr:first() .. "\n" .. st:holes():tail() or ""
+
+right: str = (st: str)
+  h = st:holes():head()
+  hc = h:ctx()
+  pr = h:prop():sub(2, h:prop():len())
+  h:prop():byte(1) == 124 and st:term():plug("J?" .. pr:first()) .. "\n" .. hc .. "\t" .. pr:rest() .. "\n" .. st:holes():tail() or ""
+
+qed: str = (st: str)
+  st:holes() == "" and st:term() or ""

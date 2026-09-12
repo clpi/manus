@@ -1,0 +1,52 @@
+gap: bool = (x: i64)
+  x == 32 or x == 9 or x == 13
+
+walk: i64 = (s: str, i: i64, n: i64, blank: bool)
+  i > s:len() and (blank and n or n + 1) or
+  s:byte(i) == 10 and walk(s, i + 1, blank and n or n + 1, true) or
+  walk(s, i + 1, n, gap(s:byte(i)) and blank or false)
+
+lines: i64 = (s: str)
+  walk(s, 1, 1, true) - 1
+
+seek: bool = (s: str, w: str, i: i64)
+  (i + w:len() - 1 <= s:len()) and (s:sub(i, i + w:len() - 1) == w or seek(s, w, i + 1)) or false
+
+has: bool = (s: str, w: str)
+  seek(s, w, 1)
+
+run: i64 = ()
+  proof = "LLLLLLLLLLLLLLLLLLLLLA2A3A4A5A6A7A8A9A!10!A!11!A!12!A!13!A!14!A!15!A!16!A!17!A!18!A!19!A!20!A!21!1"
+  claim = ">>ab>>bc>>cd>>de>>ef>>fg>>gh>>hi>>ij>>jk>>kl>>lm>>mn>>no>>op>>pq>>qr>>rs>>st>>tu>au"
+  a = "L1":check("", ">aa")
+  b = "LLLA2A31":check("", ">>ab>>bc>ac")
+  e = proof:check("", claim)
+  g = ">>ab>>bc>ac":goal():intro():intro():intro():apply("2"):apply("3"):exact("1"):qed()
+  d = g:check("", ">>ab>>bc>ac")
+  rulesok = "P12":check(">aa;>bb", "&>aa>bb") and "F1":check("&>aa>bb", ">aa") and "S1":check("&>aa>bb", ">bb") and "I1b":check(">aa", "|>aab") and "J1a":check(">aa", "|a>aa") and "LLLC321":check("", ">|ab>>a|ba>>b|ba|ba")
+  refuseok = !"L1":check("", ">ab") and ">aa":goal():split() == "" and ">>ab>>bc>ac":goal():qed() == ""
+  coq = "test/proofdata/id.v":read()
+  lean = "test/proofdata/id.lean":read()
+  agda = "test/proofdata/id.agda":read()
+  idol = "test/proofdata/id.id":read()
+  py = "test/proofdata/chain.py":read()
+  expect = "e = \"" .. proof .. "\":check(\"\", \"" .. claim .. "\")"
+  lineok = lines(idol) < lines(coq) and lines(idol) < lines(lean) and lines(idol) < lines(agda)
+  byteok = idol:len() < coq:len() and idol:len() < lean:len() and idol:len() < agda:len()
+  pyok = 1 < lines(py) and expect:len() < py:len()
+  driftok = has(idol, proof) and has(idol, claim) and has(idol, "\"L1\"")
+  ok = a and b and e and d and rulesok and refuseok and lineok and byteok and pyok and driftok
+  msg = ok and " proofunity ok" or " proofunity FAIL"
+  stdout:write("idol ")
+  stdout:write(lines(idol))
+  stdout:write(" coq ")
+  stdout:write(lines(coq))
+  stdout:write(" lean ")
+  stdout:write(lines(lean))
+  stdout:write(" agda ")
+  stdout:write(lines(agda))
+  stdout:write(" py ")
+  stdout:write(lines(py))
+  stdout:write(msg)
+  0
+run()
