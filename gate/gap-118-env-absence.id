@@ -1,0 +1,78 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+main: i64 = ()
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "./zig-out/bin/idol"
+  cc = os.env["CC"]
+  if cc == nil or cc == ""
+    cc = "cc"
+  work = chomp(gatecap("mktemp -d \"$\{TMPDIR:-/tmp\}/idol-gap118.XXXXXX\""))
+  fail = 0
+  if gatecap("test -x '{idol}'; echo $?") == "0\n"
+    scratch = "{work}/scratch"
+    gatecap("mkdir -p '{scratch}'")
+    gatecap("cat >'{work}/probe.id' <<'PROBE'\nmain: i64 = ()\n    v = os.env[\"G118PROBE\"]\n    if v == nil\n        return 10\n    if v == \"\"\n        return 20\n    30\nPROBE\n")
+    dump = digits(chomp(gatecap("TMPDIR='{scratch}' '{idol}' dump-c '{work}/probe.id' >'{work}/probe.c' 2>'{work}/dump.log'; echo $?")))
+    if dump != 0
+      print("gap-118 env absence gate: FAIL dump-c refused the probe")
+      fail = 1
+    else
+      if gatecap("command -v '{cc}' >/dev/null 2>&1; echo $?") == "0\n"
+        comp = digits(chomp(gatecap("'{cc}' -o '{work}/probe' '{work}/probe.c' 2>'{work}/cc.log'; echo $?")))
+        if comp != 0
+          print("gap-118 env absence gate: FAIL emitted C did not compile")
+          fail = 1
+        else
+          absent = digits(chomp(gatecap("TMPDIR='{scratch}' env -u G118PROBE '{work}/probe' >'{work}/absent.log' 2>&1; echo $?")))
+          empty = digits(chomp(gatecap("TMPDIR='{scratch}' env G118PROBE= '{work}/probe' >'{work}/empty.log' 2>&1; echo $?")))
+          nonempty = digits(chomp(gatecap("TMPDIR='{scratch}' env G118PROBE=hello '{work}/probe' >'{work}/nonempty.log' 2>&1; echo $?")))
+          if absent != 10
+            print("gap-118 env absence gate: FAIL absent variable answered {absent}, not 10")
+            fail = 1
+          else
+            if empty != 20
+              print("gap-118 env absence gate: FAIL present-empty variable answered {empty}, not 20")
+              fail = 1
+            else
+              if nonempty != 30
+                print("gap-118 env absence gate: FAIL present-nonempty variable answered {nonempty}, not 30")
+                fail = 1
+              else
+                if gatecap("grep -q '^getenv' lib/os.id >/dev/null 2>&1; echo $?") == "0\n"
+                  print("gap-118 env absence gate: FAIL lib/os.id defines getenv again; the admitted face is os.env[key]")
+                  fail = 1
+      else
+        print("gap-118 env absence gate: FAIL C compiler is unavailable: {cc}")
+        fail = 1
+  else
+    print("gap-118 env absence gate: FAIL compiler is not executable: {idol}")
+    fail = 1
+  gatecap("rm -rf '{work}'")
+  if fail == 0
+    print("gap-118 env absence gate: PASS absent=10 empty=20 nonempty=30")
+  fail

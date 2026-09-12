@@ -1,0 +1,57 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+main: i64 = ()
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "./zig-out/bin/idol"
+  work = chomp(gatecap("mktemp -d \"$\{TMPDIR:-/tmp\}/idol-gap111.XXXXXX\""))
+  fail = 0
+  if gatecap("test -x '{idol}'; echo $?") == "0\n"
+    gatecap("cat >'{work}/canonical.id' <<'PROBE'\ntwice = (x) x * 2\nxs = \{1, 2, 3\}\nmain: i64 = ()\n    r = iter.map(xs, twice)\n    0\nPROBE\n")
+    gatecap("cat >'{work}/unknown.id' <<'PROBE'\nmain: i64 = ()\n    s = \"abcd\"\n    r = s:zzznotarelation()\n    0\nPROBE\n")
+    log = "{work}/check.log"
+    ec = digits(chomp(gatecap("'{idol}' check '{work}/canonical.id' >'{log}' 2>&1; echo $?")))
+    if ec != 0
+      print("gap-111-subject-first gate: FAIL canonical iter.map(xs, twice) was not admitted")
+      fail = 1
+    else
+      ec2 = digits(chomp(gatecap("'{idol}' check '{work}/unknown.id' >'{log}' 2>&1; echo $?")))
+      if ec2 == 0
+        print("gap-111-subject-first gate: FAIL unknown subject-first relation was admitted")
+        fail = 1
+      else
+        found = gatecap("grep -F -- 'zzznotarelation' '{log}' >/dev/null 2>&1; echo $?") == "0\n"
+        if !found
+          print("gap-111-subject-first gate: FAIL unknown relation refusal did not name zzznotarelation")
+          fail = 1
+  else
+    print("gap-111-subject-first gate: FAIL compiler is not executable: {idol}")
+    fail = 1
+  gatecap("rm -rf '{work}'")
+  if fail == 0
+    print("gap-111-subject-first gate: PASS")
+  fail
