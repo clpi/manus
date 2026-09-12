@@ -92,19 +92,31 @@ num: i64 = (s: str)
     v = 0
     i = 1
     n = s:len()
+    neg = 0
+    if n > 0 and s:byte(1) == 45
+        neg = 1
+        i = 2
     while i <= n
         v = v * 10 + s:byte(i) - 48
         i = i + 1
+    if neg == 1
+        return 0 - v
     v
 
 dec: str = (v: i64)
     if v == 0
         return "0"
+    neg = 0
+    if v < 0
+        neg = 1
+        v = 0 - v
     out = ""
     x = v
     while x > 0
         out = hex(x - (x / 10) * 10) .. out
         x = x / 10
+    if neg == 1
+        return "-" .. out
     out
 
 trim: str = (s: str)
@@ -166,9 +178,15 @@ patch: str = (c: str, p: i64, w: i64)
 
 imm: str = (c: str, r: i64, v: i64)
     c = c .. word(movz(r, v & 65535))
-    hi = (v >> 16) & 65535
-    if hi != 0
-        c = c .. word(movk(r, hi, 1))
+    h1 = (v >> 16) & 65535
+    if h1 != 0
+        c = c .. word(movk(r, h1, 1))
+    h2 = (v >> 32) & 65535
+    if h2 != 0
+        c = c .. word(movk(r, h2, 2))
+    h3 = (v >> 48) & 65535
+    if h3 != 0
+        c = c .. word(movk(r, h3, 3))
     c
 
 term: str = (c: str, t: str, r: i64, names: str)
@@ -370,6 +388,522 @@ pop: str = (s: str, n: i64)
         i = i + 1
     out
 
+isnum: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    i = 1
+    while i <= n
+        if digit(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    return 1
+
+isname: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    i = 1
+    while i <= n
+        c = s:byte(i)
+        if c < 97 or c > 122
+            return 0
+        i = i + 1
+    return 1
+
+hasname: i64 = (lst: str, name: str)
+    m = name:len()
+    n = lst:len()
+    i = 1
+    while i <= n
+        j = i
+        while j <= n and lst:byte(j) != 124
+            j = j + 1
+        if j - i == m and lst:sub(i, j - 1) == name
+            return 1
+        i = j + 1
+    return 0
+
+varnum: i64 = (env: str, name: str)
+    m = name:len()
+    n = env:len()
+    i = 1
+    f = 0
+    while i <= n
+        j = i
+        while j <= n and env:byte(j) != 124
+            j = j + 1
+        if j - i == m and env:sub(i, j - 1) == name
+            return f / 7 + 1
+        f = f + 1
+        i = j + 1
+    return 0
+
+vfield: i64 = (vi: i64, f: i64)
+    return (vi - 1) * 7 + f
+
+eset: str = (env: str, idx: i64, v: i64)
+    out = ""
+    cur = 0
+    i = 1
+    n = env:len()
+    a = 1
+    while i <= n + 1
+        if i > n or env:byte(i) == 124
+            if cur == idx
+                out = out .. dec(v) .. "|"
+            else
+                out = out .. env:sub(a, i - 1) .. "|"
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    return out
+
+fldn: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 124
+            n = n + 1
+        i = i + 1
+    return n
+
+fld: str = (s: str, idx: i64)
+    cur = 0
+    i = 1
+    a = 1
+    n = s:len()
+    while i <= n + 1
+        if i > n or s:byte(i) == 124
+            if cur == idx
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    return ""
+
+ctset: str = (env: str, v: str, kind: i64, val: i64)
+    if hasname(env, v) == 0
+        env = env .. v .. "|0|0|0|0|0|0|"
+    vi = varnum(env, v)
+    env = eset(env, vfield(vi, 1), kind)
+    env = eset(env, vfield(vi, 2), val)
+    env = eset(env, vfield(vi, 3), 0)
+    env = eset(env, vfield(vi, 4), 0)
+    env = eset(env, vfield(vi, 5), 0)
+    return env
+
+ctcopy: str = (env: str, v: str, w: i64)
+    if hasname(env, v) == 0
+        env = env .. v .. "|0|0|0|0|0|0|"
+    vi = varnum(env, v)
+    f = 1
+    while f <= 6
+        env = eset(env, vfield(vi, f), at(env, vfield(w, f)))
+        f = f + 1
+    return env
+
+ctunknown: str = (env: str)
+    nv = fldn(env) / 7
+    vi = 1
+    while vi <= nv
+        env = eset(env, vfield(vi, 1), 1)
+        vi = vi + 1
+    return env
+
+ctscan: str = (src: str, k: i64, lc: i64, ind: i64)
+    env = ""
+    j = 0
+    while j < k
+        r = row(src, j)
+        t = trim(r)
+        if t:len() > 0 and indent(r) <= ind
+            if t:len() > 5 and t:sub(1, 5) == "while"
+                env = ctunknown(env)
+            else
+                hc = 0
+                q = 1
+                while q <= t:len()
+                    if t:byte(q) == 58
+                        hc = 1
+                    q = q + 1
+                if hc == 0
+                    eqp = 0
+                    q = 1
+                    while q <= t:len()
+                        if t:byte(q) == 61 and eqp == 0
+                            eqp = q
+                        q = q + 1
+                    if eqp > 0
+                        v = trim(t:sub(1, eqp - 1))
+                        rhs = trim(t:sub(eqp + 1, t:len()))
+                        if isname(v) == 1
+                            if isnum(rhs) == 1
+                                env = ctset(env, v, 0, num(rhs))
+                            else
+                                env = ctset(env, v, 1, 0)
+        j = j + 1
+    return env
+
+ctend: i64 = (src: str, j: i64, lc: i64, ind: i64)
+    e = j + 1
+    while e < lc
+        r = row(src, e)
+        if trim(r):len() > 0 and indent(r) <= ind
+            return e
+        e = e + 1
+    return lc
+
+isinc: i64 = (rhs: str, ctr: str)
+    oppos = 0
+    q = 1
+    while q <= rhs:len()
+        if rhs:byte(q) == 43 and oppos == 0
+            oppos = q
+        q = q + 1
+    if oppos == 0
+        return 0
+    a = trim(rhs:sub(1, oppos - 1))
+    e = trim(rhs:sub(oppos + 1, rhs:len()))
+    if a == ctr and isnum(e) == 1 and num(e) > 0
+        return 1
+    return 0
+
+stepof: i64 = (rhs: str, ctr: str)
+    oppos = 0
+    q = 1
+    while q <= rhs:len()
+        if rhs:byte(q) == 43 and oppos == 0
+            oppos = q
+        q = q + 1
+    e = trim(rhs:sub(oppos + 1, rhs:len()))
+    return num(e)
+
+ctstep: i64 = (src: str, b: i64, ej: i64, lc: i64, ctr: str)
+    cnt = 0
+    st = 0
+    j = b
+    while j < ej
+        t = trim(row(src, j))
+        if t:len() > 0
+            eqp = 0
+            q = 1
+            while q <= t:len()
+                if t:byte(q) == 61 and eqp == 0
+                    eqp = q
+                q = q + 1
+            if eqp > 0
+                v = trim(t:sub(1, eqp - 1))
+                rhs = trim(t:sub(eqp + 1, t:len()))
+                if v == ctr and isinc(rhs, ctr) == 1
+                    cnt = cnt + 1
+                    st = stepof(rhs, ctr)
+        j = j + 1
+    if cnt == 1
+        return st
+    return 0
+
+ctacc: str = (env: str, v: str, d: i64, rs: str)
+    if hasname(env, v) == 0
+        return ""
+    vi = varnum(env, v)
+    if at(env, vfield(vi, 1)) != 0
+        return ""
+    env = eset(env, vfield(vi, 3), at(env, vfield(vi, 3)) + d)
+    return rs .. ";" .. env
+
+ctcs: str = (env: str, v: str, c: i64, rs: str)
+    if hasname(env, v) == 0
+        return ""
+    vi = varnum(env, v)
+    if at(env, vfield(vi, 1)) != 0
+        return ""
+    env = eset(env, vfield(vi, 4), at(env, vfield(vi, 4)) + c)
+    return rs .. ";" .. env
+
+ctw: str = (env: str, v: str, w: str, sgn: i64, octr: str, rs: str)
+    if hasname(env, v) == 0
+        return ""
+    if hasname(env, w) == 0
+        return ""
+    if hasname(octr, w) == 1
+        return ""
+    vi = varnum(env, v)
+    wi = varnum(env, w)
+    if at(env, vfield(vi, 1)) != 0
+        return ""
+    kw = at(env, vfield(wi, 1))
+    if kw != 0 and kw != 3
+        return ""
+    if at(env, vfield(wi, 4)) != 0 or at(env, vfield(wi, 5)) != 0
+        return ""
+    env = eset(env, vfield(vi, 3), at(env, vfield(vi, 3)) + sgn * at(env, vfield(wi, 2)))
+    env = eset(env, vfield(vi, 5), at(env, vfield(vi, 5)) + sgn * at(env, vfield(wi, 3)))
+    rs = rs .. w .. "|"
+    return rs .. ";" .. env
+
+ctrow: str = (env: str, v: str, rhs: str, ctr: str, octr: str, rs: str, uc: str)
+    if isname(v) == 0
+        return ""
+    if isnum(rhs) == 1
+        if hasname(uc, v) == 1 or hasname(rs, v) == 1
+            return ""
+        env = ctset(env, v, 3, num(rhs))
+        return rs .. ";" .. env
+    if isname(rhs) == 1
+        w = rhs
+        if w == ctr or hasname(octr, w) == 1
+            return ""
+        if hasname(env, w) == 0
+            return ""
+        wi = varnum(env, w)
+        env = ctcopy(env, v, wi)
+        rs = rs .. w .. "|"
+        return rs .. ";" .. env
+    oppos = 0
+    op = 0
+    q = 1
+    while q <= rhs:len()
+        oc = rhs:byte(q)
+        if oc == 43 or oc == 45
+            if oppos == 0
+                oppos = q
+                op = oc
+        q = q + 1
+    if oppos == 0
+        return ""
+    a = trim(rhs:sub(1, oppos - 1))
+    e = trim(rhs:sub(oppos + 1, rhs:len()))
+    ac = isnum(a)
+    ec = isnum(e)
+    if ac == 1 and ec == 1
+        if hasname(uc, v) == 1 or hasname(rs, v) == 1
+            return ""
+        env = ctset(env, v, 3, foldop(num(a), op, num(e)))
+        return rs .. ";" .. env
+    if op == 43
+        if a == v and ec == 1
+            return ctacc(env, v, num(e), rs)
+        if e == v and ac == 1
+            return ctacc(env, v, num(a), rs)
+        if a == v and e == ctr
+            return ctcs(env, v, 1, rs)
+        if e == v and a == ctr
+            return ctcs(env, v, 1, rs)
+        if a == v and isname(e) == 1 and e != ctr
+            return ctw(env, v, e, 1, octr, rs)
+        if e == v and isname(a) == 1 and a != ctr
+            return ctw(env, v, a, 1, octr, rs)
+        return ""
+    if a == v and e == v
+        if hasname(uc, v) == 1 or hasname(rs, v) == 1
+            return ""
+        env = ctset(env, v, 3, 0)
+        return rs .. ";" .. env
+    if a == v and ec == 1
+        return ctacc(env, v, 0 - num(e), rs)
+    if a == v and e == ctr
+        return ctcs(env, v, 0 - 1, rs)
+    if a == v and isname(e) == 1 and e != ctr
+        return ctw(env, v, e, 0 - 1, octr, rs)
+    return ""
+
+ctapply: str = (env: str, sm: str)
+    nf = fldn(sm)
+    f = 0
+    while f < nf
+        nm = fld(sm, f)
+        mode = at(sm, f + 1)
+        vv = at(sm, f + 2)
+        if hasname(env, nm) == 0
+            env = env .. nm .. "|3|0|0|0|0|0|"
+        vi = varnum(env, nm)
+        kind = at(env, vfield(vi, 1))
+        if kind != 0 and kind != 3
+            return ""
+        if mode == 0
+            if kind == 0
+                env = eset(env, vfield(vi, 3), at(env, vfield(vi, 3)) + vv)
+            else
+                env = eset(env, vfield(vi, 2), at(env, vfield(vi, 2)) + vv)
+        else
+            env = eset(env, vfield(vi, 1), 3)
+            env = eset(env, vfield(vi, 2), vv)
+            env = eset(env, vfield(vi, 3), 0)
+            env = eset(env, vfield(vi, 4), 0)
+            env = eset(env, vfield(vi, 5), 0)
+        f = f + 7
+    return env
+
+ctbody: str = (src: str, b: i64, ej: i64, lc: i64, env: str, ctr: str, octr: str)
+    rs = ""
+    uc = ""
+    j = b
+    while j < ej
+        r = row(src, j)
+        t = trim(r)
+        if t:len() == 0
+            j = j + 1
+        else
+            if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
+                ej2 = ctend(src, j, lc, indent(r))
+                lt = 0
+                q = 1
+                while q <= t:len()
+                    if t:byte(q) == 60 and lt == 0
+                        lt = q
+                    q = q + 1
+                if lt == 0
+                    return ""
+                lhs2 = trim(t:sub(1, lt - 1))
+                if isname(lhs2) == 0
+                    return ""
+                sm = ctnest(src, j, ej2, lc, env, octr .. ctr .. "|", 0)
+                if sm == ""
+                    return ""
+                env = ctapply(env, sm)
+                if env == ""
+                    return ""
+                uc = uc .. lhs2 .. "|"
+                j = ej2
+            else
+                eqp = 0
+                q = 1
+                while q <= t:len()
+                    if t:byte(q) == 61 and eqp == 0
+                        eqp = q
+                    q = q + 1
+                if eqp == 0
+                    return ""
+                v = trim(t:sub(1, eqp - 1))
+                rhs = trim(t:sub(eqp + 1, t:len()))
+                if v == ctr
+                    if isinc(rhs, ctr) == 0
+                        return ""
+                else
+                    p = ctrow(env, v, rhs, ctr, octr, rs, uc)
+                    if p == ""
+                        return ""
+                    semi = 0
+                    q = 1
+                    while q <= p:len()
+                        if p:byte(q) == 59 and semi == 0
+                            semi = q
+                        q = q + 1
+                    rs = p:sub(1, semi - 1)
+                    env = p:sub(semi + 1, p:len())
+                j = j + 1
+    return env
+
+ctfin: str = (env: str, ctr: str, a: i64, n: i64, s: i64)
+    tri = (n * (n - 1)) / 2
+    nv = fldn(env) / 7
+    vi = 1
+    while vi <= nv
+        nm = fld(env, vfield(vi, 0))
+        kind = at(env, vfield(vi, 1))
+        if nm == ctr
+            env = eset(env, vfield(vi, 1), 0)
+            env = eset(env, vfield(vi, 2), a + n * s)
+        else
+            if kind == 0
+                vv = at(env, vfield(vi, 2))
+                d = at(env, vfield(vi, 3))
+                cs = at(env, vfield(vi, 4))
+                qs = at(env, vfield(vi, 5))
+                fv = vv + n * d + cs * (n * a + s * tri) + qs * tri
+                env = eset(env, vfield(vi, 2), fv)
+            else
+                if kind == 3 and n == 0
+                    env = eset(env, vfield(vi, 2), at(env, vfield(vi, 6)))
+        vi = vi + 1
+    return env
+
+ctsum: str = (env: str, ctr: str, a: i64, n: i64, s: i64)
+    out = ""
+    if n > 0
+        tri = (n * (n - 1)) / 2
+        nv = fldn(env) / 7
+        vi = 1
+        while vi <= nv
+            nm = fld(env, vfield(vi, 0))
+            kind = at(env, vfield(vi, 1))
+            if nm == ctr
+                out = out .. nm .. "|3|" .. dec(a + n * s) .. "|0|0|0|0|"
+            else
+                if kind == 0
+                    d = at(env, vfield(vi, 3))
+                    cs = at(env, vfield(vi, 4))
+                    qs = at(env, vfield(vi, 5))
+                    dd = n * d + cs * (n * a + s * tri) + qs * tri
+                    if dd != 0
+                        out = out .. nm .. "|0|" .. dec(dd) .. "|0|0|0|0|"
+                else
+                    if kind == 3
+                        out = out .. nm .. "|3|" .. dec(at(env, vfield(vi, 2))) .. "|0|0|0|0|"
+            vi = vi + 1
+    if out == ""
+        return " "
+    return out
+
+ctnest: str = (src: str, j: i64, ej: i64, lc: i64, env: str, octr: str, top: i64)
+    t = trim(row(src, j))
+    lt = 0
+    q = 1
+    while q <= t:len()
+        if t:byte(q) == 60 and lt == 0
+            lt = q
+        q = q + 1
+    if lt == 0
+        return ""
+    lhs = trim(t:sub(1, lt - 1))
+    rhs = trim(t:sub(lt + 1, t:len()))
+    if isname(lhs) == 0 or isnum(rhs) == 0
+        return ""
+    if hasname(octr, lhs) == 1
+        return ""
+    b = num(rhs)
+    if hasname(env, lhs) == 0
+        return ""
+    vi = varnum(env, lhs)
+    kind = at(env, vfield(vi, 1))
+    if kind != 0 and kind != 3
+        return ""
+    a = at(env, vfield(vi, 2))
+    s = ctstep(src, j + 1, ej, lc, lhs)
+    if s == 0
+        return ""
+    env2 = ctbody(src, j + 1, ej, lc, env, lhs, octr)
+    if env2 == ""
+        return ""
+    n = 0
+    if b > a
+        n = (b - a + s - 1) / s
+    if top == 1
+        return ctfin(env2, lhs, a, n, s)
+    return ctsum(env2, lhs, a, n, s)
+
+cttry: str = (src: str, k: i64, lc: i64, ind: i64, lhs: str, rhs: str)
+    if isname(lhs) == 0
+        return ""
+    env = ctscan(src, k, lc, ind)
+    ej = ctend(src, k, lc, ind)
+    fin = ctnest(src, k, ej, lc, env, "", 1)
+    if fin == ""
+        return ""
+    out = dec(ej) .. "|"
+    nv = fldn(fin) / 7
+    vi = 1
+    while vi <= nv
+        kind = at(fin, vfield(vi, 1))
+        if kind != 1
+            fv = at(fin, vfield(vi, 2))
+            ev = at(fin, vfield(vi, 6))
+            if fv != ev
+                out = out .. fld(fin, vfield(vi, 0)) .. "|" .. dec(fv) .. "|"
+        vi = vi + 1
+    return out
+
 main: i64 = ()
     src = stdin:read()
     names = ""
@@ -419,30 +953,46 @@ main: i64 = ()
                     q = q + 1
                 lhs = trim(rest:sub(1, lt - 1))
                 rhs = trim(rest:sub(lt + 1, rest:len()))
-                rl = reg(names, lhs)
-                rr = 0
-                cd = 0
-                if digit(rhs:byte(1)) == 1
-                    br = 11 + wopen
-                    code = imm(code, br, num(rhs))
-                    rr = br
-                    if num(rhs) != 0 and purecount(src, k, lc, ind, lhs) == 1
-                        pk = k - 1
-                        while pk >= 0 and trim(row(src, pk)):len() == 0
-                            pk = pk - 1
-                        if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
-                            cd = 1
+                cts = ""
+                if wopen == 0 and isnum(rhs) == 1
+                    cts = cttry(src, k, lc, ind, lhs, rhs)
+                if cts != ""
+                    ej = at(cts, 0)
+                    nf = fldn(cts)
+                    f = 1
+                    while f < nf
+                        nm = fld(cts, f)
+                        vv = at(cts, f + 1)
+                        if hasname(names, nm) == 0
+                            names = names .. nm .. "|"
+                        code = imm(code, reg(names, nm), vv)
+                        f = f + 2
+                    k = ej - 1
                 else
-                    rr = reg(names, rhs)
-                jp = code:len() / 8
-                if cd == 0
-                    code = code .. word(jump(0))
-                wjmp = wjmp .. dec(jp) .. "|"
-                wrl = wrl .. dec(rl) .. "|"
-                wrr = wrr .. dec(rr) .. "|"
-                wind = wind .. dec(ind) .. "|"
-                wcd = wcd .. dec(cd) .. "|"
-                wopen = wopen + 1
+                    rl = reg(names, lhs)
+                    rr = 0
+                    cd = 0
+                    if digit(rhs:byte(1)) == 1
+                        br = 11 + wopen
+                        code = imm(code, br, num(rhs))
+                        rr = br
+                        if num(rhs) != 0 and purecount(src, k, lc, ind, lhs) == 1
+                            pk = k - 1
+                            while pk >= 0 and trim(row(src, pk)):len() == 0
+                                pk = pk - 1
+                            if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
+                                cd = 1
+                    else
+                        rr = reg(names, rhs)
+                    jp = code:len() / 8
+                    if cd == 0
+                        code = code .. word(jump(0))
+                    wjmp = wjmp .. dec(jp) .. "|"
+                    wrl = wrl .. dec(rl) .. "|"
+                    wrr = wrr .. dec(rr) .. "|"
+                    wind = wind .. dec(ind) .. "|"
+                    wcd = wcd .. dec(cd) .. "|"
+                    wopen = wopen + 1
             else
                 eq = 0
                 q = 1

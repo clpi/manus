@@ -25,6 +25,27 @@ and in C (`programs/*.c`, bit-identical semantics, exit code = result mod 256):
 Plus, per program: object size (`.o` bytes) and source-to-executable
 compile time (median of 5).
 
+### Extended suite (opt-in)
+
+Five more programs live in `programs/` but are **not** in the default
+run list — the default list is frozen while the runtime-loss
+workstream does its fixes. Run them explicitly:
+
+```
+./run.sh --progs "predbranch mul11 subbig stride2 startupbig"
+```
+
+| program | what it stresses | why it is in the suite |
+|---|---|---|
+| `predbranch` | strictly alternating data-dependent branch x3M | **predictable** branch: pairs with `upbranch` (unpredictable LCG); a history-based predictor learns the period-2 pattern |
+| `mul11` | `x*11+1` x50M | **adversarial**: 11 is outside the strength-reduction set {2^k, 3, 5, 7, 9} |
+| `subbig` | `x-9000+8000` x50M | **adversarial**: sub with constant > 4095 defeats immediate-form subi |
+| `stride2` | `i = i + 2` loop x50M iters | **adversarial**: non-unit stride defeats the countdown transform (`purecount` needs exactly `i = i + 1`) |
+| `startupbig` | 100 constant stores, then `42` | refined startup: scales static code size to separate per-byte load cost from fixed spawn cost |
+
+Every extended program is correctness-gated the same way (Idol and C
+exit codes must agree) before it may join the default list.
+
 ## How it runs
 
 ```
@@ -75,10 +96,64 @@ Both must print `128`. Repeat timing in interleaved order; compare medians.
 | ARM64 + macOS | supported (this suite runs here today) |
 | ARM64 + Linux | backend not implemented — see `platforms/arm64-linux.sh` |
 | x86_64 + Linux | backend not implemented — see `platforms/x86_64-linux.sh` |
-| x86_64 + Windows | backend not implemented — see `platforms/x86_64-windows.sh` |
-| ARM64 + Windows | backend not implemented — see `platforms/arm64-windows.sh` |
+| x86_64 + Windows | backend not implemented — see `platforms/arm64-windows.sh` |
+| ARM64 + Windows | backend not implemented — see `platforms/x86_64-windows.sh` |
 
 `run.sh` aborts on hosts without a backend instead of silently skipping.
+
+### Shim interface
+
+`bench/platforms/` holds one shim per host triple, plus `lib.sh`
+(the loader and the interface contract). A shim is **sourced, never
+executed**, and provides:
+
+| symbol | meaning |
+|---|---|
+| `plat_triple` | e.g. `arm64-macos` |
+| `plat_status` | `supported` or `planned` |
+| `plat_idol_object SRC.id DST` | compile Idol source to a relocatable object (uses `$IDOL_NATIVE`) |
+| `plat_link OBJ EXE` | link a relocatable object into an executable |
+| `plat_c_exe SRC.c EXE` | compile C to an executable (`-O3`, best available compiler) |
+
+```sh
+source bench/platforms/lib.sh
+SHIM="$(plat_shim)" || exit 3          # this host's shim, or failure
+IDOL_NATIVE=/path/to/nativebench source "$SHIM"
+plat_idol_object prog.id prog.o && plat_link prog.o prog.exe
+```
+
+Planned shims implement the same functions as stubs (print
+`not implemented`, return 3) with comments telling the backend agent
+exactly what to fill in. To land a backend: implement the three
+functions, set `plat_status="supported"`, remove the host abort in
+`run.sh`. `bench/verify/` already builds through this interface, so a
+new supported shim lights up verification on that host with no other
+changes.
+
+## Optimization verification
+
+`bench/verify/` differentially proves the compiler's optimizations
+semantics-preserving: per optimization (constant folding, algebraic
+simplification, immediate add/sub, multiply strength reduction,
+countdown loops, copy propagation, division, nested-loop bound
+registers), randomized + adversarial Idol programs are compiled with a
+freshly built compiler and against bit-identical `clang -O3` oracles;
+exit codes (and, with `--full`, all 8 bytes of the 64-bit result) must
+agree. Any divergence is a compiler bug, saved with its reproducer.
+See `bench/verify/README.md`. This is where the countdown loop's
+soundness holes and the 32-bit constant-fold boundary are nailed down
+as executable tests rather than folklore.
+
+## Gated benchmark categories
+
+`bench/gated/` holds benchmark categories the Idol subset cannot
+express yet — floating point (`fp_dot`), indirect calls (`indirect`),
+string ops (`strops`), data-structure traversal (`traverse`), and the
+cache-friendly vs cache-hostile pair (`cache_seq`/`cache_stride`).
+Each has a frozen C oracle and an `.id.future` sketch of the intended
+Idol source, plus the exact compiler feature that unlocks it. They are
+absent from the suite rather than faked, and each carries an adoption
+checklist for the day its gate opens.
 
 ## Known limitations (not hidden)
 
@@ -88,9 +163,10 @@ Both must print `128`. Repeat timing in interleaved order; compare medians.
   are silently truncated in emitted code. Runtime values are full 64-bit.
   Every program in this suite uses constants below 2^32. Fixing this needs
   host-side 64-bit integers; it is tracked, not ignored.
+  `bench/verify/opts/fold.py` contains directed cases at this boundary.
 - **No floating point, memory ops, calls, or strings** in the compiled
   subset yet, so those benchmark categories cannot be expressed. They are
-  absent from the suite rather than faked.
+  absent from the suite rather than faked (see `bench/gated/`).
 - **Executable tests link with the system `ld`** against libSystem. The
   measured code is the compiler's; the final linker-free executable path
   is separate work.
@@ -106,3 +182,7 @@ Both must print `128`. Repeat timing in interleaved order; compare medians.
 - `sum` is *expected* to lose: clang recognizes the arithmetic series and
   runs O(1). Matching that needs loop-idiom recognition in the compiler.
   It stays in the suite as the honest gap it is.
+- **RESULTS.md discipline:** every program x every compiler is listed —
+  wins and losses, no filter. Extended-suite programs appear under the
+  same rule whenever they are run; their results are published in the
+  same table, never in a separate "good news only" file.
