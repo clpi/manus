@@ -45,6 +45,32 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# --- 0. Load-average gate: refuse to time on a loaded machine ---
+# Compares the 1-minute load average against the online core count and aborts
+# when load exceeds cores. Portable: sysctl on Darwin, /proc on Linux.
+# Test override: BENCH_LOAD and BENCH_NCPU force the compared values.
+bench_load_gate() {
+    load=""; ncpu=""
+    if [ "$(uname -s)" = "Darwin" ]; then
+        ncpu="$(sysctl -n hw.ncpu 2>/dev/null)"
+        load="$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1}')"
+    elif [ -r /proc/loadavg ]; then
+        load="$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)"
+        ncpu="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"
+    fi
+    [ -n "${BENCH_LOAD:-}" ] && load="$BENCH_LOAD"
+    [ -n "${BENCH_NCPU:-}" ] && ncpu="$BENCH_NCPU"
+    case "$load" in ''|*[!0-9.]* ) echo "bench: cannot read load average; skipping load gate." >&2; return 0;; esac
+    case "$ncpu" in ''|*[!0-9]* ) echo "bench: cannot read core count; skipping load gate." >&2; return 0;; esac
+    if awk -v l="$load" -v n="$ncpu" 'BEGIN{exit !(l > n)}'; then
+        echo "bench: 1-min load average $load exceeds $ncpu online cores; aborting." >&2
+        echo "bench: wait for the machine to idle, or override with BENCH_LOAD/BENCH_NCPU for testing." >&2
+        exit 5
+    fi
+    echo "bench: load gate ok (1-min avg $load <= $ncpu cores)"
+}
+bench_load_gate
+
 ARCH="$(uname -m)"; OS="$(uname -s)"
 echo "bench: host ${ARCH}-${OS}, rounds=${ROUNDS}"
 if [ "${ARCH}-${OS}" != "arm64-Darwin" ]; then
