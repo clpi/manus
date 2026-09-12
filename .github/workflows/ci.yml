@@ -40,14 +40,14 @@ jobs:
         run: zig build
 
       - name: Repository admission
-        # public-safety routes through gate/public-safety.sh so a host with no
+        # public-safety runs as gate/public-safety.id so a host with no
         # direct-native realization reports the exact DNB004 host fact (NOT
         # MEASURED) instead of a bare `run ./zig-out/bin/idol failure` that
         # reads as a scan finding. The step still fails on such a host: NOT
         # MEASURED is honest attribution, not admission.
         run: |
           zig build repo-hygiene
-          sh gate/public-safety.sh
+          ./zig-out/bin/idol run --backend=direct gate/public-safety.id
 
   build:
     runs-on: [self-hosted, macOS, ARM64, mac-mini, idol]

@@ -7884,7 +7884,7 @@
         "enforced_by": [
           "gate/cachepublish.sh",
           "gate/gap-145-identity-producer.sh",
-          "gate/public-safety.sh",
+          "gate/public-safety.id",
           "gate/realization/direct.sh",
           "gate/token/read.sh"
         ]

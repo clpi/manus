@@ -325,7 +325,7 @@
 | law.gate.architecture | current | protocol | 67 |  |
 | law.bridge.death | current | invariant | 67 | tools/node/dev/generate-harness |
 | law.fallback.zero | current | invariant | 67 | gate/differential.sh, gate/gap-121-module-init.sh, gate/lower/fallback.sh, tools/node/dev/generate-harness |
-| law.fact.producer.one | current | invariant | 67 | gate/cachepublish.sh, gate/gap-145-identity-producer.sh, gate/public-safety.sh, gate/realization/direct.sh, gate/token/read.sh |
+| law.fact.producer.one | current | invariant | 67 | gate/cachepublish.sh, gate/gap-145-identity-producer.sh, gate/public-safety.id, gate/realization/direct.sh, gate/token/read.sh |
 | law.unknown.one | current | invariant | 67 | gate/idiom.id, gate/probe.id |
 | law.ownership.zero | current | invariant | 67 |  |
 | law.effect.order | current | invariant | 67 |  |

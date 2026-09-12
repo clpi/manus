@@ -9,20 +9,14 @@ chomp: str = (text: str)
     n = n - 1
   text:sub(1, n)
 
-digits: i64 = (text: str)
-  if !text or text:len() == 0
-    return -1
-  v = 0
-  i = 1
-  n = text:len()
-  while i <= n
-    c = text:sub(i, i)
-    if c >= "0" and c <= "9"
-      v = v * 10 + (text:byte(i) - 48)
-      i = i + 1
-    else
-      return -1
-  v
+host: str = (idol: str, work: str)
+  gatecap("cat >'{work}/control.id' <<'PROBE'\nmain: i64 = ()\n  0\nPROBE\n")
+  gatecap("'{idol}' compile --backend=direct -o '{work}/control.bin' '{work}/control.id' >'{work}/control.log' 2>&1 </dev/null")
+  if chomp(gatecap("test -s '{work}/control.bin'; echo $?")) == "0"
+    return "yes"
+  if chomp(gatecap("grep -q 'DNB004' '{work}/control.log'; echo $?")) == "0"
+    return "no"
+  "broken"
 
 main: i64 = ()
   root = chomp(gatecap("pwd"))
@@ -35,10 +29,20 @@ main: i64 = ()
   work = ""
   cleaned = ""
   fail = 0
-  if gatecap("test -x '{idol}'; echo $?") == "0\n"
+  if chomp(gatecap("test -x '{idol}'; echo $?")) == "0"
     work = chomp(gatecap("mktemp -d /tmp/idol-publicsafety.XXXXXX"))
-    rc = digits(chomp(gatecap("'{idol}' run --backend=direct scripts/public_safety_scan.id >'{work}/scan.log' 2>&1; echo $?")))
-    if rc != 0
+    state = host(idol, work)
+    if state == "no"
+      print("public-safety.id: NOT MEASURED — the tracked-file public-safety scan (its gatecap round-trip runs through the auto backend). This host has no direct-native realization: the compiler refused a trivial program with DNB004.")
+      cleaned = gatecap("rm -rf '{work}'")
+      return 1
+    if state == "broken"
+      print("public-safety gate: FAIL the host probe failed for a reason other than DNB004")
+      print(chomp(gatecap("tail -20 '{work}/control.log'")))
+      cleaned = gatecap("rm -rf '{work}'")
+      return 1
+    rc = chomp(gatecap("'{idol}' run --backend=direct scripts/public_safety_scan.id >'{work}/scan.log' 2>&1; echo $?"))
+    if rc != "0"
       print("public-safety gate: FAIL scan exited {rc}")
       print(chomp(gatecap("tail -20 '{work}/scan.log'")))
       fail = 1
