@@ -28,7 +28,7 @@ std_inspect_hash: str = (value: any)
         if val == nil val = value[key] 
         parts[parts:len() + 1] = key .. "=" .. std_inspect_hash(val)
         i += 1
-    "{" .. parts:concat(",") .. "}"
+    "\{" .. parts:concat(",") .. "\}"
 
 std_inspect_to_str: str = (value: any, indent: any, seen: any)
     if indent == nil indent = 0 
@@ -64,7 +64,7 @@ std_inspect_to_str: str = (value: any, indent: any, seen: any)
     pairs_list = {}
     for k, v in value
         pairs_list[pairs_list:len() + 1] = {k = k, v = v}
-    if pairs_list:len() == 0 return "{}" 
+    if pairs_list:len() == 0 return "\{\}" 
     parts = {}
     i = 1
     while i <= pairs_list:len()
@@ -78,8 +78,8 @@ std_inspect_to_str: str = (value: any, indent: any, seen: any)
     prefix = "  ":rep(indent)
     inner_prefix = "  ":rep(indent + 1)
     if parts:len() <= 3 and indent < 2
-        return "{" .. parts:concat(", ") .. "}"
-    return "{\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "}"
+        return "\{" .. parts:concat(", ") .. "\}"
+    return "{\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "\}"
 
 std_inspect_diff = (a: any, b: any, prefix: any, diffs: any)
     if a == nil and b == nil return 
@@ -120,16 +120,16 @@ deep_equal: bool = (a: any, b: any)
     if na > 0
         i = 1
         while i <= na
-            if not deep_equal(a[i], b[i]) return false 
+            if !deep_equal(a[i], b[i]) return false 
             i += 1
         for ka, _va in a
             if type(ka) != "number"
-                if not deep_equal(a[ka], b[ka]) return false 
+                if !deep_equal(a[ka], b[ka]) return false 
         for kb, _vb in b
             if a[kb] == nil return false 
         return true
     for kc, vc in a
-        if not deep_equal(vc, b[kc]) return false 
+        if !deep_equal(vc, b[kc]) return false 
     for kd, _vd in b
         if a[kd] == nil return false 
     true
@@ -229,7 +229,7 @@ stack_trace: str = (level: any, max_depth: any, pretty: any)
     if max_depth == nil max_depth = 20 
     color_ok = false
     if pretty
-        pcall_ok, env_val = pcall(os.getenv, "NO_COLOR")
+        pcall_ok, env_val = pcall(env, "NO_COLOR")
         if pcall_ok and env_val != nil and env_val != ""
             color_ok = false
         else

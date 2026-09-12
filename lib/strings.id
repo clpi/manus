@@ -41,7 +41,7 @@ interp: str = (template: str, values: any)
     if values == nil return template 
     result = template
     for key, val in values
-        result = result:gsub("{" .. key:to(str) .. "}", val:to(str))
+        result = result:gsub("\{" .. key:to(str) .. "\}", val:to(str))
     result
 
 interp_indexed: str = (template: str, a1: any, a2: any, a3: any, a4: any, a5: any)
@@ -77,7 +77,7 @@ to_snake: str = (s: str)
                 prev = s:sub(i - 1, i - 1)
                 is_sep = false
                 if prev == "_" or prev == " " or prev == "-" is_sep = true 
-                if not is_sep
+                if !is_sep
                     next_char = ""
                     if i < len next_char = s:sub(i + 1, i + 1) 
                     is_lower_prev = false

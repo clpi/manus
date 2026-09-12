@@ -115,7 +115,7 @@ read_field_float: f64 = (r: any)
   if exp == 255
     if mantissa == 0
       return sign * math.huge
-    return 0 / 0
+    return 0.0 / 0.0
   sign * (1 + mantissa * 2 ^ -23) * 2 ^ (exp - 127)
 
 writer_bytes: any = (w: any)
