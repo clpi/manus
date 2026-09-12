@@ -1,0 +1,748 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = (v & 15) + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    hex(v >> 4) .. hex(v)
+
+word: str = (v: i64)
+    pair(v) .. pair(v >> 8) .. pair(v >> 16) .. pair(v >> 24)
+
+dec: str = (v: i64)
+    if v == 0
+        return "0"
+    neg = 0
+    if v < 0
+        neg = 1
+        v = 0 - v
+    out = ""
+    x = v
+    while x > 0
+        out = hex(x - (x // 10) * 10) .. out
+        x = x // 10
+    if neg == 1
+        return "-" .. out
+    out
+
+num: i64 = (s: str)
+    v = 0
+    i = 1
+    n = s:len()
+    neg = 0
+    if n > 0 and s:byte(1) == 45
+        neg = 1
+        i = 2
+    while i <= n
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    if neg == 1
+        return 0 - v
+    v
+
+fcount: i64 = (s: str, sep: i64)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == sep
+            n = n + 1
+        i = i + 1
+    n
+
+fget: i64 = (s: str, idx: i64, sep: i64)
+    cur = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        if cur == idx
+            j = i
+            while j <= n and s:byte(j) != sep
+                j = j + 1
+            return num(s:sub(i, j - 1))
+        if s:byte(i) == sep
+            cur = cur + 1
+        i = i + 1
+    0
+
+sget: str = (s: str, idx: i64, sep: i64)
+    cur = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        if cur == idx
+            j = i
+            while j <= n and s:byte(j) != sep
+                j = j + 1
+            return s:sub(i, j - 1)
+        if s:byte(i) == sep
+            cur = cur + 1
+        i = i + 1
+    ""
+
+fset: str = (s: str, idx: i64, sep: i64, v: i64)
+    out = ""
+    cur = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        j = i
+        while j <= n and s:byte(j) != sep
+            j = j + 1
+        if cur == idx
+            out = out .. dec(v) .. s:sub(j, j)
+        else
+            out = out .. s:sub(i, j)
+        cur = cur + 1
+        i = j + 1
+    out
+
+sset: str = (s: str, idx: i64, sep: i64, v: str)
+    out = ""
+    cur = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        j = i
+        while j <= n and s:byte(j) != sep
+            j = j + 1
+        if cur == idx
+            out = out .. v .. s:sub(j, j)
+        else
+            out = out .. s:sub(i, j)
+        cur = cur + 1
+        i = j + 1
+    out
+
+unhex: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return c - 48
+    if c >= 97 and c <= 102
+        return c - 87
+    if c >= 65 and c <= 70
+        return c - 55
+    0
+
+wordat: i64 = (code: str, i: i64)
+    b = 8 * i + 1
+    b0 = unhex(code:byte(b)) * 16 + unhex(code:byte(b + 1))
+    b1 = unhex(code:byte(b + 2)) * 16 + unhex(code:byte(b + 3))
+    b2 = unhex(code:byte(b + 4)) * 16 + unhex(code:byte(b + 5))
+    b3 = unhex(code:byte(b + 6)) * 16 + unhex(code:byte(b + 7))
+    b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+
+wcount: i64 = (code: str)
+    code:len() // 8
+
+seqat: str = (code: str, i: i64, l: i64)
+    code:sub(8 * i + 1, 8 * i + 8 * l)
+
+isret: i64 = (w: i64)
+    if w == 3596551104 or w == 3592356800
+        return 1
+    0
+
+isbr: i64 = (w: i64)
+    if (w >> 26) == 5 or (w >> 26) == 37
+        return 1
+    if (w >> 24) == 84 or (w >> 24) == 52 or (w >> 24) == 53 or (w >> 24) == 54 or (w >> 24) == 55
+        return 1
+    0
+
+isctrl: i64 = (w: i64)
+    if (w >> 26) == 5
+        return 1
+    if (w >> 26) == 37
+        return 0
+    if (w >> 24) == 84 or (w >> 24) == 52 or (w >> 24) == 53
+        return 1
+    if (w >> 24) == 54 or (w >> 24) == 55
+        return 1
+    if (w & 0xFFFFFC00) == 0xD65F0000
+        return 1
+    if (w & 0xFFFFFC1F) == 0xD61F0000
+        return 1
+    0
+
+ispcrel: i64 = (w: i64)
+    if (w & 0x9F000000) == 0x10000000
+        return 1
+    0
+
+xone: i64 = (w: i64)
+    if isret(w) == 1
+        return 0
+    if (w >> 26) == 37
+        return 1
+    if isctrl(w) == 1
+        return 0
+    if ispcrel(w) == 1
+        return 0
+    t = (w >> 24) & 255
+    if t == 210 or t == 242
+        if (w & 31) == 30
+            return 1
+        return 0
+    if t == 145 or t == 209 or t == 241 or t == 211 or t == 83
+        if (w & 31) == 30 or ((w >> 5) & 31) == 30
+            return 1
+        return 0
+    if (w & 31) == 30 or ((w >> 5) & 31) == 30 or ((w >> 16) & 31) == 30
+        return 1
+    0
+
+xunsafe: i64 = (code: str, n: i64)
+    i = 0
+    while i < n
+        if xone(wordat(code, i)) == 1
+            return 1
+        i = i + 1
+    0
+
+brtgt: i64 = (w: i64, i: i64)
+    if (w >> 26) == 5
+        off = w & 67108863
+        if off >= 33554432
+            off = off - 67108864
+        return i + off
+    if (w >> 26) == 37
+        off = w & 67108863
+        if off >= 33554432
+            off = off - 67108864
+        return i + off
+    if (w >> 24) == 84
+        off = (w >> 5) & 524287
+        if off >= 262144
+            off = off - 524288
+        return i + off
+    if (w >> 24) == 52 or (w >> 24) == 53
+        off = (w >> 5) & 524287
+        if off >= 262144
+            off = off - 524288
+        return i + off
+    if (w >> 24) == 54 or (w >> 24) == 55
+        off = (w >> 5) & 16383
+        if off >= 8192
+            off = off - 16384
+        return i + off
+    0 - 1
+
+badw: i64 = (w: i64)
+    if (w >> 26) == 37
+        return 1
+    if isctrl(w) == 1
+        return 1
+    if ispcrel(w) == 1
+        return 1
+    t = (w >> 24) & 255
+    if t == 210 or t == 242
+        if (w & 31) == 30
+            return 1
+        return 0
+    if t == 145 or t == 209 or t == 241 or t == 211 or t == 83
+        if (w & 31) == 30 or ((w >> 5) & 31) == 30
+            return 1
+        return 0
+    if (w & 31) == 30 or ((w >> 5) & 31) == 30 or ((w >> 16) & 31) == 30
+        return 1
+    0
+
+hasbad: i64 = (code: str, o: i64, l: i64)
+    k = 0
+    while k < l
+        if badw(wordat(code, o + k)) == 1
+            return 1
+        k = k + 1
+    0
+
+hotranges: str = (code: str, n: i64)
+    out = ""
+    i = 0
+    while i < n
+        w = wordat(code, i)
+        if isbr(w) == 1
+            t = brtgt(w, i)
+            if t > 0 and t < i
+                out = out .. dec(t) .. "," .. dec(i) .. "|"
+        i = i + 1
+    out
+
+hotat: i64 = (hot: str, s: i64, l: i64)
+    e = s + l
+    i = 0
+    n = fcount(hot, 124)
+    while i < n
+        r = sget(hot, i, 124)
+        a = fget(r, 0, 44)
+        b = fget(r, 1, 44)
+        if s < b and e > a
+            return 1
+        i = i + 1
+    0
+
+alloccold: i64 = (hot: str, occs: str, l: i64)
+    no = fcount(occs, 124)
+    f = 0
+    while f < no
+        s = fget(occs, f, 124)
+        if hotat(hot, s, l) == 1
+            return 0
+        f = f + 1
+    1
+
+brtgts: str = (code: str, n: i64)
+    out = ""
+    i = 0
+    while i < n
+        w = wordat(code, i)
+        if isbr(w) == 1
+            out = out .. dec(brtgt(w, i)) .. "|"
+        i = i + 1
+    out
+
+tgtok: i64 = (code: str, n: i64, occs: str, l: i64)
+    tgts = brtgts(code, n)
+    nt = fcount(tgts, 124)
+    no = fcount(occs, 124)
+    i = 0
+    while i < nt
+        t = fget(tgts, i, 124)
+        f = 0
+        while f < no
+            o = fget(occs, f, 124)
+            if t >= o and t < o + l
+                return 0
+            f = f + 1
+        i = i + 1
+    1
+
+findall: str = (code: str, seq: str, l: i64)
+    n = wcount(code)
+    nl = n - l
+    out = ""
+    i = 0
+    while i <= nl
+        if seqat(code, i, l) == seq
+            out = out .. dec(i) .. "|"
+        i = i + 1
+    out
+
+nonoverlap: str = (occs: str, l: i64)
+    out = ""
+    lastend = 0 - 1
+    no = fcount(occs, 124)
+    f = 0
+    while f < no
+        o = fget(occs, f, 124)
+        if o > lastend
+            out = out .. dec(o) .. "|"
+            lastend = o + l - 1
+        f = f + 1
+    out
+
+candrest: str = (s: str, idx: i64)
+    cur = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        if cur == idx
+            return s:sub(i, n)
+        if s:byte(i) == 124
+            cur = cur + 1
+        i = i + 1
+    ""
+
+tget: i64 = (strans: str, st: i64, c: i64)
+    t = sget(strans, st, 126)
+    key = dec(c) .. ","
+    kl = key:len()
+    i = 1
+    n = t:len()
+    while i + kl - 1 <= n
+        if t:sub(i, i + kl - 1) == key
+            j = i + kl
+            k = j
+            while k <= n and t:byte(k) != 124
+                k = k + 1
+            return num(t:sub(j, k - 1))
+        while i <= n and t:byte(i) != 124
+            i = i + 1
+        i = i + 1
+    0 - 1
+
+tset: str = (strans: str, st: i64, c: i64, ns: i64)
+    t = sget(strans, st, 126)
+    key = dec(c) .. ","
+    kl = key:len()
+    out = ""
+    i = 1
+    n = t:len()
+    done = 0
+    while i <= n
+        j = i
+        while j <= n and t:byte(j) != 124
+            j = j + 1
+        e = t:sub(i, j - 1)
+        if done == 0 and e:sub(1, kl) == key
+            out = out .. key .. dec(ns) .. "|"
+            done = 1
+        else
+            out = out .. e .. "|"
+        i = j + 1
+    if done == 0
+        out = out .. key .. dec(ns) .. "|"
+    sset(strans, st, 126, out)
+
+sambuild: str = (code: str, n: i64)
+    slink = "-1|"
+    slen = "0|"
+    socc = "0|"
+    sfirst = "-1|"
+    strans = "~"
+    last = 0
+    sz = 1
+    pos = 0
+    while pos < n
+        c = wordat(code, pos)
+        cur = sz
+        sz = sz + 1
+        slink = slink .. "-1|"
+        slen = slen .. dec(fget(slen, last, 124) + 1) .. "|"
+        socc = socc .. "1|"
+        sfirst = sfirst .. dec(pos) .. "|"
+        strans = strans .. "~"
+        p = last
+        while p != 0 - 1 and tget(strans, p, c) == 0 - 1
+            strans = tset(strans, p, c, cur)
+            p = fget(slink, p, 124)
+        if p == 0 - 1
+            slink = fset(slink, cur, 124, 0)
+        else
+            q = tget(strans, p, c)
+            if fget(slen, p, 124) + 1 == fget(slen, q, 124)
+                slink = fset(slink, cur, 124, q)
+            else
+                clone = sz
+                sz = sz + 1
+                slink = slink .. dec(fget(slink, q, 124)) .. "|"
+                slen = slen .. dec(fget(slen, p, 124) + 1) .. "|"
+                socc = socc .. "0|"
+                sfirst = sfirst .. dec(fget(sfirst, q, 124)) .. "|"
+                strans = strans .. sget(strans, q, 126) .. "~"
+                slink = fset(slink, q, 124, clone)
+                slink = fset(slink, cur, 124, clone)
+                pp = p
+                while pp != 0 - 1 and tget(strans, pp, c) == q
+                    strans = tset(strans, pp, c, clone)
+                    pp = fget(slink, pp, 124)
+        last = cur
+        pos = pos + 1
+    slink .. "~" .. slen .. "~" .. socc .. "~" .. sfirst .. "~" .. strans
+
+samprop: str = (sam: str)
+    slink = sget(sam, 0, 126)
+    slen = sget(sam, 1, 126)
+    socc = sget(sam, 2, 126)
+    sfirst = sget(sam, 3, 126)
+    strans = sget(sam, 4, 126)
+    sz = fcount(slink, 124)
+    maxl = 0
+    s = 0
+    while s < sz
+        l = fget(slen, s, 124)
+        if l > maxl
+            maxl = l
+        s = s + 1
+    cnt = ""
+    c = 0
+    while c <= maxl
+        cnt = cnt .. "0|"
+        c = c + 1
+    s = 0
+    while s < sz
+        l = fget(slen, s, 124)
+        cnt = fset(cnt, l, 124, fget(cnt, l, 124) + 1)
+        s = s + 1
+    c = 1
+    while c <= maxl
+        cnt = fset(cnt, c, 124, fget(cnt, c, 124) + fget(cnt, c - 1, 124))
+        c = c + 1
+    order = ""
+    s = 0
+    while s < sz
+        order = order .. "0|"
+        s = s + 1
+    s = 0
+    while s < sz
+        l = fget(slen, s, 124)
+        p = fget(cnt, l, 124) - 1
+        cnt = fset(cnt, l, 124, p)
+        order = fset(order, p, 124, s)
+        s = s + 1
+    idx = sz - 1
+    while idx >= 1
+        s = fget(order, idx, 124)
+        l = fget(slink, s, 124)
+        if l >= 0
+            socc = fset(socc, l, 124, fget(socc, l, 124) + fget(socc, s, 124))
+        idx = idx - 1
+    slink .. "~" .. slen .. "~" .. socc .. "~" .. sfirst .. "~" .. strans
+
+samcands: str = (sam: str, code: str, n: i64, hot: str, mode: i64)
+    slink = sget(sam, 0, 126)
+    slen = sget(sam, 1, 126)
+    socc = sget(sam, 2, 126)
+    sfirst = sget(sam, 3, 126)
+    sz = fcount(slink, 124)
+    best = ""
+    bestsave = 0
+    s = 1
+    while s < sz
+        if fget(socc, s, 124) >= 2 and fget(slen, s, 124) >= 4
+            link = fget(slink, s, 124)
+            lo = fget(slen, link, 124) + 1
+            if lo < 4
+                lo = 4
+            hi = fget(slen, s, 124)
+            fp = fget(sfirst, s, 124)
+            l = lo
+            while l <= hi
+                o = fp - l + 1
+                if o >= 0 and hasbad(code, o, l) == 0
+                    seq = seqat(code, o, l)
+                    occ = nonoverlap(findall(code, seq, l), l)
+                    k = fcount(occ, 124)
+                    if k >= 2
+                        save = (l - 1) * k - (l + 1)
+                        if save > bestsave
+                            ok = 1
+                            if mode == 0
+                                ok = alloccold(hot, occ, l)
+                            if ok == 1 and tgtok(code, n, occ, l) == 1
+                                bestsave = save
+                                best = dec(save) .. "|" .. seq .. "|" .. dec(l) .. "|" .. occ
+                l = l + 1
+        s = s + 1
+    best
+
+patch8: str = (c: str, p: i64, w: i64)
+    a = p * 8
+    pre = ""
+    if a > 0
+        pre = c:sub(1, a)
+    post = ""
+    if a + 9 <= c:len()
+        post = c:sub(a + 9, c:len())
+    pre .. word(w) .. post
+
+rewrite: str = (main: str, bodies: str, calls: str, bsizes: str, cand: str)
+    seq = sget(cand, 1, 124)
+    l = fget(cand, 2, 124)
+    save = fget(cand, 0, 124)
+    occs = candrest(cand, 3)
+    n = wcount(main)
+    marks = ""
+    i = 0
+    while i < n
+        marks = marks .. "0|"
+        i = i + 1
+    no = fcount(occs, 124)
+    k = 0
+    while k < no
+        marks = fset(marks, fget(occs, k, 124), 124, 1)
+        k = k + 1
+    newmain = ""
+    newpos = ""
+    i = 0
+    nn = 0
+    while i < n
+        if fget(marks, i, 124) == 1
+            newpos = newpos .. dec(nn) .. "|"
+            newmain = newmain .. "00000000"
+            nn = nn + 1
+            j = i + 1
+            while j < i + l
+                newpos = newpos .. dec(nn - 1) .. "|"
+                j = j + 1
+            i = i + l
+        else
+            newpos = newpos .. dec(nn) .. "|"
+            newmain = newmain .. seqat(main, i, 1)
+            nn = nn + 1
+            i = i + 1
+    i = 0
+    while i < n
+        if fget(marks, i, 124) == 0
+            w = wordat(main, i)
+            if isbr(w) == 1 and (w >> 26) != 37
+                t = brtgt(w, i)
+                ni = fget(newpos, i, 124)
+                nt = fget(newpos, t, 124)
+                noff = nt - ni
+                nw = w
+                if (w >> 26) == 5
+                    nw = 335544320 | (noff & 67108863)
+                else
+                    nw = 1409286144 | ((noff & 524287) << 5) | (w & 15)
+                newmain = patch8(newmain, ni, nw)
+        i = i + 1
+    newcalls = ""
+    nc = fcount(calls, 124)
+    k = 0
+    while k < nc
+        e = sget(calls, k, 124)
+        newcalls = newcalls .. dec(fget(e, 0, 44)) .. "," .. dec(fget(newpos, fget(e, 1, 44), 124)) .. "|"
+        k = k + 1
+    nb = fcount(bsizes, 124)
+    k = 0
+    while k < no
+        newcalls = newcalls .. dec(nb) .. "," .. dec(fget(newpos, fget(occs, k, 124), 124)) .. "|"
+        k = k + 1
+    newbodies = bodies .. seq .. word(3596551104)
+    newbsizes = bsizes .. dec(l + 1) .. "|"
+    mainlen = wcount(newmain)
+    bstart = ""
+    acc = mainlen
+    b = 0
+    while b <= nb
+        bstart = bstart .. dec(acc) .. "|"
+        acc = acc + fget(newbsizes, b, 124)
+        b = b + 1
+    bad = 0
+    k = 0
+    nc2 = fcount(newcalls, 124)
+    while k < nc2
+        e = sget(newcalls, k, 124)
+        b = fget(e, 0, 44)
+        cs = fget(e, 1, 44)
+        off = fget(bstart, b, 124) - cs
+        if off < 0 or off >= 33554432
+            bad = 1
+        else
+            newmain = patch8(newmain, cs, 2483027968 | (off & 67108863))
+        k = k + 1
+    if bad == 1
+        return ""
+    newmain .. "~" .. newbodies .. "~" .. newcalls .. "~" .. newbsizes .. "~" .. dec(save)
+
+doround: str = (main: str, bodies: str, calls: str, bsizes: str, mode: i64)
+    saved = 0
+    go = 1
+    rounds = 0
+    while go == 1 and rounds < 16
+        n = wcount(main)
+        sam = samprop(sambuild(main, n))
+        hot = ""
+        if mode == 0
+            hot = hotranges(main, n)
+        cand = samcands(sam, main, n, hot, mode)
+        if cand == ""
+            go = 0
+        else
+            r = rewrite(main, bodies, calls, bsizes, cand)
+            if r == ""
+                go = 0
+            else
+                main = sget(r, 0, 126)
+                bodies = sget(r, 1, 126)
+                calls = sget(r, 2, 126)
+                bsizes = sget(r, 3, 126)
+                saved = saved + fget(r, 4, 126)
+        rounds = rounds + 1
+    main .. "~" .. bodies .. "~" .. calls .. "~" .. bsizes .. "~" .. dec(saved)
+
+prolog: str = (code: str, n: i64)
+    newpos = ""
+    pos = 1
+    cost = 1
+    i = 0
+    while i < n
+        newpos = newpos .. dec(pos) .. "|"
+        if isret(wordat(code, i)) == 1
+            pos = pos + 2
+            cost = cost + 1
+        else
+            pos = pos + 1
+        i = i + 1
+    out = word(4162785278)
+    i = 0
+    while i < n
+        w = wordat(code, i)
+        if isret(w) == 1
+            out = out .. word(4165011454) .. word(w)
+        else
+            out = out .. word(w)
+        i = i + 1
+    i = 0
+    while i < n
+        w = wordat(code, i)
+        if isbr(w) == 1
+            if (w >> 26) == 37
+                return ""
+            t = brtgt(w, i)
+            if t < 0 or t >= n
+                return ""
+            ni = fget(newpos, i, 124)
+            nt = fget(newpos, t, 124)
+            off = nt - ni
+            nw = w
+            if (w >> 26) == 5
+                if off < 0 - 33554432 or off >= 33554432
+                    return ""
+                nw = 335544320 | (off & 67108863)
+            else
+                if off < 0 - 262144 or off >= 262144
+                    return ""
+                nw = 1409286144 | ((off & 524287) << 5) | (w & 15)
+            out = patch8(out, ni, nw)
+        i = i + 1
+    out .. "~" .. dec(cost)
+
+outline: str = (code: str, mode: i64)
+    n = wcount(code)
+    if xunsafe(code, n) == 1
+        return code .. "~" .. "0," .. dec(n) .. "~0"
+    pp = prolog(code, n)
+    if pp == ""
+        return code .. "~" .. "0," .. dec(n) .. "~0"
+    pre = sget(pp, 0, 126)
+    cost = fget(pp, 1, 126)
+    r = doround(pre, "", "", "", mode)
+    saved = fget(r, 4, 126)
+    if saved <= cost
+        return code .. "~" .. "0," .. dec(n) .. "~0"
+    main = sget(r, 0, 126)
+    bodies = sget(r, 1, 126)
+    bsizes = sget(r, 3, 126)
+    mainlen = wcount(main)
+    table = "0," .. dec(mainlen)
+    acc = mainlen
+    b = 0
+    nb = fcount(bsizes, 124)
+    while b < nb
+        table = table .. "|" .. dec(acc) .. "," .. dec(fget(bsizes, b, 124))
+        acc = acc + fget(bsizes, b, 124)
+        b = b + 1
+    main .. bodies .. "~" .. table .. "~" .. dec(saved - cost)
+
+strip: str = (s: str)
+    out = ""
+    i = 1
+    n = s:len()
+    while i <= n
+        c = s:byte(i)
+        if c != 32 and c != 10 and c != 13 and c != 9
+            out = out .. s:sub(i, i)
+        i = i + 1
+    out
+
+main: i64 = ()
+    src = strip(stdin:read())
+    mode = 0
+    if src:sub(1, 6) == "mode1~"
+        mode = 1
+        src = src:sub(7, src:len())
+    else
+        if src:sub(1, 6) == "mode0~"
+            src = src:sub(7, src:len())
+    stdout:write(outline(src, mode))
+    0
