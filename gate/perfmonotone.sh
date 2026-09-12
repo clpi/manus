@@ -27,11 +27,17 @@ if [ ! -f "$PROG" ]; then
     exit 1
 fi
 
-# print the block under a `## <heading>` until the next `## ` or EOF.
+# print the block between the `<!-- idol-perf-<name>:v1:begin -->` and
+# `<!-- idol-perf-<name>:v1:end -->` machine markers. Headings are gone; the
+# markers sit exactly where the old `## ` boundaries were, so the block
+# content (and the row counts below) is unchanged.
 block() {
-    heading="$1"
+    name="$1"
     file="$2"
-    awk -v h="$heading" 'BEGIN{inb=0} /^## / { if (inb) { exit } if ($0 == "## " h) { inb=1; next } } inb { print }' "$file"
+    awk -v b="<!-- idol-perf-$name:v1:begin -->" -v e="<!-- idol-perf-$name:v1:end -->" '
+        $0 == b { inb=1; next }
+        $0 == e { if (inb) exit; next }
+        inb { print }' "$file"
 }
 
 # count table data rows in a markdown table, skipping the named header and any
@@ -51,8 +57,8 @@ count_rows() {
     '
 }
 
-matrix=$(block "Compiler Prior Art Matrix" "$PROG")
-contract=$(block "Mandatory Performance Monotonicity Contract" "$PROG")
+matrix=$(block "matrix" "$PROG")
+contract=$(block "contract" "$PROG")
 
 matrix_n=$(printf '%s\n' "$matrix" | count_rows "technique")
 contract_n=$(printf '%s\n' "$contract" | count_rows "invariant")

@@ -45,8 +45,8 @@ awk '/^```text$/ { inb = !inb; next } inb && /[[:space:]]/ {
 }' "$MANIFEST" >"$RULES"
 [ -s "$RULES" ] || { printf 'corpus-status gate: FAIL — manifest yielded 0 rules\n'; exit 2; }
 
-# The derived-defaults block under "## Derived defaults" only: `status<spaces>prefix`.
-awk '/^## Derived defaults/ { ind = 1; next } /^## / { ind = 0 }
+# The derived-defaults block under the "| Derived defaults |" section marker only: `status<spaces>prefix`.
+awk '/^\|[ \t]*Derived defaults[ \t]*\|/ { ind = 1; next } /^\|[ \t]*section[ \t]*\|/ { ind = 0 }
      ind && /^```text$/ { inb = !inb; next }
      inb && /^[a-z]/ { print $1 " " $2 }' "$DEFAULTS" >"$DEFS"
 [ -s "$DEFS" ] || { printf 'corpus-status gate: FAIL — derived defaults yielded 0 rules\n'; exit 2; }

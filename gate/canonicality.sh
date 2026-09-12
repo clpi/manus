@@ -29,7 +29,7 @@ check_law_section() {
     fi
 }
 
-check_law_section '## 5. Delimiter and face closure'
+check_law_section '| 5. Delimiter and face closure |'
 check_law_section '`[]` is computed/indexed projection.'
 check_law_section '`()` is ordinary application.'
 check_law_section 'sole supreme compact law'
@@ -53,8 +53,8 @@ fi
 
 # Program document must carry both tables
 if [ -f "$PROG" ]; then
-    if grep -qF '## Final rulings' "$PROG" && \
-       grep -qF '## Canonicality status relation' "$PROG"; then
+    if grep -qF '| Final rulings |' "$PROG" && \
+       grep -qF '| Canonicality status relation |' "$PROG"; then
         ok 'authority-repair program has rulings and status relation'
     else
         bad 'authority-repair program missing rulings or status relation'

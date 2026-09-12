@@ -2,12 +2,18 @@
 # gapc0 — research-GAP C0 alignment census (role-aware).
 #
 # Every GAP that DECLARES `**Kind:** research_gap` (GAP-175 onward), plus
-# gaps/RESEARCH-SPINE.md, must carry a complete "## C0 alignment" block
+# gaps/RESEARCH-SPINE.md, must carry a complete C0 alignment block
 # (schema: gaps/RESEARCH-SPINE.md) whose kind, registry, and source syntax
 # deltas are literally 0. A missing block, a missing field, an empty field, or
 # a nonzero delta is one violation each. A research note that needs a new
 # kind/registry/syntax is a constitutional amendment request, not a GAP, and it
 # fails here until C0 itself is amended.
+#
+# The C0 alignment block is a structural directive table delimited by the
+# machine markers `<!-- idol-gap-c0:v1:begin -->` /
+# `<!-- idol-gap-c0:v1:end -->` (the frontier-block convention), NOT a
+# Markdown heading, and its fields are `| field | value |` rows, NOT a
+# Markdown list. Exactly one begin/end pair, in order, is required.
 #
 # THE SUBJECT IS A KIND, NOT A NUMBER RANGE. This census selected `>= 175`
 # because, on the day it was written, every GAP at or above 175 was a research
@@ -30,6 +36,12 @@
 # and law ids are not these roles and pass. Scanner fixtures (audit100,
 # GAP-071) are the law's own test data and are outside this census, the same
 # way audit100 excludes its own patterns.
+#
+# Quoted non-Idol code is not Idol source: fenced blocks that name a
+# non-Idol language (```zig, ```sh, ```text, ...) are evidence quotations and
+# are excluded from the role census. ```id blocks and unfenced prose stay in.
+# (GAP-240 quoted Zig host code whose `self: *Parser` receiver tripped
+# law.subject.zero.)
 #
 # Exit code = violation count. checked == 0 is itself a failure (exit 2): a
 # census that examined no files has not passed.
@@ -57,41 +69,45 @@ report() {
   viol=$((viol + 1))
 }
 
-# law.subject.zero: receiver spelling in a parameter-list shape:
-# "(self," "(self: ..." ", this)" — the synthetic-subject role.
-subj_pat='[(,][[:space:]]*(self|this|receiver|current|instance|object)([[:space:]]*[,)]|[[:space:]]*:)'
-
-# law.any.descriptor.zero / law.result.zero: open type or void in
-# annotation position — the flag class is the type-position tail (closer,
-# comma, equals, or end of line). The relation faces xs:any(p) and the
-# quoted selector `:any` end in "(" or a citation mark and pass.
-anno_any_pat=':[[:space:]]*any([[:space:]]*[,)=]|[[:space:]]*$)'
-anno_void_pat=':[[:space:]]*void([[:space:]]*[,)=]|[[:space:]]*$)'
-
-role_check() {
-  f=$1
-  base=${f##*/}
-  if grep -qE "$subj_pat" "$f"; then
-    report "$base" "parameter-position receiver binding (law.subject.zero)"
-  fi
-  if grep -qE "$anno_any_pat" "$f"; then
-    report "$base" "annotation-position open type (law.any.descriptor.zero)"
-  fi
-  if grep -qE "$anno_void_pat" "$f"; then
-    report "$base" "annotation-position void descriptor (law.result.zero)"
-  fi
+# c0_field <block-text> <field-name>: print the | field | value | cell for a
+# C0 field, unescaping \|. Prints nothing when the row is absent.
+c0_field() {
+  printf '%s\n' "$1" | awk -v fld="$2" '
+    {
+      line = $0
+      gsub(/\\[|]/, "\034", line)
+      n = split(line, c, "[|]")
+      if (n >= 4) {
+        f2 = c[2]; gsub(/^[ \t]+|[ \t]+$/, "", f2)
+        if (f2 == fld) {
+          v = c[3]
+          gsub(/^[ \t]+|[ \t]+$/, "", v)
+          gsub(/\034/, "|", v)
+          print v
+          exit
+        }
+      }
+    }'
 }
 
 check_file() {
   f=$1
   base=${f##*/}
 
-  if ! grep -q '^## C0 alignment$' "$f"; then
+  nbegin=$(grep -c -F -x '<!-- idol-gap-c0:v1:begin -->' "$f")
+  nend=$(grep -c -F -x '<!-- idol-gap-c0:v1:end -->' "$f")
+  if [ "$nbegin" != "1" ] || [ "$nend" != "1" ]; then
+    report "$base" "missing C0 alignment block"
+    return
+  fi
+  begin=$(grep -n -F -x '<!-- idol-gap-c0:v1:begin -->' "$f" | cut -d: -f1)
+  end=$(grep -n -F -x '<!-- idol-gap-c0:v1:end -->' "$f" | cut -d: -f1)
+  if [ "$begin" -ge "$end" ]; then
     report "$base" "missing C0 alignment block"
     return
   fi
 
-  block=$(sed -n '/^## C0 alignment$/,$p' "$f")
+  block=$(sed -n "$((begin + 1)),$((end - 1))p" "$f")
 
   for fld in \
     "constitutional owners" \
@@ -109,24 +125,54 @@ check_file() {
     "evidence" \
     "deletion witness"
   do
+    val=$(c0_field "$block" "$fld")
     case $fld in
       "kind delta"|"registry delta"|"source syntax delta")
-        printf '%s\n' "$block" | grep -q -- "^- \*\*$fld:\*\* 0$" || {
-          report "$base" "field [$fld] missing or not exactly 0"
-        }
+        [ "$val" = "0" ] || report "$base" "field [$fld] missing or not exactly 0"
         ;;
       *)
-        printf '%s\n' "$block" | grep -q -- "^- \*\*$fld:\*\* ..*" || {
-          report "$base" "field [$fld] missing or empty"
-        }
+        [ -n "$val" ] || report "$base" "field [$fld] missing or empty"
         ;;
     esac
   done
 }
 
+subj_pat='[(,][[:space:]]*(self|this|receiver|current|instance|object)([[:space:]]*[,)]|[[:space:]]*:)'
+anno_any_pat=':[[:space:]]*any([[:space:]]*[,)=]|[[:space:]]*$)'
+anno_void_pat=':[[:space:]]*void([[:space:]]*[,)=]|[[:space:]]*$)'
+role_check() {
+  f=$1
+  base=${f##*/}
+  # Fenced quotations that name a non-Idol language are evidence, not Idol
+  # source: law.md 111-115 governs Idol roles, so a ```zig/```sh/```text
+  # quotation cannot instantiate them. ```id blocks and unfenced text stay
+  # in the census. (GAP-240 quoted Zig host code tripped law.subject.zero.)
+  scan=$(awk '
+    /^```/ {
+      info = $0; sub(/^```[ \t]*/, "", info); sub(/[ \t]*$/, "", info)
+      if (in_fence) { in_fence = 0; skip = 0 }
+      else { in_fence = 1; skip = (info != "" && info != "id") }
+      next
+    }
+    skip { next }
+    { print }
+  ' "$f")
+  if printf '%s\n' "$scan" | grep -qE "$subj_pat"; then
+    report "$base" "parameter-position receiver binding (law.subject.zero)"
+  fi
+  if printf '%s\n' "$scan" | grep -qE "$anno_any_pat"; then
+    report "$base" "annotation-position open type (law.any.descriptor.zero)"
+  fi
+  if printf '%s\n' "$scan" | grep -qE "$anno_void_pat"; then
+    report "$base" "annotation-position void descriptor (law.result.zero)"
+  fi
+}
+
 kind_of() {
-  # The declared kind, from the one metadata line every GAP carries.
-  sed -n 's/.*\*\*Kind:\*\*[[:space:]]*\([a-z_]*\).*/\1/p' "$1" | head -n 1
+  # The declared kind, from the metadata table every GAP carries.
+  # `| kind delta |` rows must not match: after `kind` the next character
+  # must be the cell boundary.
+  sed -n 's/^|[[:space:]]*kind[[:space:]]*|[[:space:]]*\([a-z_]*\).*/\1/p' "$1" | head -n 1
 }
 
 research=0

@@ -118,12 +118,19 @@ development_url="$(printf '%s\n' "$development_pair" | cut -f2-)"
 head="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 dirty="$(git status --short 2>/dev/null | wc -l | tr -d ' ')"
+# md_field <file> <field>: print the value cell of a | field | value |
+# metadata-table row. Structural replacement for **Field:** header lines.
+md_field() {
+  sed -n "s/^|[[:space:]]*$2[[:space:]]*|[[:space:]]*\(.*\)[[:space:]]*|[[:space:]]*$/\1/p" "$1" | head -n 1
+}
+
 p0="$(
   count=0
   for gap in gaps/GAP-*.md; do
-    header="$(sed -n '1,8p' "$gap")"
-    if printf '%s\n' "$header" | grep -Eiq '^\*\*Status:\*\*[[:space:]]*(OPEN|REOPENED)([[:space:]·(:—-]|$)' &&
-       printf '%s\n' "$header" | grep -Eiq '^\*\*(Status|Priority):\*\*.*P0'; then
+    status="$(md_field "$gap" status)"
+    priority="$(md_field "$gap" priority)"
+    if printf '%s' "$status" | grep -Eiq '^(OPEN|REOPENED)([[:space:]·(:—-]|$)' &&
+       printf '%s\n%s' "$status" "$priority" | grep -Eiq 'P0'; then
       count=$((count + 1))
     fi
   done

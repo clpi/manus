@@ -7,6 +7,12 @@ set -eu
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$repo"
 
+# md_field <file> <field>: print the value cell of a | field | value |
+# metadata-table row. Structural replacement for **Field:** header lines.
+md_field() {
+  sed -n "s/^|[[:space:]]*$2[[:space:]]*|[[:space:]]*\\(.*\\)[[:space:]]*|[[:space:]]*$/\\1/p" "$1" | head -n 1
+}
+
 template="$repo/docs/spec/harness-projection.md"
 out="$repo/.agents/HARNESS.md"
 session_out="$repo/.agents/session/ENVELOPE.md"
@@ -29,10 +35,12 @@ p0_list=""
 p0_count=0
 for gap in gaps/GAP-*.md; do
   [ -f "$gap" ] || continue
-  if grep -Eiq '^\*\*Status:\*\*[[:space:]]*(OPEN|REOPENED)([[:space:]·(:—-]|$)' "$gap" 2>/dev/null &&
-     grep -Eiq '^\*\*(Status|Priority):\*\*.*P0' "$gap" 2>/dev/null; then
+  status="$(md_field "$gap" status)"
+  priority="$(md_field "$gap" priority)"
+  if printf '%s' "$status" | grep -Eiq '^(OPEN|REOPENED)([[:space:]·(:—-]|$)' &&
+     printf '%s\n%s' "$status" "$priority" | grep -Eiq 'P0'; then
     p0_count=$((p0_count + 1))
-    title="$(sed -n '1p' "$gap" | sed 's/^# *//')"
+    title="$(md_field "$gap" title)"
     id="$(basename "$gap" .md)"
     p0_list="${p0_list}
 - ${id}: ${title}"
@@ -41,7 +49,7 @@ done
 
 bootstrap_stage="S0"
 if [ -f docs/bootstrap.md ]; then
-  bootstrap_stage="$(sed -n 's/^## Current stage: //p' docs/bootstrap.md | head -1)"
+  bootstrap_stage="$(md_field docs/bootstrap.md "current stage" | head -1)"
   [ -n "$bootstrap_stage" ] || bootstrap_stage="S0"
 fi
 
@@ -68,7 +76,9 @@ generated_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u)"
 <!-- Source: docs/spec/harness-projection.md via tools/node/dev/generate-harness -->
 <!-- Regenerate: tools/node/dev/generate-harness (orient calls this) -->
 
-# Idol universal harness boot payload
+| field | value |
+|---|---|
+| title | Idol universal harness boot payload |
 
 This file is a **generated projection**, not semantic law. The supreme law is
 docs/spec/law.md, whose structured expansion is docs/spec/constitution.md.
@@ -86,7 +96,9 @@ EOF
 <!-- EPHEMERAL SESSION ENVELOPE -->
 <!-- Regenerate: tools/node/dev/generate-harness (orient calls this) -->
 
-## live envelope
+| section |
+|---|---|
+| live envelope |
 
 | field | value |
 | --- | --- |
@@ -214,7 +226,9 @@ cp "$session_tmp" "$session_out"
 # Back-compat stub — do not maintain parallel content.
 {
   cat <<EOF
-# Deprecated projection path
+| field | value |
+|---|---|
+| title | Deprecated projection path |
 
 Read **\`.agents/HARNESS.md\`** — the sole revision-bound harness boot payload.
 

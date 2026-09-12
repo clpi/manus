@@ -16,7 +16,7 @@ SCHEMA = "idol.gap.frontier.v1"
 BEGIN = "<!-- idol-gap-frontier:v1:begin -->"
 END = "<!-- idol-gap-frontier:v1:end -->"
 # The two lifecycle states a required frontier may publish. The gate does not
-# choose between them — the gap's own **Status:** header does, and the block is
+# choose between them — the gap's own status field does, and the block is
 # required to AGREE. Requiring OPEN here made closing a gap a repository-wide
 # commit block.
 LIFECYCLE = ("OPEN", "CLOSED")
@@ -34,8 +34,11 @@ REQUIRED = (
     "GAP-221",
 )
 PROJECTION = "gaps/ROOT-PROGRAM.md"
-ROSTER_BEGIN = "## The two chokepoints"
-ROSTER_END = "## Findings that outrank the classification"
+# The projection roster is a structural machine-marker block, not Markdown
+# headings: the old `## The two chokepoints` / `## Findings that outrank the
+# classification` boundaries were heading syntax and are gone.
+ROSTER_BEGIN = "<!-- idol-projection-roster:v1:begin -->"
+ROSTER_END = "<!-- idol-projection-roster:v1:end -->"
 RECLASSIFIED_ROW = re.compile(r"^\|\s*`(GAP-\d{3})`\s*\|")
 GAP_REF = re.compile(r"(GAP-\d{3})`?[ \t]*(\(not P0\))?")
 NOT_P0 = "(not P0)"
@@ -51,18 +54,19 @@ NOT_P0 = "(not P0)"
 # spelling (`IMPLEMENTATION-BLOCKED` is already written in this tree) cannot
 # repeat the outage. Retirement is CLOSED, SUPERSEDED or REFUTED, and being
 # blocked is none of them.
+# The status and priority now live in the gap's leading `| field | value |`
+# metadata table, not in `**Status:**` / `**Priority:**` header lines.
 ACTIVE_STATUS = re.compile(
-    r"^\*\*Status:\*\*[ \t]*"
+    r"^[ \t]*"
     r"(OPEN|REOPENED|IN_PROGRESS|(?!(?:CLOSED|SUPERSEDED|REFUTED)-)[A-Z_][A-Z_-]*-BLOCKED)"
     r"([ \t\u00b7(:\u2014]|$)",
     re.IGNORECASE,
 )
-ACTIVE_P0 = re.compile(r"^\*\*(Status|Priority):\*\*.*P0", re.IGNORECASE)
+P0_MARK = re.compile(r"P0", re.IGNORECASE)
 ROOT_EDGES = {
     "GAP-134": ("lib/compiler/token.id", "src/parser.zig"),
     "GAP-145": ("lib/compiler/lexer.id", "src/parser.zig"),
 }
-STATUS_HEADER = re.compile(r"^\*\*Status:\*\*[ \t]+([A-Z]+)", re.MULTILINE)
 KEYS = {
     "schema",
     "gap",
@@ -77,11 +81,73 @@ class FrontierError(ValueError):
     pass
 
 
-def heading_anchor(line):
-    heading = re.sub(r"^#{1,6}[ \t]+", "", line.rstrip())
-    heading = heading.lower().replace("`", "")
-    heading = re.sub(r"[^\w\- ]", "", heading, flags=re.UNICODE)
-    return re.sub(r"[ \t]+", "-", heading).strip("-")
+def split_row(line):
+    """Split a Markdown table row on unescaped pipes; unescape `\\|`."""
+    cells = [
+        cell.replace("\x00", "|").strip()
+        for cell in line.replace("\\|", "\x00").split("|")
+    ]
+    if cells and cells[0] == "":
+        cells = cells[1:]
+    if cells and cells[-1] == "":
+        cells = cells[:-1]
+    return cells
+
+
+def is_separator(cells):
+    return bool(cells) and all(re.fullmatch(r"-+", cell) for cell in cells)
+
+
+def field_table(lines):
+    """The leading `| field | value |` metadata table as (field, value) pairs.
+
+    Fields are lowercased; only the file's first metadata table is read, so a
+    `| field | value |` table buried in the body cannot shadow the header.
+    """
+    pairs = []
+    header_seen = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if header_seen:
+                break
+            continue
+        if not stripped.startswith("|"):
+            break
+        if not header_seen:
+            if not re.match(r"^\|\s*field\s*\|", line):
+                return []
+            header_seen = True
+            continue
+        cells = split_row(line)
+        if len(cells) >= 2 and not is_separator(cells):
+            pairs.append((cells[0].strip().lower(), cells[1].strip()))
+    return pairs
+
+
+def section_names(lines):
+    """Section names from every `| section |` marker table, in order."""
+    names = []
+    for i, line in enumerate(lines):
+        if re.match(r"^\|\s*section\s*\|", line):
+            for row in lines[i + 1:]:
+                if not row.strip().startswith("|"):
+                    break
+                cells = split_row(row)
+                if cells and not is_separator(cells):
+                    names.append(cells[0].strip())
+    return names
+
+
+def section_anchor(name):
+    """The anchor a `| section |` marker table row publishes.
+
+    Same slug rules the old Markdown headings used, so existing
+    `superseded_observations` anchors keep resolving.
+    """
+    slug = name.lower().replace("`", "")
+    slug = re.sub(r"[^\w\- ]", "", slug, flags=re.UNICODE)
+    return re.sub(r"[ \t]+", "-", slug).strip("-")
 
 
 def require_string(value, field):
@@ -109,7 +175,10 @@ def validate_text(text, expected_gap):
         raise FrontierError("frontier markers are reversed")
     if begin >= 12:
         raise FrontierError("frontier block must begin within the top 12 lines")
-    first_section = next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
+    first_section = next(
+        (i for i, line in enumerate(lines) if re.match(r"^\|\s*section\s*\|", line)),
+        len(lines),
+    )
     if begin >= first_section:
         raise FrontierError("frontier block must precede the first section")
 
@@ -127,27 +196,24 @@ def validate_text(text, expected_gap):
         raise FrontierError(f"schema must be {SCHEMA}")
     if frontier["gap"] != expected_gap:
         raise FrontierError(f"gap must be {expected_gap}")
-    # THE PROSE HEADER DECIDES, THE BLOCK AGREES. This asserted OPEN on both
+    # THE METADATA TABLE DECIDES, THE BLOCK AGREES. This asserted OPEN on both
     # faces, so closing a required gap failed the gate and blocked every commit
     # in the repository until someone edited this file — which is the copied-
     # census decay the gate exists to refuse, reproduced by the gate itself.
     # `fe41f1d6` closed GAP-221 and left it on the REQUIRED roster; main was
     # commit-blocked for every lane. The lifecycle is now derived from the one
-    # header that states it, and only the AGREEMENT is enforced.
-    status_headers = re.findall(
-        r"^\*\*Status:\*\*[ \t]+([A-Z]+)",
-        "\n".join(lines[:begin]),
-        flags=re.MULTILINE,
-    )
-    if len(status_headers) != 1 or status_headers[0] not in LIFECYCLE:
+    # metadata table that states it, and only the AGREEMENT is enforced.
+    pairs = field_table(lines[:begin])
+    statuses = [value for field, value in pairs if field == "status"]
+    if len(statuses) != 1 or not re.match(r"(OPEN|CLOSED)(?![A-Z])", statuses[0]):
         raise FrontierError(
-            "prose must carry exactly one **Status:** header naming "
+            "metadata must carry exactly one status field naming "
             f"{' or '.join(sorted(LIFECYCLE))}"
         )
-    status = status_headers[0]
+    status = "OPEN" if statuses[0].startswith("OPEN") else "CLOSED"
     if frontier["status"] != status:
         raise FrontierError(
-            f"frontier status is {frontier['status']} but the prose header "
+            f"frontier status is {frontier['status']} but the metadata "
             f"states {status}; they must agree"
         )
 
@@ -175,31 +241,32 @@ def validate_text(text, expected_gap):
                 f"root_program must end at the parser consumer {last}"
             )
 
-    anchors = {
-        heading_anchor(line)
-        for line in lines
-        if re.match(r"^#{1,6}[ \t]+", line)
-    }
+    # Section anchors are published by `| section |` marker tables, not by
+    # Markdown headings; the slug rules are unchanged so existing
+    # `superseded_observations` anchors keep resolving.
+    anchors = {section_anchor(name) for name in section_names(lines)}
     for link in frontier["superseded_observations"]:
         if not link.startswith("#") or link[1:] not in anchors:
-            raise FrontierError(f"superseded observation is not a local heading link: {link}")
+            raise FrontierError(f"superseded observation is not a local section link: {link}")
 
 
-def is_active_p0(header):
-    lines = header.splitlines()
-    status = any(ACTIVE_STATUS.match(line) for line in lines)
-    p0 = any(ACTIVE_P0.match(line) for line in lines)
-    return status and p0
+def is_active_p0(meta):
+    """meta: dict from the gap's leading `| field | value |` metadata table."""
+    status = meta.get("status", "")
+    priority = meta.get("priority", "")
+    live = bool(ACTIVE_STATUS.match(status))
+    p0 = bool(P0_MARK.search(status) or P0_MARK.search(priority))
+    return live and p0
 
 
 def active_p0_set(gaps_dir):
-    """The active-P0 census, recomputed here from the gap headers on disk."""
+    """The active-P0 census, recomputed here from the gap metadata on disk."""
     active = set()
     seen = 0
     for path in sorted(gaps_dir.glob("GAP-*.md")):
         seen += 1
-        header = "\n".join(path.read_text(encoding="utf-8").splitlines()[:8])
-        if is_active_p0(header):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if is_active_p0(dict(field_table(lines))):
             active.add(path.stem)
     if seen == 0:
         raise FrontierError("no GAP-*.md subjects found; census cannot be computed")
@@ -209,8 +276,8 @@ def active_p0_set(gaps_dir):
 def split_projection(text):
     lines = text.splitlines()
     try:
-        begin = next(i for i, line in enumerate(lines) if line.startswith(ROSTER_BEGIN))
-        end = next(i for i, line in enumerate(lines) if line.startswith(ROSTER_END))
+        begin = next(i for i, line in enumerate(lines) if line.strip() == ROSTER_BEGIN)
+        end = next(i for i, line in enumerate(lines) if line.strip() == ROSTER_END)
     except StopIteration:
         raise FrontierError(
             f"projection is missing its roster boundaries "
@@ -306,6 +373,23 @@ def validate_blockers(frontiers):
             )
 
 
+def assert_no_markdown_structure(text, label):
+    """The controls prove the gate no longer reads Markdown structure: no
+    sample may carry a heading or list marker outside fenced code."""
+    in_fence = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if re.match(r"#{1,6} ", line):
+            raise FrontierError(f"{label}: heading marker survived: {line!r}")
+        if re.match(r"[ \t]*(?:-|\*|\d+\.) ", line):
+            raise FrontierError(f"{label}: list marker survived: {line!r}")
+
+
 def sample(frontier=None, header="OPEN"):
     value = frontier or {
         "schema": SCHEMA,
@@ -315,10 +399,11 @@ def sample(frontier=None, header="OPEN"):
         "current_blockers": ["One current blocker."],
         "superseded_observations": ["#historical-observation"],
     }
-    return "\n".join((
-        "# GAP-000 — control",
-        "",
-        f"**Status:** {header}",
+    text = "\n".join((
+        "| field | value |",
+        "|---|---|",
+        "| title | GAP-000 — control |",
+        f"| status | {header} |",
         "",
         BEGIN,
         "```json",
@@ -326,9 +411,15 @@ def sample(frontier=None, header="OPEN"):
         "```",
         END,
         "",
-        "## Historical observation",
+        "| section |",
+        "|---|---|",
+        "| Historical observation |",
         "",
     ))
+    # The positive control is heading-free and list-free: the gate must pass
+    # it on structural tables and machine markers alone.
+    assert_no_markdown_structure(text, "frontier sample")
+    return text
 
 
 def closed(blockers=None):
@@ -467,48 +558,64 @@ def census_controls():
     still dispatched at it — and the gate blamed the projection for naming a gap
     the census had silently retired. Being worked on is the least retired a gap
     can be. These controls fail closed if that word is ever dropped again.
+
+    The controls run the REAL pipeline — metadata table text through
+    field_table into is_active_p0 — on heading-free, list-free samples, so
+    they prove the census no longer reads Markdown headers or list markers.
     """
+    def meta(status, priority, extra=()):
+        rows = []
+        if status is not None:
+            rows.append(f"| status | {status} |")
+        if priority is not None:
+            rows.append(f"| priority | {priority} |")
+        rows.extend(f"| {field} | {value} |" for field, value in extra)
+        text = "\n".join(["| field | value |", "|---|---|"] + rows + [""])
+        assert_no_markdown_structure(text, "census control")
+        return dict(field_table(text.splitlines()))
+
     selected = (
-        "**Status:** OPEN\n**Priority:** P0",
-        "**Status:** REOPENED\n**Priority:** P0",
-        "**Status:** IN_PROGRESS\n**Priority:** P0",
-        # the exact header shape carried by GAP-146 on disk
-        "**Status:** IN_PROGRESS \u00b7 **Filed:** !2026-08-10T12:08:03Z\n"
-        "**Priority:** P0 \u00b7 **Kind:** regression",
+        meta("OPEN", "P0"),
+        meta("REOPENED", "P0"),
+        meta("IN_PROGRESS", "P0"),
+        # the exact metadata shape carried by GAP-146 on disk
+        meta("IN_PROGRESS", "P0",
+             (("filed", "!2026-08-10T12:08:03Z"), ("kind", "regression"))),
         # BLOCKED IS NOT RETIRED. `00c0473d` marked GAP-146 OWNER-BLOCKED on
         # GAP-119 and the census dropped it, so the roster dispatched at a gap
         # the census refused and every lane's commit was blocked. The shape is
         # admitted, not the one word.
-        "**Status:** OWNER-BLOCKED \u00b7 **Filed:** !2026-08-10T12:08:03Z\n"
-        "**Priority:** P0 \u00b7 **Kind:** regression",
-        "**Status:** IMPLEMENTATION-BLOCKED\n**Priority:** P0",
-        "**Status:** SEMANTIC-VOCABULARY-BLOCKED\n**Priority:** P0",
+        meta("OWNER-BLOCKED", "P0",
+             (("filed", "!2026-08-10T12:08:03Z"), ("kind", "regression"))),
+        meta("IMPLEMENTATION-BLOCKED", "P0"),
+        meta("SEMANTIC-VOCABULARY-BLOCKED", "P0"),
     )
-    for index, header in enumerate(selected, 1):
-        if not is_active_p0(header):
+    for index, parsed in enumerate(selected, 1):
+        if not is_active_p0(parsed):
             raise FrontierError(
                 f"census positive control {index} was not selected"
             )
 
     rejected = (
         # retired lifecycles are not active, whatever their priority says
-        "**Status:** CLOSED\n**Priority:** P0",
-        "**Status:** SUPERSEDED\n**Priority:** P0",
-        "**Status:** REFUTED\n**Priority:** P0",
+        meta("CLOSED", "P0"),
+        meta("SUPERSEDED", "P0"),
+        meta("REFUTED", "P0"),
         # active lifecycles that are not P0 are not in the active-P0 census
-        "**Status:** OPEN\n**Priority:** P1",
-        "**Status:** IN_PROGRESS\n**Priority:** P2",
+        meta("OPEN", "P1"),
+        meta("IN_PROGRESS", "P2"),
         # a longer word that merely STARTS with an active one is not that word
-        "**Status:** IN_PROGRESSING\n**Priority:** P0",
+        meta("OPENED", "P0"),
+        meta("IN_PROGRESSING", "P0"),
         # a retired lifecycle is retired however it is qualified, and a blocked
         # spelling is only live because BLOCKED is what it says
-        "**Status:** CLOSED-BLOCKED\n**Priority:** P0",
-        "**Status:** OWNER-PENDING\n**Priority:** P0",
-        # a subject with no status header at all is not active
-        "**Priority:** P0",
+        meta("CLOSED-BLOCKED", "P0"),
+        meta("OWNER-PENDING", "P0"),
+        # a subject with no status field at all is not active
+        meta(None, "P0"),
     )
-    for index, header in enumerate(rejected, 1):
-        if is_active_p0(header):
+    for index, parsed in enumerate(rejected, 1):
+        if is_active_p0(parsed):
             raise FrontierError(
                 f"census damage control {index} was not rejected"
             )
@@ -517,20 +624,30 @@ def census_controls():
 
 
 def projection_sample(roster="`GAP-001`, `GAP-002`", table="| `GAP-003` | CLOSED | x |"):
-    return "\n".join((
-        "# ROOT-PROGRAM — control",
+    text = "\n".join((
+        "| field | value |",
+        "|---|---|",
+        "| title | ROOT-PROGRAM — control |",
         "",
         ROSTER_BEGIN,
         "",
-        "**1 Program** — " + roster + ".",
+        "| # | directive |",
+        "|---|---|",
+        "| 1 | Program — " + roster + ". |",
         "",
         ROSTER_END,
         "",
-        "## Reclassified",
+        "| section |",
+        "|---|---|",
+        "| Reclassified |",
         "",
         table,
         "",
     ))
+    # The projection control is heading-free and list-free: the roster
+    # boundaries are machine markers, not `##` headings.
+    assert_no_markdown_structure(text, "projection sample")
+    return text
 
 
 def projection_controls():
@@ -556,7 +673,7 @@ def projection_controls():
         (projection_sample(roster="nothing"), active, present),
         # an empty reclassification table examines nothing
         (projection_sample(table="no rows here"), active, present),
-        # the roster boundaries are gone
+        # the roster boundaries are gone: a Markdown heading is not a boundary
         (projection_sample().replace(ROSTER_BEGIN, "## renamed"), active, present),
     ]
     for index, (text, act, pres) in enumerate(damaged, 1):
