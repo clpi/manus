@@ -159,14 +159,14 @@
 # MEASURED, on aarch64-linux, by planting into a copy of these two files and
 # reading the exit status against an undamaged copy's 3:
 #
-#   * `duo`'s `_helper__twice` redirected to `_main__main`             was exit 3
+#   * `duo`'s `_helper__twice` redirected to `_main`                  was exit 3
 #   * `duo`'s reach pin deleted, leaving only `!duo_str_to_i64`        was exit 3
 #   * `duo`'s two pins separated by a space rather than a comma, which
 #     puts the reach pin in a fourth field this file never reads       was exit 3
 #   * `text`'s `_helper__value` redirected to `_helper__twice`, a
 #     relation that shape's partition does not declare                 was exit 3
 #
-# THE FIRST THREE ARE GREEN ON MACOS, NOT MERELY UNOBSERVED HERE. `_main__main` is
+# THE FIRST THREE ARE GREEN ON MACOS, NOT MERELY UNOBSERVED HERE. `_main` is
 # defined by the subject's own entry, so it satisfies a presence pin in an image
 # that proves nothing about the reach — the same shape of damage as pointing an
 # absence pin at `!duo_str_sub`, one column-half over. A row left with absence pins
@@ -197,7 +197,7 @@
 #   * `text`'s entry converting text satisfies its PRESENCE pin out of the
 #     entry's own need. The reached partition's need could stop reaching the link
 #     line entirely and the row would not notice — which is the whole of GAP-232
-#     acceptance 2. It is `_main__main` satisfying a reach pin, one column-half
+#     acceptance 2. It is `_main` satisfying a reach pin, one column-half
 #     over: the entry answering for what only the reach should.
 #   * an arithmetic entry converting text derives ABSENCE and is WRONG to. A
 #     correct compiler must carry the unit for that entry, so the row convicts
@@ -799,7 +799,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     #     entry's own need. `text` would answer, define `duo_str_to_i64`, and be
     #     green on macOS while asserting nothing about a reached partition's need
     #     reaching the link line — which is the entirety of GAP-232 acceptance 2.
-    #     It is the same damage as a reach pin naming `_main__main`, one
+    #     It is the same damage as a reach pin naming `_main`, one
     #     column-half over: the ENTRY satisfying what only the reach should.
     #   * an ABSENCE row whose entry converts text derives a direction that is
     #     WRONG. A correct compiler must put the symbol on that link line, so the
@@ -1042,7 +1042,14 @@ if run_subject "$work/ctl.solo" 7 '_no__image__defines__this'; then
     printf 'crosspartition:   the defined-relation column is not being read; the text shape would prove nothing.\n' >&2
     exit 1
 fi
-if run_subject "$work/ctl.solo" 7 '!_main__main'; then
+# THE PIN NAMES `_main`, NOT `_main__main`. The process entry owns the bare C
+# runtime name (the backend's own unit test pins that boundary: "the process
+# entry owns the C runtime name and nothing else does"), so `_main__main` is a
+# symbol no image defines and an absence pin naming it passes VACUOUSLY — this
+# control convicted the compiler for a symbol it never emits. `!_main` is the
+# absence direction actually exercised: the image defines it, so only a reader
+# that refuses can fail this line.
+if run_subject "$work/ctl.solo" 7 '!_main'; then
     printf 'crosspartition control N3: FAIL — an absence pin was accepted against an image that DEFINES the symbol.\n' >&2
     printf 'crosspartition:   the selectivity pins on duo/trio/fan are not being read.\n' >&2
     exit 1
