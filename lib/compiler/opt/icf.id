@@ -1,0 +1,252 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = (v & 15) + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    hex(v >> 4) .. hex(v)
+
+word: str = (v: i64)
+    pair(v) .. pair(v >> 8) .. pair(v >> 16) .. pair(v >> 24)
+
+dec: str = (v: i64)
+    if v == 0
+        return "0"
+    neg = 0
+    if v < 0
+        neg = 1
+        v = 0 - v
+    out = ""
+    x = v
+    while x > 0
+        out = hex(x - (x // 10) * 10) .. out
+        x = x // 10
+    if neg == 1
+        return "-" .. out
+    out
+
+num: i64 = (s: str)
+    v = 0
+    i = 1
+    n = s:len()
+    neg = 0
+    if n > 0 and s:byte(1) == 45
+        neg = 1
+        i = 2
+    while i <= n
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    if neg == 1
+        return 0 - v
+    v
+
+fcount: i64 = (s: str, sep: i64)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == sep
+            n = n + 1
+        i = i + 1
+    n
+
+fget: i64 = (s: str, idx: i64, sep: i64)
+    cur = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        if cur == idx
+            j = i
+            while j <= n and s:byte(j) != sep
+                j = j + 1
+            return num(s:sub(i, j - 1))
+        if s:byte(i) == sep
+            cur = cur + 1
+        i = i + 1
+    0
+
+sget: str = (s: str, idx: i64, sep: i64)
+    cur = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        if cur == idx
+            j = i
+            while j <= n and s:byte(j) != sep
+                j = j + 1
+            return s:sub(i, j - 1)
+        if s:byte(i) == sep
+            cur = cur + 1
+        i = i + 1
+    ""
+
+fset: str = (s: str, idx: i64, sep: i64, v: i64)
+    out = ""
+    cur = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        j = i
+        while j <= n and s:byte(j) != sep
+            j = j + 1
+        if cur == idx
+            out = out .. dec(v) .. s:sub(j, j)
+        else
+            out = out .. s:sub(i, j)
+        cur = cur + 1
+        i = j + 1
+    out
+
+unhex: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return c - 48
+    if c >= 97 and c <= 102
+        return c - 87
+    if c >= 65 and c <= 70
+        return c - 55
+    0
+
+wordat: i64 = (code: str, i: i64)
+    b = 8 * i + 1
+    b0 = unhex(code:byte(b)) * 16 + unhex(code:byte(b + 1))
+    b1 = unhex(code:byte(b + 2)) * 16 + unhex(code:byte(b + 3))
+    b2 = unhex(code:byte(b + 4)) * 16 + unhex(code:byte(b + 5))
+    b3 = unhex(code:byte(b + 6)) * 16 + unhex(code:byte(b + 7))
+    b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+
+wcount: i64 = (code: str)
+    code:len() // 8
+
+seqat: str = (code: str, i: i64, l: i64)
+    code:sub(8 * i + 1, 8 * i + 8 * l)
+
+patch8: str = (c: str, p: i64, w: i64)
+    a = p * 8
+    pre = ""
+    if a > 0
+        pre = c:sub(1, a)
+    post = ""
+    if a + 9 <= c:len()
+        post = c:sub(a + 9, c:len())
+    pre .. word(w) .. post
+
+strip: str = (s: str)
+    out = ""
+    i = 1
+    n = s:len()
+    while i <= n
+        c = s:byte(i)
+        if c != 32 and c != 10 and c != 13 and c != 9
+            out = out .. s:sub(i, i)
+        i = i + 1
+    out
+
+bodyhash: i64 = (code: str, s: i64, l: i64)
+    h = 146959
+    k = 0
+    while k < l
+        h = h * 1099511628211 + wordat(code, s + k)
+        k = k + 1
+    h
+
+bodyeq: i64 = (code: str, s1: i64, s2: i64, l: i64)
+    k = 0
+    while k < l
+        if wordat(code, s1 + k) != wordat(code, s2 + k)
+            return 0
+        k = k + 1
+    1
+
+fold: str = (code: str, table: str)
+    nf = fcount(table, 124) + 1
+    if nf <= 1
+        return code .. "~" .. table .. "~0"
+    starts = ""
+    lens = ""
+    f = 0
+    while f < nf
+        e = sget(table, f, 124)
+        starts = starts .. dec(fget(e, 0, 44)) .. "|"
+        lens = lens .. dec(fget(e, 1, 44)) .. "|"
+        f = f + 1
+    hs = "0|"
+    f = 1
+    while f < nf
+        hs = hs .. dec(bodyhash(code, fget(starts, f, 124), fget(lens, f, 124))) .. "|"
+        f = f + 1
+    canon = ""
+    f = 1
+    while f < nf
+        canon = canon .. "0|"
+        f = f + 1
+    f = 1
+    while f < nf
+        if fget(canon, f - 1, 124) == 0
+            canon = fset(canon, f - 1, 124, f)
+            g = f + 1
+            while g < nf
+                if fget(canon, g - 1, 124) == 0 and fget(hs, f, 124) == fget(hs, g, 124)
+                    if fget(lens, f, 124) == fget(lens, g, 124)
+                        if bodyeq(code, fget(starts, f, 124), fget(starts, g, 124), fget(lens, f, 124)) == 1
+                            canon = fset(canon, g - 1, 124, f)
+                g = g + 1
+        f = f + 1
+    mainlen = fget(lens, 0, 124)
+    total = wcount(code)
+    i = mainlen
+    while i < total
+        if (wordat(code, i) >> 26) == 37
+            return code .. "~" .. table .. "~0"
+        i = i + 1
+    newmain = seqat(code, 0, mainlen)
+    newbodies = ""
+    newtable = "0," .. dec(mainlen)
+    newstarts = ""
+    acc = mainlen
+    saved = 0
+    f = 1
+    while f < nf
+        if fget(canon, f - 1, 124) == f
+            newstarts = newstarts .. dec(acc) .. "|"
+            newbodies = newbodies .. seqat(code, fget(starts, f, 124), fget(lens, f, 124))
+            newtable = newtable .. "|" .. dec(acc) .. "," .. dec(fget(lens, f, 124))
+            acc = acc + fget(lens, f, 124)
+        else
+            newstarts = newstarts .. "-1|"
+            saved = saved + fget(lens, f, 124)
+        f = f + 1
+    i = 0
+    while i < mainlen
+        w = wordat(newmain, i)
+        if (w >> 26) == 37
+            off0 = w & 67108863
+            if off0 >= 33554432
+                off0 = off0 - 67108864
+            t = i + off0
+            f = 1
+            while f < nf
+                bs = fget(starts, f, 124)
+                bl = fget(lens, f, 124)
+                if t == bs
+                    nt = fget(newstarts, fget(canon, f - 1, 124) - 1, 124)
+                    off = nt - i
+                    if off < 0 or off >= 33554432
+                        return code .. "~" .. table .. "~0"
+                    newmain = patch8(newmain, i, 2483027968 | (off & 67108863))
+                    f = nf
+                else
+                    if t > bs and t < bs + bl
+                        return code .. "~" .. table .. "~0"
+                f = f + 1
+        i = i + 1
+    newmain .. newbodies .. "~" .. newtable .. "~" .. dec(saved)
+
+main: i64 = ()
+    src = strip(stdin:read())
+    i = 1
+    n = src:len()
+    while i <= n and src:byte(i) != 126
+        i = i + 1
+    code = src:sub(1, i - 1)
+    table = src:sub(i + 1, n)
+    stdout:write(fold(code, table))
+    0
