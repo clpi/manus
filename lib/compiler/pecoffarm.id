@@ -1,0 +1,169 @@
+u8: str = (v: i64)
+    digits = "0123456789abcdef"
+    b = v & 255
+    hi = (b >> 4) + 1
+    lo = (b & 15) + 1
+    digits:sub(hi, hi) .. digits:sub(lo, lo)
+
+u16: str = (v: i64)
+    u8(v) .. u8(v >> 8)
+
+u32: str = (v: i64)
+    u8(v) .. u8(v >> 8) .. u8(v >> 16) .. u8(v >> 24)
+
+u64: str = (v: i64)
+    u32(v) .. u32(v >> 32)
+
+name8: str = (s: str)
+    out = ""
+    i = 1
+    while i <= 8
+        if i <= s:len()
+            out = out .. u8(s:byte(i))
+        else
+            out = out .. u8(0)
+        i = i + 1
+    out
+
+zeros: str = (n: i64)
+    out = ""
+    i = 0
+    while i < n
+        out = out .. "00"
+        i = i + 1
+    out
+
+strbytes: str = (s: str)
+    out = ""
+    i = 1
+    while i <= s:len()
+        out = out .. u8(s:byte(i))
+        i = i + 1
+    out
+
+movz: i64 = (rd: i64, imm: i64)
+    3531603968 | ((imm & 65535) << 5) | rd
+
+subimm: i64 = (rd: i64, rn: i64, imm: i64)
+    3506438144 | ((imm & 4095) << 10) | (rn << 5) | rd
+
+adrp: i64 = (rd: i64, pages: i64)
+    2415919104 | ((pages & 3) << 29) | (((pages >> 2) & 524287) << 5) | rd
+
+ldru: i64 = (rt: i64, rn: i64, scaled: i64)
+    4181721088 | (scaled << 10) | (rn << 5) | rt
+
+blr: i64 = (rn: i64)
+    3594452992 | (rn << 5)
+
+cell: str = (v: i64)
+    u32(v)
+
+textrva: i64 = ()
+    4096
+
+idatarva: i64 = ()
+    8192
+
+iltrva: i64 = ()
+    8232
+
+iatrva: i64 = ()
+    8248
+
+namerva: i64 = ()
+    8264
+
+dllrva: i64 = ()
+    8278
+
+entry: str = (code: i64)
+    pages = (iatrva() >> 12) - (textrva() >> 12)
+    raw = iatrva() & 4095
+    off = raw >> 3
+    prog = cell(subimm(31, 31, 32))
+    prog = prog .. cell(movz(0, code))
+    prog = prog .. cell(adrp(1, pages))
+    prog = prog .. cell(ldru(1, 1, off))
+    prog = prog .. cell(blr(1))
+    prog
+
+doshead: str = ()
+    u16(23117) .. zeros(58) .. u32(128)
+
+stubhead: str = ()
+    strbytes("This program cannot be run in DOS mode.") .. u8(13) .. u8(10) .. u8(36) .. zeros(22)
+
+coffhead: str = ()
+    u16(43620) .. u16(2) .. u32(0) .. u32(0) .. u32(0) .. u16(240) .. u16(34)
+
+opthead: str = (textraw: i64, idataraw: i64)
+    opt = u16(523)
+    opt = opt .. u8(0) .. u8(0)
+    opt = opt .. u32(textraw)
+    opt = opt .. u32(idataraw)
+    opt = opt .. u32(0)
+    opt = opt .. u32(textrva())
+    opt = opt .. u32(textrva())
+    opt = opt .. u64(5368709120)
+    opt = opt .. u32(4096)
+    opt = opt .. u32(512)
+    opt = opt .. u16(0) .. u16(0)
+    opt = opt .. u16(0) .. u16(0)
+    opt = opt .. u16(6) .. u16(0)
+    opt = opt .. u32(0)
+    opt = opt .. u32(12288)
+    opt = opt .. u32(512)
+    opt = opt .. u32(0)
+    opt = opt .. u16(3)
+    opt = opt .. u16(33120)
+    opt = opt .. u64(1048576)
+    opt = opt .. u64(4096)
+    opt = opt .. u64(1048576)
+    opt = opt .. u64(4096)
+    opt = opt .. u32(0)
+    opt = opt .. u32(16)
+    opt = opt .. u32(0) .. u32(0)
+    opt = opt .. u32(idatarva()) .. u32(40)
+    i = 0
+    while i < 14
+        opt = opt .. u32(0) .. u32(0)
+        i = i + 1
+    opt
+
+secheads: str = (codelen: i64, textraw: i64, idatalen: i64, idataraw: i64)
+    text = name8(".text") .. u32(codelen) .. u32(textrva()) .. u32(textraw) .. u32(512) .. u32(0) .. u32(0) .. u16(0) .. u16(0) .. u32(1610612768)
+    idata = name8(".idata") .. u32(idatalen) .. u32(idatarva()) .. u32(idataraw) .. u32(512 + textraw) .. u32(0) .. u32(0) .. u16(0) .. u16(0) .. u32(3221225536)
+    text .. idata
+
+impdata: str = ()
+    desc = u32(iltrva()) .. u32(0) .. u32(0) .. u32(dllrva()) .. u32(iatrva())
+    tab = u64(namerva()) .. u64(0)
+    name = u16(0) .. strbytes("ExitProcess") .. u8(0)
+    dll = strbytes("KERNEL32.dll") .. u8(0)
+    desc .. zeros(20) .. tab .. tab .. name .. dll
+
+peexe: str = (codehex: str)
+    codelen = codehex:len() / 2
+    textraw = 512
+    idata = impdata()
+    idatalen = idata:len() / 2
+    idataraw = 512
+    pe = doshead() .. stubhead() .. u32(17744) .. coffhead() .. opthead(textraw, idataraw) .. secheads(codelen, textraw, idatalen, idataraw)
+    hlen = 64 + 64 + 4 + 20 + 240 + 80
+    pe = pe .. zeros(512 - hlen)
+    pe = pe .. codehex .. zeros(textraw - codelen)
+    pe = pe .. idata .. zeros(idataraw - idatalen)
+    pe
+
+main: i64 = ()
+    src = stdin:read()
+    code = 0
+    i = 1
+    while i <= src:len()
+        c = src:byte(i)
+        if c >= 48 and c <= 57
+            code = code * 10 + c - 48
+        i = i + 1
+    stdout:write(peexe(entry(code)))
+    0
