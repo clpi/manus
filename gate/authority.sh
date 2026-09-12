@@ -227,7 +227,7 @@ fi
 GAP134="$ROOT/gaps/GAP-134.md"
 
 if [ -r "$CONSTITUTION" ]; then
-    contains "$CONSTITUTION" '# Idol constitution projection' 'constitution no longer declares itself a projection of compact law'
+    contains "$CONSTITUTION" '| title | Idol constitution projection |' 'constitution no longer declares itself a projection of compact law'
     contains "$CONSTITUTION" 'sole supreme compact law' 'constitution no longer subordinates to compact law'
     contains "$CONSTITUTION" 'the compact law wins' 'constitution lost compact-law-wins-on-drift ruling'
     contains "$CONSTITUTION" 'Computed or indexed aggregate access is projection — `table[key]`' 'constitution access section lost bracket projection law'
@@ -246,7 +246,7 @@ if [ -r "$GAP134" ]; then
 fi
 
 if [ -r "$LAW" ]; then
-    contains "$LAW" '# Idol — supreme language, semantic-graph, compiler, and performance law' 'compact law identity/title drifted'
+    contains "$LAW" '| title | Idol — supreme language, semantic-graph, compiler, and performance law |' 'compact law identity/title drifted'
     contains "$LAW" '`()` is ordinary application.' 'law no longer fixes parentheses as application'
     contains "$LAW" '`[]` is computed/indexed projection.' 'law no longer fixes brackets as projection'
     contains "$LAW" '`{}` carries structured pack/table/descriptor structure.' 'law no longer fixes braces as structure'
