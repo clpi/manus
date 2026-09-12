@@ -328,6 +328,77 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
         m = mulred(c, rd, e, av, names)
         if m:len() > 0
             return m
+    if o == 47 and econst == 1 and aconst == 0
+        dd = ev
+        ra = reg(names, a)
+        if dd == 1
+            return c .. word(mov(rd, ra))
+        if dd == 0 - 1
+            return c .. word(minus(rd, 31, ra))
+        ad = dd
+        if ad < 0
+            ad = 0 - ad
+        if ad > 0 and ad < 4294967296
+            pw = powtwo(ad)
+            if pw > 0
+                c = c .. word(2470445056 | (63 << 16) | (63 << 10) | (ra << 5) | 9)
+                c = c .. word(3544186880 | ((64 - pw) << 16) | (63 << 10) | (9 << 5) | 9)
+                c = c .. word(add(9, ra, 9))
+                c = c .. word(2470445056 | (pw << 16) | (63 << 10) | (9 << 5) | 9)
+                if dd < 0
+                    return c .. word(minus(rd, 31, 9))
+                return c .. word(mov(rd, 9))
+            tw = 0 - 9223372036854775807 - 1
+            tm = tw - 1
+            qd = tm / ad
+            pr = qd * ad
+            rm = tm - pr
+            an = tm - rm
+            p = 63
+            t1 = tw / an
+            q1 = 0 - t1
+            pr = q1 * an
+            r1 = tw - pr
+            t2 = tw / ad
+            q2 = 0 - t2
+            pr = q2 * ad
+            r2 = tw - pr
+            fin = 0
+            while fin == 0
+                p = p + 1
+                q1 = q1 * 2
+                r1d = an - r1
+                if r1 >= r1d
+                    q1 = q1 + 1
+                    r1 = r1 - r1d
+                else
+                    r1 = r1 * 2
+                q2 = q2 * 2
+                r2 = r2 * 2
+                if r2 >= ad
+                    q2 = q2 + 1
+                    r2 = r2 - ad
+                dl = ad - r2
+                if q1 < dl
+                    fin = 0
+                else
+                    if q1 == dl and r1 == 0
+                        fin = 0
+                    else
+                        fin = 1
+            mg = q2 + 1
+            sh = p - 64
+            c = imm(c, 9, mg)
+            c = c .. word(2604662784 | (9 << 16) | (ra << 5) | 10)
+            if mg < 0
+                c = c .. word(add(10, 10, ra))
+            if sh > 0
+                c = c .. word(2470445056 | (sh << 16) | (63 << 10) | (10 << 5) | 10)
+            c = c .. word(3544186880 | (63 << 16) | (63 << 10) | (10 << 5) | 9)
+            c = c .. word(add(10, 10, 9))
+            if dd < 0
+                return c .. word(minus(rd, 31, 10))
+            return c .. word(mov(rd, 10))
     ra = 0
     rb = 0
     if aconst == 1
@@ -925,6 +996,7 @@ main: i64 = ()
     pendkind = 0
     pendval = 0
     fix2 = "target=reassoc layer=emit merge=add,subneg,mul flush=read,write,loop,final arith=mod2p64 exclude=div,subreassoc,crossvar canon=egraph-distinct"
+    fix3 = "target=div layer=calc algo=hd10-signed-division domain=absdivisor-lt-2p32 emit=smulh,addsub,asr,lsrcorr special=d1-mov,dneg1-neg,pow2-biasshift negdiv=posmagic-negate fallback=sdiv verify=exhaustive32-sampled64"
     lc = rows(src)
     k = 0
     while k < lc
