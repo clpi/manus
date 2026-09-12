@@ -499,3 +499,145 @@ rewrite1: str = (g: str)
     if hx(tl(r), 1) == 1
         ch = 1
     g .. ";" .. px(ch)
+
+saturate: str = (g: str, maxiter: i64, maxnodes: i64)
+    it = 0
+    while it < maxiter
+        if nn(g) >= maxnodes
+            break
+        r = rewrite1(g)
+        g = hd(r)
+        ch1 = hx(tl(r), 1)
+        r = congr(g)
+        g = hd(r)
+        ch2 = hx(tl(r), 1)
+        if ch1 == 0 and ch2 == 0
+            break
+        it = it + 1
+    g .. ";" .. px(it)
+
+maddcost4: i64 = (g: str, mulclass: i64, othercost: i64, depth: i64, forbid: i64)
+    if depth <= 0
+        return 1000000
+    best = 1000000
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == mulclass and opof(g, i) == 42
+            l = efind(g, lfof(g, i))
+            r = efind(g, rtof(g, i))
+            if l == forbid or r == forbid
+                i = i + 1
+                continue
+            c = 1 + ecost4(g, l, depth - 1, forbid) + ecost4(g, r, depth - 1, forbid) + othercost
+            if c < best
+                best = c
+        i = i + 1
+    best
+
+ncost4: i64 = (g: str, i: i64, depth: i64, forbid: i64)
+    if depth <= 0
+        return 1000000
+    op = opof(g, i)
+    if op == 108
+        return 0
+    if op == 118
+        return 0
+    l = efind(g, lfof(g, i))
+    r = efind(g, rtof(g, i))
+    if l == forbid or r == forbid
+        return 1000000
+    lc = ecost4(g, l, depth - 1, forbid)
+    rc = ecost4(g, r, depth - 1, forbid)
+    if op == 43
+        base = 1 + lc + rc
+        mc = maddcost4(g, l, rc, depth - 1, forbid)
+        if mc < base
+            base = mc
+        mc = maddcost4(g, r, lc, depth - 1, forbid)
+        if mc < base
+            base = mc
+        return base
+    if op == 45
+        return 1 + lc + rc
+    if op == 42
+        return 3 + lc + rc
+    if op == 47
+        return 10 + lc + rc
+    if op == 38
+        return 1 + lc + rc
+    1000000
+
+ecost4: i64 = (g: str, eid: i64, depth: i64, forbid: i64)
+    if depth <= 0
+        return 1000000
+    eid = efind(g, eid)
+    best = 1000000
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == eid
+            c = ncost4(g, i, depth - 1, eid)
+            if c < best
+                best = c
+        i = i + 1
+    best
+
+ecost: i64 = (g: str, eid: i64)
+    ecost4(g, eid, 20, efind(g, eid))
+
+ebest: i64 = (g: str, eid: i64)
+    eid = efind(g, eid)
+    best = 1000000
+    bn = 0 - 1
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == eid
+            c = ncost4(g, i, 20, eid)
+            if c < best
+                best = c
+                bn = i
+        i = i + 1
+    bn
+
+vname: str = (g: str, idx: i64)
+    vn = vnames(g)
+    c = 0
+    a = 1
+    i = 1
+    n = vn:len()
+    while i <= n + 1
+        if i > n or vn:byte(i) == 124
+            if c == idx
+                return vn:sub(a, i - 1)
+            c = c + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+opchar: str = (op: i64)
+    if op == 43
+        return "+"
+    if op == 45
+        return "-"
+    if op == 42
+        return "*"
+    if op == 47
+        return "/"
+    if op == 38
+        return "&"
+    "?"
+
+e2s: str = (g: str, eid: i64)
+    bn = ebest(g, eid)
+    if bn < 0
+        return ""
+    op = opof(g, bn)
+    if op == 108
+        return dec(lval(lfof(g, bn), rtof(g, bn)))
+    if op == 118
+        return vname(g, lfof(g, bn))
+    l = e2s(g, lfof(g, bn))
+    r = e2s(g, rtof(g, bn))
+    "(" .. l .. opchar(op) .. r .. ")"
