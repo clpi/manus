@@ -13,12 +13,12 @@ point.clone = (self)
 point.eq = (self, other): bool
     if other == nil return false 
     self.x == other.x and self.y == other.y
-point.to_string = (self): str
+point.tostring = (self): str
     "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 
 cloned = point:clone()
-print("Original: " .. point:to_string())
-print("Cloned:   " .. cloned:to_string())
+print("Original: " .. point:tostring())
+print("Cloned:   " .. cloned:tostring())
 print("Eq:       " .. to(str)(point:eq(cloned)))
 
 print("\nPoint fields:")

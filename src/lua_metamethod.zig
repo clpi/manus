@@ -48,7 +48,7 @@ pub const DeriveBinding = struct {
 };
 
 pub const derive_bindings: []const DeriveBinding = &.{
-    .{ .derive_trait = "Display", .metamethod = .__tostring, .c_wrapper_suffix = "tostring", .method_alias = "to_string" },
+    .{ .derive_trait = "Display", .metamethod = .__tostring, .c_wrapper_suffix = "tostring", .method_alias = "tostring" },
     .{ .derive_trait = "Eq", .metamethod = .__eq, .c_wrapper_suffix = "eq", .method_alias = "eq" },
     .{ .derive_trait = "Ord", .metamethod = .__lt, .c_wrapper_suffix = "lt" },
     .{ .derive_trait = "Ord", .metamethod = .__le, .c_wrapper_suffix = "le" },

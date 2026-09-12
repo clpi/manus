@@ -10830,7 +10830,7 @@ test "parse: simple concept with one method" {
     defer arena.deinit();
     const mod = try parseSource(
         \\concept Printable
-        \\  fun to_string(self) -> str
+        \\  fun tostring(self) -> str
         \\end
     , &arena);
     try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
@@ -10840,7 +10840,7 @@ test "parse: simple concept with one method" {
     try testing.expectEqualStrings("Printable", cd.name);
     try testing.expect(cd.type_params == null);
     try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
-    try testing.expectEqualStrings("to_string", cd.required_methods[0].name);
+    try testing.expectEqualStrings("tostring", cd.required_methods[0].name);
     try testing.expectEqual(@as(usize, 1), cd.required_methods[0].params.len);
     try testing.expectEqualStrings("self", cd.required_methods[0].params[0].name);
     try testing.expect(cd.required_methods[0].ret_type == .named);

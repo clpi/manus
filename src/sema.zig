@@ -5549,7 +5549,7 @@ pub const Sema = struct {
                 if (std.mem.eql(u8, mc.method, "eq") and enum_type_has_derive(ot, "Eq")) {
                     return .bool;
                 }
-                if (std.mem.eql(u8, mc.method, "to_string") and enum_type_has_derive(ot, "Display")) {
+                if (std.mem.eql(u8, mc.method, "tostring") and enum_type_has_derive(ot, "Display")) {
                     return .str;
                 }
                 if (self.methodCallResolved(mc.obj, mc.method, mc.args, ot)) {
@@ -16291,7 +16291,7 @@ test "sema: derived enum display and eq methods have native result types" {
         \\end
         \\local red = Color.Red
         \\local green = Color.Green
-        \\local label: str = red:to_string()
+        \\local label: str = red:tostring()
         \\local same: bool = red:eq(green)
     ;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

@@ -16,7 +16,7 @@ Hash = meta.make_concept("Hash", {
 })
 
 Display = meta.make_concept("Display", {
-  methods = { "to_string" }
+  methods = { "tostring" }
 })
 
 Default = meta.make_concept("Default", {

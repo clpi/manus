@@ -99,7 +99,7 @@ print("debug_level = " .. debug_level)
 print("\n-- 9. Concepts --")
 
 concept Printable
-    to_string(self): str
+    tostring(self): str
 
 concept Counter
     increment(self): void
@@ -110,20 +110,20 @@ counter.increment = (self): void
     self._val = self._val + 1
 counter.value = (self): i64
     self._val
-counter.to_string = (self): str
+counter.tostring = (self): str
     "Counter(" .. to(str)(self._val) .. ")"
 
 counter:increment()
 counter:increment()
 counter:increment()
-print("Counter: " .. counter:to_string())
+print("Counter: " .. counter:tostring())
 print("Counter value: " .. to(str)(counter:value()))
 
 M = {}
 M:hash(): i64
     42
 
-@comp.assert(not @satisfies(M, "Printable"), "M lacks to_string")
+@comp.assert(not @satisfies(M, "Printable"), "M lacks tostring")
 print("@satisfies(M, Printable) = " .. to(str)(@satisfies(M, "Printable")))
 
 Ctable = {}

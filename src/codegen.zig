@@ -1468,7 +1468,7 @@ pub const CodeGen = struct {
         }
         if (self.enum_name_of(t)) |ename| {
             if (self.enum_is_payload_free(ename) and self.enum_has_derive(ename, "Display")) {
-                self.p("fprintf({s}, \"%s\", duo_{s}_to_string(", .{ stream, ename });
+                self.p("fprintf({s}, \"%s\", duo_{s}_tostring(", .{ stream, ename });
                 try self.emit_expr(arg);
                 self.p("))", .{});
                 return true;
@@ -2010,7 +2010,7 @@ pub const CodeGen = struct {
         }
         if (self.alias_defs.get(type_name)) |ad| {
             if (std.mem.eql(u8, method, "hash") and alias_has_derive(ad.attributes, "Hash")) return true;
-            if (std.mem.eql(u8, method, "to_string") and alias_has_derive(ad.attributes, "Display")) return true;
+            if (std.mem.eql(u8, method, "tostring") and alias_has_derive(ad.attributes, "Display")) return true;
             if (std.mem.eql(u8, method, "eq") and alias_has_derive(ad.attributes, "Eq")) return true;
             if (std.mem.eql(u8, method, "clone") and alias_has_derive(ad.attributes, "Clone")) return true;
         }
@@ -2473,7 +2473,7 @@ pub const CodeGen = struct {
                     std.mem.eql(u8, mc.method, "greet"))
                     return .void;
                 if (std.mem.eql(u8, mc.method, "lang")) return .str;
-                if (std.mem.eql(u8, mc.method, "to_string")) return .str;
+                if (std.mem.eql(u8, mc.method, "tostring")) return .str;
                 if (std.mem.eql(u8, mc.method, "eq")) return .bool;
                 return .i64;
             }
@@ -2483,7 +2483,7 @@ pub const CodeGen = struct {
                     if (self.enum_has_derive(enum_name, "Eq") and self.enum_is_payload_free(enum_name)) return .bool;
                 }
             }
-            if (std.mem.eql(u8, mc.method, "to_string")) {
+            if (std.mem.eql(u8, mc.method, "tostring")) {
                 if (self.expr_enum_name(mc.obj)) |enum_name| {
                     if (self.enum_has_derive(enum_name, "Display") and self.enum_is_payload_free(enum_name)) return .str;
                 }
@@ -8976,7 +8976,7 @@ pub const CodeGen = struct {
     // while allowing untyped code to use Lua-style metatable dispatch.
     //
     // Supported @derive traits on alias types:
-    //   Display  — __tostring metamethod, :to_string() method
+    //   Display  — __tostring metamethod, :tostring() method
     //   Eq       — __eq metamethod, :eq() method
     //   Ord      — __lt, __le metamethods, :lt(), :le(), :gt(), :ge() methods
     //   Hash     — :hash() method (FNV-1a over fields)
@@ -9396,7 +9396,7 @@ pub const CodeGen = struct {
                 }
                 self.p("}} duo_{s};\n\n", .{ed.name});
                 if (attrs_have_derive(ed.attributes, "Display")) {
-                    self.p("static const char* duo_{s}_to_string(duo_{s} value) {{\n", .{ ed.name, ed.name });
+                    self.p("static const char* duo_{s}_tostring(duo_{s} value) {{\n", .{ ed.name, ed.name });
                     self.p("    switch (value) {{\n", .{});
                     for (ed.variants) |v| {
                         self.p("        case duo_{s}_{s}: return \"", .{ ed.name, v.name });
@@ -10546,7 +10546,7 @@ pub const CodeGen = struct {
         if (!self.enum_has_derive(enum_name, "Display")) return false;
         if (!self.enum_is_payload_free(enum_name)) return false;
 
-        self.p("duo_{s}_to_string(", .{enum_name});
+        self.p("duo_{s}_tostring(", .{enum_name});
         try self.emit_expr(target);
         self.p(")", .{});
         return true;
@@ -10571,7 +10571,7 @@ pub const CodeGen = struct {
     fn enum_display_call_receiver(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?*const ast.Expr {
         if (func.* != .field) return null;
         const f = func.field;
-        if (!std.mem.eql(u8, f.field, "to_string")) return null;
+        if (!std.mem.eql(u8, f.field, "tostring")) return null;
         if (f.obj.* == .name and self.enum_has_payload.contains(f.obj.name.ident)) {
             return if (args.len > 0) args[0] else null;
         }
@@ -16182,7 +16182,7 @@ pub const CodeGen = struct {
                 }
             } else if (self.enum_name_of(t)) |ename| {
                 if (self.enum_is_payload_free(ename) and self.enum_has_derive(ename, "Display")) {
-                    self.p("duo_{s}_to_string(", .{ename});
+                    self.p("duo_{s}_tostring(", .{ename});
                     try self.emit_expr(arg);
                     self.p(")", .{});
                 } else if (self.enum_is_payload_free(ename)) {
@@ -18689,10 +18689,10 @@ pub const CodeGen = struct {
                         }
                     }
                 }
-                if (std.mem.eql(u8, mc.method, "to_string")) {
+                if (std.mem.eql(u8, mc.method, "tostring")) {
                     if (self.enum_name_of(ot)) |enum_name| {
                         if (self.enum_has_derive(enum_name, "Display") and self.enum_is_payload_free(enum_name)) {
-                            self.p("duo_{s}_to_string(", .{enum_name});
+                            self.p("duo_{s}_tostring(", .{enum_name});
                             try self.emit_expr(mc.obj);
                             self.p(")", .{});
                             return;
@@ -22810,7 +22810,7 @@ pub const CodeGen = struct {
                 if (self.expr_enum_name(args[0])) |enum_name| {
                     if (self.enum_has_derive(enum_name, "Display") and self.enum_is_payload_free(enum_name)) {
                         if (result_rt == .any) self.p("lua_val_lit(", .{});
-                        self.p("duo_{s}_to_string(", .{enum_name});
+                        self.p("duo_{s}_tostring(", .{enum_name});
                         try self.emit_expr(args[0]);
                         self.p(")", .{});
                         if (result_rt == .any) self.p(")", .{});
@@ -35145,9 +35145,9 @@ test "derived enum declarations emit runtime meta descriptors" {
         \\print(Color.name)
         \\print(Color.variants[1].name)
         \\print(tostring(red))
-        \\print(red:to_string())
-        \\print(Color.to_string(red))
-        \\print(red.to_string(red))
+        \\print(red:tostring())
+        \\print(Color.tostring(red))
+        \\print(red.tostring(red))
         \\print(red:eq(green))
         \\print(Color.eq(red, green))
         \\print(red.eq(red, green))
@@ -35173,9 +35173,9 @@ test "derived enum declarations emit runtime meta descriptors" {
     try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_i64(Color_derives, 2, lua_val_lit(\"Clone\"));") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_i64(Color_derives, 3, lua_val_lit(\"Eq\"));") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_table_get_str_lit(Color, \"name\"") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "static const char* duo_Color_to_string(duo_Color value)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static const char* duo_Color_tostring(duo_Color value)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "case duo_Color_Red: return \"Red\";") != null);
-    try testing.expect(std.mem.count(u8, output, "duo_Color_to_string(red)") >= 4);
+    try testing.expect(std.mem.count(u8, output, "duo_Color_tostring(red)") >= 4);
     try testing.expect(std.mem.indexOf(u8, output, "static bool duo_Color_eq(duo_Color a, duo_Color b)") != null);
     try testing.expect(std.mem.count(u8, output, "duo_Color_eq(red, green)") >= 3);
     try testing.expect(std.mem.indexOf(u8, output, "duo_Color_Red") != null);

@@ -8,7 +8,7 @@ shape =
   id = 7
   draw = (self) -> str
     "shape"
-  to_string = (self) -> str
+  tostring = (self) -> str
     "drawable"
 
 print("Drawable name: " .. Drawable.name)
@@ -16,4 +16,4 @@ print("satisfies Drawable: " .. to(str)(meta.satisfies_concept(shape, Drawable))
 print("satisfies Display: " .. to(str)(meta.satisfies_concept(shape, derive.Display)))
 
 print("draw: " .. shape:draw())
-print("to_string: " .. shape:to_string())
+print("tostring: " .. shape:tostring())
