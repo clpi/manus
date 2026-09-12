@@ -23,11 +23,35 @@ field: str = (s: str)
         i = i + 1
     out
 
-set: i64 = (d: i64, v: i64)
-    3531603968 | ((v & 65535) << 5) | d
+movz: i64 = (rd: i64, imm: i64)
+    3531603968 | ((imm & 65535) << 5) | rd
 
-trap: i64 = (v: i64)
-    3556769792 | (v << 5)
+movk: i64 = (rd: i64, imm: i64, hw: i64)
+    4068474880 | (hw << 21) | ((imm & 65535) << 5) | rd
+
+add: i64 = (rd: i64, rn: i64, rm: i64)
+    2332033024 | (rm << 16) | (rn << 5) | rd
+
+minus: i64 = (rd: i64, rn: i64, rm: i64)
+    3405774848 | (rm << 16) | (rn << 5) | rd
+
+mul: i64 = (rd: i64, rn: i64, rm: i64)
+    2600468480 | (rm << 16) | (31 << 10) | (rn << 5) | rd
+
+div: i64 = (rd: i64, rn: i64, rm: i64)
+    2596277248 | (rm << 16) | (rn << 5) | rd
+
+mov: i64 = (rd: i64, rm: i64)
+    2852126720 | (rm << 16) | (31 << 5) | rd
+
+cmp: i64 = (rn: i64, rm: i64)
+    3942645760 | (rm << 16) | (rn << 5) | 31
+
+jump: i64 = (off: i64)
+    335544320 | (off & 67108863)
+
+bcond: i64 = (cond: i64, off: i64)
+    1409286144 | ((off & 524287) << 5) | cond
 
 ret: i64 = ()
     3596551104
@@ -97,70 +121,183 @@ at: i64 = (vals: str, idx: i64)
         i = i + 1
     0
 
-val: i64 = (t: str, names: str, vals: str)
+reg: i64 = (names: str, name: str)
+    19 + find(names, name)
+
+put: str = (c: str, w: i64)
+    c .. word(w)
+
+patch: str = (c: str, p: i64, w: i64)
+    a = p * 8
+    pre = ""
+    if a > 0
+        pre = c:sub(1, a)
+    post = ""
+    if a + 9 <= c:len()
+        post = c:sub(a + 9, c:len())
+    pre .. word(w) .. post
+
+imm: str = (c: str, r: i64, v: i64)
+    c = c .. word(movz(r, v & 65535))
+    hi = (v >> 16) & 65535
+    if hi != 0
+        c = c .. word(movk(r, hi, 1))
+    c
+
+term: str = (c: str, t: str, r: i64, names: str)
     if digit(t:byte(1)) == 1
-        return num(t)
-    at(vals, find(names, t))
+        return imm(c, r, num(t))
+    c .. word(mov(r, reg(names, t)))
+
+calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
+    ra = 0
+    rb = 0
+    if digit(a:byte(1)) == 1
+        c = imm(c, 9, num(a))
+        ra = 9
+    else
+        ra = reg(names, a)
+    if digit(e:byte(1)) == 1
+        c = imm(c, 10, num(e))
+        rb = 10
+    else
+        rb = reg(names, e)
+    if o == 43
+        return c .. word(add(rd, ra, rb))
+    if o == 45
+        return c .. word(minus(rd, ra, rb))
+    if o == 42
+        return c .. word(mul(rd, ra, rb))
+    c .. word(div(rd, ra, rb))
+
+indent: i64 = (s: str)
+    n = s:len()
+    i = 1
+    while i <= n and s:byte(i) == 32
+        i = i + 1
+    i - 1
+
+rows: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            n = n + 1
+        i = i + 1
+    if s:len() > 0 and s:byte(s:len()) != 10
+        n = n + 1
+    n
+
+row: str = (s: str, k: i64)
+    n = s:len()
+    i = 1
+    cur = 0
+    a = 1
+    while i <= n + 1
+        if i > n or s:byte(i) == 10
+            if cur == k
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+pop: str = (s: str, n: i64)
+    out = ""
+    i = 0
+    while i < n - 1
+        out = out .. dec(at(s, i)) .. "|"
+        i = i + 1
+    out
 
 main: i64 = ()
     src = stdin:read()
     names = ""
-    vals = ""
-    result = 0
-    n = src:len()
-    i = 1
-    while i <= n
-        j = i
-        while j <= n and src:byte(j) != 10
-            j = j + 1
-        line = trim(src:sub(i, j - 1))
-        i = j + 1
-        if line:len() > 0
-            colon = 0
-            k = 1
-            while k <= line:len()
-                if line:byte(k) == 58
-                    colon = 1
-                k = k + 1
-            if colon == 0
+    code = ""
+    wtest = ""
+    wpatch = ""
+    wind = ""
+    wopen = 0
+    lc = rows(src)
+    k = 0
+    while k < lc
+        raw = row(src, k)
+        t = trim(raw)
+        if t:len() == 0
+            k = k + 1
+        else
+            ind = indent(raw)
+            while wopen > 0 and at(wind, wopen - 1) >= ind
+                tp = at(wtest, wopen - 1)
+                pp = at(wpatch, wopen - 1)
+                pos = code:len() / 8
+                code = code .. word(jump(tp - pos))
+                code = patch(code, pp, bcond(10, code:len() / 8 - pp))
+                wtest = pop(wtest, wopen)
+                wpatch = pop(wpatch, wopen)
+                wind = pop(wind, wopen)
+                wopen = wopen - 1
+            if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
+                rest = t:sub(7, t:len())
+                lt = 0
+                q = 1
+                while q <= rest:len()
+                    if rest:byte(q) == 60 and lt == 0
+                        lt = q
+                    q = q + 1
+                lhs = trim(rest:sub(1, lt - 1))
+                rhs = trim(rest:sub(lt + 1, rest:len()))
+                rl = reg(names, lhs)
+                rr = 0
+                if digit(rhs:byte(1)) == 1
+                    code = imm(code, 9, num(rhs))
+                    rr = 9
+                else
+                    rr = reg(names, rhs)
+                tp = code:len() / 8
+                code = code .. word(cmp(rl, rr))
+                code = code .. word(bcond(10, 0))
+                wtest = wtest .. dec(tp) .. "|"
+                wpatch = wpatch .. dec(tp + 1) .. "|"
+                wind = wind .. dec(ind) .. "|"
+                wopen = wopen + 1
+            else
                 eq = 0
-                k = 1
-                while k <= line:len()
-                    if line:byte(k) == 61 and eq == 0
-                        eq = k
-                    k = k + 1
+                q = 1
+                while q <= t:len()
+                    if t:byte(q) == 61 and eq == 0
+                        eq = q
+                    q = q + 1
                 if eq > 0
-                    name = trim(line:sub(1, eq - 1))
-                    rhs = trim(line:sub(eq + 1, line:len()))
+                    name = trim(t:sub(1, eq - 1))
+                    rhs = trim(t:sub(eq + 1, t:len()))
+                    if find(names, name) == 0 - 1
+                        names = names .. name .. "|"
+                    rd = reg(names, name)
                     oppos = 0
                     op = 0
-                    k = 1
-                    while k <= rhs:len()
-                        c = rhs:byte(k)
-                        if c == 43 or c == 45 or c == 42 or c == 47
+                    q = 1
+                    while q <= rhs:len()
+                        oc = rhs:byte(q)
+                        if oc == 43 or oc == 45 or oc == 42 or oc == 47
                             if oppos == 0
-                                oppos = k
-                                op = c
-                        k = k + 1
-                    v = 0
-                    if oppos > 0
-                        a = val(trim(rhs:sub(1, oppos - 1)), names, vals)
-                        b = val(trim(rhs:sub(oppos + 1, rhs:len())), names, vals)
-                        if op == 43
-                            v = a + b
-                        if op == 45
-                            v = a - b
-                        if op == 42
-                            v = a * b
-                        if op == 47
-                            v = a / b
+                                oppos = q
+                                op = oc
+                        q = q + 1
+                    if oppos == 0
+                        code = term(code, rhs, rd, names)
                     else
-                        v = val(rhs, names, vals)
-                    names = names .. name .. "|"
-                    vals = vals .. dec(v) .. "|"
+                        a = trim(rhs:sub(1, oppos - 1))
+                        e = trim(rhs:sub(oppos + 1, rhs:len()))
+                        code = calc(code, rd, a, op, e, names)
                 else
-                    result = val(line, names, vals)
-    code = word(0:set(result)) .. word(ret())
+                    code = term(code, t, 0, names)
+                    code = code .. word(ret())
+                    k = lc
+            k = k + 1
+    codesize = code:len() / 2
+    symoff = 208 + codesize
+    stroff = symoff + 16
     head = word(4277009103)
     head = head .. word(16777228)
     head = head .. word(0)
@@ -173,9 +310,9 @@ main: i64 = ()
     head = head .. word(152)
     head = head .. field("")
     head = head .. quad(0)
-    head = head .. quad(8)
+    head = head .. quad(codesize)
     head = head .. quad(208)
-    head = head .. quad(8)
+    head = head .. quad(codesize)
     head = head .. word(7)
     head = head .. word(7)
     head = head .. word(1)
@@ -183,7 +320,7 @@ main: i64 = ()
     head = head .. field("__text")
     head = head .. field("__TEXT")
     head = head .. quad(0)
-    head = head .. quad(8)
+    head = head .. quad(codesize)
     head = head .. word(208)
     head = head .. word(2)
     head = head .. word(0)
@@ -194,9 +331,9 @@ main: i64 = ()
     head = head .. word(0)
     head = head .. word(2)
     head = head .. word(24)
-    head = head .. word(216)
+    head = head .. word(symoff)
     head = head .. word(1)
-    head = head .. word(232)
+    head = head .. word(stroff)
     head = head .. word(11)
     head = head .. code
     head = head .. word(1)
