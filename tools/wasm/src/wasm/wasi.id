@@ -1,57 +1,6 @@
-# WASI host implementation for the engine.
-#
-# TARGET STANDARD: `wasi_snapshot_preview1` — the 46-function witx ABI, whole.
-# Preview 2 / the Component Model is NOT targeted here and is NOT claimed: it is
-# a different surface (WIT worlds, resources, canonical ABI) and this repository
-# has no component decoder, no `.wit` files, and no canonical-ABI lifting. The
-# four `wasi:*@0.2.0` entries this file used to carry were never registered by
-# `wasi_register` and never reachable; claiming them was a coverage lie, so they
-# are gone. See OPEN QUESTIONS at the foot of this file.
-#
-# SANDBOX SHAPE (this is what every errno below is derived from):
-#   * exactly three file descriptors exist: 0 stdin, 1 stdout, 2 stderr;
-#   * there are NO preopened directories, therefore no directory descriptor
-#     exists, therefore every `path_*` operation has no `fd` to resolve
-#     against and answers `badf`;
-#   * there are no sockets, so every `sock_*` answers `badf`.
-# A capability that does not exist must answer `badf`, never `success`. A stub
-# that answers `success` silently produces a wrong program; a stub that answers
-# an errno produces a program that fails where it should.
-#
-# EVERY errno in this file was MEASURED against wasmtime 47.0.3 with a
-# single-import `.wasm` probe per function, not read off the specification:
-#   fd_advise/fd_allocate/fd_datasync/fd_sync/fd_fdstat_set_flags/
-#   fd_fdstat_set_rights/fd_filestat_set_size/fd_filestat_set_times/
-#   fd_readdir/fd_renumber/fd_pread/fd_pwrite  -> badf, on fd 1 AND on fd 999
-#   fd_seek/fd_tell                            -> spipe on stdio, badf otherwise
-#   fd_filestat_get                            -> success on stdio, badf otherwise
-#   fd_close                                   -> success on stdio, badf otherwise
-#   fd_write(0) / fd_read(1)                   -> badf
-#   fd_prestat_get/fd_prestat_dir_name         -> badf with no preopens
-#   every path_*                               -> badf with no preopens
-#   every sock_*                               -> badf
-#   proc_raise                                 -> notsup
-#   sched_yield                                -> success
-#   poll_oneoff with nsubscriptions = 0        -> inval
-#
-# THE PARTS OF THAT POLICY THAT ARE NOT MEMORY ACCESS LIVE IN ONE PLACE.
-# `src/wasm/wasi_abi.id` holds the roster, the numbering, the errno policy, the
-# proc_exit status range, the argv[0] rule, the descriptor set and the stdio
-# filetype; `src/engine.id` reads it and so does this file. That file's header
-# records the exact migration boundary. Pointer parameters and results now cross
-# same-home relations correctly; the remaining blocker is graph-native
-# cross-home module lowering. Until that exists, deleting the inline host would
-# route execution through the legacy req-module authority rather than the one
-# semantic graph. Everything the split does not require to be duplicated is
-# read from the ABI file. Two policies had already drifted when this req was
-# added: the stdio filetype and the proc_exit status range.
 
 abi = req "src.wasm.wasi_abi"
 
-# ═══════════════════════════════════════════════════════════════
-# WASI errno codes — the witx enumeration, by ordinal. The ordinals are the
-# ABI: `spipe` is 70 because it is the 70th variant, not because of POSIX.
-# ═══════════════════════════════════════════════════════════════
 ERRNO =
   success = 0
   toobig = 1
@@ -147,57 +96,26 @@ CLOCKID =
   process_cputime = 2
   thread_cputime = 3
 
-# `rt_mod` holds the runtime module, handed over by runtime.register at
-# registration time. runtime requires wasi, so wasi must not require runtime
-# back — that cycle is what forced the old per-function lazy `req`.
-# The runtime module is held in a one-slot table, not in a bare global:
-# assigning a module-level scalar from inside a lambda does not propagate in
-# this toolchain, so `rt_mod = runtime` left every host function reading nil
-# and every memory load returning nil. A table field written through the same
-# lambda does propagate. `test/wasi_conform.id` catches a regression here
-# because fd_write would stop reporting 3 bytes written.
 global rt_box = {}
 
-# `math.random` is seeded once, lazily, so `random_get` does not return the
-# same byte sequence on every process. See OPEN QUESTION 4: this is NOT a
-# cryptographic source and `random_get` is specified to be one.
 global rng_box = { seeded = 0 }
 
-# ═══════════════════════════════════════════════════════════════
-# Descriptor helpers. The whole descriptor policy lives here, once, so that
-# adding a real fd table later is one edit and not forty.
-# ═══════════════════════════════════════════════════════════════
 
-# `t:len()` on a table lowers to the string-buffer length accessor in this
-# toolchain and answers 0, which silently reported argc = 0 for every guest.
-# Walking the vector is the spelling that observes the real count.
 tbl_len: i64 = (t: any)
   n = 0
   while t[n + 1] != nil
     n = n + 1
   n
 
-# A descriptor that this host actually holds.
 fd_is_stdio: i64 = (fd: i64)
   if fd == 0 or fd == 1 or fd == 2
     return 1
   0
 
-# Answer for any operation that needs a descriptor this host does not hold.
-# Every caller uses this rather than open-coding 8, so the sandbox policy is
-# stated once.
 fd_absent_errno: i64 = ()
   ERRNO.badf
 
-# ═══════════════════════════════════════════════════════════════
-# WASI Preview 1 — descriptors
-# ═══════════════════════════════════════════════════════════════
 
-# fd_write(fd, iovs, iovs_len, nwritten) -> errno
-# Writes only to the descriptor asked for. The previous implementation sent
-# every fd that was not 1 to stderr and reported success for fds that do not
-# exist, so a guest writing to a closed descriptor saw its bytes appear on the
-# console and got `success` back.
 wasi_fd_write = (rt, args)
   fd = args[1]
   iovs_ptr = args[2]
@@ -226,7 +144,6 @@ wasi_fd_write = (rt, args)
   runtime.mem_store_i32(rt, nwritten_ptr, total)
   ERRNO.success
 
-# fd_read(fd, iovs, iovs_len, nread) -> errno
 wasi_fd_read = (rt, args)
   fd = args[1]
   iovs_ptr = args[2]
@@ -252,41 +169,24 @@ wasi_fd_read = (rt, args)
   runtime.mem_store_i32(rt, nread_ptr, total)
   ERRNO.success
 
-# fd_fdstat_get(fd, ptr) -> errno
-# fdstat layout: u8 filetype @0, u16 flags @2, u64 rights_base @8,
-# u64 rights_inheriting @16.
 wasi_fd_fdstat_get = (rt, args)
   fd = args[1]
   ptr = args[2]
   runtime = rt_box.m
   if fd_is_stdio(fd) == 0
     return fd_absent_errno()
-  # stdout/stderr are reported non-tty so line-buffered guests flush on newline
-  # instead of waiting for __stdio_exit, which the engine does not emulate.
   flags = 0
   if fd == 1 or fd == 2
     flags = 4
-  # THE FILETYPE COMES FROM THE SHARED TABLE, not from a constant written here.
-  # This said `character_device` (2) while the engine and wasmtime both answer
-  # `unknown` (0) whenever stdout is a pipe or a file — i.e. in every automated
-  # comparison. Two hosts for one ABI disagreeing about a byte a guest reads is
-  # the exact failure the shared table exists to prevent. wasmtime reports 2
-  # only on an interactive TTY, which this toolchain cannot detect; that
-  # difference is stated in `wasi_abi.id`, not hidden.
   runtime.mem_write_byte(rt, ptr, abi.stdio_filetype)
   runtime.mem_store_i32(rt, ptr + 2, flags)
   runtime.mem_store_i32(rt, ptr + 4, 0)
-  # rights_base / rights_inheriting: grant all, so wasi-libc's write()/read()
-  # rights checks never reject a stdio operation.
   runtime.mem_store_i32(rt, ptr + 8, -1)
   runtime.mem_store_i32(rt, ptr + 12, -1)
   runtime.mem_store_i32(rt, ptr + 16, -1)
   runtime.mem_store_i32(rt, ptr + 20, -1)
   ERRNO.success
 
-# fd_filestat_get(fd, ptr) -> errno
-# filestat layout: u64 dev @0, u64 ino @8, u8 filetype @16, u64 nlink @24,
-# u64 size @32, u64 atim @40, u64 mtim @48, u64 ctim @56.
 wasi_fd_filestat_get = (rt, args)
   fd = args[1]
   ptr = args[2]
@@ -308,9 +208,6 @@ wasi_fd_close = (rt, args)
     return fd_absent_errno()
   ERRNO.success
 
-# fd_seek / fd_tell: stdio is a stream, and seeking a stream is `spipe`, which
-# is what a guest's `ftell` on a pipe must see. Returning `success` here made
-# every buffered-IO guest believe stdout was a seekable file.
 wasi_fd_seek = (rt, args)
   if fd_is_stdio(args[1]) == 0
     return fd_absent_errno()
@@ -321,9 +218,6 @@ wasi_fd_tell = (rt, args)
     return fd_absent_errno()
   ERRNO.spipe
 
-# The operations below need a descriptor with file rights. This host holds
-# none, on ANY fd — wasmtime answers `badf` for these on fd 1 as well as on a
-# nonexistent fd, because stdio carries no such right.
 wasi_fd_advise = (rt, args)
   fd_absent_errno()
 
@@ -360,22 +254,12 @@ wasi_fd_readdir = (rt, args)
 wasi_fd_renumber = (rt, args)
   fd_absent_errno()
 
-# No preopened directories exist, so descriptor 3 and up are absent.
 wasi_fd_prestat_get = (rt, args)
   fd_absent_errno()
 
 wasi_fd_prestat_dir_name = (rt, args)
   fd_absent_errno()
 
-# ═══════════════════════════════════════════════════════════════
-# WASI Preview 1 — paths
-#
-# Every one of these resolves a relative path against a directory descriptor.
-# This host has no preopens, so no directory descriptor exists and the answer
-# is `badf` for all of them. That is not a placeholder: it is the correct
-# answer for a host with an empty filesystem world, and it is what wasmtime
-# answers when the same module is run without `--dir`.
-# ═══════════════════════════════════════════════════════════════
 wasi_path_create_directory = (rt, args)
   fd_absent_errno()
 
@@ -406,10 +290,6 @@ wasi_path_symlink = (rt, args)
 wasi_path_unlink_file = (rt, args)
   fd_absent_errno()
 
-# ═══════════════════════════════════════════════════════════════
-# WASI Preview 1 — sockets. No socket world is admitted, so no socket
-# descriptor exists.
-# ═══════════════════════════════════════════════════════════════
 wasi_sock_accept = (rt, args)
   fd_absent_errno()
 
@@ -422,29 +302,18 @@ wasi_sock_send = (rt, args)
 wasi_sock_shutdown = (rt, args)
   fd_absent_errno()
 
-# ═══════════════════════════════════════════════════════════════
-# WASI Preview 1 — process
-# ═══════════════════════════════════════════════════════════════
-# proc_exit(code) terminates. The STATUS IS NOT THE ARGUMENT: preview1 permits
-# 0..125 and wasmtime refuses anything above with exit 1 — measured, boundary
-# included, in `wasi_abi.id`. `os.exit(args[1])` let a guest fabricate a status
-# the oracle never produces (255 here against wasmtime's 1).
 wasi_proc_exit = (rt, args)
   code = args[1]
   if abi.proc_exit_refused(code) == 1
     io.stderr:write("wasi: proc_exit(" .. to(str)(code) .. ") is outside the range wasi_snapshot_preview1 permits (0-" .. to(str)(abi.PROC_EXIT_MAX) .. ")\n")
   os.exit(abi.proc_exit_status(code))
 
-# proc_raise is deprecated in preview1 and wasmtime answers `notsup`.
 wasi_proc_raise = (rt, args)
   ERRNO.notsup
 
 wasi_sched_yield = (rt, args)
   ERRNO.success
 
-# ═══════════════════════════════════════════════════════════════
-# WASI Preview 1 — arguments and environment
-# ═══════════════════════════════════════════════════════════════
 wasi_args_sizes_get = (rt, args)
   runtime = rt_box.m
   argc_ptr = args[1]
@@ -454,8 +323,6 @@ wasi_args_sizes_get = (rt, args)
   buf_size = 0
   i = 1
   while i <= argc
-    # `string.len(argv[i])`, not `argv:len()(i)` — the old spelling called the
-    # integer count as a function and could never have run.
     buf_size = buf_size + string.len(argv[i]) + 1
     i = i + 1
   runtime.mem_store_i32(rt, argc_ptr, argc)
@@ -482,10 +349,6 @@ wasi_args_get = (rt, args)
     i = i + 1
   ERRNO.success
 
-# The environment world is empty by policy (OPEN QUESTION 3). Both halves agree
-# on that: sizes reports zero entries and a zero buffer, and `environ_get`
-# therefore has nothing to write. An empty environment is a fact the guest can
-# act on; it is not a stub.
 wasi_environ_sizes_get = (rt, args)
   runtime = rt_box.m
   runtime.mem_store_i32(rt, args[1], 0)
@@ -495,16 +358,6 @@ wasi_environ_sizes_get = (rt, args)
 wasi_environ_get = (rt, args)
   ERRNO.success
 
-# ═══════════════════════════════════════════════════════════════
-# WASI Preview 1 — clocks
-#
-# `time.now_ns()` — what the previous revision called — does not exist in this
-# toolchain; the module never compiled, so this never ran. The sources that DO
-# exist are `os.time()` (whole seconds since the epoch) and `os.clock()`
-# (process CPU seconds, fractional). Each clock id below is answered from the
-# source that actually matches its meaning, and `clock_res_get` reports the
-# resolution of that source rather than a flattering constant.
-# ═══════════════════════════════════════════════════════════════
 wasi_clock_time_get = (rt, args)
   runtime = rt_box.m
   clock_id = args[1]
@@ -529,8 +382,6 @@ wasi_clock_res_get = (rt, args)
   res_ptr = args[2]
   r = 0
   if clock_id == CLOCKID.realtime
-    # os.time() advances in whole seconds. Saying "1 nanosecond" here would be
-    # a measurement claim the source cannot support.
     r = 1000000000
   elseif clock_id == CLOCKID.monotonic
     r = 1000
@@ -543,15 +394,6 @@ wasi_clock_res_get = (rt, args)
   runtime.mem_store_i64(rt, res_ptr, r)
   ERRNO.success
 
-# ═══════════════════════════════════════════════════════════════
-# WASI Preview 1 — randomness
-#
-# The previous body was `0:random(255)`, which calls `random` on the integer 0
-# and does not compile. Had it compiled as intended it would still have been
-# the wrong shape. This fills the buffer from `math.random`, seeded once per
-# process. See OPEN QUESTION 4 — `math.random` is NOT a cryptographic source
-# and preview1 specifies one.
-# ═══════════════════════════════════════════════════════════════
 wasi_random_get = (rt, args)
   runtime = rt_box.m
   buf_ptr = args[1]
@@ -565,29 +407,12 @@ wasi_random_get = (rt, args)
     i = i + 1
   ERRNO.success
 
-# ═══════════════════════════════════════════════════════════════
-# WASI Preview 1 — polling
-#
-# Zero subscriptions is `inval` (measured). Anything else needs a real wait,
-# and this toolchain exposes no sleep or select primitive, so the honest
-# answer is a refusal rather than an immediate fake event: a guest that gets
-# `nosys` fails visibly, a guest that gets a fabricated ready-event spins or
-# mis-times silently. See OPEN QUESTION 5.
-# ═══════════════════════════════════════════════════════════════
 wasi_poll_oneoff = (rt, args)
   nsubscriptions = args[3]
   if nsubscriptions == 0
     return ERRNO.inval
   ERRNO.nosys
 
-# ═══════════════════════════════════════════════════════════════
-# Registration table — all 46 preview1 functions.
-# ═══════════════════════════════════════════════════════════════
-# A table literal with computed string keys does not survive a `req`
-# boundary in this toolchain (the entries read back nil), so the registry is
-# built by named projection, which does. `test/wasi_conform.id` checks all 46
-# entries are readable through a `req`, which is the control that catches it
-# if that ever regresses.
 global host_functions = {}
 host_functions.args_get = wasi_args_get
 host_functions.args_sizes_get = wasi_args_sizes_get
@@ -636,10 +461,6 @@ host_functions.sock_recv = wasi_sock_recv
 host_functions.sock_send = wasi_sock_send
 host_functions.sock_shutdown = wasi_sock_shutdown
 
-# Registration is written out one call per function rather than looped: the
-# generic-for codegen over a table of closures is currently fragile, and a
-# registration that silently skips an entry is exactly the failure this module
-# exists to remove.
 wasi_register = (rt, runtime)
   rt_box.m = runtime
   m = "wasi_snapshot_preview1"
@@ -690,43 +511,6 @@ wasi_register = (rt, runtime)
   runtime.register_import(rt, m, "sock_send", wasi_sock_send)
   runtime.register_import(rt, m, "sock_shutdown", wasi_sock_shutdown)
 
-# ═══════════════════════════════════════════════════════════════
-# OPEN QUESTIONS — deliberately NOT answered here, because each one is a
-# design decision about what world the engine admits, not a missing line.
-#
-# 1. PREOPENS. Every `path_*` above answers `badf` because there are no
-#    preopened directories. Admitting a filesystem world needs a decision on
-#    where preopens come from (CLI flag? environment? build metadata?), how
-#    guest paths are resolved against them, and how escape (`..`, symlinks) is
-#    refused. Until that is decided, `badf` is the correct answer and a real
-#    `path_open` cannot be written.
-#
-# 2. CLOCK GUARANTEES. `os.clock()` is process CPU time, not a wall-clock
-#    monotonic source; `os.time()` has one-second resolution. The monotonic
-#    clock here therefore does not advance while the process is blocked, and
-#    realtime cannot resolve below a second. Whether the engine should acquire
-#    a real monotonic source, and whether a guest may rely on `clock_time_get`
-#    for elapsed wall time, is a runtime capability decision.
-#
-# 3. ENVIRONMENT PASS-THROUGH. The environment is empty by policy. Whether the
-#    host process environment should be visible to a guest — all of it, a
-#    filtered subset, or nothing — is a sandboxing decision, not a default.
-#
-# 4. ENTROPY. `random_get` is specified to produce cryptographically secure
-#    bytes. `math.random` is not such a source. Filling the buffer from it is
-#    strictly better than the previous all-zero fill, but a guest that seeds a
-#    key from it is not safe. A real entropy source is a runtime capability
-#    that has to be admitted.
-#
-# 5. POLL. `poll_oneoff` refuses with `nosys` for any non-empty subscription
-#    set. Implementing it needs a sleep/select primitive and a decision about
-#    whether clock subscriptions may busy-wait.
-#
-# 6. PREVIEW 2. Preview 2 is a different ABI reached through the component
-#    model. Supporting it needs a component decoder, WIT world resolution and
-#    canonical-ABI lifting/lowering — none of which exist in this repository.
-#    It is not a matter of adding entries to the table above.
-# ═══════════════════════════════════════════════════════════════
 
 M = {}
 M.register = wasi_register
@@ -735,11 +519,6 @@ M.FILETYPE = FILETYPE
 M.abi = abi
 M.CLOCKID = CLOCKID
 M.host_functions = host_functions
-# Each host function is ALSO a named projection on the module, because a
-# computed-key read of `host_functions` across a `req` boundary does not
-# resolve in this toolchain. `test/wasi_conform.id` calls every one of these
-# by name, so a function that is dropped here fails a check rather than
-# quietly becoming an unbound import.
 M.args_get = wasi_args_get
 M.args_sizes_get = wasi_args_sizes_get
 M.clock_res_get = wasi_clock_res_get

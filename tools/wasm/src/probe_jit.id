@@ -1,41 +1,6 @@
-# THE JIT SUBSTRATE GATE. Does the toolchain give this engine a way to run
-# native code at all?
-#
-# `src/engine.id` carries ~2,200 lines of ARM64 emitter behind
-# `if force_interp == 0 and jitm.arch() == "arm64"`. That test could never be
-# true and, worse, could never SAY so: `jit.arch` is a VALUE (`src/jit.zig`
-# emits `lua_table_init_lit(m, "arch", lua_val_lit("native"))`), calling a
-# string yields nil rather than faulting, and nil != "arm64" silently. So every
-# benchmark in this project attributing a 5x-18x gap to "the interpreter" was
-# measuring the only engine that has ever run.
-#
-# Fixing the string alone would NOT have made the jit run, and that is the
-# thing this file exists to state: the six entry points the emitter calls do
-# not exist. Measured at this revision, the `jit` table the compiler builds
-# holds exactly on / off / flush / status / version / version_num / opt / os /
-# arch — no alloc, no seal, no call, no word writer, no symbol lookup.
-#
-# EXIT STATUS IS THE ANSWER: 0 when the substrate is whole and the emitted
-# entry code really returns 42, 1 when it is not. A probe that prints
-# "mmap refused" and exits 0 is how this stayed invisible. A probe that
-# SIGILLs is not a verdict either: it sealed ARM64 words and entered them on
-# an x86_64 host (measured, exit 132). The entry bytes below are therefore
-# per-architecture, and an architecture with no entry proof refuses rather
-# than executing foreign instruction encodings.
-#
-#   duo compile src/probe_jit.id --backend=c --emit exe -o /tmp/probe_jit
-#   /tmp/probe_jit ; echo $?
 
-# `req`, NOT the bare name. `jit` is a HARDCODED BUILTIN module — the table
-# `lua_jit_init()` builds in `src/jit.zig`, holding on/off/flush/status/
-# version/version_num/opt/os/arch and nothing else — and it SHADOWS
-# `lib/jit.id`, which is where alloc/w32/r32/seal/call*/sym/addr actually live.
 j = req "jit"
 
-# The arch string, read BOTH ways. `jit.arch` is a value today and is expected
-# to become a real accessor; accepting either shape, and either spelling of the
-# architecture, is what stops the next change from reproducing the silent
-# mismatch above.
 arch_name: str = ()
   r: str = "nil"
   av = j.arch
@@ -56,9 +21,6 @@ arch_is_arm64: i64 = ()
     r = 1
   r
 
-# Underscore-private for the same reason `_OP_return_call` in `src/engine.id`
-# is: `gate/vocabulary.sh` freezes new module-scope vocabulary until the graph
-# can prove public reach, and admits the private face.
 _arch_is_x86_64: i64 = ()
   r: i64 = 0
   av = j.arch
@@ -73,8 +35,6 @@ report: i64 = (name: str, present: i64)
   if present == 1
     print("  present  " .. name)
   else
-    # "shadowed", not "MISSING": the member exists in `lib/jit.id` and is
-    # callable; only the table-field read is intercepted by the builtin.
     print("  shadowed " .. name)
   present
 
@@ -83,10 +43,6 @@ probe_main = ()
   print("jit.arch names arm64     = " .. to(str)(arch_is_arm64()))
   print("substrate the ARM64 emitter in src/engine.id calls:")
   n: i64 = 0
-  # Each presence test is written out rather than passed through a helper: an
-  # UNTYPED parameter holding a module member does not compile here
-  # ("use of undeclared identifier"), and a typed one would have to name a
-  # type the missing members do not have.
   h1: i64 = 0
   if j.alloc != nil
     h1 = 1
@@ -111,29 +67,12 @@ probe_main = ()
   n += report("jit.seal(buf, bytes) -> ok     # mprotect RX + icache", h4)
   n += report("jit.call2(buf, a, b) -> i64    # enter under the C ABI", h5)
   n += report("jit.sym(name) -> addr          # host symbol for an imported call", h6)
-  # THE ROSTER ABOVE IS INFORMATION, NOT THE VERDICT, and it used to be the
-  # verdict, which is why it read MISSING for a substrate that works. `req "jit"`
-  # registers `lib/jit.id` in `duo_modules`, but the generated `lua_require`
-  # tests the hardcoded builtin names FIRST, so the BINDING still holds the
-  # builtin table (which has no `alloc`) while every CALL through it was
-  # compiled to a direct call against the real Idol module. So `j.alloc == nil`
-  # answers "missing" and `j.alloc(4096)` answers with a live mapping, both
-  # truthfully, about two different things.
-  #
-  # A roster read cannot settle this and neither can the opposite reading: a
-  # member can be non-nil and still DO NOTHING (`lib/jit.id`'s `w32` was
-  # `return lua_val_nil()` for as long as `@comp.c.emit` in statement position
-  # was dropped by the C backend). Only the end-to-end proof below decides, and
-  # only IT sets the exit status.
   buf = j.alloc(4096)
   if !buf
     print("VERDICT: jit.alloc exists and REFUSED (mmap failed).")
     os.exit(1)
-  # The entry bytes are the machine's own. One probe for the host that runs it,
-  # chosen by the arch the substrate itself reports.
   codesz: i64 = 0
   if arch_is_arm64() == 1
-    # MOVZ W0, #42  => 0x52800000 | (imm16 << 5) | Rd  ; RET
     j.w32(buf, 0, 0x52800000 | (42 << 5))
     j.w32(buf, 1, 0xD65F03C0)
     if j.r32(buf, 0) != (0x52800000 | (42 << 5))
@@ -141,15 +80,6 @@ probe_main = ()
       os.exit(1)
     codesz = 8
   elseif _arch_is_x86_64() == 1
-    # System V AMD64, byte-for-byte what `as` emits:
-    #   movq %rdi, %rax   48 89 F8   arg0 -> return register
-    #   addq %rsi, %rax   48 01 F0   arg1 in
-    #   retq              C3
-    # 40 + 2 = 42 through BOTH argument registers. `48 01 F8` is
-    # `addq %rdi, %rax` — arg0 added to whatever the caller left in rax —
-    # and measured through this substrate it answers 40 for (40, 2) with
-    # exit 0: a plausible wrong answer, which is the shape this probe
-    # exists to refuse, so both arguments are load-bearing here.
     j.w8(buf, 0, 0x48)
     j.w8(buf, 1, 0x89)
     j.w8(buf, 2, 0xF8)
@@ -157,9 +87,6 @@ probe_main = ()
     j.w8(buf, 4, 0x01)
     j.w8(buf, 5, 0xF0)
     j.w8(buf, 6, 0xC3)
-    # Little-endian word read: bytes 48 89 F8 48 at word 0 read back as
-    # 0x48F88948 (1224247624) — the same orientation as the `0x4342`
-    # round-trip check in `src/engine.id`'s substrate self-test.
     if j.r32(buf, 0) != 0x48F88948
       print("VERDICT: jit.w8/jit.r32 do not round-trip the entry bytes (word0="
         .. to(str)(j.r32(buf, 0)) .. ", expected 1224247624).")

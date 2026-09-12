@@ -1,14 +1,3 @@
-# tools/reduce/fixtures/graph/argface.id — the arg-form defect's causal test.
-#
-# LAW: the same semantic application (same subject, same relation, same
-# operand pack, same result demand) MUST lower identically regardless of
-# source face (argument form vs subject-chain form). A wrong answer from
-# either face is a compiler defect, not a language rule.
-#
-# This fixture ASSERTS the equivalence at runtime: both faces run, both
-# results must be equal AND nonzero. When the compiler is fixed this
-# passes; until then it documents the defect (see
-# evidence/mop/wasm/argform.defect.md for the 8-line isolation).
 
 hex: i64 = (c: i64)
   if c >= 48 and c <= 57
@@ -21,9 +10,7 @@ hex: i64 = (c: i64)
 
 main: i64 = ()
   s: str = "0061736d01000000"
-  # subject-chain face (currently CORRECT)
   chain: i64 = s:byte(3):hex()
-  # argument face with pre-bound local (currently WRONG: returns 0)
   b: i64 = s:byte(3)
   argform: i64 = s:hex(b)
   stdout:write("chain=" .. chain:to(str) .. " argform=" .. argform:to(str))

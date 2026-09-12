@@ -1,38 +1,4 @@
-# Derived-lines / total-lines for the engine, target >= 80%.
-#
-#   duo run bench/derived.id
-#
-# The mandate calls hand-written serialization in the engine "a violation with a
-# derivation repair", and asks for the repair to be MEASURED rather than
-# asserted. This is that measurement. It had no implementation before
-# 2026-08-08; the first honest reading of it is 0%.
-#
-# WHAT COUNTS AS DERIVED. A line is derived when it was projected from a
-# descriptor rather than typed by a person, and it says so in the source:
-#
-#   # derived(wasm.opcodes) begin
-#   ...projected lines...
-#   # derived end
-#
-# That marker is the whole contract. It is deliberately a source annotation
-# and not an inference: a heuristic that GUESSED which lines "look generated"
-# would be exactly the kind of recognizer CLAUDE.md §3 forbids # it would key
-# on shape, and it would drift green as the shapes drifted.
-#
-# POSITIVE CONTROL. A scanner that reports 0 is usually broken rather than
-# green (§3 again), and this one reports 0 today, so the zero has to be
-# proved. `_selfcheck` runs the same counter over a synthetic buffer that DOES
-# carry the markers; if that reads 0 the harness declares itself broken and
-# exits non-zero instead of reporting a clean 0%.
-#
-# The denominator is the BUILT artifact only. `src/wasm/*.id` is excluded and
-# reported separately: nothing requires those files, so counting them would
-# inflate the denominator with code that does not ship.
 
-# `require("script")`, NOT `std.script` / bare `script`: a bare `std` reaches
-# the C emitter as an undeclared global and indexing it SEGFAULTS the binary
-# before its first statement (measured, exit 139); a bare module name registers
-# no module at all. `require` is the only spelling that embeds lib/script.id.
 script = require("script")
 
 _is_code: bool = (line: str)
@@ -43,8 +9,6 @@ _is_code: bool = (line: str)
     return false
   true
 
-# Returns "<code>|<derived>" for one file's text. Both counters walk the same
-# lines in the same pass so a marker can never be counted without its body.
 _scan: str = (text: str)
   code = 0
   derived = 0
@@ -67,33 +31,9 @@ _part: i64 = (s: str, n: i64)
     return to(i64)(s:sub(1, i - 1))
   to(i64)(s:sub(i + 1, s:len()))
 
-# A file's marker-free line count, used to report what the projection would
-# have to cover. Kept separate from _scan so the two can disagree loudly.
 _count: str = (path: str)
   _scan(script.fs_read(path))
 
-# Lines that hard-code a WASM-format fact the canonical descriptor table
-# already carries: an opcode number used as a dispatch predicate. This is the
-# specific population the mandate names, so it is reported on its own rather than
-# folded into "everything hand-written".
-#
-# Two qualifications, both added 2026-08-08 when the population went 241 -> 2
-# and the leftovers turned out to be noise rather than debt:
-#
-#   * a line INSIDE a derived region is skipped. A projected line does not
-#     hard-code anything # it is the output of the descriptor, by the same
-#     marker contract the ratio above uses. Without this, projecting the table
-#     made the count go UP, because `OP_nop = 1` and `OP_loop = 3` match the
-#     pattern on the lowercase "op" buried in their own names.
-#   * the operator must be a COMPARISON. `fop = 0x3800` assigns an ARM64
-#     instruction field; it is an assignment, not a dispatch predicate, and
-#     the ARM64 encoding is not a fact any wasm descriptor carries.
-#
-# What is deliberately NOT filtered: `f64op == 1`, three times, where `f64op`
-# is a width flag and 1 is not an opcode. Tuning the pattern until it read
-# exactly 0 would leave a detector that cannot be told apart from a broken
-# one. Those three are a live floor: see 3, and the scanner is still looking.
-# If this ever reports 0, suspect the scanner before celebrating.
 _format_facts: i64 = (text: str)
   n = 0
   inside = false
@@ -104,9 +44,6 @@ _format_facts: i64 = (text: str)
     elseif t == "-- derived end"
       inside = false
     elseif _is_code(line) and not inside
-      # `==` `>=` `<=` / `!=` / bare `<` `>`. Three alternatives rather
-      # than one because a single class would also admit the bare `=` of
-      # an assignment, which is the case being excluded.
       if line:match("op%s*[=><]=%s*0?x?%x") != nil
         n = n + 1
       elseif line:match("op%s*!=%s*0?x?%x") != nil
@@ -115,9 +52,6 @@ _format_facts: i64 = (text: str)
         n = n + 1
   n
 
-# The zero has to be earned. Same counter, a buffer that is KNOWN to contain
-# two derived code lines; anything else means the scanner stopped working and
-# the real reading is untrustworthy.
 _selfcheck: bool = ()
   probe = "a = 1\n-- derived(probe.table) begin\nb = 2\nc = 3\n-- derived end\nd = 4\n"
   r = _scan(probe)
@@ -128,10 +62,6 @@ _selfcheck: bool = ()
     print("selfcheck: expected 2 derived lines, got " .. to(str)(_part(r, 2)))
     return false
   
-# The opcode-predicate counter gets the same treatment, and it needs it
-  # more: it was tightened after the projection landed, and a filter added
-  # to make a number go DOWN has to prove it still counts the thing it is
-  # for. Four lines, one of each verdict.
   facts = "if op == 106\nfop = 0x3800\n-- derived(t) begin\nOP_nop = 1\n-- derived end\nif op >= 40\n"
   f = _format_facts(facts)
   if f != 2
@@ -161,11 +91,6 @@ derived = _part(r, 2)
 print(_pad("FILE", 30) .. _pad("CODE", 8) .. _pad("DERIVED", 9) .. "SHIPS")
 print(_pad(built, 30) .. _pad(code:to(str), 8) .. _pad(derived:to(str), 9) .. "yes")
 
-# Everything under src/ that is NOT required by the built artifact. These
-# are reported so the number cannot be flattered by counting dead trees
-# (src/wasm/jit_arm64.id is 701 lines of a register-allocating JIT whose
-# host modules # runtime.id, init.id # were deleted; it compiles and
-# runs nowhere).
 orphan = 0
 for _i, f in script.fs_glob("src/wasm/*.id")
   o = _count(f)

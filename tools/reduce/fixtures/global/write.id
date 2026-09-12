@@ -1,6 +1,3 @@
-# F3b — global-init-not-constant:g (module-global written at runtime)
-# Theorem: refuses with global-init-not-constant:g; f3_neg.id (never written)
-# refuses with the bare name instead — two distinct missing facts.
 global g: str = ""
 set: i64 = ()
   g = "x"

@@ -1,24 +1,4 @@
-# WASM benchmark fixture: 2-BILLION-iteration FNV-style hash.
-#
-# Duo replacement for bench/hash2b.c. Same kernel as bench/hash.id with ten
-# times the loop — it exists to give the harnesses a long-running module.
-#
-#   duo compile bench/hash2b.id #target wasm32-wasi -o bench/hash2b.wasm
-#
-# Returns i32, matching the C original's uint32_t -> wasm i32 signature, so
-# wasmtime prints -1009008024 exactly as it did for the C build. Keeping the
-# signed i32 preserves the one corpus entry that exercises verify.id's
-# unsigned fold # the case that caught a real bug in it.
-#
-# Locals are `u32` so the TYPE carries the wrap, as C's uint32_t did. An
-# earlier version used i64 plus `& 4294967295` after every step: same answer,
-# three extra ops per iteration, which pushed the engine's INTERPRETER past the
-# harnesses' 120s timeout on the 2-billion sibling. A fixture must be fast
-# enough to time.
 
-# GAP-12: `@c.export` does not attach to a value-form binding — it degrades
-# to "use of undeclared identifier '__c_export'". The exported entry stays a
-# bare declaration until that closes; `main` uses the canonical value form.
 @comp.c.export("run")
 run: i32 = ()
   h: u32 = 2166136261

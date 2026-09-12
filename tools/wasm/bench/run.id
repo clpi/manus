@@ -1,24 +1,4 @@
-# the engine wasm benchmark + coverage harness.
-#
-# Duo replacement for bench/run.sh, which shelled out to python3 four times per
-# module just to read a clock. Timing is time.monotonic() now.
-#
-# Every perf/coverage claim about the engine must come from this harness. It exists
-# because two earlier "baselines" were wrong for the same reason: the engine reads
-# DUO_WASM_MODULE, NOT argv (src/engine.id entry), and silently falls back to a
-# hardcoded /tmp/hash.wasm. Passing a module as an argument measures nothing.
-#
-#   idol run bench/run.id          # full sweep
-#   idol run bench/run.id cover    # coverage only, no timing
-#
-# For CORRECTNESS use bench/verify.id: "the engine produced a result" is not
-# coverage, and this harness only checks that the two engines agree with
-# each other. Only wasmtime agreement counts, and that lives there.
 
-# `require("script")`, NOT `std.script` / bare `script`: a bare `std` reaches
-# the C emitter as an undeclared global and indexing it SEGFAULTS the binary
-# before its first statement (measured, exit 139); a bare module name registers
-# no module at all. `require` is the only spelling that embeds lib/script.id.
 script = require("script")
 
 _pad: str = (s: str, w: i64)
@@ -49,20 +29,13 @@ _field: str = (raw: str, key: str)
 _ms: i64 = (a: i64, b: i64)
   to(i64)((b - a) / 1000000)
 
-# Run one engine on one module. Returns "<result>|<ms>|<engine>".
-# the engine is invoked via DUO_WASM_MODULE; anything else is a lie (see header).
 _engine: str = (root: str, binary: str, mod: str, engine: str)
-  # Corpora disagree on the entry export: hash.wasm uses `run`, wart's uses
-  # `_start`. Try both rather than silently reporting "unsupported".
   raw = ""
   res = "none"
   for _i, want in { "run", "_start" }
     if res == "none"
       raw = script.capture("DUO_WASM_MODULE=" .. root .. "/" .. mod .. " DUO_WASM_INVOKE=" .. want .. " DUO_WASM_ENGINE=" .. engine .. " timeout 120 " .. binary .. " 2>&1")
       res = _field(raw, "result")
-  # Report the engine that ACTUALLY ran: the JIT falls back to the
-  # interpreter on any opcode it cannot emit, so "jit" requested is not
-  # "jit" used.
   res .. "|" .. _field(raw, "seconds") .. "|" .. _field(raw, "engine")
 
 _wasmtime_run: str = (wasmtime: str, mod: str)
@@ -73,18 +46,6 @@ _wasmtime_run: str = (wasmtime: str, mod: str)
     out = "none"
   out .. "|" .. to(str)(_ms(a, b)) .. "ms"
 
-# Which wart produced the numbers in this table.
-#
-# Every wart row used to be reported against "whatever binary $WART resolved
-# to", which is a path into an uncommitted working tree outside this
-# repository. No published comparison recorded which wart it ran against, so
-# none of them was reproducible # and wart moves: `ad10076` landed 232 NEON
-# SIGILL opcodes on 2026-08-08 alone. A number without a commit is not a
-# measurement, it is an anecdote with a decimal point.
-#
-# This does not PIN wart # pinning means a submodule and that decision is
-# open (docs/wart-integration.md §5). It makes the absence of a pin VISIBLE,
-# which is the part that can be done from here.
 provenance: str = (repo: str)
   out = "no repo at {repo}"
   if script.fs_exists(repo)
@@ -92,22 +53,12 @@ provenance: str = (repo: str)
     if sha == ""
       out = "{repo} is not a git checkout"
     else
-      # `wc -l` pads its count with leading blanks on macOS; a raw splice
-      # puts "ad10076+       3 uncommitted" in the table.
       dirt = script.chomp(script.capture("git -C {repo} status --porcelain 2>/dev/null | wc -l | tr -d ' '"))
       out = sha
       if dirt != "0"
         out = "{sha}+{dirt} uncommitted — NOT REPRODUCIBLE"
   out
 
-# A nonzero exit from wart is REPORTED, never mapped to a name.
-#
-# This used to special-case 132 (128+SIGILL) as wart's expected failure, on a
-# note saying wart's ARM64 JIT emits `ldp xzr,xzr,[sp],#16` and traps on Apple
-# silicon. Measured 2026-08-08: wart builds clean and its JIT returns the same
-# values as wasmtime, wasmer and this engine. The arm was dead code guarding a
-# condition that does not occur, and a harness that has a name ready for a
-# failure will use it.
 _wartrun: str = (wart: str, mod: str)
   a: i64 = std.time.monotonic()
   rc: i64 = script.status("timeout 120 " .. wart .. " run " .. mod)
@@ -139,8 +90,6 @@ main: i64 = ()
     print("BUILD FAILED: no binary at " .. binary)
     return 1
 
-  # PROVENANCE, before any number. A wart column with no wart commit beside
-  # it is not reproducible, and the reader cannot tell that by looking at it.
   if mode != "cover"
     repo = script.getenv("WARTREPO", script.getenv("HOME", ".") .. "/x/wart")
     print("wart      {repo}")
@@ -154,8 +103,6 @@ main: i64 = ()
   total = 0
   for _i, m in script.fs_glob("bench/*.wasm")
     total = total + 1
-    # `jt`, not `jit`: `jit` is the frozen std.jit namespace root, and
-    # assigning it is "attempt to assign to const variable".
     jt = _engine(root, binary, m, "jit")
     itp = _engine(root, binary, m, "interp")
     wt = "-|-"
@@ -165,9 +112,6 @@ main: i64 = ()
       wr = _wartrun(wart, m)
     print(_pad(script.path_stem(m), 32) .. " " .. _pad(jt, 26) .. " " .. _pad(itp, 26) .. " " .. _pad(wt, 18) .. " " .. wr)
 
-    # the engine "covers" a module when it produced a result at all and both
-    # engines agree. result=0 is legitimate here: the wart corpus exports
-    # a void `_start`.
     jr = _head(jt)
     ir = _head(itp)
     if jr == ir and jr != "none" and jr != "-1"

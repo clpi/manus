@@ -1,9 +1,2 @@
-# F5 theorem (final): self-recursion crashes the graph aggregate publisher.
-# 1792 -> 11 -> 2 lines. A relation invoking ITSELF with literal arguments
-# reaches publishApplicationResultAggregate and returns InvalidAggregateFact
-# (a raw internal error; the stack trace leaks into the diagnostic) instead
-# of a classified refusal. crash/ctrl.id is the non-self-recursive control:
-# identical shape (same undeclared result descriptor, same call form) with
-# the call target renamed produces a CLEAN return-type diagnostic.
 parse_expr: Res = (src: str, pos: i64)
     r = parse_expr(src, 0)

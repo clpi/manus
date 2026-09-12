@@ -1,5 +1,3 @@
-# F5 negative control: identical shape, call target renamed — no
-# self-recursion, no crash, clean diagnostic instead.
 helper: Res = (src: str, pos: i64)
     src
 parse_expr: Res = (src: str, pos: i64)

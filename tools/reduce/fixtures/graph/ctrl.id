@@ -1,4 +1,3 @@
-# F1 negative control: write_i64 instead of write_f64 — compiles
 w: i64 = (out: i64)
   buf = mem.ptr_from_addr(i64, out)
   mem.write_i64(buf, 8, 7)

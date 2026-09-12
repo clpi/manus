@@ -1,44 +1,6 @@
-# the engine's WASM opcode descriptor table, and the projection that writes it into
-# src/engine.id.
-#
-#   duo run tools/opcodes.id          # project; rewrites src/engine.id
-#   duo run tools/opcodes.id #check  # fail if the projection is stale
-#
-# WHY THIS EXISTS. it used to hard-code 170 distinct opcode numbers across
-# 241 dispatch predicates # in the interpreter ladder AND, independently,
-# in the JIT's ALU_OPS / CMP_OPS tables. The 2026-08-06 handoff named that
-# exact failure ("hand-writing the rest across interpreter arms *and* JIT
-# emitters is the thing to avoid") and it happened anyway, because there was
-# nothing to hand-write *from* on the engine side: duo's canonical table
-# (lib/wasm/ward_mvp_opcodes.id) stops at 63 ops and the engine needs 170.
-#
-# So OPS below is the descriptor, and every opcode number the engine compiles
-# against is projected from it. An opcode number now appears ONCE in this
-# repo per fact, not once per consumer.
-#
-# THIS TABLE IS NOT A SECOND SOURCE OF TRUTH. `_agree` checks every row that
-# lib/wasm/ward_mvp_opcodes.id also carries against that file, parsed at
-# run time, and refuses to project on any disagreement. duo's canonical table
-# stays the authority for the 63 it holds; OPS extends it and is answerable
-# to it. That check is negative-controlled by `_selfcheck` # a table that
-# cannot disagree is not a check.
-#
-# MONOGLOT: this is .id, not the .py that used to do this job (deleted
-# 2026-08-07 after it silently read a /tmp path that no longer existed) and
-# not the .zig generator that owns lib/wasm/.
 
-# `require("script")`, NOT `std.script`. The `std.` spelling is why this file
-# could not run at all: a bare `std` is not a module reference, it reaches the C
-# emitter as an undeclared global (`static lua_Value duo_g_std;`), and indexing
-# it is a NULL table read. The binary SEGFAULTS before its first statement —
-# measured, exit 139, on a three-line program whose only use is
-# `script.getenv(...)`. `require` is the mechanism that actually registers a
-# module (src/codegen.zig collect_require_names); a dotted `std.` path registers
-# one only if `lib/std/<name>.id` exists, and it does not.
 script = require("script")
 
-# {opcode, canonical wasm name}. Ordered by opcode; the projection preserves
-# this order, which is what makes re-running a no-op.
 OPS = {
   { 0, "unreachable" },
   { 1, "nop" },
@@ -226,10 +188,7 @@ OPS = {
   { 253, "prefix.simd" }
 }
 
-# JIT projections. Both are keyed by NAME, so the opcode number they used to
-# repeat now comes from OPS. A name that is not in OPS is a hard error.
 
-# ARM64 base word for the one shared ALU emit path.
 ALUWORD = {
   { "i32.add", 184549376 },
   { "i32.sub", 1258291200 },
@@ -257,8 +216,6 @@ ALUWORD = {
   { "i64.rotr", 2596285440 }
 }
 
-# ARM64 condition code fed to CSET. The i64 rows reuse the i32 conditions on a
-# 64-bit CMP; the CSET stays 32-bit because a wasm compare yields i32.
 CMPCOND = {
   { "i32.eq", 0 },
   { "i32.ne", 1 },
@@ -282,9 +239,6 @@ CMPCOND = {
   { "i64.ge_u", 2 }
 }
 
-# Duo keywords cannot be bare identifiers, so those four names take a trailing
-# underscore. The set matches lib/wasm/ward_mvp_opcodes.id exactly, which
-# is what lets `_agree` compare the two files name-for-name.
 _reserved = { "if", "else", "end", "return" }
 
 _isreserved: bool = (name: str)
@@ -293,7 +247,6 @@ _isreserved: bool = (name: str)
       return true
   false
 
-# "i32.load8_s" -> "OP_i32_load8_s"; "if" -> "OP_if_".
 _const: str = (name: str)
   out = ""
   i = 1
@@ -308,40 +261,6 @@ _const: str = (name: str)
     out = out .. "_"
   "OP_" .. out
 
-# `return -1`, NOT a bare `-1` tail — and the difference is a PARSER DEFECT,
-# not a style preference. This was a SILENT WRONG ANSWER, not a build failure.
-#
-# The shape this relation had, from the day it was written until now, was
-#
-#     if row[2] == name
-#       return row[1]
-#     -1                      <- intended: fall-through "not found" sentinel
-#
-# and a block-tail expression that BEGINS WITH A UNARY MINUS is absorbed as a
-# BINARY minus onto the preceding expression, across the newline and the dedent.
-# So the parser built `return row[1] - 1` and there was no tail left at all.
-# Measured 2026-08-15, eleven lines, one two-row table, three shapes side by
-# side (the only difference between them is the last line of the body):
-#
-#     tail `-1`        -> hit 105, miss 0     WRONG on both
-#     tail `return -1` -> hit 106, miss -1    correct
-#     tail `99`        -> hit 106, miss 99    correct
-#
-# So it is unary-minus-in-tail-position specifically; a positive literal tail is
-# fine. Routed to the src lane as a parser bug.
-#
-# WHAT IT COST HERE. `_num` feeds `_resolve()` and the `_body_alu()` /
-# `_body_cmp()` projections, so every opcode number this file would have written
-# into src/engine.id's JIT tables was ONE TOO LOW, and `_resolve` — which
-# rejects a row whose `_num(...) < 0` — could never fire, because the sentinel
-# came back as 0 rather than -1.
-#
-# AND THE FORMATTER DID NOT CAUSE THIS, it only made it visible. Commit
-# c4a35dee ("De-Lua: 38 more files...") reprinted this relation as the single
-# line `return row[1] - 1`. That is `idol fmt` faithfully rendering the AST the
-# parser had actually built — the meaning had been wrong since the file was
-# written, and the sweep is simply where the text finally agreed with it. The
-# reprint is evidence, not the defect.
 _num: i64 = (name: str)
   for _i, row in OPS
     if row[2] == name
@@ -364,7 +283,6 @@ _hex8: str = (v: i64)
     i = i + 1
   "0x" .. out
 
-# ── the four projected bodies ────────────────────────────────────────────
 
 _body_consts: str = ()
   out = ""
@@ -390,22 +308,6 @@ _body_cmp: str = ()
     out = out .. "  {" .. _pad(_const(row[1]) .. ",", 16) .. " " .. to(str)(row[2]) .. "},\n"
   out .. "}\n"
 
-# ── region rewrite ───────────────────────────────────────────────────────
-#
-# Replaces the text between `-- derived(<tag>) begin` and `-- derived end`,
-# markers included in neither. Byte-exact round trip when the body is already
-# current, which is the whole idempotency property; `_selfcheck` proves the
-# round trip rather than assuming it.
-# `str:trim()` RETURNS NIL. Measured 2026-08-15, one line, no library:
-#
-#     print("[" .. "  hi  ":trim() .. "]")   ->   [nil]
-#     print("[" .. "abc":trim() .. "]")      ->   [nil]
-#
-# It is not "returns empty" — it is nil, and `nil:find(pat, 1, true)` inside the
-# loop below is what killed this file with SIGBUS (exit 138) rather than any
-# diagnostic. `s:len()` on the same subject is correct, so it is `trim`
-# specifically. Routed to the src lane. `_trim` below is the local replacement,
-# built only from `:len()`, `:byte()` and `:sub()`, all measured working.
 _trim: str = (s: str)
   a = 1
   n = s:len()
@@ -415,16 +317,6 @@ _trim: str = (s: str)
     n = n - 1
   s:sub(a, n)
 
-# THE MARKERS ARE `#`, NOT `--`, and this file was still looking for `--`.
-#
-# src/engine.id carries `# derived(wasm.opcodes.constants) begin` and
-# `# derived end`; the de-Lua migration moved every comment from `--` to `#` and
-# these two string literals were not moved with them. So `_render` matched
-# nothing in the real target, `seen` stayed 0, and the `seen != 1` guard would
-# have refused the projection — correctly, but for a reason that names the
-# region rather than the marker syntax. `_selfcheck` did not catch it because
-# its synthetic buffer used `--` too: the control and the code agreed with each
-# other and both disagreed with the file being projected. It now uses `#`.
 _render: str = (text: str, tag: str, body: str)
   open = "# derived(" .. tag .. ") begin"
   out = ""
@@ -444,38 +336,8 @@ _render: str = (text: str, tag: str, body: str)
   if seen != 1
     print("*** region '" .. tag .. "' appears " .. seen:to(str) .. " times, expected 1 ***")
     os.exit(1)
-  # Splitting a "…\n"-terminated text yields a trailing empty element, which
-  # the loop turned back into a newline. Drop it so the round trip is exact.
   out:sub(1, out:len() - 1)
 
-# ── answerability to duo's canonical table ───────────────────────────────
-#
-# Parses lib/wasm/ward_mvp_opcodes.id (63 ops, emitted by
-# `duo wasm-tables emit`) and demands OPS agree on every one. Reported as a
-# count, not a boolean, because a parser that matched nothing would otherwise
-# read as unanimous agreement.
-# NO `:match`, BECAUSE `:match` CANNOT RETURN A CAPTURE HERE.
-#
-# This was `nm = line:match("^(OP_[%w_]+) = (%d+)$")` followed by
-# `if nm != nil`. `str:match(pat)` is typed BOOL by this compiler — not the
-# capture, and not nil-on-miss. Two consequences, both silent:
-#
-#   * `nm != nil` is true for EVERY line, because a bool is never nil, so the
-#     body ran on comment lines and blank lines as well as opcode rows;
-#   * `nm` then carried `true`/`false` into the name comparison, which is
-#     exactly what the harness printed on its first successful run:
-#     `*** false: canonical table says 0, tools/opcodes.id says -1 ***`.
-#
-# Measured 2026-08-15: `to(str)(s:match(pat))` does not even compile — the C
-# backend emits `duo_str_from_bool(...)` for it and clang rejects the argument
-# type. Same defect family as `s:find(p) == nil`, which is also always false.
-# Routed to the src lane.
-#
-# The parse below uses only `:len()`, `:sub()` and `:byte()`, all measured
-# working, and is STRICTER than the pattern it replaces: the name must start
-# `OP_`, the separator must be exactly " = ", and every remaining character must
-# be a digit. A line that does not match all three is skipped, which is what
-# keeps `checked` an honest count — and `main` refuses to project when it is 0.
 _digits: bool = (s: str)
   if s:len() == 0
     return false
@@ -512,36 +374,20 @@ _agree: i64 = (path: str)
           checked = checked + 1
   checked
 
-# ── controls ─────────────────────────────────────────────────────────────
-#
-# Three things could each read "green" while broken, so each gets a probe that
-# must FAIL for the harness to trust the one that must pass.
-# RESTORED. Commit c4a35dee ("De-Lua: 38 more files after the concept and
-# directive round-trip fixes") rewrote this declaration from `()` to `{}` and
-# DE-INDENTED its entire body, which turned the negative control into a
-# top-level value binding and a run of loose statements. `_selfcheck` is the
-# probe that stops `_agree` from reading as unanimous agreement when it parsed
-# nothing, so the sweep deleted exactly the check this file leans on. The body
-# below is byte-identical to c4a35dee~1; only the `()` and the indentation are
-# restored. `_resolve` two declarations down kept its `()` and shows the shape.
 _selfcheck: bool = ()
-  # 1. the region rewriter round-trips a buffer byte for byte
   src = "a\n# derived(t) begin\nold\n# derived end\nb\n"
   if _render(src, "t", "old\n") != src
     print("selfcheck: _render is not an identity on an already-current body")
     return false
-  # 2. and actually replaces when the body differs
   if _render(src, "t", "new\n") != "a\n# derived(t) begin\nnew\n# derived end\nb\n"
     print("selfcheck: _render did not replace the region body")
     return false
-  # 3. name mangling, including the reserved-word suffix
   if _const("i32.load8_s") != "OP_i32_load8_s"
     print("selfcheck: _const mangled i32.load8_s wrongly")
     return false
   if _const("end") != "OP_end_"
     print("selfcheck: _const did not suffix the reserved word `end`")
     return false
-  # 4. the number lookup rejects an unknown name instead of inventing one
   if _num("i32.nonesuch") != -1
     print("selfcheck: _num invented a number for an unknown opcode")
     return false
@@ -553,11 +399,6 @@ _selfcheck: bool = ()
     return false
   true
 
-# Every JIT row must resolve through OPS. This is the property that makes OPS
-# the single source: a row that could not resolve would otherwise be silently
-# dropped from the projected table and the JIT would just stop compiling that
-# opcode # which is invisible, because the JIT falls back to the interpreter
-# and the correctness gate stays green.
 _resolve: bool = ()
   ok = true
   for _i, row in ALUWORD
@@ -577,10 +418,6 @@ main: i64 = ()
   if not _resolve()
     return 1
   
-  # NOT a hardcoded default. A personal path here is a public_safety_scan
-  # failure (A19) and it is also wrong for everyone but one machine;
-  # ask git where the checkout is instead. `_agree` below is the control:
-  # a root that does not resolve parses 0 rows and the tool refuses.
   root = script.getenv("DUO_ROOT", "")
   if root == ""
     root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
@@ -591,12 +428,6 @@ main: i64 = ()
     return 1
   print("agrees with duo's canonical table on " .. n:to(str) .. " opcode(s)")
 
-  # RE-INDENTED. Everything from here to the final `0` was DE-INDENTED out of
-  # `main` by commit c4a35dee, so the projection ran as top-level statements
-  # and `main` ended at the print above — an `i64` relation falling off the end
-  # of its body, which the C backend emits as `return lua_val_nil();` from an
-  # `int64_t` function and clang rejects. The `return 0` / `return 1` arms below
-  # were returning from a relation they were no longer inside.
   target = "src/engine.id"
   before = script.fs_read(target)
   after = _render(before, "wasm.opcodes.constants", _body_consts())
@@ -604,9 +435,6 @@ main: i64 = ()
   after = _render(after, "wasm.opcodes.aluword", _body_alu())
   after = _render(after, "wasm.opcodes.cmpcond", _body_cmp())
 
-  # Mode selection is an ENV VAR, not argv: duo-compiled binaries do not
-  # populate Lua's `arg`, and an argv-driven flag would silently take the
-  # write path in a gate that meant to check.
   if script.getenv("DUO_WASM_DERIVE", "") != ""
     if after != before
       print("*** " .. target .. " is STALE against tools/opcodes.id ***")

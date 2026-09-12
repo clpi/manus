@@ -1,5 +1,3 @@
-# the engine/src/wasm/table.id — Function reference tables
-# Used for call_indirect dispatch. Fixed array of function indices.
 
 fun table_new(size: i64)
     ptr = __emit("calloc(size, sizeof(int64_t))")
@@ -20,7 +18,6 @@ fun table_grow(t, n: i64): i64
     old_size: i64 = t.size
     new_size: i64 = old_size + n
     __emit("t.as.tval = realloc(t.as.tval, new_size * sizeof(int64_t))")
-    # Zero new entries
     __emit("memset((int64_t*)t.as.tval + old_size, 0, n * sizeof(int64_t))")
     t.size = new_size
     return old_size

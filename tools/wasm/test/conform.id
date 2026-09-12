@@ -1,45 +1,5 @@
-# the engine conformance suite — every fixture, both engines, both entry shapes,
-# differenced against wasmtime BY VALUE.
-#
-#   zig build wasm-test              (from the repository root; sole admission)
-#
-# Until this file existed the engine had NO test suite. `test/main.id` required four
-# modules that had been deleted and did !parse; the only checking in the
-# project was `bench/verify.id` (one engine per run, one entry shape) and a
-# benchmark harness that filtered on the engine's `-1` sentinel. A WASM runtime was
-# shipping in a release on that.
-#
-# WHAT THIS ASSERTS
-#   * every `.wasm` under the fixture globs, under `interp` AND `jit`, at every
-#     entry shape wasmtime can invoke (`run` and `_start`);
-#   * the VALUE, !the exit status. the engine exits 0 while printing nothing, and
-#     it has returned a correct-looking number for a module it never read.
-#
-# WHY THE CONTROLS COME FIRST, AND WHY THEY EXIT 3
-#   A harness in this repo once reported a confident "0 identical / 176
-#   differing" because the baseline binary it was comparing against had been
-#   deleted mid-run. Another reported "18/18 passing" while the engine ignored its
-#   argument entirely and ran a hardcoded `/tmp/hash.wasm`. Both were green-
-#   looking numbers from a harness that was !measuring anything. So this one
-#   refuses to print a score at all until it has proved, in this process, that
-#   both binaries exist, that the module path reaches the runtime, that a
-#   perturbed module is refused, and that its own comparator can return a red.
-#   A control failure is exit 3 — distinct from exit 1 (real conformance
-#   failures), so a broken harness can never be read as a failing runtime.
 
 
-# ── LOCAL SHELL/STRING PRIMITIVES ──────────────────────────────────────────
-# The `std` script and string modules are UNUSABLE at this revision and that is
-# why this suite scored nothing at all: reading `std.script` into a local
-# SEGFAULTS in a C-backend binary before the first statement of the program
-# runs, so this file died before printing "== controls ==" and
-# `zig build wasm-test` was red for a reason no output described. Minimal
-# repro, measured: a program whose only statement is `m = std.script` exits
-# 139. `req "script"` does not compile either (`lib/script.id:7`: 'execute' is
-# neither a descriptor nor a callable).
-#
-# The ten primitives this suite used are therefore defined here on `io.popen`,
-# `env` and the shell, all of which work. No assertion below changed.
 _chomp: str = (s: str)
     n: i64 = string.len(s)
     while n > 0 and (string.byte(s, n) == 10 or string.byte(s, n) == 13 or string.byte(s, n) == 32 or string.byte(s, n) == 9)
@@ -85,11 +45,6 @@ _hash: str = (path: str)
     _chomp(_capture("shasum -a 256 " .. path .. " 2>/dev/null | cut -d ' ' -f 1"))
 end
 
-# The EXACT exit status. `os.execute` collapses every failure to a boolean, so
-# a 42-vs-1 divergence would read as agreement. The subshell parentheses are
-# load-bearing: without them an `exit 7` inside the command terminates the
-# popen'd shell before `echo $?` runs and the capture is "" -> 0, i.e.
-# "everything succeeded", the worst possible failure mode here.
 _status: i64 = (cmd: str)
     to(i64)(_chomp(_capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?")))
 end
@@ -135,7 +90,6 @@ _split = (s: str, sep: str)
     out
 end
 
-# The basename with its final extension removed.
 _pathstem: str = (path: str)
     n: i64 = string.len(path)
     cut: i64 = 0
@@ -161,9 +115,6 @@ _pathstem: str = (path: str)
     base
 end
 
-# A glob, through the shell, as a table. `ls -1d` is asked for one path per
-# line; a pattern matching nothing yields an EMPTY table rather than the
-# pattern itself, which is what the fixture-count control depends on.
 _glob = (pat: str)
     out = {}
     n: i64 = 0
@@ -183,10 +134,6 @@ _isnum: bool = (s: str)
     string.match(s, "^%-?%d+%.?%d*$") != nil
 end
 
-# wasmtime prints i32 signed, the engine prints it unsigned; the same 32-bit value
-# has to fold to one spelling before it is compared. Non-integral values are
-# f64 and are compared as DOUBLES, because the two runtimes print different
-# digit counts for the same number (4.436463668243931 vs 4.4364636682439311).
 _norm: str = (s: str)
     t = _chomp(s)
     if !_isnum(t)
@@ -195,9 +142,6 @@ _norm: str = (s: str)
     f: f64 = to(f64)(t)
     i: i64 = to(i64)(f)
     if to(f64)(i) == f
-        # Duo's `%` is C-style TRUNCATED and keeps the dividend's sign, so the
-        # wrap-to-positive is load-bearing: without it wasmtime's -1009008024
-        # and the engine's 3285959272 — one value — read as a difference.
         u = i % 4294967296
         if u < 0
             u += 4294967296
@@ -207,11 +151,6 @@ _norm: str = (s: str)
     f:to(str)
 end
 
-# Every non-empty line of an output, joined by ONE space. Both sides of every
-# comparison go through this, so a module printing two lines cannot read as a
-# difference just because one side was sampled with `tail -1` and the other was
-# concatenated without a separator. That defect reported 30 false DIFFs on the
-# first full run of this suite.
 _lines: str = (raw: str)
     out = ""
     for _i, line in _split(raw, "\n")
@@ -227,9 +166,6 @@ _lines: str = (raw: str)
     out
 end
 
-# A module whose answer is what it PRINTS through fd_write is compared on its
-# emitted bytes, !on the numeric result of a void `_start`. the engine's own
-# protocol lines are stripped to recover just the module's output.
 _emitted: str = (raw: str)
     out = ""
     for _i, line in _split(raw, "\n")
@@ -279,10 +215,6 @@ _rule: void = ()
     print(line)
 end
 
-# the engine's honest refusal: an opcode with no arm, or a guard inside an arm.
-# Distinguished from silence because they are different failures — a named
-# refusal is a known gap that ratchets, silence is a timeout or a crash and is
-# never acceptable.
 _refusal: str = (raw: str)
     m = string.match(raw, "wasm: unimplemented opcode ([^\n]*)")
     if m == nil
@@ -297,13 +229,7 @@ _refusal: str = (raw: str)
     _chomp(m)
 end
 
-# THE COMPARATOR. Every row in the matrix and every positive control goes
-# through this one function, so a control that proves it can say DIFF proves it
-# for the whole table. Returns the verdict word.
 _verdict: str = (ref: str, got: str, raw: str)
-    # The build runs this sabotage after a clean pass and requires exit 3.
-    # If the known-bad comparator control cannot see it, the evidence path
-    # cannot prove that a wrong answer makes the gate red.
     if _getenv("DUO_WASM_DAMAGE", "") == "comparator"
         return "PASS"
     end
@@ -322,16 +248,6 @@ _verdict: str = (ref: str, got: str, raw: str)
     "DIFF"
 end
 
-# Run the engine once. `raw` is stdout+stderr; the caller pulls fields out of it.
-#
-# `engine` == "default" means UNSET THE VARIABLE, with `env -u`, not set it to
-# the empty string. That column is the one the rest of the world actually runs:
-# `interp` and `jit` are both REQUIREMENTS, and neither exercises the selection
-# the engine makes when nobody has asked for anything. Without it, flipping the
-# jit's default-off arm would change behaviour on a path this table never
-# executed even once — and the fallback that a DECLINED body takes under the
-# default is that exact path, which `DUO_WASM_ENGINE=jit` deliberately refuses
-# to take.
 _engine: str = (bin: str, mod: str, invoke: str, engine: str, secs: i64)
     sel = "DUO_WASM_ENGINE=" .. engine .. " "
     if engine == "default"
@@ -343,11 +259,6 @@ _engine: str = (bin: str, mod: str, invoke: str, engine: str, secs: i64)
         .. bin .. " 2>&1")
 end
 
-# The observable answer the engine gave. PRINTED BYTES WIN, unconditionally: a
-# wasi-libc `_start` prints its answer and returns void, so the engine's `result=0`
-# is the exit code, !the answer. Keying this on "is the oracle numeric"
-# looked reasonable and was wrong — hot_big printed 2331661441 and was scored
-# against `result=0` for it, one of 30 false DIFFs.
 _answer: str = (raw: str)
     em = _emitted(raw)
     if em != ""
@@ -359,11 +270,6 @@ end
 binary = _getenv("DUO_WASM_BIN", "/tmp/duowasm")
 wasmtime = _getenv("WASMTIME", "wasmtime")
 wasmtimepin = _getenv("WASMTIME_VERSION", "47.0.3")
-# The portable C host-bridge artifact is slower than a hand-built probe. On this
-# aarch64 Linux subject, `bench/hash2b.wasm` completed correctly in 142.50s;
-# the old 120s budget turned both interpreter-backed rows into NORESULT. This
-# gate compares VALUE rather than proving a speed target, so use a ceiling with
-# room for thermal/scheduler drift and report performance separately.
 secs: i64 = to(i64)(_getenv("DUO_WASM_TIMEOUT", "240"))
 root = _chomp(_capture("pwd"))
 repo = root .. "/../.."
@@ -446,17 +352,11 @@ ctlfail = 0
 
 print("== controls ==")
 
-# ── CONTROL 1: both binaries under test exist and run ────────────────
-# The 176-row harness that scored a confident zero did so because the
-# binary it was differencing against was gone. Nothing below is worth
-# reading until this passes.
 if !_isfile(binary)
     print("CONTROL FAIL: the engine binary !found at " .. binary)
     print("  engine artifact was !produced")
     ctlfail += 1
 else
-    # `env -u`, !`DUO_WASM_MODULE=`: an EMPTY variable is still set, and the engine
-    # only prints its usage when the variable is absent.
     probe = _capture("env -u DUO_WASM_MODULE " .. binary .. " 2>&1")
     if string.match(probe, "DUO_WASM_MODULE") == nil
         print("CONTROL FAIL: " .. binary .. " does !respond as the engine")
@@ -499,10 +399,6 @@ if ctlfail != 0
     return 3
 end
 
-# ── collect fixtures ─────────────────────────────────────────────────
-# Two corpora: the engine's own, and the repo's wasm_rt set (which is where
-# hot_big lives). Both are INPUT, !source; the monoglot rule covers
-# source only.
 fixtures = {}
 nfix = 0
 for _g, pat in {_getenv("DUO_WASM_FIXTURES", "bench/*.wasm"),
@@ -527,10 +423,6 @@ for _i, m in fixtures
     print("input=" .. m .. " sha256=" .. inputhash)
 end
 
-# ── build the ORACLE table: (module, entry) -> wasmtime's answer ──────
-# The entry shape is decided by wasmtime's EXIT STATUS, !by its output:
-# a void export runs fine and prints nothing, and keying off output alone
-# both drops those rows and misnames the export in the diagnostic.
 omod = {}
 oent = {}
 oval = {}
@@ -553,12 +445,6 @@ if nora == 0
 end
 print("ok   " .. nora:to(str) .. " (module, entry) pair(s) the oracle can answer")
 
-# Wart's frozen CLI intentionally does not print an exported scalar result, so
-# it cannot replace the by-value Wasmtime table above. It must still answer an
-# actual Wasm question: this fixed positive control makes its test-oracle role
-# load-bearing without pretending process success is value agreement. Pin that
-# role to the interpreter: the default JIT is an optimization tier and traps
-# with an illegal instruction on this aarch64 host for the control module.
 wartcontrol = root .. "/bench/hash.wasm"
 if _status(wartbin .. " --no-jit --no-color -f run " .. wartcontrol .. " >/dev/null 2>&1") != 0
     print("CONTROL FAIL: frozen Wart interpreter could !execute " .. wartcontrol)
@@ -573,11 +459,6 @@ if _status(wartbin .. " --no-jit --no-color -f run " .. wartpert .. " >/dev/null
 end
 print("ok   oracle=wart tier=interpreter control=bench/hash.wasm entry=run observable=execution-status damage=broken-magic-refused")
 
-# ── CONTROL 2: the module path REACHES the runtime ───────────────────
-# the engine reads DUO_WASM_MODULE, !argv, and it used to DEFAULT to a hardcoded
-# /tmp/hash.wasm — so it answered 1899277430 for a path that did !exist
-# and a whole 18-module sweep came back "100% passing". Two fixtures with
-# different oracle answers must produce two different the engine answers.
 ai = 0
 bi = 0
 for k = 1, nora
@@ -607,9 +488,6 @@ end
 print("ok   input reaches the runtime: " .. _pathstem(omod[ai]) .. "=" .. aa
     .. " vs " .. _pathstem(omod[bi]) .. "=" .. ab)
 
-# ── CONTROL 3: the comparator can return a RED ───────────────────────
-# Same function every matrix row uses, handed a deliberately mismatched
-# pair. If this says PASS the whole table below is meaningless.
 if _verdict(oval[ai], aa, ra) != "PASS"
     print("CONTROL FAIL: the comparator does !accept a known-good pair")
     return 3
@@ -620,13 +498,6 @@ if _verdict(oval[bi], aa, ra) != "DIFF"
 end
 print("ok   comparator says PASS on a matched pair and DIFF on a mismatched one")
 
-# ── CONTROL 4: a PERTURBED module is refused ─────────────────────────
-# Byte 4 of every wasm module is `m` of the magic `\0asm`. Overwriting it
-# is a fixture-independent perturbation: no runtime may execute the result.
-# the engine DID execute it — every walker in engine.id started at byte 9 and
-# assumed the header — and printed the unperturbed answer, which is the
-# silent-success shape this project has been caught by twice. The header
-# check that makes this control meaningful landed with this suite.
 pert = tmp .. "/wasmconform-perturbed.wasm"
 _cp(root .. "/" .. omod[ai], pert)
 _run("printf '\\x00' | dd of=" .. pert .. " bs=1 seek=3 conv=notrunc >/dev/null 2>&1")
@@ -644,7 +515,6 @@ end
 print("ok   perturbed module refused by both (the engine said: "
     .. _trim(_split(rp, "\n")[1]) .. ")")
 
-# ── CONTROL 5: a MISSING module is refused, !defaulted ────────────
 miss = tmp .. "/wasmconform-no-such-module.wasm"
 _rm(miss)
 rm = _engine(binary, miss, "run", "interp", secs)
@@ -654,10 +524,6 @@ if _field(rm, "result") != ""
 end
 print("ok   missing module refused rather than defaulted")
 
-# ── CONTROL 6: tail-call proposal modules run under the in-tree engine ─────
-# `IDOL_WASM_TAILCALL=1` makes the compiler emit opcode 0x12 (`return_call`).
-# `docs/spec/cost.md` names the precise gap this closes for the engine: accept
-# the opcode, consume its funcidx immediate, and keep the body scanner aligned.
 _tailmod = tmp .. "/tailcall.wasm"
 _tailsrc = repo .. "/examples/table/tailcall.id"
 _tailcmd = "IDOL_WASM_TAILCALL=1 " .. repo .. "/zig-out/bin/idol compile " .. _tailsrc
@@ -686,45 +552,11 @@ end
 print("ok   tail-call proposal opcode 0x12 runs under interp and default (_start -> "
     .. _tailanswer .. ")")
 
-# ── IS THERE A SECOND ENGINE TO DIFFERENCE AGAINST? ──────────────────
-# Asked ONCE, before the matrix, because the answer decides whether the
-# "jit" column means anything. It has never meant anything: `DUO_WASM_ENGINE`
-# only ever tested for "interp", so asking for "jit" got the INTERPRETER and
-# this matrix reported perfect interp/jit agreement across every fixture for
-# as long as it has existed — a differential whose two arms are the same
-# program. The engine now REFUSES `DUO_WASM_ENGINE=jit` (exit 4) with the
-# reason when the jit cannot run, so the gap is visible here instead of being
-# printed 65 times as a fake DIFF, and the moment the jit becomes real this
-# column starts differencing for the first time.
-#
-# AND THE PROBE MAY NOT BE ONE FIXTURE. It was `omod[1]`, and `omod[1]` is
-# `call_indirect.wasm`, which the jit declines — so on the first run where the
-# ARM64 emitter WORKED, the whole jit column was dropped and this suite printed
-# "jit asked 0, jit actually compiled 0" over 23 rows the jit had in fact
-# compiled correctly. One fixture deciding whether the differential happens at
-# all is the same defect as one engine answering both columns: in both cases
-# the table cannot fail.
-#
-# So the jit column ALWAYS runs, and a body the jit declines is its own
-# verdict. The engine exits 4 and prints its reason when it is asked for the
-# jit and cannot deliver, which is what makes DECLINED distinguishable from a
-# silent fallback; DECLINED is a known gap that ratchets, not a pass and not a
-# failure. `RAN` on every row is the standing proof that the two arms are
-# different programs — a row reading `jit-arm64` was not produced by the
-# interpreter.
 engines = {}
 engines[1] = "interp"
 engines[2] = "jit"
-# THE SHIPPING PATH. `interp` and `jit` are both requirements and neither is
-# what a caller who asks for nothing gets. The jit's default-off arm can only
-# be deleted on evidence, and "DIFFER 0 in the jit column" is not that evidence
-# while the default column has never been run: under the default a declined
-# body FALLS BACK silently, and a silent fallback is the exact shape that hid
-# an operand-stack bug here before. This column costs one more process per
-# fixture and is the only row that describes what the engine actually does.
 engines[3] = "default"
 
-# The engine's refusal to run the interpreter under the jit's name.
 _jitrefused: bool = (raw: str)
     string.match(raw, "DUO_WASM_ENGINE=jit was requested") != nil
 end
@@ -747,18 +579,9 @@ jitasked = 0
 jitdecl = 0
 jitdeclrow = {}
 fallbackrows = 0
-# THE ARM-AGAINST-ARM COUNT. Both columns are already differenced against
-# wasmtime, but "each agreed with the oracle" is a weaker statement than "the
-# two engines agreed with each other" on the rows where wasmtime has no value
-# to give (a void `_start`), and it is the statement this suite is for. The
-# interpreter's answer for row k is kept and the jit's is compared to it.
 crossok = 0
 crossbad = 0
 interpans = {}
-# THE SAME COUNT FOR THE SHIPPING PATH. A default run is allowed to pick either
-# engine and is allowed to fall back; it is NOT allowed to answer differently
-# from the interpreter, whichever it picked. This is the only counter that
-# constrains the path a caller who asks for nothing actually takes.
 defok = 0
 defbad = 0
 defran = {}
@@ -808,9 +631,6 @@ for k = 1, nora
         print("MODE module=" .. name .. " entry=" .. oent[k]
             .. " requested=" .. engine .. " selected=" .. selected
             .. " fallback=" .. fallback .. " reason=" .. reason)
-        # A DECLINED body: the jit was asked, could not compile this one, and
-        # said so rather than letting the interpreter answer under its name.
-        # Reported and ratcheted, never scored as agreement.
         if engine == "jit" and _jitrefused(raw)
             jitdecl += 1
             print(_pad(name, 34) .. " " .. _pad(oent[k], 7) .. " " .. _pad(engine, 7)
@@ -838,11 +658,6 @@ for k = 1, nora
             end
         end
         if ref == ""
-            # wasmtime invoked it but it yields nothing observable: a void
-            # export that neither returns nor prints. There is no value to
-            # difference, so the only honest check is that the engine also ran it
-            # to completion. Counted apart from PASS — "did !trap" is
-            # much weaker evidence than "matched the oracle".
             v = "OK(void)"
             if _refusal(raw) != ""
                 v = "UNSUPPORTED"
@@ -876,10 +691,6 @@ for k = 1, nora
     end
 end
 
-# A fourth, distinct run proves the fallback transition itself. It is not the
-# default column renamed: the forced-JIT run above must first decline this exact
-# body, then a fresh default request must select the interpreter and preserve
-# the independently recorded interpreter answer.
 fallbackprobe = 0
 for k = 1, nora
     if jitdeclrow[k] and fallbackprobe == 0
@@ -928,44 +739,12 @@ print("interp-vs-default: AGREE " .. defok:to(str) .. ", DIFFER " .. defbad:to(s
     .. " (this is the path the world runs; the jit's default-off arm cannot be"
     .. " deleted on the jit column alone)")
 
-# THE PROOF THAT THE TWO ARMS ARE DIFFERENT PROGRAMS. Without this the table
-# below is satisfiable by running the interpreter twice, which is exactly what
-# it did for as long as it existed. `RAN` reading `jit-arm64` on at least one
-# row is the evidence; zero is a stated gap, never a pass.
 if jitran == 0
     print("")
     print("STATED GAP: not one row was compiled by the jit — the two columns are")
     print("  the same program and this table cannot fail. Not reported as agreement.")
 end
 
-# JIT ENGAGEMENT FLOOR. The JIT falls back SILENTLY, so a purely value-based
-# gate stays fully green while the JIT is dead: that has happened here, an
-# operand-stack bug disabled compilation for every float module and the
-# corpus still read 42/42. The floor is a ratchet, !a target.
-# RATCHETED 2026-08-15 from 0 to 69. Three operand-stack faults in the emitter
-# were fixed today (call_indirect arity, non-inlined call arity, fd_write
-# dispatch), and each had ALSO been suppressing compilation of bodies it did not
-# miscompile: on the ORIGINAL corpus DECLINED fell 29 -> 14 while COMPILED rose
-# 36 -> 51, and the 21 fixtures added with them take COMPILED to 69. A floor of
-# 0 lets all of that go away again in silence, which is precisely how an
-# operand-stack bug once disabled the jit for every float module while the
-# corpus still read 42/42.
-#
-# Cross-platform proof comes first. That gate is now closed on Linux x86_64:
-# `tools/wasm/proof.sh` and `zig build wasm-test` run green through the portable
-# host bridge, and `src/probe_jit.id` proves the x86_64 substrate itself
-# allocates, writes, seals and enters code. The remaining asymmetry is not the
-# host but the emitter: this engine's compiled body path still writes ARM64
-# instructions only, so a forced-JIT x86_64 row must refuse by NAMING emitter
-# absence rather than re-blaming the host. Requiring the arm64 floor there would
-# still make Linux x86_64 fail before any Wasm correctness row is measured — not
-# because the host cannot run the path, but because no x86_64 JIT body
-# realization exists yet. So the default floor is 69 only where the jit can
-# actually emit (`arm64` / `aarch64`), and 0 elsewhere. The environment still
-# overrides it for ratchets or targeted probes.
-# `_hostarch` / `_floordef` carry the underscore prefix because they are private
-# plumbing for the floor below, not module vocabulary; the vocabulary gate
-# admits underscore-prefixed declarations and charges bare module bindings.
 _hostarch = _chomp(_capture("uname -m"))
 _floordef = "0"
 if _hostarch == "arm64" or _hostarch == "aarch64"
@@ -977,29 +756,12 @@ if jitran < floor
     return 1
 end
 
-# WRONG and SILENT are never acceptable: a DIFF is a wrong answer and a
-# NORESULT is a timeout or a crash. An UNSUPPORTED row is the engine refusing an
-# opcode by name, which is a KNOWN GAP — it ratchets against a budget so a
-# new gap is caught while the existing ones do !hold the gate hostage.
-# The budget is a number someone has to lower, !a licence.
-# Measured 2026-08-08: 2 rows, both `loop_f64` (_start), both refusing
-# opcode 252 `prefix.fc` at body offset 287 — one gap, counted once per
-# engine. Lower this whenever that gap closes.
-# CLOSED, and the budget lowered to 0 on 2026-08-15: the run that says so is
-# 68 pairs x 3 engines, UNSUPPORTED 0. A budget nobody is spending is a licence
-# for the next gap to arrive unnoticed.
 budget: i64 = to(i64)(_getenv("DUO_WASM_UNSUPPORTED", "0"))
 bad = 0
-# A jit that computes a DIFFERENT value from the interpreter is the failure
-# this whole suite exists to catch, and it is worse than either engine being
-# wrong against wasmtime: it means one of them is silently answering a
-# different question. Never budgeted.
 if crossbad != 0
     print("*** " .. crossbad:to(str) .. " row(s): THE JIT AND THE INTERPRETER DISAGREE ***")
     bad += 1
 end
-# The same rule for the shipping path. A default run may pick either engine and
-# may fall back; it may not answer differently from the interpreter.
 if defbad != 0
     print("*** " .. defbad:to(str) .. " row(s): THE DEFAULT PATH AND THE INTERPRETER DISAGREE ***")
     bad += 1

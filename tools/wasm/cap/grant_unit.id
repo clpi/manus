@@ -1,18 +1,3 @@
-# The grant algebra, checked directly — the layer BELOW the guest fixtures.
-#
-#   duo compile cap/grant_unit.id --backend=c --emit exe -o <bin> && <bin>
-#   (cwd = tools/wasm, so `req "src.wasm.wasi_abi"` resolves the same way
-#    `src/engine.id` resolves it)
-#
-# WHY THIS EXISTS SEPARATELY FROM THE GUEST FIXTURES. A guest fixture proves
-# the engine refuses or admits a module; it cannot distinguish "the grant said
-# no" from "the import walk broke". This file asks the policy directly, so a
-# refusal that came from the wrong place is visible.
-#
-# EVERY ASSERTION IS TWO-SIDED. A policy that denies everything passes a
-# refusal-only suite, and a policy that grants everything passes an
-# admission-only suite. Every row below that expects 0 has a partner that
-# expects 1 over the same spec or the same index.
 
 wabi = req "src.wasm.wasi_abi"
 
@@ -34,9 +19,6 @@ eqs: i64 = (what: str, got: str, want: str)
   r
 
 cap_main = ()
-  # ── the six worlds partition the roster, with no index left over ────────
-  # Counted rather than asserted per-index: a partition that lost an entry
-  # would otherwise show up only as a function nobody could grant.
   nproc: i64 = 0
   nclock: i64 = 0
   nenv: i64 = 0
@@ -70,13 +52,10 @@ cap_main = ()
   fails += eq("world/device", ndev, 2)
   fails += eq("world/unassigned", nnone, 0)
   fails += eq("world/total", nproc + nclock + nenv + nfs + nnet + ndev, 46)
-  # NEGATIVE CONTROL for the partition: an index off the end of the roster
-  # belongs to no world, so no world token can reach it.
   fails += eqs("world/off-roster-low", wabi.grant_world(0), "")
   fails += eqs("world/off-roster-high", wabi.grant_world(47), "")
   checks += 10
 
-  # ── all / none, and the count on each side ──────────────────────────────
   na: i64 = 0
   nn: i64 = 0
   ne: i64 = 0
@@ -88,15 +67,11 @@ cap_main = ()
     k += 1
   fails += eq("all grants 46", na, 46)
   fails += eq("none grants 0", nn, 0)
-  # THE EMPTY SPEC IS NOT `all`. A written-but-empty policy grants nothing;
-  # only an UNSET variable takes the engine's default, and that substitution
-  # happens in engine.id, not here.
   fails += eq("empty spec grants 0", ne, 0)
   fails += eq("all is total", wabi.grant_is_total("all"), 1)
   fails += eq("none is not total", wabi.grant_is_total("none"), 0)
   checks += 5
 
-  # ── one function, by name ───────────────────────────────────────────────
   fails += eq("fd_write alone: fd_write", wabi.grant_admits("fd_write", wabi.i_fd_write), 1)
   fails += eq("fd_write alone: fd_read", wabi.grant_admits("fd_write", wabi.i_fd_read), 0)
   fails += eq("fd_write alone: proc_exit", wabi.grant_admits("fd_write", wabi.i_proc_exit), 0)
@@ -108,8 +83,6 @@ cap_main = ()
   fails += eq("fd_write alone grants exactly 1", n1, 1)
   checks += 4
 
-  # ── withhold: all,-fd_write ─────────────────────────────────────────────
-  # The headline case. 45 granted, and the one withheld is the one named.
   fails += eq("all,-fd_write: fd_write denied", wabi.grant_admits("all,-fd_write", wabi.i_fd_write), 0)
   fails += eq("all,-fd_write: fd_read granted", wabi.grant_admits("all,-fd_write", wabi.i_fd_read), 1)
   fails += eq("all,-fd_write: proc_exit granted", wabi.grant_admits("all,-fd_write", wabi.i_proc_exit), 1)
@@ -122,7 +95,6 @@ cap_main = ()
   fails += eq("all,-fd_write is not total", wabi.grant_is_total("all,-fd_write"), 0)
   checks += 5
 
-  # ── withhold a whole world ──────────────────────────────────────────────
   n3: i64 = 0
   k = 1
   while k <= 46
@@ -133,7 +105,6 @@ cap_main = ()
   fails += eq("all,-filesystem: clock granted", wabi.grant_admits("all,-filesystem", wabi.i_clock_time_get), 1)
   checks += 3
 
-  # ── grant a world, then one function outside it ─────────────────────────
   n4: i64 = 0
   k = 1
   while k <= 46
@@ -145,14 +116,11 @@ cap_main = ()
   fails += eq("clock,random_get: fd_write", wabi.grant_admits("clock,random_get", wabi.i_fd_write), 0)
   checks += 4
 
-  # ── order matters, and it matters BOTH ways ─────────────────────────────
-  # A left-to-right fold is only meaningful if the reverse order differs.
   fails += eq("all,-fd_write,fd_write re-grants", wabi.grant_admits("all,-fd_write,fd_write", wabi.i_fd_write), 1)
   fails += eq("none,fd_write grants it", wabi.grant_admits("none,fd_write", wabi.i_fd_write), 1)
   fails += eq("fd_write,none takes it back", wabi.grant_admits("fd_write,none", wabi.i_fd_write), 0)
   checks += 3
 
-  # ── the spec validator: a typo must be REFUSED, not silently denied ─────
   fails += eqs("valid spec has no bad token", wabi.grant_bad_token("all,-fd_write"), "")
   fails += eqs("valid world spec", wabi.grant_bad_token("clock,network"), "")
   fails += eqs("typo is reported verbatim", wabi.grant_bad_token("all,-fd_wrote"), "-fd_wrote")
@@ -160,14 +128,9 @@ cap_main = ()
   fails += eq("known: fd_write", wabi.grant_token_known("fd_write"), 1)
   fails += eq("known: filesystem", wabi.grant_token_known("filesystem"), 1)
   fails += eq("unknown: fd_wrote", wabi.grant_token_known("fd_wrote"), 0)
-  # The near-miss that started all of this. `fdxwrite` matched the engine's old
-  # name mask; it names nothing in the grant algebra.
   fails += eq("unknown: fdxwrite", wabi.grant_token_known("fdxwrite"), 0)
   checks += 8
 
-  # ── the withhold errno is not any other errno ───────────────────────────
-  # If it collided with one the host already returns, a denied guest could not
-  # tell denial from failure. Checked against every ordinal this host emits.
   fails += eq("notcapable is 76", wabi.ERRNO_notcapable, 76)
   fails += eq("notcapable != success", wabi.ERRNO_notcapable == wabi.ERRNO_success, false)
   fails += eq("notcapable != badf", wabi.ERRNO_notcapable == wabi.ERRNO_badf, false)
@@ -175,7 +138,6 @@ cap_main = ()
   fails += eq("notcapable != nosys", wabi.ERRNO_notcapable == wabi.ERRNO_nosys, false)
   fails += eq("notcapable != notsup", wabi.ERRNO_notcapable == wabi.ERRNO_notsup, false)
   fails += eq("notcapable != spipe", wabi.ERRNO_notcapable == wabi.ERRNO_spipe, false)
-  # And it is not the answer any STATIC arm of the policy gives, for any index.
   nc: i64 = 0
   k = 1
   while k <= 46

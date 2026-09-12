@@ -1,41 +1,6 @@
-# Native MCP server — runs on `idol run` (no C backend, no Lua runtime).
-# Transport: newline-delimited JSON-RPC over stdio (stdin:line / stdout:write).
-#
-# Sentinel-free by construction (PREDICATE-ZERO):
-#   - No `== 0` / `== ""` / `== nil` / `== true` anywhere. Dispatch is by the
-#     `line:has(needle)` presence fact, consumed directly in refinement `if`.
-#   - End of input is not a value: when the peer closes stdin the C ingress
-#     primitive ends the process, so the loop is `while true` with no EOF flag.
-#   - `find` results are used only as substring coordinates, inside a branch a
-#     `has` fact has already proved the field present — never compared to a
-#     not-found sentinel.
-#
-# concept arm (GAP-120): the served `concept` tool runs the produced graph
-# finding through `tools/concept/doc.sh` and answers the rendered verdict as
-# the JSON-RPC `result.content[0].text`. The argument `arguments.file` travels
-# to `doc.sh` as one argv element via shell single-quoting — a path carrying
-# a SPACE survives `gate/mcp.sh`'s spaced-path positive control and a path
-# carrying a `'` survives via the standard close-quote / escaped-quote /
-# reopen-quote sequence. Missing `arguments.file` answers -32602; an
-# unreadable subject answers -32000 carrying the `doc.sh` refusal text;
-# verdict-correctness stays owned by `gate/concept.sh` over the export and by
-# `gate/docs.sh` over the render; this arm owns the served boundary only.
-# When the request is NOT a `concept` call the arm runs a no-op so the
-# persistent stream's `initialize`/`tools/list`/`ping` cycle never invokes
-# `doc.sh` (the prior gate's correctness depended on that — see
-# `gate/mcp.sh`'s 12 contract rows and `mcp-gate`'s newline-delimited
-# framing check).
-#
-# Notifications (no `id` member) are answered only by the existing
-# `notifications/message` branch: a notification MUST NOT receive a reply,
-# even for a `concept` notification with a valid file — the JSON-RPC framing
-# `mcp-gate` holds expects zero bytes of response, and the served arm obeys.
 
 line = stdin:line()
 while true
-    # The id value runs to the first `,` or, when id is the final member, to
-    # the closing `}` — clients differ on member order (opencode serializes
-    # id last, so a to-comma slice swallowed the `}` and broke framing).
     position: i64 = line:find("\"id\":", 1, 1)
     offset: i64 = position + 5
     length: i64 = line:len()
@@ -130,10 +95,5 @@ while true
                             else
                                 "\{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":\{\"level\":\"debug\",\"logger\":\"idol\",\"data\":\"ack\"\}\}"
 
-    # MCP stdio framing: one JSON object per LINE. The trailing newline is the
-    # delimiter a line-oriented client reads on, and stdout:write is raw host
-    # egress — the backend flushes it, so each response reaches the peer before
-    # the next request is read (the handshake used to sit in libc's 4 KiB
-    # block buffer until exit and every client timed out).
     stdout:write(resp .. "\n")
     line = stdin:line()

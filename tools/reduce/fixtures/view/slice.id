@@ -1,6 +1,3 @@
-# F4 — 30-line slice of token_view.id; still refuses with missing: view
-# compiler.token_view
-# Immutable observation over a production token pack (GAP-134 prerequisite).
 
 pack: { kinds: []i64, lines: []i64, cols: []i64, texts: []str, count: i64 }
 
