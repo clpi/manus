@@ -255,7 +255,7 @@ process · unikernel · WASI component · eBPF · firmware · bare-metal · kern
 
 | # | directive |
 |---|---|
-| 1 | See `docs/architecture-negative-controls.md` for the full systemic-misunderstanding catalog and companion gate IDs. |
+| 1 | See `gate/architecture-negative.sh` and `gate/architecture-companion.sh` for the negative controls and companion gate IDs. |
 
 | section |
 |---|---|
@@ -263,7 +263,7 @@ process · unikernel · WASI component · eBPF · firmware · bare-metal · kern
 
 | # | directive |
 |---|---|
-| 1 | **Negative controls:** `docs/architecture-negative-controls.md` · `gate/architecture-negative.sh` · `gate/architecture-companion.sh` |
+| 1 | **Negative controls:** `gate/architecture-negative.sh` · `gate/architecture-companion.sh` |
 | 2 | **Canonical source debt:** `docs/projections/canonical-source-debt.md` |
 | 3 | **Capability map:** `docs/history/optimization-frontier-census.md` |
 | 4 | **Priority compass:** `docs/AGENT_ALIGNMENT.md` |

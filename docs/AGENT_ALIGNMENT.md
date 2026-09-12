@@ -1,29 +1,26 @@
-| # | directive |
-|---|---|
-| 1 | <!-- GENERATED frame — do not edit outside the residue markers below. |
-| 2 | Producer: docs/spec/constitution.md (C0). |
-| 3 | Emitter: scripts/alignment_emit.id. |
-| 4 | Check and regenerate: sh gate/alignment-projection.sh C0 law.semantic.service binds the constitution to generate the teaching corpus and fails independently handwritten copies; law.doc.corpus makes documentation corpus. gaps/GAP-133.md records the drift this closes. --> |
+<!-- GENERATED frame — do not edit outside the residue markers below.
+     Producer: docs/spec/constitution.md (C0). Emitter: scripts/alignment_emit.id.
+     Check and regenerate: sh gate/alignment-projection.sh
+     C0 law.semantic.service binds the constitution to generate the teaching
+     corpus and fails independently handwritten copies; law.doc.corpus makes
+     documentation corpus. gaps/GAP-133.md records the drift this closes. -->
 
-| field | value |
-|---|---|
-| title | Agent Alignment Compass |
+# Agent Alignment Compass
 
-| # | directive |
-|---|---|
-| 1 | This file is a short priority router. |
-| 2 | It is not language law and must not grow into a second specification. |
-| 3 | Start at `AGENTS.md` (Idol durable orientation + mechanical preflight); it routes to the sole law, this priority projection, the current production ledger, and live ownership. |
-| 4 | The constitution is structured law documentation, not an implementation example. |
+This file is a short priority router. It is not language law and must not grow
+into a second specification. Start at `AGENTS.md` (Idol durable orientation +
+mechanical preflight); it routes to the sole law, this priority projection,
+the current production ledger, and live ownership.
+The constitution is structured law documentation, not an implementation
+example.
 
-| # | directive |
-|---|---|
-| 1 | Everything outside the residue markers is emitted from C0 by `scripts/alignment_emit.id`; the residue between them is authored operative guidance, carried byte-for-byte and counted. |
-| 2 | A `law.*` identity cited anywhere in this file must resolve in C0 or regeneration fails, so a retired authority cannot keep being taught here — that is the GAP-133 defect class. |
+Everything outside the residue markers is emitted from C0 by
+`scripts/alignment_emit.id`; the residue between them is authored operative
+guidance, carried byte-for-byte and counted. A `law.*` identity cited
+anywhere in this file must resolve in C0 or regeneration fails, so a retired
+authority cannot keep being taught here — that is the GAP-133 defect class.
 
-| section |
-|---|---|
-| Cited laws (resolved against C0 at emit time) |
+## Cited laws (resolved against C0 at emit time)
 
 | Law | Kind | Holds |
 |---|---|---|
@@ -32,27 +29,19 @@
 | `law.bootstrap.velocity` | protocol | priority |
 | `law.bridge.death` | invariant | deletion |
 
-| section |
-|---|---|
-| The docs gate (C0 §57) |
+## The docs gate (C0 §57)
 
-| # | directive |
-|---|---|
-| 1 | Documentation is corpus (`law.doc.corpus`). |
-| 2 | Each of these is a build failure: |
+Documentation is corpus (`law.doc.corpus`). Each of these is a build
+failure:
 
-| # | directive |
-|---|---|
-| 1 | a visible semantic token lacks a semantic role |
-| 2 | a current lowering claim lacks compiler evidence |
-| 3 | source, graph, dnir and assembly correspondence is broken |
-| 4 | stale canonical syntax contradicts an owner ruling |
-| 5 | generated escape artifacts appear in output |
-| 6 | distinguishable semantic roles collapse to identical rendering by accident |
+1. a visible semantic token lacks a semantic role
+2. a current lowering claim lacks compiler evidence
+3. source, graph, dnir and assembly correspondence is broken
+4. stale canonical syntax contradicts an owner ruling
+5. generated escape artifacts appear in output
+6. distinguishable semantic roles collapse to identical rendering by accident
 
-| # | directive |
-|---|---|
-| 1 | <!-- @@residue:begin — authored; counted; shrink it by moving facts into C0 --> |
+<!-- @@residue:begin — authored; counted; shrink it by moving facts into C0 -->
 
 | section |
 |---|---|
@@ -156,7 +145,7 @@
 |---|---|
 | 1 | **Central overnight rule:** when a blocker disappears, name the **authority gained**. |
 | 2 | If the answer is "backend recognizes another AST/storage pattern," architecture got worse. |
-| 3 | Full manifest: `docs/architecture-negative-controls.md`. |
+| 3 | Full manifest: `gate/architecture-negative.sh`. |
 
 | # | directive |
 |---|---|
@@ -208,7 +197,7 @@
 | # | directive |
 |---|---|
 | 1 | **Tonight's priority:** read the "Tonight's priority injection" section in `.agents/ARCHITECTURE_INJECTION.md` before any fix. |
-| 2 | **Architecture-negative controls:** `docs/architecture-negative-controls.md` and `gate/architecture-negative.sh` / `gate/architecture-companion.sh` — run before claiming semantic progress; a passing fixture is not the objective. |
+| 2 | **Architecture-negative controls:** `gate/architecture-negative.sh` / `gate/architecture-companion.sh` — run before claiming semantic progress; a passing fixture is not the objective. |
 | 3 | **Canonical source debt:** `docs/projections/canonical-source-debt.md` — three states (canonical / migratable / debt) for every `lib/compiler/**` construct. |
 | 4 | DNIR must not silently drop semantic facts recoverable from the graph. |
 | 5 | Sema must not route meaning by hard-coded relation names. |
@@ -394,4 +383,4 @@ external compiler
 |---|---|
 | 1 | Record architectural blockers in `gaps/GAP-0NN.md`. |
 | 2 | Record performance evidence in `docs/performance.md`. |
-| 3 | Use the current checkout and fixed artifacts for every claim; do not infer implementation state from historical pass documents. <!-- @@residue:end --> |
+<!-- @@residue:end -->
