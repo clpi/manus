@@ -191,6 +191,39 @@ elf: str = (code: str)
     out = out .. shdr(23, 3, 0, 0, shstroff, 33, 0, 0, 1, 0)
     out
 
+w: i64 = (b: i64)
+    stdout:write(string.char(b))
+    0
+
+nib: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return c - 48
+    c - 87
+
+emithex: i64 = (h: str)
+    i = 1
+    n = h:len()
+    while i < n
+        w(nib(h:byte(i)) * 16 + nib(h:byte(i + 1)))
+        i = i + 2
+    0
+
+exe: str = (code: str)
+    cl = code:len() / 2
+    base = 4194304
+    ho = 120
+    entry = base + ho
+    total = ho + cl
+    out = "7f454c46" .. pair(2) .. pair(1) .. pair(1) .. pair(0)
+    out = out .. "0000000000000000"
+    out = out .. half(2) .. half(62) .. word(1)
+    out = out .. quad(entry) .. quad(64) .. quad(0)
+    out = out .. word(0) .. half(64) .. half(56) .. half(1) .. half(64) .. half(0) .. half(0)
+    out = out .. word(1) .. word(5) .. quad(0) .. quad(base) .. quad(base)
+    out = out .. quad(total) .. quad(total) .. quad(4096)
+    out = out .. code
+    out
+
 digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
