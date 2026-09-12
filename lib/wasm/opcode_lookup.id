@@ -1,9 +1,7 @@
-# GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
-# Regenerate: idol wasm-tables emit
-# Canonical opcode facts: src/wasm_semantic.zig
+"do not edit by hand"
 
 GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
-INSTRUCTION_COUNT = 64
+INSTRUCTION_COUNT =64
 
 INSTRUCTION_IDS = {
   "wasm.unreachable",

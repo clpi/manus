@@ -848,9 +848,7 @@ idbody: str = ()
   slots = roleslotcount
   ids = roleidentitycount
   eof = kindeof
-  s = "# GENERATED from lib/compiler/token.id — do not edit by hand.\n"
-  s = "{s}# Regenerate: idol run lib/compiler/token.id\n"
-  s = "{s}# Grammar-role projection of the one Idol grammar-fact owner.\n\n"
+  s = "\"do not edit by hand\"\n\n"
   s = "{s}roleidentitycount = {ids}\n"
   s = "{s}rolecount = {slots}\n"
   s = "{s}kindeof = {eof}\n"

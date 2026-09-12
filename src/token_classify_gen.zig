@@ -64,22 +64,14 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     const kws = keywords;
     const sorted = sortedIndices();
     try w.print(
-        \\# GENERATED from src/token_classify_gen.zig — do not edit by hand.
-        \\# Regenerate: idol token-tables emit
-        \\# Keyword facts: src/grammar_role_table.zig `.keyword` rows — the
-        \\# generated projection of the one owner, lib/compiler/token.id.
-        \\
-        \\# Duo-native keyword classifier (P12-WS7).
-        \\# {d} reserved words; 3 candidate realizations. Kind ids are
-        \\# lexer.TokenKind ordinals read off the owner's rows, so the Duo side
-        \\# is differential-equivalent to the host path (src/keyword_bridge.zig).
+        \\"do not edit by hand"
         \\
         \\GENERATOROWNER = "src/token_classify_gen.zig"
         \\DESCRIPTORSCHEMA = "grammar-role-v1"
         \\KEYWORDCOUNT = {d}
         \\PRODUCTIONCLASSIFIER = "classifier.branchchain"
         \\
-    , .{ kws.len, kws.len });
+    , .{kws.len});
 
     // KIND_* constants — stable lexer.TokenKind ordinals.
     var name_buf: [32]u8 = undefined;
@@ -89,7 +81,7 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     }
 
     // Sorted descriptor (lexicographic) — 1-indexed Lua tables.
-    try w.writeAll("\n# Sorted descriptor (lexicographic) for sortedlookup + metadata.\nSORTEDTEXT = {\n");
+    try w.writeAll("\nSORTEDTEXT = {\n");
     for (sorted, 0..) |ki, i| {
         try w.print("  {s}\"{s}\",\n", .{ if (i == 0) "" else "", kws[ki].text });
     }
@@ -100,7 +92,7 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     try w.writeAll("}\n");
 
     // Candidate 1 — branch chain (linear if-chain; no tables, no alloc).
-    try w.writeAll("\n# Candidate 1: branch chain (production).\nclassifybranchchain: i64 = (w: str)\n");
+    try w.writeAll("\nclassifybranchchain: i64 = (w: str)\n");
     for (kws) |kw| {
         try w.print("  if w == \"{s}\"\n    return {d}\n", .{ kw.text, @intFromEnum(kw.kind) });
     }
@@ -125,7 +117,7 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
             return a < b;
         }
     }.lessThan);
-    try w.writeAll("\n# Candidate 2: length bucket (filter then equality chain).\nclassifylengthbucket: i64 = (w: str)\n  n = string.len(w)\n");
+    try w.writeAll("\nclassifylengthbucket: i64 = (w: str)\n  n = string.len(w)\n");
     for (lengths[0..len_count]) |l| {
         try w.print("  if n == {d}\n", .{l});
         for (kws) |kw| {
@@ -137,12 +129,11 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     try w.writeAll("  0\n");
 
     // Candidate 3 — sorted binary search.
-    try w.print("\n# Candidate 3: sorted lookup (binary search over descriptor).\nclassifysortedlookup: i64 = (w: str)\n  lo = 1\n  hi = {d}\n  while lo <= hi\n    mid = (lo + hi) // 2\n    if w == SORTEDTEXT[mid]\n      return SORTEDID[mid]\n    if w < SORTEDTEXT[mid]\n      hi = mid - 1\n    else\n      lo = mid + 1\n  0\n", .{kws.len});
+    try w.print("\nclassifysortedlookup: i64 = (w: str)\n  lo = 1\n  hi = {d}\n  while lo <= hi\n    mid = (lo + hi) // 2\n    if w == SORTEDTEXT[mid]\n      return SORTEDID[mid]\n    if w < SORTEDTEXT[mid]\n      hi = mid - 1\n    else\n      lo = mid + 1\n  0\n", .{kws.len});
 
     // Production entry + metadata projections.
     try w.writeAll(
         \\
-        \\# Production entry (branch chain, mirrored by src/keyword_classify.c).
         \\@c.export("duo_keyword_classify")
         \\classify: i64 = (w: str)
         \\  classifybranchchain(w)

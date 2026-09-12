@@ -1,6 +1,4 @@
-# GENERATED from lib/compiler/token.id — do not edit by hand.
-# Regenerate: idol run lib/compiler/token.id
-# Grammar-role projection of the one Idol grammar-fact owner.
+"do not edit by hand"
 
 roleidentitycount = 113
 rolecount = 114

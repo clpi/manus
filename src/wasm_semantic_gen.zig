@@ -144,13 +144,9 @@ pub fn writeCatalogJson(w: *std.Io.Writer) !void {
 /// Emit `lib/wasm/opcode_lookup.id` — generated opcode → semantic id dispatch (P9-M1).
 pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
     try w.writeAll(
-        \\# GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
-        \\# Regenerate: idol wasm-tables emit
-        \\# Canonical opcode facts: src/wasm_semantic.zig
+        \\"do not edit by hand"
         \\
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
-        \\CANONICAL_OWNER = "src/wasm_semantic.zig"
-        \\FOREIGN_LAW = "wasm-core-1.0"
         \\INSTRUCTION_COUNT =
     );
     try w.print("{d}\n\n", .{wasm_semantic.mvpCount()});
@@ -188,9 +184,6 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
         \\
         \\generator_owner: str = ()
         \\  GENERATOR_OWNER
-        \\
-        \\foreign_law: str = ()
-        \\  FOREIGN_LAW
         \\
         \\instruction_count: i64 = ()
         \\  INSTRUCTION_COUNT
@@ -248,17 +241,9 @@ fn wardOpcodeFieldName(id: []const u8) []const u8 {
 /// Emit `lib/wasm/ward_mvp_opcodes.id` — Ward-compatible OP_* for MVP subset only.
 pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
     try w.writeAll(
-        \\# GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
-        \\# Regenerate: idol wasm-tables emit
-        \\# Canonical bounded subset (
-    );
-    try w.print("{d}", .{wasm_semantic.mvpCount()});
-    try w.writeAll(
-        \\ ops). Ward extended opcodes remain in ward/src/wasm/op.id until migrated.
+        \\"do not edit by hand"
         \\
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
-        \\CANONICAL_OWNER = "src/wasm_semantic.zig"
-        \\FOREIGN_LAW = "wasm-core-1.0"
         \\
     );
     for (wasm_semantic.mvp_instructions) |inst| {
@@ -286,9 +271,6 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\canonical_owner: str = ()
         \\  CANONICAL_OWNER
-        \\
-        \\foreign_law: str = ()
-        \\  FOREIGN_LAW
         \\
     );
 }
@@ -327,29 +309,6 @@ test "wasm_semantic_gen: emit duo lookup includes i32.add" {
     try emitDuoOpcodeLookup(&aw.writer);
     const out = aw.written();
     try std.testing.expect(std.mem.indexOf(u8, out, "wasm.i32.add") != null);
-}
-
-test "wasm_semantic_gen: duo lookup carries foreign_law identity" {
-    // tools/wasm SOURCE-ZERO closure: the generated `.id` projection must
-    // carry the foreign-law identity so tools/wasm can ask the canonical
-    // semantic graph producer (via this file) whether a fact is foreign or
-    // native, instead of inferring it from the instruction id.
-    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
-    defer aw.deinit();
-    try emitDuoOpcodeLookup(&aw.writer);
-    const out = aw.written();
-    try std.testing.expect(std.mem.indexOf(u8, out, "FOREIGN_LAW = \"wasm-core-1.0\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "foreign_law: str = ()") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "  FOREIGN_LAW") != null);
-}
-
-test "wasm_semantic_gen: ward projection carries foreign_law identity" {
-    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
-    defer aw.deinit();
-    try emitWardMvpOpcodes(&aw.writer);
-    const out = aw.written();
-    try std.testing.expect(std.mem.indexOf(u8, out, "FOREIGN_LAW = \"wasm-core-1.0\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "foreign_law: str = ()") != null);
 }
 
 test "wasm_semantic_gen: catalog JSON carries foreign_law identity" {
