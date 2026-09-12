@@ -511,6 +511,7 @@ fn emitObjectModeWithGraphLineage(
         output.const_data,
         output.symbols,
         output.relocations,
+        output.data_relocations,
         output.bss_size,
         output.global_data,
         output.cstring_coalescable,
@@ -619,7 +620,22 @@ const Symbol = struct {
     external: bool = true, // n_ext bit for nlist; local string symbols set this false
 };
 
-const RelocKind = enum(u3) { branch26, page21, pageoff12 };
+const RelocKind = enum(u3) {
+    branch26,
+    page21,
+    pageoff12,
+    /// Absolute 64-bit address of a local symbol, emitted into __DATA,__data.
+    /// A string-literal global initializer is a link-time address, so finish
+    /// records one per initialized word and the writer serializes it as
+    /// ARM64_RELOC_UNSIGNED.
+    abs64,
+};
+
+/// A global word whose load-time content is a string's address.
+const GlobalStrFixup = struct {
+    word: u32, // index into global_words
+    str_sym: u32, // interned __cstring symbol
+};
 
 const Relocation = struct {
     offset: u32,
@@ -719,6 +735,8 @@ const Arm64Output = struct {
     const_data: []u8 = &.{},
     symbols: []Symbol,
     relocations: []Relocation,
+    /// Data-section relocations (RelocKind.abs64) for __DATA,__data.
+    data_relocations: []Relocation = &.{},
     lineage: []MachineLineage = &.{},
     /// Borrowed physical context for the ids in `lineage`.
     graph: ?*const semantic_graph.SemanticGraph = null,
@@ -753,6 +771,7 @@ const Arm64Output = struct {
         for (self.symbols) |sym| alloc.free(sym.name);
         alloc.free(self.symbols);
         alloc.free(self.relocations);
+        alloc.free(self.data_relocations);
         if (self.lineage.len > 0) alloc.free(self.lineage);
         for (self.cost) |entry| alloc.free(entry.reason);
         if (self.cost.len > 0) alloc.free(self.cost);
@@ -1045,6 +1064,17 @@ const Arm64Compiler = struct {
     /// (`HPLS.md` §31) and a module with nothing but zero initializers emits the
     /// same `__DATA,__bss` bytes it always did.
     global_init: std.StringHashMapUnmanaged(u64) = .empty,
+    /// String-literal initializers for globals: global name -> interned
+    /// __cstring symbol. Populated by compileDnirModule (which interns the
+    /// literal); internGlobal records the word index when storage is
+    /// allocated. The word's load-time content is the string's address.
+    global_str_inits: std.StringHashMapUnmanaged(u32) = .empty,
+    /// Words whose load-time content is a string address, in allocation order.
+    /// finish emits a data-section relocation for each.
+    global_str_fixups: std.ArrayListUnmanaged(GlobalStrFixup) = .empty,
+    /// Data-section relocations (RelocKind.abs64), recorded by finish and
+    /// serialized by the Mach-O writer into __DATA,__data's relocation list.
+    data_relocations: std.ArrayListUnmanaged(Relocation) = .empty,
     /// Initial word content in WORD ORDER, appended by `internGlobal` alongside
     /// `global_syms` so the two can never drift. `finish` writes these as the
     /// section payload.
@@ -1488,6 +1518,8 @@ const Arm64Compiler = struct {
         self.depth_metered_names.deinit(self.alloc);
         self.global_syms.deinit(self.alloc);
         self.global_init.deinit(self.alloc);
+        self.global_str_inits.deinit(self.alloc);
+        self.global_str_fixups.deinit(self.alloc);
         self.global_words.deinit(self.alloc);
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
@@ -1617,6 +1649,15 @@ const Arm64Compiler = struct {
             for (self.global_words.items) |w| {
                 if (w != 0) any_nonzero = true;
             }
+            // A string-initialized word is zero in the object but non-zero
+            // after the linker resolves its relocation, so it forces
+            // __DATA,__data like any other non-zero word.
+            var str_fixup_by_word = std.AutoHashMap(u32, u32).init(self.alloc);
+            defer str_fixup_by_word.deinit();
+            for (self.global_str_fixups.items) |f| {
+                try str_fixup_by_word.put(f.word, f.str_sym);
+                any_nonzero = true;
+            }
             try self.asm_text.appendSlice(
                 self.alloc,
                 if (any_nonzero)
@@ -1631,10 +1672,26 @@ const Arm64Compiler = struct {
                 try self.asm_text.appendSlice(self.alloc, sym.name);
                 const word = self.global_words.items[w];
                 if (any_nonzero) {
-                    try self.asm_text.print(self.alloc, ":\n\t.quad {d}\n", .{@as(i64, @bitCast(word))});
-                    var buf: [8]u8 = undefined;
-                    std.mem.writeInt(u64, &buf, word, .little);
-                    try global_data.appendSlice(self.alloc, &buf);
+                    if (str_fixup_by_word.get(@intCast(w))) |str_sym| {
+                        // The address is a link-time fact: the assembler
+                        // resolves the symbol, and the object writer records
+                        // a data-section relocation for the linker.
+                        const str_name = self.symbols.items[str_sym].name;
+                        try self.asm_text.print(self.alloc, ":\n\t.quad {s}\n", .{str_name});
+                        var buf: [8]u8 = undefined;
+                        std.mem.writeInt(u64, &buf, 0, .little);
+                        try global_data.appendSlice(self.alloc, &buf);
+                        try self.data_relocations.append(self.alloc, .{
+                            .offset = @intCast(w * 8),
+                            .symbol_index = str_sym,
+                            .kind = .abs64,
+                        });
+                    } else {
+                        try self.asm_text.print(self.alloc, ":\n\t.quad {d}\n", .{@as(i64, @bitCast(word))});
+                        var buf: [8]u8 = undefined;
+                        std.mem.writeInt(u64, &buf, word, .little);
+                        try global_data.appendSlice(self.alloc, &buf);
+                    }
                 } else {
                     try self.asm_text.appendSlice(self.alloc, ":\n\t.zero 8\n");
                 }
@@ -1652,6 +1709,7 @@ const Arm64Compiler = struct {
 
         // Mach-O stores section relocations sorted by descending r_address.
         std.mem.sort(Relocation, self.relocations.items, {}, relocDescByOffset);
+        std.mem.sort(Relocation, self.data_relocations.items, {}, relocDescByOffset);
 
         const text = try self.code.toOwnedSlice(self.alloc);
         errdefer self.alloc.free(text);
@@ -1665,6 +1723,8 @@ const Arm64Compiler = struct {
         }
         const relocations = try self.relocations.toOwnedSlice(self.alloc);
         self.relocations = .empty;
+        const data_relocations = try self.data_relocations.toOwnedSlice(self.alloc);
+        self.data_relocations = .empty;
         errdefer self.alloc.free(relocations);
         const lineage = try self.lineage.toOwnedSlice(self.alloc);
         self.lineage = .empty;
@@ -1678,6 +1738,7 @@ const Arm64Compiler = struct {
             .const_data = const_bytes,
             .symbols = symbols,
             .relocations = relocations,
+            .data_relocations = data_relocations,
             .lineage = lineage,
             .bss_size = bss_size,
             .global_data = global_data_bytes,
@@ -1789,6 +1850,12 @@ const Arm64Compiler = struct {
         // pass has to re-derive the correspondence. A name with no published
         // initializer holds zero, which is what a zerofill word already is.
         try self.global_words.append(self.alloc, self.global_init.get(name) orelse 0);
+        if (self.global_str_inits.get(name)) |str_sym| {
+            try self.global_str_fixups.append(self.alloc, .{
+                .word = @intCast(self.global_words.items.len - 1),
+                .str_sym = str_sym,
+            });
+        }
         try self.globals.put(self.alloc, name, idx);
         return idx;
     }
@@ -1842,7 +1909,16 @@ const Arm64Compiler = struct {
             const word: u64 = switch (g.init) {
                 .i64 => |n| @bitCast(n),
                 .f64 => |f| @bitCast(f),
-                // `lowerModuleFromGraph` publishes only `.i64`/`.f64` and
+                .str => |s| blk: {
+                    // The word holds the string's address -- a link-time fact.
+                    // Intern the literal, remember the symbol by global name,
+                    // and leave a zero word the data-section relocation
+                    // resolves at link time.
+                    const str_sym = try self.internString(s);
+                    try self.global_str_inits.put(self.alloc, g.name, str_sym);
+                    break :blk 0;
+                },
+                // lowerModuleFromGraph publishes only .i64/.f64/.str and
                 // refuses everything else, so this is unreachable in practice
                 // and refuses rather than guessing if that ever stops holding.
                 else => return self.refuse(@src()),
@@ -12701,7 +12777,7 @@ fn bssBaseAddr(text_len: usize, cstring_len: usize, const_len: usize) usize {
 }
 
 fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation, bss_size: u64) Error![]u8 {
-    return emitMachOArm64ObjectWithConst(alloc, text, cstring, &.{}, symbols, relocations, bss_size, &.{}, true);
+    return emitMachOArm64ObjectWithConst(alloc, text, cstring, &.{}, symbols, relocations, &.{}, bss_size, &.{}, true);
 }
 
 fn emitMachOArm64ObjectWithConst(
@@ -12711,6 +12787,7 @@ fn emitMachOArm64ObjectWithConst(
     const_data: []const u8,
     symbols: []const Symbol,
     relocations: []const Relocation,
+    data_relocations: []const Relocation,
     bss_size: u64,
     /// The module-global arena's LOAD-TIME CONTENT, or empty for an all-zero
     /// arena. Empty realizes `__DATA,__bss` (S_ZEROFILL, no file bytes) exactly
@@ -12759,7 +12836,8 @@ fn emitMachOArm64ObjectWithConst(
     const sizeofcmds = segment_size + section_size * nsects + symtab_size + build_version_size;
     const text_offset = machOTextOffset(cstring.len, const_data.len, bss_size);
     const reloff: usize = text_offset + text.len;
-    const after_relocs: usize = reloff + relocations.len * 8;
+    const data_reloff: usize = reloff + relocations.len * 8;
+    const after_relocs: usize = data_reloff + data_relocations.len * 8;
     const cstring_fileoff: usize = after_relocs;
     const after_cstring: usize = if (has_cstring) cstring_fileoff + cstring.len else after_relocs;
     // 8-byte aligned in the FILE as well as in the VM layout: every element is an
@@ -12887,8 +12965,10 @@ fn emitMachOArm64ObjectWithConst(
         // section carries its real one.
         try appendU32(&out, alloc, if (has_data) @as(u32, @intCast(data_fileoff)) else 0);
         try appendU32(&out, alloc, 3); // align (2^3 = 8)
-        try appendU32(&out, alloc, 0); // reloff — the words hold no addresses
-        try appendU32(&out, alloc, 0); // nreloc
+        // String-literal initializers record ARM64_RELOC_UNSIGNED here; a
+        // word with no address still holds no relocation.
+        try appendU32(&out, alloc, if (data_relocations.len > 0) @as(u32, @intCast(data_reloff)) else 0); // reloff
+        try appendU32(&out, alloc, @intCast(data_relocations.len)); // nreloc
         try appendU32(&out, alloc, if (has_data) @as(u32, 0x0) else 0x1); // S_REGULAR / S_ZEROFILL
         try appendU32(&out, alloc, 0);
         try appendU32(&out, alloc, 0);
@@ -12917,7 +12997,16 @@ fn emitMachOArm64ObjectWithConst(
             .branch26 => reloc.symbol_index | (1 << 24) | (2 << 25) | (1 << 27) | (2 << 28), // pcrel, BR26
             .page21 => reloc.symbol_index | (1 << 24) | (2 << 25) | (1 << 27) | (3 << 28), // pcrel, PAGE21
             .pageoff12 => reloc.symbol_index | (0 << 24) | (2 << 25) | (1 << 27) | (4 << 28), // PAGEOFF12
+            .abs64 => unreachable, // data-section only; serialized below
         };
+        try appendU32(&out, alloc, reloc.offset);
+        try appendU32(&out, alloc, flags);
+    }
+    for (data_relocations) |reloc| {
+        // ARM64_RELOC_UNSIGNED: absolute 64-bit address of a local symbol.
+        // r_pcrel=0, r_length=3 (8 bytes), r_extern=1, r_type=0.
+        std.debug.assert(reloc.kind == .abs64);
+        const flags: u32 = reloc.symbol_index | (0 << 24) | (3 << 25) | (1 << 27) | (0 << 28);
         try appendU32(&out, alloc, reloc.offset);
         try appendU32(&out, alloc, flags);
     }
@@ -17260,6 +17349,7 @@ test "native backend: graph linkage owns source C string import" {
                 try std.testing.expect(sym.defined and !sym.external and sym.section == 2);
                 saw_pageoff12 = true;
             },
+            .abs64 => unreachable, // data-section only; lives in output.data_relocations
         }
     }
     try std.testing.expect(saw_branch_puts);

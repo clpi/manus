@@ -3192,12 +3192,24 @@ fn lowerModuleFromGraph(
     for (module_globals.order.items) |g| {
         const init = g.init orelse continue;
         const ty = module_globals.types.get(g.name) orelse continue;
+        // A string-typed global with a string-literal initializer publishes
+        // the literal content. The word holds the string's address — a
+        // link-time fact — so the backend interns the literal and resolves
+        // the address with a data-section relocation. Dropping the
+        // initializer here left a zero word that a later write made
+        // observable, and reads before the write dereferenced null.
+        if (ty == .str and init.* == .quoted) {
+            const v = comptime_eval.eval(init) catch null;
+            if (v) |val| {
+                if (val == .string) {
+                    try globals.append(alloc, .{ .name = g.name, .ty = ty, .init = .{ .str = val.string } });
+                    continue;
+                }
+            }
+            // The literal did not fold to a string; fall through to the
+            // constant path below, which bails with a diagnostic.
+        }
         const value = constGlobalInit(init, ty) orelse {
-            // String-typed globals with string-literal initializers cannot be
-            // published as a compile-time constant word (the address is a
-            // link-time fact). Skip the initializer: the global gets zero
-            // storage and the string is materialized at the read site.
-            if (ty == .str and init.* == .quoted) continue;
             // A module-home alias (`global A = compiler.arm64`) is a subject
             // binding, not a load-time word. Calls resolve through graph
             // application facts; the initializer has no `__DATA` image.
