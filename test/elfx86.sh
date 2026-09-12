@@ -6,12 +6,13 @@
 # Part 2: differential test of the 44 encoder vectors in x86.id's main
 # against the system assembler (clang -arch x86_64 -mavx2 -mbmi2); every vector must
 # match byte-for-byte (same oracle strategy as lib/compiler/arm64check.id).
-# Part 3: build the elfx86 emitter (--backend native) and compile four
+# Part 3: build the elfx86 emitter (--backend native) and compile seven
 # demo programs to ELF64; python3 validates ELF structure (magic, class,
 # type, machine, entry, PT_LOAD, 5 section headers, .text vaddr == entry,
 # _start symbol) and checks .text bytes against clang-assembled
 # equivalents for the arithmetic and division programs, plus loop-shape
-# patterns for the countdown-while programs.
+# patterns for the countdown-while programs and the nested-loop
+# bound-register regression programs.
 #
 # Usage: ./test/elfx86.sh   (run from repo root)
 set -u
@@ -75,10 +76,12 @@ printf 'a = 20\nb = 6\nc = a / b\nc\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/
 printf 'i = 0\nwhile i < 3\n    i = i + 1\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p3.elf" || fail "emit p3"
 printf 'i = 0\nwhile i < 3\n    i = i + 1\nx = 9\nx\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p4.elf" || fail "emit p4"
 printf 'a = 0 - 20\nb = a / 3\nc = a / 7\nd = a / 8\ne = b / 10\ne\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p5.elf" || fail "emit p5"
-pass "emit (5 programs)"
+printf 't = 0\na = 0\nwhile a < 2\n    a = a + 1\n    t = t + a\n    b = 0\n    while b < 2\n        b = b + 1\n        t = t + b\n        c = 0\n        while c < 2\n            c = c + 1\n            t = t + c\nt\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p6.elf" || fail "emit p6"
+printf 't = 0\na = 0\nwhile a < 2\n    a = a + 1\n    t = t + a\n    b = 0\n    while b < 2\n        b = b + 1\n        t = t + b\n        c = 0\n        while c < 2\n            c = c + 1\n            t = t + c\n            d = 0\n            while d < 2\n                d = d + 1\n                t = t + d\nt\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p7.elf" || fail "emit p7"
+pass "emit (7 programs)"
 
 echo "== structural validation + clang oracle =="
-python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" "$WORK/p5.elf" <<'PYEOF' || fail "structural validation"
+python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" "$WORK/p5.elf" "$WORK/p6.elf" "$WORK/p7.elf" <<'PYEOF' || fail "structural validation"
 import struct, sys, subprocess
 
 def ck(c, m):
@@ -163,6 +166,19 @@ ck('4898' not in t5, "p5 no cqo")
 t4 = parse_elf(sys.argv[4]).hex()
 ck('4983e801' in t4 and '75fa' in t4, "p4 loop closed before trailing code")
 ck(t4.endswith('4889c7b83c0000000f05'), "p4 exit epilogue")
+t6 = parse_elf(sys.argv[6]).hex()
+ck('4983fd02' in t6, "p6 a-loop cmpri r13,2")
+ck('4983fe02' in t6, "p6 b-loop cmpri r14,2")
+ck('4983ff02' in t6, "p6 c-loop cmpri r15,2")
+ck('b902000000' not in t6, "p6 no rcx bound-register init")
+ck(t6.endswith('4889c7b83c0000000f05'), "p6 exit epilogue")
+t7 = parse_elf(sys.argv[7]).hex()
+ck('4983fd02' in t7, "p7 a-loop cmpri r13,2")
+ck('4983fe02' in t7, "p7 b-loop cmpri r14,2")
+ck('4983ff02' in t7, "p7 c-loop cmpri r15,2")
+ck('4883fb02' in t7, "p7 d-loop cmpri rbx,2")
+ck('b902000000' not in t7, "p7 no rcx bound-register init (4-deep)")
+ck(t7.endswith('4889c7b83c0000000f05'), "p7 exit epilogue")
 print("structural + oracle checks passed")
 PYEOF
 pass "structural validation + clang oracle"
