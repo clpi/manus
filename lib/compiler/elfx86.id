@@ -688,7 +688,10 @@ main: i64 = ()
                             code = code .. jcc(5, back)
                     else
                         top = jp + 5
-                        cm = cmprr(rl, rr)
+                        if cd == 2
+                            cm = cmpri(rl, rr)
+                        else
+                            cm = cmprr(rl, rr)
                         cl = cm:len() / 2
                         back = top - (here + cl + 2)
                         neg = 0 - 128
@@ -726,7 +729,10 @@ main: i64 = ()
                         code = code .. jcc(5, back)
                 else
                     top = jp + 5
-                    cm = cmprr(rl, rr)
+                    if cd == 2
+                        cm = cmpri(rl, rr)
+                    else
+                        cm = cmprr(rl, rr)
                     cl = cm:len() / 2
                     back = top - (here + cl + 2)
                     neg = 0 - 128
@@ -758,19 +764,21 @@ main: i64 = ()
                 rr = 0
                 cd = 0
                 if digit(rhs:byte(1)) == 1
-                    br = breg(wopen)
-                    code = imm(code, breg(wopen), num(rhs))
-                    rr = br
-                    if num(rhs) != 0 and purecount(src, k, lc, ind, lhs) == 1
+                    bv = num(rhs)
+                    cd = 2
+                    rr = bv
+                    if bv != 0 and wopen < 3 and purecount(src, k, lc, ind, lhs) == 1
                         pk = k - 1
                         while pk >= 0 and trim(row(src, pk)):len() == 0
                             pk = pk - 1
                         if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
                             cd = 1
+                            rr = breg(wopen)
+                            code = imm(code, rr, bv)
                 else
                     rr = reg(names, rhs)
                 jp = code:len() / 2
-                if cd == 0
+                if cd != 1
                     code = code .. jmpn(0)
                 wjmp = wjmp .. dec(jp) .. "|"
                 wrl = wrl .. dec(rl) .. "|"
