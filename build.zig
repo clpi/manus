@@ -142,7 +142,7 @@ pub fn build(b: *std.Build) void {
     // owner is not generated — it is authored with a banner, and the lexer
     // artifact already proved that failure shape in this tree. This step
     // regenerates into a scratch tree and fails unless the tracked bytes match.
-    const grammar_projection_cmd = b.addSystemCommand(&.{"./gate/grammar-projection.sh"});
+    const grammar_projection_cmd = b.addSystemCommand(&.{"./zig-out/bin/idol", "run", "--backend=direct", "gate/grammar-projection.id"});
     grammar_projection_cmd.setCwd(b.path("."));
     grammar_projection_cmd.setEnvironmentVariable("IDOL", "./zig-out/bin/idol");
     grammar_projection_cmd.step.dependOn(b.getInstallStep());

@@ -31,7 +31,7 @@
 
 | Question | Answer | Proof command |
 |---|---|---|
-| Does an executable **grammar owner** exist? | **Yes.** `lib/compiler/token.id` is the one executable grammar-fact owner (`law.grammar.one`). | `IDOL=./zig-out/bin/idol sh gate/grammar-projection.sh` compiles the owner through the portable C realization, executes it in a stage tree, validates both generated consumers, and byte-compares both tracked projections. |
+| Does an executable **grammar owner** exist? | **Yes.** `lib/compiler/token.id` is the one executable grammar-fact owner (`law.grammar.one`). | `IDOL=./zig-out/bin/idol sh gate/grammar-projection.id` compiles the owner through the portable C realization, executes it in a stage tree, validates both generated consumers, and byte-compares both tracked projections. |
 | Is **grammar consumer closure** reached? | **No.** Twenty-five bounded production decisions consume owner facts, but the wider structural parser and editor grammar remain host-authored and `docs/spec/grammar.md` does not generate the parser. | `sh gate/token/read.sh`; `docs/bootstrap.md` owns the exact remaining authority. |
 | Is the **parser** Idol-owned? | **Partly.** Twenty-five production decisions execute from `lib/compiler/parser.id`; `src/parser.zig` still owns most recognition, AST materialization, bindings, and source structure. | `IDOL=./zig-out/bin/idol sh tools/node/dev/parser/artifact`; `sh gate/token/read.sh` |
 
@@ -108,7 +108,7 @@ semantics → resolution → demand → realization → machine → object → r
 
 | # | directive |
 |---|---|
-| 1 | **Four-axis commit test:** CAPABILITY, OWNERSHIP, CONVERGENCE, FTCFTW — capability-only is not SHC progress. `gate/taint.sh` supplies the executable counterfactual for the transferred lexer boundary; `gate/grammar-projection.sh` supplies it for the grammar owner; `docs/bootstrap.md` owns the stage contract. |
+| 1 | **Four-axis commit test:** CAPABILITY, OWNERSHIP, CONVERGENCE, FTCFTW — capability-only is not SHC progress. `gate/taint.sh` supplies the executable counterfactual for the transferred lexer boundary; `gate/grammar-projection.id` supplies it for the grammar owner; `docs/bootstrap.md` owns the stage contract. |
 
 | # | directive |
 |---|---|
@@ -159,7 +159,7 @@ semantics → resolution → demand → realization → machine → object → r
 
 | Claim | Command that recomputes it |
 |---|---|
-| The generated grammar projections are load-bearing — `src/grammar_role_table.zig` and `lib/token/grammarrole.id` regenerate byte-identically from `lib/compiler/token.id`, and a malformed producer that exits zero changes no tracked byte | `zig build grammar-projection` (or `sh gate/grammar-projection.sh`) on a direct-native-supported host; on this x86_64-linux host the command refuses DNB004 before the owner runs, so use the prior measured witness in `gaps/GAP-134.md` rather than treating the local red as a semantic regression |
+| The generated grammar projections are load-bearing — `src/grammar_role_table.zig` and `lib/token/grammarrole.id` regenerate byte-identically from `lib/compiler/token.id`, and a malformed producer that exits zero changes no tracked byte | `zig build grammar-projection` (or `sh gate/grammar-projection.id`) on a direct-native-supported host; on this x86_64-linux host the command refuses DNB004 before the owner runs, so use the prior measured witness in `gaps/GAP-134.md` rather than treating the local red as a semantic regression |
 | The editor grammar's disagreement with the owner is exactly the pinned baseline — the gate prints owner infix identities, editor operator rows, and divergences found / pinned / unpinned / stale | `zig build treesitter-agreement` (or `sh gate/treesitter/agreement.sh`) on a direct-native-supported host; on this x86_64-linux host the gate reports NOT MEASURED because the same DNB004 blocks the local direct-native witness |
 | The parser holds no token→operation or operation→token map of its own; `src/ast.zig` aliases the generated ontology and `src/pretty.zig`'s inverse is compile-time checked for totality and injectivity | `zig build unit-test`; inspect `src/grammar_roles.zig` tests and `src/ast.zig` `BinOp`/`UnOp` |
 | The `demandsOperand` membership is an owner fact, and its size is pinned by a counting control rather than by prose | `zig build unit-test` — `src/grammar_roles.zig`, test "the demand fact is the exact dual of expression start" |
@@ -222,7 +222,7 @@ semantics → resolution → demand → realization → machine → object → r
 | 1 | An Idol file existing on a production path is ownership. |
 | 2 | An Idol file compiling under a backend is coverage. |
 | 3 | A generated artifact is only evidence of ownership when a gate proves it regenerates byte-identically from its owner — otherwise it is a tracked file that may drift, and "the grammar is Idol owned" becomes a claim with no counterfactual. |
-| 4 | That reasoning is written into `gate/grammar-projection.sh` itself. |
+| 4 | That reasoning is written into `gate/grammar-projection.id` itself. |
 
 | section |
 |---|---|
