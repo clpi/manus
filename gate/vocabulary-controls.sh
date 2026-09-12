@@ -212,6 +212,77 @@ cp "$here/subject.sh" "$ureponame/gate/subject.sh"
 mkunitrepo "$ureponame"
 expect_fail "non-word unit name" env "IDOL=$REALIDOL" "$ureponame/gate/vocabulary.sh" --diff "$tmp/unitbad.diff"
 
+
+# TEST-DATA SCOPE. Bindings under test/ are data, not library surface: they
+# are admitted without graph proof, but LAW-16 naming and zero prose still hold.
+cat >"$tmp/testdata.diff" <<'EOF'
+--- a/test/byte.id
++++ b/test/byte.id
+@@ -1,0 +4 @@
++a = "L1"
++b = "LLLA2A31"
++e = "LLLLLLLLLLLLLLLLLLLLLA2A3A4A5A6A7A8A9A!10!A!11!A!12!A!13!A!14!A!15!A!16!A!17!A!18!A!19!A!20!A!21!1"
+EOF
+expect_pass "test-data bindings are admitted without graph proof" "$gate" --diff "$tmp/testdata.diff"
+
+cat >"$tmp/testunder.diff" <<'EOF'
+--- a/test/byte.id
++++ b/test/byte.id
+@@ -1,0 +2 @@
++a_thing = 1
+EOF
+expect_fail "underscore binding in test data" "$gate" --diff "$tmp/testunder.diff"
+
+cat >"$tmp/testcamel.diff" <<'EOF'
+--- a/test/byte.id
++++ b/test/byte.id
+@@ -1,0 +2 @@
++myVar = 1
+EOF
+expect_fail "camelCase binding in test data" "$gate" --diff "$tmp/testcamel.diff"
+
+cat >"$tmp/testprose.diff" <<'EOF'
+--- a/test/byte.id
++++ b/test/byte.id
+@@ -1,0 +3 @@
++# a note about the data below
++a = 1
+EOF
+expect_fail "prose comment in test data" "$gate" --diff "$tmp/testprose.diff"
+
+cat >"$tmp/nontest.diff" <<'EOF'
+--- a/examples/probe.id
++++ b/examples/probe.id
+@@ -1,0 +2 @@
++a = 1
+EOF
+expect_fail "the same binding outside test data stays refused" "$gate" --diff "$tmp/nontest.diff"
+
+# A `.testdata` sidecar marker extends the scope to data files outside test/.
+urepotd="$tmp/unitrepo-td"
+mkdir -p "$urepotd/gate"
+printf 'x = 1\n' > "$urepotd/data.id"
+: > "$urepotd/data.id.testdata"
+cp "$gate" "$urepotd/gate/vocabulary.sh"
+cp "$here/vocab-extract.awk" "$urepotd/gate/vocab-extract.awk"
+cp "$here/subject.sh" "$urepotd/gate/subject.sh"
+mkunitrepo "$urepotd"
+cat >"$tmp/td.diff" <<'EOF'
+--- a/data.id
++++ b/data.id
+@@ -1,0 +2 @@
++a = 1
+EOF
+expect_pass "testdata sidecar marker admits bindings" env "IDOL=$REALIDOL" "$urepotd/gate/vocabulary.sh" --diff "$tmp/td.diff"
+
+cat >"$tmp/tdunder.diff" <<'EOF'
+--- a/data.id
++++ b/data.id
+@@ -1,0 +2 @@
++a_thing = 1
+EOF
+expect_fail "underscore binding refused under a sidecar marker" env "IDOL=$REALIDOL" "$urepotd/gate/vocabulary.sh" --diff "$tmp/tdunder.diff"
+
 # The selftest carries the in-graph damage controls (no normalization; foreign
 # bytes need a binding; a binding admits only its own bytes) and nothing else
 # runs it, so `--controls` would otherwise never reach them.

@@ -18,10 +18,17 @@
 # still requires compiler-produced body and linkage facts, and a name
 # declared twice in one unit is ambiguous and refused.
 #
-# Cases, descriptors, and value bindings remain fail-closed: their corresponding
-# graph reach/cardinality projection is not exported yet. This gate keeps no
-# admitted-word list, never treats source spelling as identity, and never reads
-# NodeKind alone as semantic proof.
+# TEST-DATA SCOPE. Files under test/ -- or files carrying a `.testdata`
+# sidecar marker -- are data, not library surface. Their cases, descriptors,
+# and value bindings are admitted without graph proof when they satisfy the
+# structural checks: LAW-16 naming (one irreducible lowercase word) and zero
+# prose (no `#` comment lines). Relations in test-data files still require
+# graph proof, via a concatenation unit when they span files.
+#
+# Cases, descriptors, and value bindings outside test-data scope remain
+# fail-closed: their corresponding graph reach/cardinality projection is not
+# exported yet. This gate keeps no admitted-word list, never treats source
+# spelling as identity, and never reads NodeKind alone as semantic proof.
 #
 # A graph entity proves that the parser accepted a spelling. It does not prove
 # the spelling is a NAME. LAW-16 admits one irreducible lowercase word; a
@@ -182,7 +189,7 @@ n_lines=$(LC_ALL=C awk 'END { print NR + 0 }' "$cand")
 if [ "$n_new" -gt 0 ]; then
     [ -x "$idol" ] || die "graph witness needs an executable compiler: $idol"
     witness="$tmp/witness"
-    if python3 - "$new" "$root" "$idol" "$tmp" >"$witness" 2>&1 <<'PY'
+    if python3 - "$new" "$root" "$idol" "$tmp" "$cand" >"$witness" 2>&1 <<'PY'
 from copy import deepcopy
 from pathlib import Path
 import json
@@ -190,7 +197,7 @@ import re
 import subprocess
 import sys
 
-rows_path, root_text, idol, tmpdir = sys.argv[1:]
+rows_path, root_text, idol, tmpdir, cand_path = sys.argv[1:]
 root = Path(root_text).resolve()
 rows = []
 for raw in Path(rows_path).read_text().splitlines():
@@ -246,9 +253,45 @@ except ValueError as exc:
     print(f"concat-units manifest refused: {exc}")
     raise SystemExit(1)
 
+# ---- candidate diff scan: added lines per file (prose control) ----
+added_lines = {}
+cur = None
+for line in Path(cand_path).read_text().splitlines():
+    if line.startswith("--- "):
+        cur = None
+        continue
+    if line.startswith("+++ "):
+        p = line[4:].strip()
+        cur = p[2:] if p.startswith("b/") else p
+        added_lines.setdefault(cur, [])
+        continue
+    if cur is not None and line.startswith("+") and not line.startswith("+++"):
+        added_lines[cur].append(line[1:])
+
+
+def test_scoped(file):
+    """Test-data scope: files under test/, or files carrying a `.testdata`
+    sidecar marker. Their cases, descriptors, and value bindings are data,
+    not library surface, so they are admitted on structural checks alone."""
+    if file == "test" or file.startswith("test/"):
+        return True
+    return (root / (file + ".testdata")).is_file()
+
+
+def structural_refusal(name, file):
+    """LAW-16 naming plus the zero-prose rule. Returns the refusal reason,
+    or None when the declaration is structurally admissible."""
+    if NATIVE_WORD.fullmatch(name) is None:
+        return f"LAW-16 naming: {name!r} is not one irreducible lowercase word"
+    for ln in added_lines.get(file, []):
+        if re.match(r"[ \t]*#", ln):
+            return "prose: a # comment line; test-data sources carry zero comments"
+    return None
+
 graphs = {}
 unit_graphs = {}
 proven = []
+admitted = []
 unproven = []
 
 
@@ -408,6 +451,13 @@ for kind, name, file in rows:
         else:
             proven.append((kind, name, file, entity, graph))
         continue
+    if test_scoped(file) and kind != "relation":
+        why = structural_refusal(name, file)
+        if why is None:
+            admitted.append(("test-data", kind, name, file))
+        else:
+            unproven.append((kind, name, file, "test-data scope: " + why))
+        continue
     if kind != "relation":
         unproven.append((kind, name, file, "no graph-backed admission for this declaration kind"))
         continue
@@ -505,6 +555,8 @@ if proven:
 
 for kind, name, file, entity, _ in proven:
     print(f"graph-proven {kind:12} {name:28} {file} id={entity}")
+for label, kind, name, file in admitted:
+    print(f"{label} {kind:12} {name:28} {file}")
 if proven:
     print("vocabulary graph controls: PASS (body, linkage, exposure, root scope, schema version, source law)")
     print("vocabulary identity controls: PASS (no normalization, foreign bytes need a binding, binding admits only its own bytes)")
@@ -517,5 +569,5 @@ PY
     fi
 fi
 
-note "$prog: $n_lines diff lines examined; $n_new graph-proven module-scope declaration(s)."
-note "$prog: VOCABULARY GRAPH WITNESS OK."
+note "$prog: $n_lines diff lines examined; $n_new candidate module-scope declaration(s)."
+note "$prog: VOCABULARY ADMISSION OK."
