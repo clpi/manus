@@ -14,6 +14,12 @@
 | traverse | linked-list walk 1m nodes | memory plus pointers |
 | cache_seq | stride-1 walk 64mb | memory array indexing |
 | cache_stride | stride-64 walk 64mb | memory array indexing |
+| g_ptrchase | shuffled 4m-node pointer chase | heap allocation, pointers, struct fields |
+| g_hashtable | open-addressing insert plus lookup 200k | arrays, pointers, modular indexing |
+| g_float | double dot product plus horner 4m | float type plus float arithmetic |
+| g_strbuild | 1m integer appends plus byte scan | byte-addressable memory, byte stores |
+| g_callchain | 12-deep call chain 20m calls | function definitions plus calls |
+| g_megamorph | 16-entry indirect dispatch 10m | indirect calls plus arrays |
 
 | section |
 |---|---|
