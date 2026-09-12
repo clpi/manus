@@ -32,6 +32,12 @@ movk: i64 = (rd: i64, imm: i64, hw: i64)
 add: i64 = (rd: i64, rn: i64, rm: i64)
     2332033024 | (rm << 16) | (rn << 5) | rd
 
+addsh: i64 = (rd: i64, rn: i64, rm: i64, sh: i64)
+    2332033024 | (rm << 16) | (sh << 10) | (rn << 5) | rd
+
+subs: i64 = (rd: i64, rn: i64, im: i64)
+    4043309056 | ((im & 4095) << 10) | (rn << 5) | rd
+
 minus: i64 = (rd: i64, rn: i64, rm: i64)
     3405774848 | (rm << 16) | (rn << 5) | rd
 
@@ -202,18 +208,52 @@ mulred: str = (c: str, rd: i64, n: str, v: i64, names: str)
     if sh > 0
         return c .. word(lsl(rd, reg(names, n), sh))
     if v == 3
-        t = c .. word(lsl(10, reg(names, n), 1))
-        return t .. word(add(rd, reg(names, n), 10))
+        return c .. word(addsh(rd, reg(names, n), reg(names, n), 1))
     if v == 5
-        t = c .. word(lsl(10, reg(names, n), 2))
-        return t .. word(add(rd, reg(names, n), 10))
+        return c .. word(addsh(rd, reg(names, n), reg(names, n), 2))
     if v == 7
         t = c .. word(lsl(10, reg(names, n), 3))
         return t .. word(minus(rd, 10, reg(names, n)))
     if v == 9
-        t = c .. word(lsl(10, reg(names, n), 3))
-        return t .. word(add(rd, reg(names, n), 10))
+        return c .. word(addsh(rd, reg(names, n), reg(names, n), 3))
     ""
+
+purecount: i64 = (src: str, k: i64, lc: i64, ind: i64, lhs: str)
+    bind = 0
+    k2 = k + 1
+    while k2 < lc and bind == 0
+        r2 = row(src, k2)
+        t2 = trim(r2)
+        if t2:len() > 0
+            if indent(r2) > ind
+                bind = indent(r2)
+            else
+                k2 = lc
+        if k2 < lc
+            k2 = k2 + 1
+    if bind == 0
+        return 0
+    p = 1
+    found = 0
+    inc = lhs .. " = " .. lhs .. " + 1"
+    k2 = k + 1
+    while k2 < lc and p == 1
+        r2 = row(src, k2)
+        t2 = trim(r2)
+        if t2:len() > 0
+            if indent(r2) > ind
+                if indent(r2) == bind and t2 == inc
+                    found = 1
+                else
+                    if find(t2, lhs) != 0 - 1
+                        p = 0
+            else
+                k2 = lc
+        if k2 < lc
+            k2 = k2 + 1
+    if found == 0
+        p = 0
+    p
 
 calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
     aconst = digit(a:byte(1))
@@ -328,6 +368,7 @@ main: i64 = ()
     wrl = ""
     wrr = ""
     wind = ""
+    wcd = ""
     wopen = 0
     lc = rows(src)
     k = 0
@@ -342,15 +383,21 @@ main: i64 = ()
                 jp = at(wjmp, wopen - 1)
                 rl = at(wrl, wopen - 1)
                 rr = at(wrr, wopen - 1)
-                bp = jp + 1
+                cd = at(wcd, wopen - 1)
                 tp = code:len() / 8
-                code = patch(code, jp, jump(tp - jp))
-                code = code .. word(cmp(rl, rr))
-                code = code .. word(bcond(11, bp - (tp + 1)))
+                if cd == 1
+                    code = code .. word(subs(rr, rr, 1))
+                    code = code .. word(bcond(1, jp - (tp + 1)))
+                else
+                    bp = jp + 1
+                    code = patch(code, jp, jump(tp - jp))
+                    code = code .. word(cmp(rl, rr))
+                    code = code .. word(bcond(11, bp - (tp + 1)))
                 wjmp = pop(wjmp, wopen)
                 wrl = pop(wrl, wopen)
                 wrr = pop(wrr, wopen)
                 wind = pop(wind, wopen)
+                wcd = pop(wcd, wopen)
                 wopen = wopen - 1
             if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
                 rest = t:sub(7, t:len())
@@ -364,18 +411,27 @@ main: i64 = ()
                 rhs = trim(rest:sub(lt + 1, rest:len()))
                 rl = reg(names, lhs)
                 rr = 0
+                cd = 0
                 if digit(rhs:byte(1)) == 1
                     br = 11 + wopen
                     code = imm(code, br, num(rhs))
                     rr = br
+                    if num(rhs) != 0 and purecount(src, k, lc, ind, lhs) == 1
+                        pk = k - 1
+                        while pk >= 0 and trim(row(src, pk)):len() == 0
+                            pk = pk - 1
+                        if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
+                            cd = 1
                 else
                     rr = reg(names, rhs)
                 jp = code:len() / 8
-                code = code .. word(jump(0))
+                if cd == 0
+                    code = code .. word(jump(0))
                 wjmp = wjmp .. dec(jp) .. "|"
                 wrl = wrl .. dec(rl) .. "|"
                 wrr = wrr .. dec(rr) .. "|"
                 wind = wind .. dec(ind) .. "|"
+                wcd = wcd .. dec(cd) .. "|"
                 wopen = wopen + 1
             else
                 eq = 0
@@ -397,19 +453,23 @@ main: i64 = ()
                         if find(names, name) == 0 - 1
                             names = names .. name .. "|"
                         rd = reg(names, name)
-                        oppos = 0
-                        op = 0
-                        q = 1
-                        while q <= rhs:len()
-                            oc = rhs:byte(q)
-                            if oc == 43 or oc == 45 or oc == 42 or oc == 47
-                                if oppos == 0
-                                    oppos = q
-                                    op = oc
-                            q = q + 1
-                        if oppos == 0
-                            code = term(code, rhs, rd, names)
-                        else
+                        skip = 0
+                        if wopen > 0 and at(wcd, wopen - 1) == 1 and rd == at(wrl, wopen - 1)
+                            skip = 1
+                        if skip == 0
+                            oppos = 0
+                            op = 0
+                            q = 1
+                            while q <= rhs:len()
+                                oc = rhs:byte(q)
+                                if oc == 43 or oc == 45 or oc == 42 or oc == 47
+                                    if oppos == 0
+                                        oppos = q
+                                        op = oc
+                                q = q + 1
+                            if oppos == 0
+                                code = term(code, rhs, rd, names)
+                            else
                             a = trim(rhs:sub(1, oppos - 1))
                             e = trim(rhs:sub(oppos + 1, rhs:len()))
                             code = calc(code, rd, a, op, e, names)
