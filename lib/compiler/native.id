@@ -50,6 +50,12 @@ madd: i64 = (rd: i64, rn: i64, rm: i64, ra: i64)
 msub: i64 = (rd: i64, rn: i64, rm: i64, ra: i64)
     2600501248 | (rm << 16) | (ra << 10) | (rn << 5) | rd
 
+tbnz: i64 = (n: i64, bit: i64, off: i64)
+    922746880 | (((bit >> 5) & 1) << 31) | ((bit & 31) << 19) | ((off & 16383) << 5) | n
+
+subsh: i64 = (rd: i64, rn: i64, rm: i64, sh: i64)
+    3405774848 | (rm << 16) | (sh << 10) | (rn << 5) | rd
+
 div: i64 = (rd: i64, rn: i64, rm: i64)
     2596277248 | (rm << 16) | (rn << 5) | rd
 
@@ -102,6 +108,15 @@ stx: i64 = (rt: i64, rn: i64, off: i64)
 
 ldx: i64 = (rt: i64, rn: i64, off: i64)
     4181721088 | ((off >> 3) << 10) | (rn << 5) | rt
+
+global _lmulpos: i64 = 0 - 1
+global _lmulrd: i64 = 0
+global _lmulrn: i64 = 0
+global _lmulrm: i64 = 0
+global _lslpos: i64 = 0 - 1
+global _lslrd: i64 = 0
+global _lslrn: i64 = 0
+global _lslsh: i64 = 0
 
 digit: i64 = (c: i64)
     if c >= 48 and c <= 57
@@ -213,39 +228,35 @@ flushpend: str = (c: str, names: str, pn: str, pk: i64, pv: i64)
     if find(names, pn) >= 9
         c = vget(c, 9, names, pn)
         if pk == 0
-            if pv > 0 and pv < 4096
-                c = c .. word(addi(9, 9, pv))
-            else
-                if pv < 0 and pv > 0 - 4096
-                    c = c .. word(subi(9, 9, 0 - pv))
-                else
-                    c = imm(c, 10, pv)
-                    c = c .. word(add(9, 9, 10))
+            c = fladd(c, 9, pv)
         else
             pm = mulred(c, 9, pn, pv, names)
             if pm:len() > 0
                 c = pm
+                _lmulpos = 0 - 1
             else
                 c = imm(c, 10, pv)
                 c = c .. word(mul(9, 9, 10))
+                _lmulpos = c:len() / 8 - 1
+                _lmulrd = 9
+                _lmulrn = 9
+                _lmulrm = 10
         return vset(c, 9, names, pn)
     prd = 19 + find(names, pn)
     if pk == 0
-        if pv > 0 and pv < 4096
-            c = c .. word(addi(prd, prd, pv))
-        else
-            if pv < 0 and pv > 0 - 4096
-                c = c .. word(subi(prd, prd, 0 - pv))
-            else
-                c = imm(c, 9, pv)
-                c = c .. word(add(prd, prd, 9))
+        c = fladd(c, prd, pv)
     else
         pm = mulred(c, prd, pn, pv, names)
         if pm:len() > 0
             c = pm
+            _lmulpos = 0 - 1
         else
             c = imm(c, 10, pv)
             c = c .. word(mul(prd, prd, 10))
+            _lmulpos = c:len() / 8 - 1
+            _lmulrd = prd
+            _lmulrn = prd
+            _lmulrm = 10
     c
 
 put: str = (c: str, w: i64)
@@ -444,6 +455,10 @@ mulred: str = (c: str, rd: i64, n: str, v: i64, names: str)
     if sh > 0 or v == 3 or v == 5 or v == 7 or v == 9
         c = vget(c, 9, names, n)
     if sh > 0
+        _lslpos = c:len() / 8
+        _lslrd = rd
+        _lslrn = 9
+        _lslsh = sh
         return c .. word(lsl(rd, 9, sh))
     if v == 3
         return c .. word(addsh(rd, 9, 9, 1))
@@ -575,6 +590,24 @@ hassub: i64 = (hay: str, key: str)
             return 1
         i = i + 1
     0
+
+shfold: str = (c: str, rd: i64, ra: i64, rb: i64, o: i64)
+    if _lslpos == c:len() / 8 - 1 and _lslrd > 10 and _lslrn != _lslrd
+        if _lslrd == rb or (_lslrd == ra and o == 43)
+            mp = _lslpos
+            rn = _lslrn
+            sh = _lslsh
+            rd0 = _lslrd
+            _lslpos = 0 - 1
+            pre = ""
+            if mp > 0
+                pre = c:sub(1, mp * 8)
+            if rd0 == rb
+                if o == 43
+                    return pre .. word(addsh(rd, ra, rn, sh))
+                return pre .. word(subsh(rd, ra, rn, sh))
+            return pre .. word(addsh(rd, rb, rn, sh))
+    ""
 
 global _esatdepth: i64 = 0
 
@@ -708,10 +741,20 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
         c = expr(c, a, base, base + 2, names)
         c = expr(c, e, base + 1, base + 2, names)
         if o == 43
+            sff = shfold(c, rd, base, base + 1, 43)
+            if sff:len() > 0
+                return sff
             return c .. word(add(rd, base, base + 1))
         if o == 45
+            sff = shfold(c, rd, base, base + 1, 45)
+            if sff:len() > 0
+                return sff
             return c .. word(minus(rd, base, base + 1))
         if o == 42
+            _lmulpos = c:len() / 8
+            _lmulrd = rd
+            _lmulrn = base
+            _lmulrm = base + 1
             return c .. word(mul(rd, base, base + 1))
         if o == 38
             return c .. word(band(rd, base, base + 1))
@@ -812,6 +855,14 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
             return c .. word(mov(rd, 10))
     ra = 0
     rb = 0
+    if o == 43 or o == 45
+        if hasname(names, a) == 1 and hasname(names, e) == 1
+            dai = find(names, a)
+            dei = find(names, e)
+            if dai >= 0 and dai < 9 and dei >= 0 and dei < 9
+                sff0 = shfold(c, rd, 19 + dai, 19 + dei, o)
+                if sff0:len() > 0
+                    return sff0
     if an == 1
         c = imm(c, 9, av)
         ra = 9
@@ -825,10 +876,20 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
         c = vget(c, 10, names, e)
         rb = 10
     if o == 43
+        sff = shfold(c, rd, ra, rb, 43)
+        if sff:len() > 0
+            return sff
         return c .. word(add(rd, ra, rb))
     if o == 45
+        sff = shfold(c, rd, ra, rb, 45)
+        if sff:len() > 0
+            return sff
         return c .. word(minus(rd, ra, rb))
     if o == 42
+        _lmulpos = c:len() / 8
+        _lmulrd = rd
+        _lmulrn = ra
+        _lmulrm = rb
         return c .. word(mul(rd, ra, rb))
     if o == 38
         return c .. word(band(rd, ra, rb))
@@ -1429,6 +1490,28 @@ hasidx: i64 = (src: str)
         i = i + 1
     0
 
+fladd: str = (code: str, prd: i64, pv: i64)
+    if pv == 0
+        return code
+    if pv < 0 and pv > 0 - 4096
+        return code .. word(subi(prd, prd, 0 - pv))
+    if _lmulpos == code:len() / 8 - 1 and _lmulrd == prd
+        mp = _lmulpos
+        rn = _lmulrn
+        rm = _lmulrm
+        _lmulpos = 0 - 1
+        pre = ""
+        if mp > 0
+            pre = code:sub(1, mp * 8)
+        atmp = 11
+        if rn == 11 or rm == 11
+            atmp = 9
+        return pre .. imm("", atmp, pv) .. word(madd(prd, rn, rm, atmp))
+    if pv > 0 and pv < 4096
+        return code .. word(addi(prd, prd, pv))
+    code = imm(code, 9, pv)
+    code .. word(add(prd, prd, 9))
+
 main: i64 = ()
     src = stdin:read()
     if hasidx(src) == 1
@@ -1458,6 +1541,7 @@ main: i64 = ()
     wrr = ""
     wind = ""
     wcd = ""
+    wzz = ""
     wopen = 0
     pendname = ""
     pendkind = 0
@@ -1480,6 +1564,7 @@ main: i64 = ()
                 ri = at(wrl, wopen - 1)
                 qi = at(wrr, wopen - 1)
                 cd = at(wcd, wopen - 1)
+                zz = at(wzz, wopen - 1)
                 tp = code:len() / 8
                 if cd == 1
                     if qi < 9
@@ -1497,18 +1582,28 @@ main: i64 = ()
                     else
                         code = vgeti(code, 9, names, ri)
                         rl = 9
-                    if qi < 9
-                        rr = 19 + qi
+                    if zz == 1
+                        tp2 = code:len() / 8
+                        toff = bp - tp2
+                        if toff >= 0 - 8192 and toff <= 8191
+                            code = code .. word(tbnz(rl, 63, toff))
+                        else
+                            code = code .. word(cmp(rl, 31))
+                            code = code .. word(bcond(11, bp - (tp2 + 1)))
                     else
-                        code = vgeti(code, 10, names, qi)
-                        rr = 10
-                    code = code .. word(cmp(rl, rr))
-                    code = code .. word(bcond(11, bp - code:len() / 8))
+                        if qi < 9
+                            rr = 19 + qi
+                        else
+                            code = vgeti(code, 10, names, qi)
+                            rr = 10
+                        code = code .. word(cmp(rl, rr))
+                        code = code .. word(bcond(11, bp - code:len() / 8))
                 wjmp = pop(wjmp, wopen)
                 wrl = pop(wrl, wopen)
                 wrr = pop(wrr, wopen)
                 wind = pop(wind, wopen)
                 wcd = pop(wcd, wopen)
+                wzz = pop(wzz, wopen)
                 wopen = wopen - 1
             if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
                 rest = t:sub(7, t:len())
@@ -1539,19 +1634,23 @@ main: i64 = ()
                     li = find(names, lhs)
                     qi = 0
                     cd = 0
+                    zb = 0
                     if digit(rhs:byte(1)) == 1
-                        bn = "loopbd:" .. dec(wopen)
-                        if hasname(names, bn) == 0
-                            names = names .. bn .. "|"
-                        bi = find(names, bn)
-                        code = vseti(imm(code, 9, num(rhs)), 9, names, bi)
-                        qi = bi
-                        if num(rhs) != 0 and purecount(src, k, lc, ind, lhs) == 1
-                            pk = k - 1
-                            while pk >= 0 and trim(row(src, pk)):len() == 0
-                                pk = pk - 1
-                            if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
-                                cd = 1
+                        if num(rhs) == 0
+                            zb = 1
+                        else
+                            bn = "loopbd:" .. dec(wopen)
+                            if hasname(names, bn) == 0
+                                names = names .. bn .. "|"
+                            bi = find(names, bn)
+                            code = vseti(imm(code, 9, num(rhs)), 9, names, bi)
+                            qi = bi
+                            if purecount(src, k, lc, ind, lhs) == 1
+                                pk = k - 1
+                                while pk >= 0 and trim(row(src, pk)):len() == 0
+                                    pk = pk - 1
+                                if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
+                                    cd = 1
                     else
                         qi = find(names, rhs)
                     jp = code:len() / 8
@@ -1562,6 +1661,7 @@ main: i64 = ()
                     wrr = wrr .. dec(qi) .. "|"
                     wind = wind .. dec(ind) .. "|"
                     wcd = wcd .. dec(cd) .. "|"
+                    wzz = wzz .. dec(zb) .. "|"
                     wopen = wopen + 1
             else
                 eq = 0
@@ -1631,7 +1731,18 @@ main: i64 = ()
                             if skind < 0
                                 code = flushpend(code, names, pendname, pendkind, pendval)
                                 pendname = ""
-                                code = calc(code, rd, a, op, e, 11, names)
+                                ei = find(names, e)
+                                if op == 43 and a == name and ei >= 0 and ei < 9 and _lmulpos == code:len() / 8 - 1 and _lmulrd == rd
+                                    mp = _lmulpos
+                                    rn = _lmulrn
+                                    rm = _lmulrm
+                                    _lmulpos = 0 - 1
+                                    pre = ""
+                                    if mp > 0
+                                        pre = code:sub(1, mp * 8)
+                                    code = pre .. word(madd(rd, rn, rm, 19 + ei))
+                                else
+                                    code = calc(code, rd, a, op, e, 11, names)
                                 if spilldst == 1
                                     code = vseti(code, 9, names, ni)
                             else
