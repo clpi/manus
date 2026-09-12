@@ -616,7 +616,6 @@ divconstr: str = (c: str, rd: i64, ra: i64, dd: i64, names: str)
     if sh > 0
         t = t .. sarri(2, sh)
     t = t .. movrr(rd, 2)
-    t = t .. movrr(2, rd)
     t = t .. shrri(2, 63)
     t = t .. addrr(rd, 2)
     if dd < 0
