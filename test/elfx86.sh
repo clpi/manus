@@ -79,10 +79,12 @@ printf 'a = 0 - 20\nb = a / 3\nc = a / 7\nd = a / 8\ne = b / 10\ne\n' | "$WORK/e
 printf 't = 0\na = 0\nwhile a < 2\n    a = a + 1\n    t = t + a\n    b = 0\n    while b < 2\n        b = b + 1\n        t = t + b\n        c = 0\n        while c < 2\n            c = c + 1\n            t = t + c\nt\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p6.elf" || fail "emit p6"
 printf 't = 0\na = 0\nwhile a < 2\n    a = a + 1\n    t = t + a\n    b = 0\n    while b < 2\n        b = b + 1\n        t = t + b\n        c = 0\n        while c < 2\n            c = c + 1\n            t = t + c\n            d = 0\n            while d < 2\n                d = d + 1\n                t = t + d\nt\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p7.elf" || fail "emit p7"
 printf 'a = 6\nb = a * 3\nc = a * 5\nd = a * 7\ne = a * 9\ne\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p8.elf" || fail "emit p8"
-pass "emit (8 programs)"
+printf 'a = 2\nb = 3\nc = 4\nd = a + b * c\nd\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p9.elf" || fail "emit p9"
+printf 'i = 0\nn = 5\nwhile i < n\n    i = i + 1\ni\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p10.elf" || fail "emit p10"
+pass "emit (10 programs)"
 
 echo "== structural validation + clang oracle =="
-python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" "$WORK/p5.elf" "$WORK/p6.elf" "$WORK/p7.elf" "$WORK/p8.elf" <<'PYEOF' || fail "structural validation"
+python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" "$WORK/p5.elf" "$WORK/p6.elf" "$WORK/p7.elf" "$WORK/p8.elf" "$WORK/p9.elf" "$WORK/p10.elf" <<'PYEOF' || fail "structural validation"
 import struct, sys, subprocess
 
 def ck(c, m):
@@ -153,6 +155,7 @@ ck('41b803000000' in t3, "p3 loop counter init r8=3")
 ck('4983e801' in t3, "p3 loop decrement sub r8,1")
 ck('75fa' in t3, "p3 loop back-edge jne")
 ck(t3.endswith('4889c7b83c0000000f05'), "p3 exit epilogue")
+ck('41bc03000000' in t3, "p3 countdown write-back mov r12d,3")
 t5 = parse_elf(sys.argv[5]).hex()
 ck('5655555555555555' in t5, "p5 hoisted magic /3")
 ck('2549922449922449' in t5, "p5 hoisted magic /7")
@@ -186,6 +189,18 @@ ck('4f8d34a4' in t8, "p8 *5 single lea")
 ck('4f8d1464' in t8 and '4f8d3ca2' in t8, "p8 *7 two leas")
 ck('4b8d1ce4' in t8, "p8 *9 single lea")
 ck(t8.endswith('4889c7b83c0000000f05'), "p8 exit epilogue")
+t9 = parse_elf(sys.argv[9]).hex()
+ck('4152' in t9, "p9 push r10 spill")
+ck('415b' in t9, "p9 pop r11 restore")
+ck(t9.count('4152') == t9.count('415b'), "p9 push/pop balanced")
+ck('4d0fafd6' in t9, "p9 imul r10,r14 (b*c)")
+ck('4d01d7' in t9, "p9 add r15,r10 (a+b*c)")
+ck(t9.endswith('4889c7b83c0000000f05'), "p9 exit epilogue")
+t10 = parse_elf(sys.argv[10]).hex()
+ck('e904000000' in t10, "p10 entry jmp targets cmp")
+ck('7cf7' in t10, "p10 jl back-edge to body")
+ck('4d39ec' in t10, "p10 cmprr r13,r12 bound check")
+ck(t10.endswith('4889c7b83c0000000f05'), "p10 exit epilogue")
 print("structural + oracle checks passed")
 PYEOF
 pass "structural validation + clang oracle"
