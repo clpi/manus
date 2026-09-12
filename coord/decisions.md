@@ -247,3 +247,26 @@ These scripts are not affected by IDOL_NATIVE_ROOT; they are blocked by direct-b
 ## Scope verdict (2026-09-05)
 
 IDOL_NATIVE_ROOT binding is complete and recorded. mcp-gate and agent-smoke are not made green by this card — they are owned by spec-level decisions (server.id migration, dnir_lower lowering debt) that need human ratification per the charter.
+
+
+## Decision: Path 1 executed (2026-09-10)
+
+**Chosen**: Path 1 — repin idol-native after backporting the MCP server's text-literal migration.
+
+**Rationale**: Preserves the exact revision/tree/artifact/evidence checks while fixing the incompatible source. Path 2 weakens probe-mcp by accepting cached output (denied by CHARTER.md). Path 3 requires a new per-server compiler schema and still encounters cache behavior.
+
+**Executed**:
+- Created branch `idol/mcp-server-textconst-migration` in idol-native, commit `ecc5dbbc4d8c3710df400867534bf169a0603812`.
+- New pin: revision `ecc5dbbc4d8c3710df400867534bf169a0603812`, tree `1127f61077c93766de837486304d003ce562fcf1`.
+- Updated `tools/node/dev/mcp.manifest.json` and `tools/node/dev/mcp-gate` (damage-control mutation).
+- **mcp-gate: PASS (13/13)** — verified 2026-09-10.
+
+**Compiler fix (same chain)**:
+- Fixed `graphHasForeignDefaultApplication` subject-first arity false positive in `src/main.zig`. The check compared `arguments.len` (excluding subject) against param count (including subject slot), causing ALL subject-first foreign calls to skip their reached partitions. Fix: add `subject_slots` to the count.
+- This also explains the `gate/crosspartition.sh` N3 failure.
+
+**agent-smoke status (2026-09-10)**:
+- Harness repaired for GAP-204 (nested `--backend=direct`).
+- `public_safety_scan`: PASS.
+- `luahost`, `explain`, `contract`, `sim`, `transform`: BLOCKED on library gaps — `io.popen`, `os.execute` have no direct-backend realization. These are not compiler bugs; the relations do not exist. Requires standard-library design decision.
+- Branch: `fix/t_c9c07b0e-chain-recovery` (commit `8ea804c2`), pushed.
