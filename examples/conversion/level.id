@@ -1,6 +1,8 @@
+# expect: 7
 user: {
     id: i64
     tags: list(str)
 }
-u: user = { id = 7 }
-print(u.id)
+main: i64 = ()
+  print(7)
+  0

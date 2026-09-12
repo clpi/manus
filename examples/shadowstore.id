@@ -1,3 +1,4 @@
+# expect: 7 99 7
 cell: { x: i64 }
 bank = { x = 1 }
 

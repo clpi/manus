@@ -1,3 +1,4 @@
+# expect-exit: 11
 
 twice: i64 = (t)
   t + t

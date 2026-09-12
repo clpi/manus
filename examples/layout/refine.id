@@ -1,3 +1,4 @@
+# expect: 6
 global gp: { x: i8, y: i64 } = { x = 1, y = 2 }
 
 p: { x: i8, y: i64 } =

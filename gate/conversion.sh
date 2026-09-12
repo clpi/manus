@@ -115,10 +115,9 @@ cc=${CC:-cc}
 
 # The two fixtures that have a realization today, and the four that do not with
 # the exact id each refuses at. Arm 5 owns the second list.
-live='examples/conversion/edge.id examples/conversion/level.id'
+live='examples/conversion/edge.id examples/conversion/level.id examples/conversion/slot.id'
 dead='examples/conversion/convert.id:unsupported-conversion
 examples/conversion/relation.id:missing-application-id
-examples/conversion/slot.id:record-param
 examples/conversion/store.id:missing-application-id'
 
 for fixture in $live; do

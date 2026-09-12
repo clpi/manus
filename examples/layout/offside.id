@@ -1,3 +1,4 @@
+# expect: 20 3 6
 
 bump: i64 = (n: i64)
   n + 10

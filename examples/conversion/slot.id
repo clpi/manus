@@ -1,3 +1,4 @@
+# expect: 7 1 12
 
 token: {
     span: i64

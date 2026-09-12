@@ -1,3 +1,4 @@
+# expect: 189
 
 stretch: f64 = (v: f64)
   v * 25400.0

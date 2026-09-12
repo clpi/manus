@@ -1,3 +1,4 @@
+# expect: 0 3 9
 
 tick = 0
 step = (n: i64)

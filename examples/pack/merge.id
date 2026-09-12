@@ -1,3 +1,4 @@
+# expect: 42 over trunc
 
 scan: i64 | error = (b: i64)
     if b > 63
