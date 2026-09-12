@@ -1,0 +1,19 @@
+# shift.id — parse loop that shifts and adds.
+#
+# Regression test for the native backend << miscompile: a loop carrying
+# v = (v << 4) + s:byte(i) - 48 must shift v left by 4 before adding the next
+# hex digit. Returns 0 when the shift is emitted correctly, nonzero when the
+# value after shifting is wrong.
+#
+# "1234" hex = 0x1234 = 4660 decimal.
+main: i64 = ()
+    s = "1234"
+    v = 0
+    i = 1
+    while i <= 4
+        v = (v << 4) + s:byte(i) - 48
+        i = i + 1
+    if v == 4660
+        0
+    else
+        1

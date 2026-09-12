@@ -1,0 +1,22 @@
+# chain.id — chained user-relation calls across a call boundary.
+#
+# Regression test for the native backend caller-save bug: when a value already
+# occupies an ABI argument register (x0-x7) it is staged for the next call
+# with no copy, and if that value stays live past the call the register is its
+# only copy. Excluding staged registers from the caller-save set loses the
+# value across the call (fixed upstream by "native: preserve live staged ABI
+# registers across calls").
+#
+# Returns 0 when the backend preserves t1 across the idr(t1) call, nonzero
+# when the value is lost.
+idr: str = (x: str)
+    x
+
+main: i64 = ()
+    t1 = idr("V")
+    t2 = idr(t1)
+    x = t1 .. t2
+    if x == "VV"
+        0
+    else
+        1

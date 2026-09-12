@@ -1,0 +1,23 @@
+# lenbig.id — long concatenated string with trailing literal.
+#
+# Regression test for the native backend concat miscompile: a single `..`
+# chain with more than 8 dynamic holes requires multiple vararg chunks, and
+# the trailing literal after the last hole was dropped from the final chunk's
+# format (fixed upstream by "fix: keep trailing concat literals on final
+# vararg chunk"). Returns 0 when the full string (including "TAIL") is built,
+# nonzero when the trailing literal is lost.
+main: i64 = ()
+    a = "a"
+    b = "b"
+    c = "c"
+    d = "d"
+    e = "e"
+    f = "f"
+    g = "g"
+    h = "h"
+    i = "i"
+    s = a .. b .. c .. d .. e .. f .. g .. h .. i .. "TAIL"
+    if s == "abcdefghiTAIL"
+        0
+    else
+        1
