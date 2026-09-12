@@ -3316,6 +3316,7 @@ pub const Sema = struct {
                         const ann = try self.resolve_type(lname.typ);
                         const before = self.errors;
                         if (i < ld.inits.len) self.check_demanded_pack(lname.typ, ld.inits[i]);
+                        if (i < ld.inits.len) self.checkArrayLiteralExtent(lname.loc, ann, ld.inits[i]);
                         // Check type mismatch: if init type is known (not any/nil) and
                         // annotation is known (not any), they must match
                         if (i < init_types.items.len) {
@@ -4771,6 +4772,30 @@ pub const Sema = struct {
     /// gap's own "Do not" places the diagnostic exactly there. The subject
     /// resolution and the label test mirror `check_descriptor_application`
     /// clause for clause so the two faces cannot drift apart.
+
+    /// A fixed-array annotation `[N]T` demands exactly N positional elements
+    /// in a table-literal initializer. A short literal used to sail through
+    /// and publish a literal-sized aggregate while the annotation promised
+    /// N — `a: [8]i64 = {0}` read as a 1-element table and `a[2]` trapped
+    /// at runtime. Refuse at the annotation instead; the repair is spelling
+    /// out all N elements.
+    fn checkArrayLiteralExtent(self: *Sema, loc: ast.Loc, ann: RT, rhs: *const ast.Expr) void {
+        if (ann != .array) return;
+        const size = ann.array.size orelse return;
+        if (rhs.* != .table) return;
+        var count: usize = 0;
+        for (rhs.table.fields) |field| {
+            if (field != .positional) return;
+            count += 1;
+        }
+        if (count != size) {
+            self.err(loc, "array literal has {d} element(s) but the annotation demands [{d}]", .{ count, size });
+            return;
+        }
+        for (rhs.table.fields) |field| {
+            self.checkArrayLiteralExtent(field.positional.loc(), ann.array.elem.*, field.positional);
+        }
+    }
 
     fn check_demanded_pack(self: *Sema, ann: ast.TypeExpr, rhs: *ast.Expr) void {
         if (ann == .named) return self.check_demanded_pack_for(ann.named, rhs);
