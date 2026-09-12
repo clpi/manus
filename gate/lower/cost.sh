@@ -234,7 +234,7 @@ static double network_once(unsigned long n) {
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_addr.s_addr = htonl(0x7f000001UL);
     addr.sin_port = 0;
     if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         close(listener);
