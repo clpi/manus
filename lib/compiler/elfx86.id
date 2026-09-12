@@ -815,7 +815,8 @@ main: i64 = ()
                     cd = at(wcd, wopen - 1)
                     here = code:len() / 2
                     if cd == 1
-                        code = code .. subri(rr, 1)
+                        cr = breg(wopen - 1)
+                        code = code .. subri(cr, 1)
                         back = jp - (here + 6)
                         neg = 0 - 128
                         if back < neg or back > 127
@@ -823,6 +824,7 @@ main: i64 = ()
                             code = code .. jccn(5, back)
                         else
                             code = code .. jcc(5, back)
+                        code = imm(code, rl, rr)
                     else
                         top = jp + 5
                         if cd == 2
@@ -856,7 +858,8 @@ main: i64 = ()
                 cd = at(wcd, wopen - 1)
                 here = code:len() / 2
                 if cd == 1
-                    code = code .. subri(rr, 1)
+                    cr = breg(wopen - 1)
+                    code = code .. subri(cr, 1)
                     back = jp - (here + 6)
                     neg = 0 - 128
                     if back < neg or back > 127
@@ -864,6 +867,7 @@ main: i64 = ()
                         code = code .. jccn(5, back)
                     else
                         code = code .. jcc(5, back)
+                    code = imm(code, rl, rr)
                 else
                     top = jp + 5
                     if cd == 2
@@ -910,8 +914,8 @@ main: i64 = ()
                             pk = pk - 1
                         if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
                             cd = 1
-                            rr = breg(wopen)
-                            code = imm(code, rr, bv)
+                            rr = bv
+                            code = imm(code, breg(wopen), bv)
                 else
                     rr = reg(names, rhs)
                 jp = code:len() / 2
