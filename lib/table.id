@@ -32,15 +32,6 @@ merge: any = (a: any, b: any)
             out[k] = v
     out
 
-contains: bool = (list: any, value: any)
-    if list == nil return false 
-    i = 1
-    while i <= list:len()
-        v = list[i]
-        if v == value return true 
-        i += 1
-    false
-
 index_of: any = (list: any, value: any)
     if list == nil return 0 
     i = 1

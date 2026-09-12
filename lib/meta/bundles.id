@@ -19,13 +19,6 @@ names: any = ()
 traits: any = (bundle_name: str)
   bundles(bundle_name) or {}
 
-contains: bool = (bundle_name: str, trait: str)
-  rows = traits(bundle_name)
-  for _, t in rows
-    if t == trait
-      return true
-  false
-
 describe: str = (bundle_name: str)
   rows = traits(bundle_name)
   bundle_name .. " => " .. rows:concat(", ")

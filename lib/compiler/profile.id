@@ -18,7 +18,7 @@
 # declaration. Predicting from the surface is possible precisely because those
 # rules are syntactic.
 
-contains: bool = (hay: str, needle: str)
+has: bool = (hay: str, needle: str)
   hn: i64 = hay:len()
   nn: i64 = needle:len()
   i: i64 = 1
@@ -44,17 +44,17 @@ contains: bool = (hay: str, needle: str)
 dynamic: bool = (src: str)
   # an `any`-typed parameter or binding: the native-scalar path refuses the
   # whole module on this one, with no diagnostic
-  if contains(src, ": any")
+  if has(src, ": any")
     return true
   # a table literal or index: no native memory representation for a table
   # crossing a call boundary
-  if contains(src, "{")
+  if has(src, "{")
     return true
   # varargs
-  if contains(src, "...")
+  if has(src, "...")
     return true
   # string values beyond literals passed straight through
-  if contains(src, ": str")
+  if has(src, ": str")
     return true
   false
 

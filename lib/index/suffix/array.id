@@ -76,5 +76,3 @@ lookup: any = (store: any, pattern: str)
 findall: any = (store: any, pattern: str)
     lookup(store, pattern)
 
-contains: bool = (store: any, pattern: str)
-    lookup(store, pattern):len() > 0
