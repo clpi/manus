@@ -1,4 +1,4 @@
 # input endpoint — call as input:read() / input:read(path).
 
 input =
-  read = fetch
+  read = get

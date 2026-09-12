@@ -1,6 +1,6 @@
 # input home — read relation on readable subjects (no @c, no lua).
 
-fetch: str = (path: str)
+get: str = (path: str)
   if path == nil or path:len() == 0
     stdin:read()
   path:read()
