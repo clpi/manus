@@ -121,13 +121,12 @@ done
 # The direct backend's verdict on each spelling. Recorded as `admit`/`refuse`;
 # python asserts they DISAGREE and asserts which way round.
 for f in call index; do
-  if ( cd "$probe" && "$idol" run "$probe/$f.id" --backend=direct >"$probe/$f.run" 2>&1 ); then
+  if "$idol" compile "$probe/$f.id" -o "$probe/$f.bin" >"$probe/$f.run" 2>&1; then
     echo admit > "$probe/$f.verdict"
   else
     echo refuse > "$probe/$f.verdict"
   fi
 done
-
 # ── arm 5 input: the `placeFold` body, sliced by brace depth ───────────────
 python3 - "$lower" > "$probe/arms.txt" <<'PY'
 import sys, re
