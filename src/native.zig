@@ -5505,7 +5505,7 @@ const Arm64Compiler = struct {
                 // cannot be asked not to append, so the `.str` arm becomes
                 // `printf("%s", v)` and travels the stack-vararg path the
                 // numeric arms already use. `print` is untouched.
-                const nonl = std.mem.eql(u8, ins.field, "nonl");
+                const nonl = std.mem.eql(u8, ins.field, "nonl") or std.mem.eql(u8, ins.field, "byte");
                 // `puts` alone takes the value in x0 and no format. Every other
                 // shape is a `printf`: format in x0, value in x2 and then at
                 // [sp,#0]. A VALUELESS print is a `printf` with no value at all,
@@ -5535,7 +5535,8 @@ const Arm64Compiler = struct {
                         const reg = try self.evalDnirValue(temps, ins.lhs);
                         value_reg = reg;
                         self.releaseDnirTemp(pinned, ins.lhs, reg);
-                        fmt_sym = try self.internString(if (nonl) "%lld" else "%lld\n");
+                        const is_byte = std.mem.eql(u8, ins.field, "byte");
+                        fmt_sym = try self.internString(if (is_byte) "%c" else if (nonl) "%lld" else "%lld\n");
                     },
                     .f64 => switch (ins.lhs) {
                         // Literal: the bit pattern goes straight into x2, which

@@ -15233,6 +15233,15 @@ fn lowerStreamClose(ctx: *LowerCtx, obj: *const ast.Expr) Error!dnir.Value {
 fn lowerWrite(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     if (args.len != 1) return bail(ctx.diagnostic, @src());
     const arg = args[0];
+    if (arg.* == .call and arg.call.func.* == .field) {
+        const f = arg.call.func.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string") and
+            std.mem.eql(u8, f.field, "char") and arg.call.args.len == 1) {
+            const bv = try lowerExpr(ctx, arg.call.args[0]);
+            try ctx.emit(.{ .op = .print_value, .lhs = bv, .ty = .i64, .field = "byte" });
+            return .void;
+        }
+    }
     if (try lowerPrintFormat(ctx, arg, false)) |v| return v;
     const v = try lowerExpr(ctx, arg);
     // WRITING BYTES TO A BYTE STREAM NEEDS NO TEXTUAL LAW, which is why the
