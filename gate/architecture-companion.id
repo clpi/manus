@@ -1,0 +1,136 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+relock: i64 = (idol: str, root: str, work: str)
+  gatecap("'{root}/tools/node/dev/idol-lock' -- '{idol}' run --backend=direct '{root}/gate/architecture-companion.id' >'{work}/relock.log' 2>&1; printf '%s' \"$?\" >'{work}/relock.rc'")
+  print(chomp(gatecap("cat '{work}/relock.log'")))
+  digits(chomp(gatecap("cat '{work}/relock.rc'")))
+
+native: i64 = (idol: str, work: str)
+  gatecap("printf 'main: i64 = ()\\n  0\\n' >'{work}/control.id'")
+  rc = digits(chomp(gatecap("'{idol}' compile --backend=direct -o '{work}/control.bin' '{work}/control.id' >'{work}/nativelog.txt' 2>&1; echo $?")))
+  if rc == 0
+    if gatecap("test -s '{work}/control.bin' >/dev/null 2>&1; echo $?") == "0\n"
+      return 1
+    return 3
+  if gatecap("grep -q 'DNB004' '{work}/nativelog.txt' >/dev/null 2>&1; echo $?") == "0\n"
+    return 2
+  3
+
+probes: i64 = (idol: str, root: str, work: str, log: str, nat: i64)
+  gatecap("cat >'{work}/ambiguity.id' <<'PROBE'\nmain: i64 = ()\n    xs = \{1, 2, 3\}\n    xs:map(twice)\n    0\n\ntwice: any = (x: any)\n    x\nPROBE\n")
+  rc = digits(chomp(gatecap("cd '{root}' && '{idol}' check '{work}/ambiguity.id' >'{log}' 2>&1; echo $?")))
+  if rc == 0
+    print("architecture-companion: FAIL AMBIGUITY-FAILS: xs:map(twice) admitted without disambiguating iter vs table")
+    return 1
+  if gatecap("grep -Eiq 'ambiguous|ambig' '{log}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL AMBIGUITY-FAILS: refusal did not name ambiguity")
+    return 1
+  print("architecture-companion: ok   AMBIGUITY-FAILS RESOLUTION-AMBIGUITY")
+  save = "{root}/examples/bind_save_state.id"
+  if gatecap("test -f '{save}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL missing probe: {save}")
+    return 1
+  if digits(chomp(gatecap("cd '{root}' && '{idol}' check '{save}' >'{log}' 2>&1; echo $?"))) != 0
+    print("architecture-companion: FAIL GRAPH-ARG-EXACT: bind_save_state.id check failed")
+    return 1
+  print("architecture-companion: ok   GRAPH-ARG-EXACT")
+  canon = "{root}/examples/bind_concat.id"
+  if gatecap("test -f '{canon}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL missing probe: {canon}")
+    return 1
+  fmt1 = "{work}/fmt1.id"
+  fmt2 = "{work}/fmt2.id"
+  gatecap("cp '{canon}' '{fmt1}'")
+  if digits(chomp(gatecap("cd '{root}' && '{idol}' fmt '{fmt1}' >'{log}' 2>&1; echo $?"))) != 0
+    print("architecture-companion: FAIL FORMAT-FIXPOINT: idol fmt failed on canonical probe")
+    return 1
+  if gatecap("grep -Eiq '\\bfun\\b|\\bend\\b|\\bthen\\b' '{fmt1}' >/dev/null 2>&1; echo $?") == "0\n"
+    print("architecture-companion: FAIL FORMAT-FIXPOINT: fmt reintroduced retired faces (fun/end/then)")
+    return 1
+  gatecap("cp '{fmt1}' '{fmt2}'")
+  if digits(chomp(gatecap("cd '{root}' && '{idol}' fmt '{fmt2}' >'{log}' 2>&1; echo $?"))) != 0
+    print("architecture-companion: FAIL FORMAT-FIXPOINT: second fmt pass failed")
+    return 1
+  if gatecap("cmp -s '{fmt1}' '{fmt2}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL FORMAT-FIXPOINT: fmt is not idempotent on canonical probe")
+    return 1
+  if digits(chomp(gatecap("cd '{root}' && '{idol}' check '{fmt2}' >'{log}' 2>&1; echo $?"))) != 0
+    print("architecture-companion: FAIL FORMAT-FIXPOINT: formatted canonical probe failed check")
+    return 1
+  print("architecture-companion: ok   FORMAT-FIXPOINT")
+  direct = "{root}/examples/call_index_assign.id"
+  if gatecap("test -f '{direct}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL missing probe: {direct}")
+    return 1
+  if digits(chomp(gatecap("cd '{root}' && '{idol}' check '{direct}' >'{log}' 2>&1; echo $?"))) != 0
+    print("architecture-companion: FAIL CHECK-NOT-DIRECT-ADMISSION: call_index_assign.id must pass idol check (sema path)")
+    return 1
+  rc = digits(chomp(gatecap("cd '{root}' && '{idol}' run '{direct}' >'{log}' 2>&1; echo $?")))
+  if rc == 0
+    print("architecture-companion: FAIL CHECK-NOT-DIRECT-ADMISSION: call_index_assign.id must refuse direct run (not exit 0)")
+    return 1
+  if nat == 2
+    print("architecture-companion: FAIL CHECK-NOT-DIRECT-ADMISSION: NOT MEASURED — this host has no direct-native realization (DNB004 on a trivial control), so the direct SUBSET refusal this probe asserts cannot be reached")
+    return 1
+  if gatecap("grep -Eiq 'DNB001|UnsupportedProgram|direct backend' '{log}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL CHECK-NOT-DIRECT-ADMISSION: direct refusal did not name DNB/direct backend")
+    return 1
+  print("architecture-companion: ok   CHECK-NOT-DIRECT-ADMISSION")
+  if digits(chomp(gatecap("'{idol}' run --backend=direct '{root}/gate/architecture-negative.id' >'{log}' 2>&1; echo $?"))) != 0
+    print("architecture-companion: FAIL RESOLUTION-PERMUTATION: architecture-negative RESOLUTION-PERMUTATION checks failed")
+    return 1
+  if gatecap("grep -Fq 'RESOLUTION-PERMUTATION: foreign_module_homes documents order independence' '{log}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL RESOLUTION-PERMUTATION: static order-independence check missing from negative gate")
+    return 1
+  if gatecap("grep -Fq 'RESOLUTION-PERMUTATION: unit test must guard non-first-wins resolution' '{log}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL RESOLUTION-PERMUTATION: unit-test guard missing from negative gate")
+    return 1
+  print("architecture-companion: ok   RESOLUTION-PERMUTATION")
+  0
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  if chomp(gatecap("printf '%s' \"$\{IDOL_LOCK_HELD:-0\}\"")) != "1"
+    work = chomp(gatecap("mktemp -d \"$\{TMPDIR:-/tmp\}/idol-arch-companion.XXXXXX\""))
+    code = relock(idol, root, work)
+    gatecap("rm -rf '{work}'")
+    return code
+  work = chomp(gatecap("mktemp -d \"$\{TMPDIR:-/tmp\}/idol-arch-companion.XXXXXX\""))
+  log = "{work}/log.txt"
+  nat = native(idol, work)
+  if gatecap("test -x '{idol}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("architecture-companion: FAIL compiler not executable: {idol}")
+    gatecap("rm -rf '{work}'")
+    return 1
+  code = probes(idol, root, work, log, nat)
+  gatecap("rm -rf '{work}'")
+  if code == 0
+    print("architecture-companion gate: PASS")
+  code
