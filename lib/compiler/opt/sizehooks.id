@@ -1,0 +1,42 @@
+hooks: table = ()
+    {
+        { point = "postemit", file = "lib/compiler/native.id", anchor = "codesize", stage = "emit", input = "code", output = "code", order = 1, tool = "outline" },
+        { point = "postoutline", file = "lib/compiler/native.id", anchor = "postemit", stage = "emit", input = "codetable", output = "codetable", order = 2, tool = "icf" },
+        { point = "profilefeed", file = "lib/compiler/profile.id", anchor = "profile", stage = "plan", input = "src", output = "hot", order = 0, tool = "pgo" },
+    }
+
+policy: table = ()
+    {
+        { name = "minlen", value = 4 },
+        { name = "minocc", value = 2 },
+        { name = "coldonly", value = 1 },
+        { name = "maxrounds", value = 16 },
+        { name = "blrng", value = 134217728 },
+    }
+
+pgo: table = ()
+    {
+        { name = "funhot", fields = "name,count", consumer = "outline", effect = "exclude" },
+        { name = "hotfmt", fields = "start,end", consumer = "outline", effect = "gate" },
+        { name = "upgrade", fields = "mode", consumer = "outline", effect = "select" },
+    }
+
+limits: table = ()
+    {
+        { name = "x30", rule = "skip" },
+        { name = "pcrel", rule = "never" },
+        { name = "ctrl", rule = "never" },
+        { name = "bl", rule = "skip" },
+    }
+
+method: table = ()
+    {
+        { name = "outline", algo = "sam", order = "n" },
+        { name = "icf", algo = "hashfold", order = "n" },
+    }
+
+io: table = ()
+    {
+        { name = "outline", input = "hex", output = "hex~table~saved" },
+        { name = "icf", input = "hex~table", output = "hex~table~saved" },
+    }
