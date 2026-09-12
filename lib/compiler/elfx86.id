@@ -641,6 +641,8 @@ pop: str = (s: str, n: i64)
 
 main: i64 = ()
     src = stdin:read()
+    src = compiler.opt.zerotrip.zerotrip(src)
+    src = compiler.opt.licm.licm(src)
     names = ""
     code = ""
     mgs = divscan(src)
