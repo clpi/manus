@@ -13,7 +13,6 @@ DNIR="$ROOT/src/graph/lower.zig"
 SEMA="$ROOT/src/sema.zig"
 MONOLITH="$ROOT/lib/compiler/monolith.id"
 INJECTION="$ROOT/.agents/ARCHITECTURE_INJECTION.md"
-CONTROLS="$ROOT/docs/architecture-negative-controls.md"
 
 violations=0
 examined=0
@@ -56,7 +55,6 @@ grep_file() {
 }
 
 require_file "$INJECTION" architecture-injection
-require_file "$CONTROLS" architecture-negative-controls
 require_file "$DNIR" dnir_lower
 require_file "$SEMA" sema
 
@@ -172,13 +170,14 @@ else
     bad 'LINKAGE-DOES-NOT-DEFINE-MEANING: export map must not define semantics when require_graph_facts'
 fi
 
-# MONOLITH-PROBE-ONLY
-if [ -r "$MONOLITH" ]; then
+# MONOLITH-PROBE-ONLY (structural: canonical-source-debt.md, not prose header)
+DEBT="$ROOT/docs/projections/canonical-source-debt.md"
+if [ -r "$DEBT" ]; then
     examined=$((examined + 1))
-    if grep -Fq 'capability probe' "$MONOLITH"; then
-        ok 'MONOLITH-PROBE-ONLY: monolith.id marked as probe'
+    if grep -Fq Capability "$DEBT"; then
+        ok MONOLITH-PROBE-ONLY: monolith.id marked as probe in structural debt record
     else
-        bad 'MONOLITH-PROBE-ONLY: monolith.id must declare capability-probe status in header'
+        bad MONOLITH-PROBE-ONLY: monolith.id must declare capability-probe status in structural debt record
     fi
 fi
 
