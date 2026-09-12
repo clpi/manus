@@ -116,7 +116,7 @@ case $mode in
     --check)
         manifest=${2:-${IDOL_NATIVE_CALL_FLEET:-}}
         subject=${IDOL_NATIVE_CALL_SOURCE:-"$root/test/native/call.id"}
-        [ -n "$manifest" ] || fail 'set IDOL_NATIVE_CALL_FLEET or pass a manifest path'
+        [ -n "$manifest" ] || { printf 'native-call: NOT MEASURED — set IDOL_NATIVE_CALL_FLEET or pass a manifest path (fleet evidence absent on this host)\n' >&2; exit 2; }
         [ -f "$subject" ] || fail "conformance subject is absent: $subject"
         check "$manifest" "$(hash256 "$subject")"
         ;;

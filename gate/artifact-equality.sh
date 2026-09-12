@@ -106,7 +106,7 @@ case $mode in
     --check)
         manifest=${2:-${IDOL_ARTIFACT_FLEET:-}}
         subject=${IDOL_ARTIFACT_SOURCE:-"$root/test/native/call.id"}
-        [ -n "$manifest" ] || fail 'set IDOL_ARTIFACT_FLEET or pass a manifest path'
+        [ -n "$manifest" ] || { printf 'artifact-equality: NOT MEASURED — set IDOL_ARTIFACT_FLEET or pass a manifest path (fleet evidence absent on this host)\n' >&2; exit 2; }
         [ -f "$subject" ] || fail "artifact subject is absent: $subject"
         check "$manifest" "$(hash256 "$subject")"
         ;;
