@@ -41,6 +41,27 @@ mul: i64 = (rd: i64, rn: i64, rm: i64)
 div: i64 = (rd: i64, rn: i64, rm: i64)
     2596277248 | (rm << 16) | (rn << 5) | rd
 
+addi: i64 = (rd: i64, rn: i64, v: i64)
+    2432696320 | ((v & 4095) << 10) | (rn << 5) | rd
+
+subi: i64 = (rd: i64, rn: i64, v: i64)
+    3506438144 | ((v & 4095) << 10) | (rn << 5) | rd
+
+lsl: i64 = (rd: i64, rn: i64, s: i64)
+    3544186880 | (((64 - s) & 63) << 16) | ((63 - s) << 10) | (rn << 5) | rd
+
+powtwo: i64 = (v: i64)
+    if v < 2
+        return 0 - 1
+    sh = 0
+    p = 1
+    while p < v
+        p = p * 2
+        sh = sh + 1
+    if p == v
+        return sh
+    0 - 1
+
 mov: i64 = (rd: i64, rm: i64)
     2852126720 | (rm << 16) | (31 << 5) | rd
 
@@ -176,6 +197,24 @@ simpmul: i64 = (a: i64, isa: i64, b: i64, isb: i64)
         return 1
     0
 
+mulred: str = (c: str, rd: i64, n: str, v: i64, names: str)
+    sh = powtwo(v)
+    if sh > 0
+        return c .. word(lsl(rd, reg(names, n), sh))
+    if v == 3
+        t = c .. word(lsl(10, reg(names, n), 1))
+        return t .. word(add(rd, reg(names, n), 10))
+    if v == 5
+        t = c .. word(lsl(10, reg(names, n), 2))
+        return t .. word(add(rd, reg(names, n), 10))
+    if v == 7
+        t = c .. word(lsl(10, reg(names, n), 3))
+        return t .. word(minus(rd, 10, reg(names, n)))
+    if v == 9
+        t = c .. word(lsl(10, reg(names, n), 3))
+        return t .. word(add(rd, reg(names, n), 10))
+    ""
+
 calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
     aconst = digit(a:byte(1))
     econst = digit(e:byte(1))
@@ -207,6 +246,20 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
             return term(c, a, rd, names)
         if aconst == 0 and econst == 0 and a == e
             return imm(c, rd, 0)
+    if o == 43 and aconst == 1 and econst == 0 and av < 4096
+        return c .. word(addi(rd, reg(names, e), av))
+    if o == 43 and aconst == 0 and econst == 1 and ev < 4096
+        return c .. word(addi(rd, reg(names, a), ev))
+    if o == 45 and aconst == 0 and econst == 1 and ev < 4096
+        return c .. word(subi(rd, reg(names, a), ev))
+    if o == 42 and aconst == 0 and econst == 1
+        m = mulred(c, rd, a, ev, names)
+        if m:len() > 0
+            return m
+    if o == 42 and aconst == 1 and econst == 0
+        m = mulred(c, rd, e, av, names)
+        if m:len() > 0
+            return m
     ra = 0
     rb = 0
     if aconst == 1
@@ -271,8 +324,9 @@ main: i64 = ()
     src = stdin:read()
     names = ""
     code = ""
-    wtest = ""
-    wpatch = ""
+    wjmp = ""
+    wrl = ""
+    wrr = ""
     wind = ""
     wopen = 0
     lc = rows(src)
@@ -285,13 +339,17 @@ main: i64 = ()
         else
             ind = indent(raw)
             while wopen > 0 and at(wind, wopen - 1) >= ind
-                tp = at(wtest, wopen - 1)
-                pp = at(wpatch, wopen - 1)
-                pos = code:len() / 8
-                code = code .. word(jump(tp - pos))
-                code = patch(code, pp, bcond(10, code:len() / 8 - pp))
-                wtest = pop(wtest, wopen)
-                wpatch = pop(wpatch, wopen)
+                jp = at(wjmp, wopen - 1)
+                rl = at(wrl, wopen - 1)
+                rr = at(wrr, wopen - 1)
+                bp = jp + 1
+                tp = code:len() / 8
+                code = patch(code, jp, jump(tp - jp))
+                code = code .. word(cmp(rl, rr))
+                code = code .. word(bcond(11, bp - (tp + 1)))
+                wjmp = pop(wjmp, wopen)
+                wrl = pop(wrl, wopen)
+                wrr = pop(wrr, wopen)
                 wind = pop(wind, wopen)
                 wopen = wopen - 1
             if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
@@ -307,15 +365,16 @@ main: i64 = ()
                 rl = reg(names, lhs)
                 rr = 0
                 if digit(rhs:byte(1)) == 1
-                    code = imm(code, 9, num(rhs))
-                    rr = 9
+                    br = 11 + wopen
+                    code = imm(code, br, num(rhs))
+                    rr = br
                 else
                     rr = reg(names, rhs)
-                tp = code:len() / 8
-                code = code .. word(cmp(rl, rr))
-                code = code .. word(bcond(10, 0))
-                wtest = wtest .. dec(tp) .. "|"
-                wpatch = wpatch .. dec(tp + 1) .. "|"
+                jp = code:len() / 8
+                code = code .. word(jump(0))
+                wjmp = wjmp .. dec(jp) .. "|"
+                wrl = wrl .. dec(rl) .. "|"
+                wrr = wrr .. dec(rr) .. "|"
                 wind = wind .. dec(ind) .. "|"
                 wopen = wopen + 1
             else
