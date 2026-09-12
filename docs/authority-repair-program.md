@@ -28,7 +28,7 @@
 | law.coherence | current | invariant | 2 |  |
 | law.owner | current | invariant | 3 |  |
 | law.identity.mnemonic | current | invariant | 4 |  |
-| law.id.one | current | invariant | 4 | gate/readpath.sh |
+| law.id.one | current | invariant | 4 | gate/readpath.id |
 | law.identity.continuity | current | protocol | 4 |  |
 | law.identity.fingerprint | current | protocol | 4 |  |
 | law.number.projection | current | invariant | 4 |  |

@@ -76,7 +76,7 @@ environment[k]   → os.env[k]    (environment is not a thing)
 
 | # | directive |
 |---|---|
-| 1 | `path:read()` on an absent or unreadable path FAILS CLOSED: the runtime refuses with an identity-first diagnostic naming the cause and the path (`read-refused:absent:<path>` / `read-refused:io:<path>`) and a nonzero exit, because an absent file is not a value and NULL-as-`str` was measured undefined behaviour (`law.id.one`: downstream semantic use fails closed when the required facts are absent; refusal pinned by `gate/readpath.sh`). |
+| 1 | `path:read()` on an absent or unreadable path FAILS CLOSED: the runtime refuses with an identity-first diagnostic naming the cause and the path (`read-refused:absent:<path>` / `read-refused:io:<path>`) and a nonzero exit, because an absent file is not a value and NULL-as-`str` was measured undefined behaviour (`law.id.one`: downstream semantic use fails closed when the required facts are absent; refusal pinned by `gate/readpath.id`). |
 | 2 | A structured absent\|present outcome family that lets source observe absence as a value remains open under `GAP-154`/`GAP-118` and is not admitted by this refusal. |
 
 | section |

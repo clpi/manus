@@ -100,7 +100,7 @@ done
 # the gate is NOT MEASURED rather than failed: the same attribution class
 # the .sh gates get from the producer's sentence, via IDOL_DIRECT_NATIVE,
 # which this file already probed above.
-IDOL_GATES='gate/table_apply.id gate/canonicality.id'
+IDOL_GATES='gate/table_apply.id gate/canonicality.id gate/readpath.id'
 
 idol=${IDOL_BIN:-$repo/zig-out/bin/idol}
 for idgate in $IDOL_GATES; do

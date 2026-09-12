@@ -1,0 +1,115 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if text == nil or text == ""
+    return -1
+  v = 0
+  seen = false
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      seen = true
+      i = i + 1
+    else
+      if c == " " or c == "\n" or c == "\r" or c == "\t"
+        i = i + 1
+      else
+        return -1
+  if !seen
+    return -1
+  v
+
+exitedzero: bool = (shellline: str)
+  chomp(gatecap("( {shellline} ) >/dev/null 2>&1; echo $?")) == "0"
+
+present: bool = (path: str)
+  exitedzero("test -r '{path}'")
+
+nonempty: bool = (path: str)
+  exitedzero("test -s '{path}'")
+
+contains: bool = (path: str, needle: str)
+  exitedzero("grep -F -- '{needle}' '{path}'")
+
+samebytes: bool = (a: str, b: str)
+  exitedzero("cmp -s '{a}' '{b}'")
+
+runcode: i64 = (shellline: str)
+  digits(chomp(gatecap("{shellline}; echo $?")))
+
+main: i64 = ()
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "./zig-out/bin/idol"
+  if !exitedzero("test -x '{idol}'")
+    print("readpath: no compiler at {idol}")
+    return 2
+  work = chomp(gatecap("mktemp -d /tmp/idol-readpath.XXXXXX"))
+  gatecap("cat >'{work}/readpath.id' <<'PROBE'\nmain: i64 = ()\n    p: str = os.env[\"READPATH_SUBJECT\"]\n    body: str = p:read()\n    stdout:write(body)\n    0\nPROBE\n")
+  clog = "{work}/compile.log"
+  code = runcode("'{idol}' compile '{work}/readpath.id' -o '{work}/readpath.bin' >'{clog}' 2>&1")
+  if code != 0
+    if contains(clog, "DNB004")
+      print("readpath: NOT MEASURED — the fail-closed refusal and its positive control are read from an EXECUTED binary that cannot be built. This host has no direct-native realization: the compiler refused with DNB004.")
+      gatecap("rm -rf '{work}'")
+      return 2
+    print(chomp(gatecap("cat '{clog}'")))
+    print("readpath: FAIL — readpath.id did not compile — the subject does not exist, so nothing below is measured")
+    gatecap("rm -rf '{work}'")
+    return 1
+  fail = 0
+  absent = "{work}/does-not-exist.txt"
+  aout = "{work}/absent.out"
+  aerr = "{work}/absent.err"
+  code = runcode("READPATH_SUBJECT='{absent}' '{work}/readpath.bin' >'{aout}' 2>'{aerr}'")
+  if code == 0
+    n = digits(chomp(gatecap("wc -c <'{aout}'")))
+    print("readpath: FAIL — §1 absent path answered exit 0 with {n} stdout byte(s) — an absent file scored as a value")
+    fail = 1
+  else
+    if nonempty(aout)
+      print("readpath: FAIL — §1 absent path refused but wrote stdout bytes first — the refusal leaked a partial value")
+      fail = 1
+    else
+      if !contains(aerr, "read-refused:absent:{absent}")
+        print(chomp(gatecap("cat '{aerr}'")))
+        print("readpath: FAIL — §1 absent path refused without naming the cause and path (read-refused:absent:<path>)")
+        fail = 1
+      else
+        print("readpath: §1 absent path refuses, exit {code}, cause and path named on stderr")
+  presentpath = "{work}/present.txt"
+  pout = "{work}/present.out"
+  perr = "{work}/present.err"
+  gatecap("printf 'alpha\\nbeta' >'{presentpath}'")
+  code = runcode("READPATH_SUBJECT='{presentpath}' '{work}/readpath.bin' >'{pout}' 2>'{perr}'")
+  if code != 0
+    print(chomp(gatecap("cat '{perr}'")))
+    print("readpath: FAIL — §2 present file refused (exit {code}) — the fail-closed leg fires on a file that is there")
+    fail = 1
+  else
+    if !samebytes(presentpath, pout)
+      print("readpath: FAIL — §2 present file did not answer its exact bytes")
+      fail = 1
+    else
+      if nonempty(perr)
+        print("readpath: FAIL — §2 present file answered but also wrote stderr — a diagnostic with no failure")
+        fail = 1
+      else
+        print("readpath: §2 present file answers its exact bytes, stderr silent")
+  gatecap("rm -rf '{work}'")
+  if fail != 0
+    return 1
+  print("readpath: PASS")
+  0
