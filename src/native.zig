@@ -8943,6 +8943,48 @@ const Arm64Compiler = struct {
                 }
             }
         }
+        // Skip the O(n^3) transitive closure when the call graph is acyclic:
+        // a cycle-free graph has no function reaching itself, so
+        // depth_metered_names would stay empty. Kahn's check is O(n^2).
+        {
+            const indeg = try self.alloc.alloc(u32, n);
+            defer self.alloc.free(indeg);
+            @memset(indeg, 0);
+            var ci: usize = 0;
+            while (ci < n) : (ci += 1) {
+                var cj: usize = 0;
+                while (cj < n) : (cj += 1) {
+                    if (reach[ci * n + cj]) indeg[cj] += 1;
+                }
+            }
+            const queue = try self.alloc.alloc(usize, n);
+            defer self.alloc.free(queue);
+            var qh: usize = 0;
+            var qt: usize = 0;
+            var ii: usize = 0;
+            while (ii < n) : (ii += 1) {
+                if (indeg[ii] == 0) {
+                    queue[qt] = ii;
+                    qt += 1;
+                }
+            }
+            var visited: usize = 0;
+            while (qh < qt) : (qh += 1) {
+                const u = queue[qh];
+                visited += 1;
+                var vv: usize = 0;
+                while (vv < n) : (vv += 1) {
+                    if (reach[u * n + vv]) {
+                        indeg[vv] -= 1;
+                        if (indeg[vv] == 0) {
+                            queue[qt] = vv;
+                            qt += 1;
+                        }
+                    }
+                }
+            }
+            if (visited == n) return;
+        }
         var changed = true;
         while (changed) {
             changed = false;
