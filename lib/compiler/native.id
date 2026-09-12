@@ -944,7 +944,7 @@ isnum: i64 = (s: str)
         if digit(s:byte(i)) == 0
             return 0
         i = i + 1
-    return 1
+    1
 
 isname: i64 = (s: str)
     n = s:len()
@@ -956,7 +956,7 @@ isname: i64 = (s: str)
         if c < 97 or c > 122
             return 0
         i = i + 1
-    return 1
+    1
 
 hasname: i64 = (lst: str, name: str)
     m = name:len()
@@ -969,7 +969,7 @@ hasname: i64 = (lst: str, name: str)
         if j - i == m and lst:sub(i, j - 1) == name
             return 1
         i = j + 1
-    return 0
+    0
 
 varnum: i64 = (env: str, name: str)
     m = name:len()
@@ -984,10 +984,10 @@ varnum: i64 = (env: str, name: str)
             return f / 7 + 1
         f = f + 1
         i = j + 1
-    return 0
+    0
 
 vfield: i64 = (vi: i64, f: i64)
-    return (vi - 1) * 7 + f
+    (vi - 1) * 7 + f
 
 eset: str = (env: str, idx: i64, v: i64)
     out = ""
@@ -1009,7 +1009,7 @@ eset: str = (env: str, idx: i64, v: i64)
             out = out .. dec(v) .. "|"
         else
             out = out .. env:sub(a, n) .. "|"
-    return out
+    out
 
 fldn: i64 = (s: str)
     n = 0
@@ -1018,7 +1018,7 @@ fldn: i64 = (s: str)
         if s:byte(i) == 124
             n = n + 1
         i = i + 1
-    return n
+    n
 
 fld: str = (s: str, idx: i64)
     cur = 0
@@ -1032,7 +1032,7 @@ fld: str = (s: str, idx: i64)
             cur = cur + 1
             a = i + 1
         i = i + 1
-    return ""
+    ""
 
 ctset: str = (env: str, v: str, kind: i64, val: i64)
     if hasname(env, v) == 0
@@ -1043,7 +1043,7 @@ ctset: str = (env: str, v: str, kind: i64, val: i64)
     env = eset(env, vfield(vi, 3), 0)
     env = eset(env, vfield(vi, 4), 0)
     env = eset(env, vfield(vi, 5), 0)
-    return env
+    env
 
 ctcopy: str = (env: str, v: str, w: i64)
     if hasname(env, v) == 0
@@ -1053,7 +1053,7 @@ ctcopy: str = (env: str, v: str, w: i64)
     while f <= 6
         env = eset(env, vfield(vi, f), at(env, vfield(w, f)))
         f = f + 1
-    return env
+    env
 
 ctunknown: str = (env: str)
     nv = fldn(env) / 7
@@ -1061,7 +1061,7 @@ ctunknown: str = (env: str)
     while vi <= nv
         env = eset(env, vfield(vi, 1), 1)
         vi = vi + 1
-    return env
+    env
 
 ctscan: str = (src: str, k: i64, lc: i64, ind: i64)
     env = ""
@@ -1095,7 +1095,7 @@ ctscan: str = (src: str, k: i64, lc: i64, ind: i64)
                             else
                                 env = ctset(env, v, 1, 0)
         j = j + 1
-    return env
+    env
 
 ctend: i64 = (src: str, j: i64, lc: i64, ind: i64)
     e = j + 1
@@ -1104,7 +1104,7 @@ ctend: i64 = (src: str, j: i64, lc: i64, ind: i64)
         if trim(r):len() > 0 and indent(r) <= ind
             return e
         e = e + 1
-    return lc
+    lc
 
 isinc: i64 = (rhs: str, ctr: str)
     oppos = 0
@@ -1119,7 +1119,7 @@ isinc: i64 = (rhs: str, ctr: str)
     e = trim(rhs:sub(oppos + 1, rhs:len()))
     if a == ctr and isnum(e) == 1 and num(e) > 0
         return 1
-    return 0
+    0
 
 stepof: i64 = (rhs: str, ctr: str)
     oppos = 0
@@ -1129,7 +1129,7 @@ stepof: i64 = (rhs: str, ctr: str)
             oppos = q
         q = q + 1
     e = trim(rhs:sub(oppos + 1, rhs:len()))
-    return num(e)
+    num(e)
 
 ctstep: i64 = (src: str, b: i64, ej: i64, lc: i64, ctr: str)
     cnt = 0
@@ -1153,7 +1153,7 @@ ctstep: i64 = (src: str, b: i64, ej: i64, lc: i64, ctr: str)
         j = j + 1
     if cnt == 1
         return st
-    return 0
+    0
 
 ctacc: str = (env: str, v: str, d: i64, rs: str)
     if hasname(env, v) == 0
