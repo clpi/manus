@@ -1,3 +1,4 @@
+# expect: 1 -1 1 -1 1 -1
 two = 2
 neg = 0 - two
 a = -7 % 2

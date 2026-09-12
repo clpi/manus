@@ -310,9 +310,9 @@ for fixture in $unparsed; do
     if "$idol" compile --backend=wasm "$fixture" -o "$work/unparsed.wasm" >"$work/unparsed.log" 2>&1; then
         fail "$fixture NOW PARSES. It states no answer at all: give it a '# expect:' line, run it, and move it into the live list"
     fi
-    grep -q "^$fixture:39:9: error: expected descriptor field name or spread" "$work/unparsed.log" ||
-        fail "$fixture no longer fails at 39:9 'expected descriptor field name or spread': $(grep -m1 error: "$work/unparsed.log")"
-    printf 'pack gate: arm 5 %s does not parse (39:9 expected descriptor field name or spread) and states no oracle line\n' "$fixture"
+    grep -q "^$fixture:16:15: error:.*law.brace" "$work/unparsed.log" ||
+        fail "$fixture no longer fails at 16:15 'law.brace': $(grep -m1 error: "$work/unparsed.log")"
+    printf 'pack gate: arm 5 %s does not parse (16:15 law.brace) and states no oracle line\n' "$fixture"
 done
 
 # ==================== ARM 6: THE LOOP LAW consume.id LOST ===================

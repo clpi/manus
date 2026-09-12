@@ -1,7 +1,7 @@
 #!/bin/sh
 # gate/alignment-projection.sh — the compass counterfactual (GAP-133).
 #
-# Sibling of gate/table-projection.sh and gate/grammar-projection.sh: the same
+# Sibling of gate/table-projection.sh and gate/grammar-projection.id: the same
 # property, for docs/AGENT_ALIGNMENT.md. C0 law.semantic.service binds the
 # constitution to generate the teaching corpus and fails independently
 # handwritten copies; gaps/GAP-133.md records what a handwritten compass did

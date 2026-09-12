@@ -5215,7 +5215,7 @@
           "Tree-sitter LSP MCP and formatter consume the same facts or generated projections they do not retain independent grammar or semantic classification"
         ],
         "enforced_by": [
-          "gate/grammar-projection.sh",
+          "gate/grammar-projection.id",
           "gate/lower/fallback.sh",
           "gate/token/read.sh"
         ]

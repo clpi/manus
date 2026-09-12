@@ -1,3 +1,4 @@
+# expect: 12 3 12
 
 use = (f, v)
   f(v)

@@ -1,7 +1,7 @@
 #!/bin/sh
 # gate/table-projection.sh — the generated-table counterfactual.
 #
-# Sibling of gate/grammar-projection.sh, which asserts the same property for
+# Sibling of gate/grammar-projection.id, which asserts the same property for
 # the two grammar-role artifacts. This one covers the OTHER generated family:
 # everything `idol wasm-tables emit` and `idol token-tables emit` write.
 #

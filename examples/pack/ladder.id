@@ -2,7 +2,7 @@
 point: { x: f64, y: f64 }
 
 make: point = (a: f64, b: f64)
-    { a, b }
+    { x = a, y = b }
 
 main = ()
     q = point{ x = 3.0, y = 4.0 }

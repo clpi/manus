@@ -1,3 +1,4 @@
+# expect: 5 3 13 3000 5003 3005
 tail: i64 = (n: i64, acc: i64)
   if n <= 0
     acc

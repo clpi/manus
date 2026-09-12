@@ -1,3 +1,4 @@
+# expect: 16
 
 eq_f64_i64: i64 = (v: f64)
   v:to(i64)

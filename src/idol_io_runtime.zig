@@ -10,13 +10,15 @@
 //! a way that a hand-rolled buffered reader would not reproduce, so the port
 //! keeps calling the same libc functions the C called, in the same order.
 //!
-//! THE CONSTRUCTOR IS THE HARD PART. The C had
+//! THE HANDLER INSTALL IS THE HARD PART. The C had
 //! `__attribute__((constructor)) static void idol_io_line_buffer(void)`, which
-//! sets stdout line-buffered BEFORE main. It is not decoration: the server loop
-//! writes a response and then reads the next request, and a full-buffered pipe
-//! deadlocks that handshake. Dropping it in favour of lazy initialisation would
-//! move the flush point, so it is preserved exactly, via module-level assembly
-//! that emits the `__DATA,__mod_init_func` pointer.
+//! installed the SIGABRT flush handler BEFORE main. It is not decoration: the
+//! B5 obligation (bytes written before a trap must be observed) needs the
+//! handler in place before any trap. Dropping it in favour of lazy
+//! initialisation would move the install point, so the install is preserved
+//! exactly — but LAZILY, on first entry to any exported function below, which
+//! is the earliest point the handler can matter. No `__mod_init_func`, no
+//! pre-main work.
 //!
 //! # RUNG 1 — THE ARRIVAL GRANULARITY IS AN OBSERVATION NOTHING REQUIRED
 //!
@@ -111,13 +113,6 @@
 //!                   and it does not: every program that observed pre-trap bytes
 //!                   before observes them after.
 //!
-//! `export const ptr linksection("__DATA,__mod_init_func")` — the obvious
-//! spelling — produces a correct section (flags 0x09, S_MOD_INIT_FUNC_POINTERS)
-//! and then CRASHES ld64 in `AliasAddressOrderer`, because Zig emits three
-//! symbols at that one address where clang emits an anonymous `ltmp`. The
-//! assembly below emits the pointer with no symbol attached, which is what the
-//! linker expects. Verified by running a linked probe and observing the
-//! constructor's output land before `main`'s.
 
 // ── platform ABI ────────────────────────────────────────────────────────────
 extern "c" fn malloc(n: usize) ?*anyopaque;
@@ -179,28 +174,26 @@ fn abortFlush(sig: c_int) callconv(.c) void {
 
 // ── the pre-main constructor ────────────────────────────────────────────────
 /// Was: `setvbuf(stdout, _IOLBF)` — a per-newline arrival observation for the
-/// life of the process, costing ~3,200 instructions per newline forever. Now:
-/// install the B5 handler and nothing else. stdout keeps libc's own default
-/// (line-buffered on a tty, block-buffered on a pipe or file), which is the
-/// weakest arrival observation that still satisfies B1-B5.
+/// life of the process, costing ~3,200 instructions per newline forever. Then:
+/// a pre-main constructor installing the B5 handler and nothing else. Now: the
+/// constructor is gone and the handler installs LAZILY, on first entry to any
+/// exported function below.
 ///
-/// The SYMBOL NAME IS DELIBERATELY UNCHANGED. `gate/survivor.sh` pins that an
-/// `os.args` program carries exactly one initializer and that it is
-/// `_idol_io_line_buffer`; that row stays true. Its sibling rows pin `_setvbuf`
-/// in the undefined-symbol census and those DO change — see the routed note in
-/// the lane report. A gate row that pins the pre-transform symbol set is
-/// measuring the old realization, not the semantics, and must be updated with
-/// the transform rather than blocking it.
-export fn idol_io_line_buffer() callconv(.c) void {
+/// WHY LAZY. Installing a signal handler for a process that never traps is
+/// initialization `main` doesn't touch: dyld ran the initializer, touched its
+/// page, and paid a `signal` call before the first user instruction, for every
+/// io-linked program whether it traps or not. The handler's only job is B5 —
+/// flush stdout before dying from SIGABRT — and B5 can only matter once the
+/// program has touched this runtime, so installing on first touch preserves
+/// every obligation B1-B5 with no pre-main work at all.
+///
+/// WHY UNGUARDED. A "did I install yet" flag is a writable global: a new
+/// `__DATA` word, a new loader segment, a new page touched — the very costs
+/// this removes. `signal` is idempotent, so every entry point installs
+/// unconditionally; one cheap libc call beside the syscalls these functions
+/// already make, and nothing for the loader to do before `main`.
+inline fn ensureAbortFlush() void {
     _ = signal(SIGABRT, abortFlush);
-}
-
-comptime {
-    asm (
-        \\.section __DATA,__mod_init_func,mod_init_funcs
-        \\.p2align 3
-        \\.quad _idol_io_line_buffer
-    );
 }
 
 // ── shared reader ───────────────────────────────────────────────────────────
@@ -235,6 +228,7 @@ fn readFd(fd: c_int) ?[*:0]u8 {
 }
 
 export fn idol_io_read_stdin() callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
     arrive(); // B3: about to block on input; the request must already be out.
     return readFd(0);
 }
@@ -244,6 +238,7 @@ export fn idol_io_read_stdin() callconv(.c) ?[*:0]u8 {
 /// the process ends cleanly rather than answering an empty-string sentinel, so
 /// the Idol server loop is `while true` with nothing to compare against.
 export fn idol_io_read_line() callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
     var cap: usize = 8192;
     var len: usize = 0;
     var buf: [*]u8 = @ptrCast(malloc(cap) orelse return null);
@@ -302,6 +297,7 @@ fn readRefused(cause: [*:0]const u8, path: [*:0]const u8) noreturn {
 }
 
 export fn idol_io_read_path(path: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
     const p = path orelse return idol_io_read_stdin();
     if (p[0] == 0) return idol_io_read_stdin();
     const f = fopen(p, "rb") orelse readRefused("absent", p);
@@ -336,6 +332,7 @@ export fn idol_io_read_path(path: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
 /// 1-based. A missing index is UNKNOWN (null), not "" — the two are different
 /// answers and collapsing them is what GAP-118 records.
 export fn idol_os_arg(i: i64) callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
     if (i < 1) return null;
     const argc: i64 = _NSGetArgc().*;
     const argv = _NSGetArgv().*;
@@ -345,6 +342,7 @@ export fn idol_os_arg(i: i64) callconv(.c) ?[*:0]u8 {
 
 /// Failure is UNKNOWN (null), not "". GAP-118, same rule as `idol_os_arg`.
 export fn idol_os_cwd() callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
     var cap: usize = 256;
     while (true) {
         const buf: [*]u8 = @ptrCast(malloc(cap) orelse return null);
@@ -358,6 +356,7 @@ export fn idol_os_cwd() callconv(.c) ?[*:0]u8 {
 
 
 export fn idol_io_open(path: ?[*:0]const u8, mode: ?[*:0]const u8) callconv(.c) i64 {
+    ensureAbortFlush();
     const p = path orelse return 0;
     const m = mode orelse return 0;
     const f = fopen(p, m) orelse return 0;
@@ -365,6 +364,7 @@ export fn idol_io_open(path: ?[*:0]const u8, mode: ?[*:0]const u8) callconv(.c) 
 }
 
 export fn idol_io_write_handle(handle: i64, text: ?[*:0]const u8) callconv(.c) i64 {
+    ensureAbortFlush();
     if (handle == 0) return 1;
     const f: *anyopaque = @ptrFromInt(@as(usize, @intCast(handle)));
     const s = text orelse return 1;
@@ -372,25 +372,30 @@ export fn idol_io_write_handle(handle: i64, text: ?[*:0]const u8) callconv(.c) i
 }
 
 export fn idol_io_stdout_handle() callconv(.c) i64 {
+    ensureAbortFlush();
     return @intCast(@intFromPtr(__stdoutp));
 }
 
 export fn idol_io_stderr_handle() callconv(.c) i64 {
+    ensureAbortFlush();
     return @intCast(@intFromPtr(__stderrp));
 }
 
 export fn idol_io_close_handle(handle: i64) callconv(.c) i64 {
+    ensureAbortFlush();
     if (handle == 0) return 1;
     const f: *anyopaque = @ptrFromInt(@as(usize, @intCast(handle)));
     return if (fclose(f) != 0) 1 else 0;
 }
 
 export fn idol_os_remove(path: ?[*:0]const u8) callconv(.c) i64 {
+    ensureAbortFlush();
     const p = path orelse return 0;
     return if (unlink(p) == 0) 1 else 0;
 }
 
 export fn idol_os_execute(cmd: ?[*:0]const u8) callconv(.c) i64 {
+    ensureAbortFlush();
     const c = cmd orelse return 1;
     arrive(); // B4: the child inherits fd 1 and must not overtake our bytes.
     const rc = system(c);
@@ -401,6 +406,7 @@ export fn idol_os_execute(cmd: ?[*:0]const u8) callconv(.c) i64 {
 }
 
 export fn idol_process_capture(cmd: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
     const c = cmd orelse return emptyHeap();
     arrive(); // B4: the child inherits fd 1 and must not overtake our bytes.
     const f = popen(c, "r") orelse return emptyHeap();

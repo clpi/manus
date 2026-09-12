@@ -120,7 +120,7 @@ KNOWNUNPROVEN=''
 # `gate/all.sh` is a RUNNER, not a gate: it executes every file here, so under
 # a plant it would recurse into this one. Excluded by role, and named so the
 # exclusion is visible rather than implicit in a glob.
-RUNNERS='gate/all.sh gate/vacuity.sh gate/admission-all.sh'
+RUNNERS='gate/all.sh gate/vacuity.sh gate/admission-all.id'
 
 # ── libraries, which declare their own role ────────────────────────────────
 # A file under `gate/` that exists to be SOURCED is not a gate, and the plants

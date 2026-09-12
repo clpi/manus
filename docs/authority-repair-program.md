@@ -230,7 +230,7 @@
 | law.realization.valid | current | invariant | 67 |  |
 | law.lower.bound | current | invariant | 67 |  |
 | law.link.semantic | current | invariant | 67 |  |
-| law.grammar.one | current | invariant | 67 | gate/grammar-projection.sh, gate/lower/fallback.sh, gate/token/read.sh |
+| law.grammar.one | current | invariant | 67 | gate/grammar-projection.id, gate/lower/fallback.sh, gate/token/read.sh |
 | law.control.derived | current | invariant | 67 | tools/node/dev/orient |
 | law.tag.authority | current | invariant | 67 | gate/graph.id |
 | law.module.zero | current | invariant | 67 | gate/graph.id |
