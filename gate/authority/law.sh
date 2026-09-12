@@ -127,7 +127,14 @@ ANCHORS='docs/spec/law.md docs/spec/constitution.md docs/spec/AUTHORITY.md docs/
 #   sh gate/authority/law.sh   # the census line prints both counts
 # A count BELOW a floor means the extractor, the pathspecs or the tree broke.
 # Above is fine and needs no edit -- projections are expected to multiply.
-FLOOR_ROOT=20
+# Re-derived 2026-09-12: 20 -> 16. Ten witness files were deleted by
+# no-prose conversions between be64bc75 and HEAD (docs/metaprogramming.md,
+# docs/src/concepts.md, docs/src/concurrency.md, docs/src/editor_setup.md,
+# docs/src/introduction.md, docs/src/roadmap.md, docs/src/simd.md,
+# docs/src/wasm.md, docs/tooling.md, tools/wasm/README.md); their routing
+# sentences were duplicative, not unique law. Census re-run at 01a58601:
+# 16 witnesses, 1 distinct value (docs/spec/law.md), no split.
+FLOOR_ROOT=16
 FLOOR_COMPUTED=8
 
 [ -r gate/subject.sh ] || die 'subject producer gate/subject.sh is absent'
