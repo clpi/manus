@@ -149,16 +149,73 @@ term: str = (c: str, t: str, r: i64, names: str)
         return imm(c, r, num(t))
     c .. word(mov(r, reg(names, t)))
 
+foldop: i64 = (a: i64, o: i64, b: i64)
+    if o == 43
+        return a + b
+    if o == 45
+        return a - b
+    if o == 42
+        return a * b
+    0
+
+simpadd: i64 = (a: i64, isa: i64, b: i64, isb: i64)
+    if isa == 1 and a == 0
+        return 1
+    if isb == 1 and b == 0
+        return 2
+    0
+
+simpmul: i64 = (a: i64, isa: i64, b: i64, isb: i64)
+    if isa == 1 and a == 0
+        return 3
+    if isb == 1 and b == 0
+        return 3
+    if isa == 1 and a == 1
+        return 2
+    if isb == 1 and b == 1
+        return 1
+    0
+
 calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
+    aconst = digit(a:byte(1))
+    econst = digit(e:byte(1))
+    av = 0
+    ev = 0
+    if aconst == 1
+        av = num(a)
+    if econst == 1
+        ev = num(e)
+    if aconst == 1 and econst == 1 and o != 47
+        return imm(c, rd, foldop(av, o, ev))
+    skip = 0
+    if o == 43
+        s = simpadd(av, aconst, ev, econst)
+        if s == 1
+            return term(c, e, rd, names)
+        if s == 2
+            return term(c, a, rd, names)
+    if o == 42
+        s = simpmul(av, aconst, ev, econst)
+        if s == 1
+            return term(c, a, rd, names)
+        if s == 2
+            return term(c, e, rd, names)
+        if s == 3
+            return imm(c, rd, 0)
+    if o == 45
+        if econst == 1 and ev == 0
+            return term(c, a, rd, names)
+        if aconst == 0 and econst == 0 and a == e
+            return imm(c, rd, 0)
     ra = 0
     rb = 0
-    if digit(a:byte(1)) == 1
-        c = imm(c, 9, num(a))
+    if aconst == 1
+        c = imm(c, 9, av)
         ra = 9
     else
         ra = reg(names, a)
-    if digit(e:byte(1)) == 1
-        c = imm(c, 10, num(e))
+    if econst == 1
+        c = imm(c, 10, ev)
         rb = 10
     else
         rb = reg(names, e)
@@ -271,27 +328,49 @@ main: i64 = ()
                 if eq > 0
                     name = trim(t:sub(1, eq - 1))
                     rhs = trim(t:sub(eq + 1, t:len()))
-                    if find(names, name) == 0 - 1
-                        names = names .. name .. "|"
-                    rd = reg(names, name)
+                    hascolon = 0
+                    cn = 1
+                    while cn <= name:len()
+                        if name:byte(cn) == 58
+                            hascolon = 1
+                        cn = cn + 1
+                    if hascolon == 0
+                        if find(names, name) == 0 - 1
+                            names = names .. name .. "|"
+                        rd = reg(names, name)
+                        oppos = 0
+                        op = 0
+                        q = 1
+                        while q <= rhs:len()
+                            oc = rhs:byte(q)
+                            if oc == 43 or oc == 45 or oc == 42 or oc == 47
+                                if oppos == 0
+                                    oppos = q
+                                    op = oc
+                            q = q + 1
+                        if oppos == 0
+                            code = term(code, rhs, rd, names)
+                        else
+                            a = trim(rhs:sub(1, oppos - 1))
+                            e = trim(rhs:sub(oppos + 1, rhs:len()))
+                            code = calc(code, rd, a, op, e, names)
+                else
                     oppos = 0
                     op = 0
                     q = 1
-                    while q <= rhs:len()
-                        oc = rhs:byte(q)
+                    while q <= t:len()
+                        oc = t:byte(q)
                         if oc == 43 or oc == 45 or oc == 42 or oc == 47
                             if oppos == 0
                                 oppos = q
                                 op = oc
                         q = q + 1
                     if oppos == 0
-                        code = term(code, rhs, rd, names)
+                        code = term(code, t, 0, names)
                     else
-                        a = trim(rhs:sub(1, oppos - 1))
-                        e = trim(rhs:sub(oppos + 1, rhs:len()))
-                        code = calc(code, rd, a, op, e, names)
-                else
-                    code = term(code, t, 0, names)
+                        a = trim(t:sub(1, oppos - 1))
+                        e = trim(t:sub(oppos + 1, t:len()))
+                        code = calc(code, 0, a, op, e, names)
                     code = code .. word(ret())
                     k = lc
             k = k + 1
