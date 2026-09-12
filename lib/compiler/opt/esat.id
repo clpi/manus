@@ -1,0 +1,260 @@
+
+hx: i64 = (s: str, p: i64)
+    v = 0
+    i = 0
+    while i < 8
+        c = s:byte(p + i)
+        d = c - 48
+        if c >= 97
+            d = c - 87
+        else
+            if c >= 65
+                d = c - 55
+        v = v * 16 + d
+        i = i + 1
+    v
+
+px: str = (v: i64)
+    dg = "0123456789abcdef"
+    o = ""
+    i = 0
+    while i < 8
+        o = dg:sub((v & 15) + 1, (v & 15) + 1) .. o
+        v = v >> 4
+        i = i + 1
+    o
+
+seg: str = (s: str, p: i64, n: i64)
+    if n <= 0
+        return ""
+    s:sub(p, p + n - 1)
+
+putw: str = (g: str, p: i64, w: str)
+    seg(g, 1, p - 1) .. w .. seg(g, p + 8, g:len() - p - 7)
+
+hd: str = (s: str)
+    i = 1
+    n = s:len()
+    while i <= n and s:byte(i) != 59
+        i = i + 1
+    s:sub(1, i - 1)
+
+tl: str = (s: str)
+    i = 1
+    n = s:len()
+    while i <= n and s:byte(i) != 59
+        i = i + 1
+    s:sub(i + 1, n)
+
+nn: i64 = (g: str)
+    hx(g, 1)
+
+pb: i64 = (g: str)
+    9 + nn(g) * 24
+
+sb: i64 = (g: str)
+    9 + nn(g) * 32
+
+hb: i64 = (g: str)
+    9 + nn(g) * 40
+
+vb: i64 = (g: str)
+    9 + nn(g) * 40 + 8192
+
+opof: i64 = (g: str, i: i64)
+    hx(g, 9 + i * 24)
+
+lfof: i64 = (g: str, i: i64)
+    hx(g, 9 + i * 24 + 8)
+
+rtof: i64 = (g: str, i: i64)
+    hx(g, 9 + i * 24 + 16)
+
+parof: i64 = (g: str, i: i64)
+    hx(g, pb(g) + i * 8)
+
+szof: i64 = (g: str, i: i64)
+    hx(g, sb(g) + i * 8)
+
+vnames: str = (g: str)
+    v = vb(g)
+    seg(g, v, g:len() - v + 1)
+
+efind: i64 = (g: str, x: i64)
+    p = parof(g, x)
+    while p != x
+        x = p
+        p = parof(g, x)
+    x
+
+union: str = (g: str, a: i64, b: i64)
+    ra = efind(g, a)
+    rb = efind(g, b)
+    if ra == rb
+        return g
+    sa = szof(g, ra)
+    sb2 = szof(g, rb)
+    if sa < sb2
+        t = ra
+        ra = rb
+        rb = t
+        t = sa
+        sa = sb2
+        sb2 = t
+    g = putw(g, pb(g) + rb * 8, px(ra))
+    putw(g, sb(g) + ra * 8, px(sa + sb2))
+
+hhash: i64 = (op: i64, l: i64, r: i64)
+    (op * 31 + l * 131 + r * 13131) & 4294967295
+
+hfindb: i64 = (hc: str, base: i64, op: i64, l: i64, r: i64)
+    s = hhash(op, l, r) & 255
+    i = 0
+    while i < 256
+        p = base + s * 32
+        id = hx(hc, p + 24)
+        if id == 4294967295
+            return 4294967295
+        if hx(hc, p) == op and hx(hc, p + 8) == l and hx(hc, p + 16) == r
+            return id
+        s = (s + 1) & 255
+        i = i + 1
+    4294967295
+
+hputb: str = (hc: str, base: i64, op: i64, l: i64, r: i64, id: i64)
+    s = hhash(op, l, r) & 255
+    i = 0
+    while i < 256
+        p = base + s * 32
+        if hx(hc, p + 24) == 4294967295
+            return seg(hc, 1, p - 1) .. px(op) .. px(l) .. px(r) .. px(id) .. seg(hc, p + 32, hc:len() - p - 31)
+        s = (s + 1) & 255
+        i = i + 1
+    hc
+
+mkg: str = (d: i64)
+    hc = ""
+    i = 0
+    while i < 256
+        hc = hc .. "ffffffffffffffffffffffffffffffff"
+        i = i + 1
+    px(0) .. hc
+
+mknode: str = (g: str, op: i64, l: i64, r: i64)
+    if op != 108 and op != 118
+        l = efind(g, l)
+        r = efind(g, r)
+    e = hfindb(g, hb(g), op, l, r)
+    if e != 4294967295
+        return px(e) .. ";" .. g
+    n = nn(g)
+    nodes = seg(g, 9, n * 24) .. px(op) .. px(l) .. px(r)
+    pars = seg(g, pb(g), n * 8) .. px(n)
+    szs = seg(g, sb(g), n * 8) .. px(1)
+    tail = seg(g, hb(g), g:len() - hb(g) + 1)
+    g = px(n + 1) .. nodes .. pars .. szs .. tail
+    g = hputb(g, hb(g), op, l, r, n)
+    px(n) .. ";" .. g
+
+vindex: i64 = (vn: str, name: str)
+    idx = 0
+    a = 1
+    i = 1
+    n = vn:len()
+    while i <= n + 1
+        if i > n or vn:byte(i) == 124
+            if vn:sub(a, i - 1) == name
+                return idx
+            idx = idx + 1
+            a = i + 1
+        i = i + 1
+    0 - 1
+
+vcount: i64 = (vn: str)
+    if vn:len() == 0
+        return 0
+    n = 1
+    i = 1
+    while i <= vn:len()
+        if vn:byte(i) == 124
+            n = n + 1
+        i = i + 1
+    n
+
+vadd: str = (g: str, name: str)
+    vn = vnames(g)
+    idx = vindex(vn, name)
+    if idx < 0
+        idx = vcount(vn)
+        if vn == ""
+            vn = name
+        else
+            vn = vn .. "|" .. name
+        g = seg(g, 1, vb(g) - 1) .. vn
+    mknode(g, 118, idx, 0)
+
+ladd: str = (g: str, v: i64)
+    lo = v & 4294967295
+    hi = (v >> 32) & 4294967295
+    mknode(g, 108, lo, hi)
+
+lval: i64 = (lo: i64, hi: i64)
+    if hi >= 2147483648
+        return (hi - 4294967296) * 4294967296 + lo
+    hi * 4294967296 + lo
+
+samesig: i64 = (g: str, i: i64, j: i64)
+    if opof(g, i) != opof(g, j)
+        return 0
+    op = opof(g, i)
+    if op == 108 or op == 118
+        if lfof(g, i) != lfof(g, j)
+            return 0
+        if rtof(g, i) != rtof(g, j)
+            return 0
+        return 1
+    if efind(g, lfof(g, i)) != efind(g, lfof(g, j))
+        return 0
+    if efind(g, rtof(g, i)) != efind(g, rtof(g, j))
+        return 0
+    1
+
+compress: str = (g: str)
+    n = nn(g)
+    p = ""
+    i = 0
+    while i < n
+        p = p .. px(efind(g, i))
+        i = i + 1
+    seg(g, 1, pb(g) - 1) .. p .. seg(g, sb(g), g:len() - sb(g) + 1)
+
+congr: str = (g: str)
+    ch = 0
+    ag = 1
+    while ag == 1
+        ag = 0
+        hc = ""
+        i = 0
+        while i < 256
+            hc = hc .. "ffffffffffffffffffffffffffffffff"
+            i = i + 1
+        n = nn(g)
+        i = 0
+        while i < n
+            op = opof(g, i)
+            l = lfof(g, i)
+            r = rtof(g, i)
+            if op != 108 and op != 118
+                l = efind(g, l)
+                r = efind(g, r)
+            e = hfindb(hc, 1, op, l, r)
+            if e != 4294967295
+                if efind(g, i) != efind(g, e)
+                    g = union(g, i, e)
+                    ag = 1
+                    ch = 1
+            else
+                hc = hputb(hc, 1, op, l, r, i)
+            i = i + 1
+    g = compress(g)
+    g .. ";" .. px(ch)
