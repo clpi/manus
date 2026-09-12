@@ -64,7 +64,7 @@
 | # | directive |
 |---|---|
 | 1 | The live multi-device system does not go through one canonical surface. Evidence: |
-| 2 | ↳ 37 ad-hoc scripts in `/Users/clp/.hermes/scripts/` (outside the repo): `idol_live_adaptive_routing.py`, `idol_live_semantic_cache.py`, `idol_live_gateway_tick.py` (+2 `.bak`), `idol_live_bounded_dispatch.py` (+2 `.bak`), `idol_live_fleet_tick.py`, `idol_live_chain_monitor.py`, `idol_telegram_status.py`, `idol-live-fleet-saturation.sh`, `run-saturation-wave.sh`, etc. |
+| 2 | ↳ 37 ad-hoc scripts in `$HOME/.hermes/scripts/` (outside the repo): `idol_live_adaptive_routing.py`, `idol_live_semantic_cache.py`, `idol_live_gateway_tick.py` (+2 `.bak`), `idol_live_bounded_dispatch.py` (+2 `.bak`), `idol_live_fleet_tick.py`, `idol_live_chain_monitor.py`, `idol_telegram_status.py`, `idol-live-fleet-saturation.sh`, `run-saturation-wave.sh`, etc. |
 | 3 | ↳ In-repo: `coord/cron/*.sh` (`lane.sh`, `overnight.sh`, `healthcheck.sh`, `migrate-private-prefixes.sh`, `filter_pending.py`), `bin/idol-main-mcp.sh`, `scripts/live/reconcile.sh`. |
 | 4 | ↳ In-repo `channels/` and `subscriptions/` directories exist but are **empty** — the intended surface has no implementation. |
 | 5 | **Fix:** define the single canonical surface (likely the MCP/kanban event surface), reimplement the 37 scripts' behavior as Idol behind it, delete the sprawl. **Sequences after:** #8 (shell/python removal), #15 (Idol-native implementations), and the L6/L7 feasibility work below. |
@@ -325,7 +325,7 @@
 
 | # | directive |
 |---|---|
-| 1 | Targets: `/Users/clp/.hermes/scripts/idol_live_adaptive_routing.py` (168 lines, L6) and `idol_live_semantic_cache.py` (183 lines, L7). |
+| 1 | Targets: `$HOME/.hermes/scripts/idol_live_adaptive_routing.py` (168 lines, L6) and `idol_live_semantic_cache.py` (183 lines, L7). |
 
 | # | directive |
 |---|---|

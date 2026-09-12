@@ -17,8 +17,8 @@
 
 | # | directive |
 |---|---|
-| 1 | Repository benchmarked: `/Users/clp/work/idol` |
-| 2 | Development worktree reported by `tools/node/dev/orient`: `/Users/clp/work/idol` |
+| 1 | Repository benchmarked: `$HOME/work/idol` |
+| 2 | Development worktree reported by `tools/node/dev/orient`: `$HOME/work/idol` |
 | 3 | Requested report path: `~/x/idol/research/compile-benchmarks.md` |
 | 4 | Benchmark source set: every file matched by `sorted(Path(repo / "lib").rglob("*.id"))` |
 | 5 | Files checked: 270 |
@@ -35,11 +35,11 @@
 | 1 | Benchmark driver: |
 
 ```sh
-cd /Users/clp/work/idol
+cd $HOME/work/idol
 ./tools/node/dev/idol-lock -- \
-  python3 /Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/bench_idol_check_lib.py \
-    --repo /Users/clp/work/idol \
-    --out-dir /Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/benchmark-results/full \
+  python3 $HOME/.hermes/kanban/workspaces/t_f6bca87379cc/bench_idol_check_lib.py \
+    --repo $HOME/work/idol \
+    --out-dir $HOME/.hermes/kanban/workspaces/t_f6bca87379cc/benchmark-results/full \
     --repeats 3 \
     --timeout 60
 ```
@@ -57,7 +57,7 @@ cd /Users/clp/work/idol
 | 1 | Slow-set phase probe: |
 
 ```sh
-cd /Users/clp/work/idol
+cd $HOME/work/idol
 ./tools/node/dev/idol-lock -- <phase-probe-driver>
 IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 ```
@@ -88,7 +88,7 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 | 2 | Machine: `mm.local`, Darwin `25.5.0`, `arm64`. |
 | 3 | Parent benchmark repository HEAD at benchmark start: `a94d71262211ca0bf5992449c9056557f43ce334` (`a94d7126`). |
 | 4 | `tools/node/dev/orient` at report-write time reported HEAD `b1e9e4e1`, branch `main`, dirty entries `0`. |
-| 5 | Parent benchmark binary: `/Users/clp/work/idol/zig-out/bin/idol`. |
+| 5 | Parent benchmark binary: `$HOME/work/idol/zig-out/bin/idol`. |
 | 6 | Parent benchmark binary sha256: `419646c051a9e4ab65aaf75c071ff66d749c668a132152363d06b0913594a7ee`. |
 | 7 | Phase probe binary sha256: `43f71975f0b29e98615b6933add7b43752cb6dec6e4eaaec2926c9bfd33ffe1a`. |
 | 8 | Upstream caveat from the benchmark handoff: after the benchmark, the main repo advanced to `b1e9e4e1`, changing only `src/lexer_tokenize.c`; the checked `lib/*.id` set remained 270 files and the live `zig-out/bin/idol` hash still matched the benchmark binary. |
@@ -337,12 +337,12 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 
 | # | directive |
 |---|---|
-| 1 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-aggregate.json` |
-| 2 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-runs.jsonl` |
-| 3 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-methodology.json` |
-| 4 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-slowest-10pct.csv` |
-| 5 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-summary.md` |
-| 6 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/bench_idol_check_lib.py` |
+| 1 | `$HOME/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-aggregate.json` |
+| 2 | `$HOME/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-runs.jsonl` |
+| 3 | `$HOME/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-methodology.json` |
+| 4 | `$HOME/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-slowest-10pct.csv` |
+| 5 | `$HOME/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-summary.md` |
+| 6 | `$HOME/.hermes/kanban/attachments/t_05cb584e/bench_idol_check_lib.py` |
 
 | # | directive |
 |---|---|
@@ -350,14 +350,14 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 
 | # | directive |
 |---|---|
-| 1 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/slowest-lib-bottleneck-profile.md` |
-| 2 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/slowest-lib-bottleneck-classification.json` |
-| 3 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-summary.json` |
-| 4 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-summary.csv` |
-| 5 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-runs.jsonl` |
-| 6 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/home-alias-summary.json` |
-| 7 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/home-alias-runs.jsonl` |
-| 8 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/builtin-trace-samples.txt` |
+| 1 | `$HOME/.hermes/kanban/attachments/t_44c380b5/slowest-lib-bottleneck-profile.md` |
+| 2 | `$HOME/.hermes/kanban/attachments/t_44c380b5/slowest-lib-bottleneck-classification.json` |
+| 3 | `$HOME/.hermes/kanban/attachments/t_44c380b5/phase-profile-summary.json` |
+| 4 | `$HOME/.hermes/kanban/attachments/t_44c380b5/phase-profile-summary.csv` |
+| 5 | `$HOME/.hermes/kanban/attachments/t_44c380b5/phase-profile-runs.jsonl` |
+| 6 | `$HOME/.hermes/kanban/attachments/t_44c380b5/home-alias-summary.json` |
+| 7 | `$HOME/.hermes/kanban/attachments/t_44c380b5/home-alias-runs.jsonl` |
+| 8 | `$HOME/.hermes/kanban/attachments/t_44c380b5/builtin-trace-samples.txt` |
 
 | # | directive |
 |---|---|
@@ -365,6 +365,6 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 
 | # | directive |
 |---|---|
-| 1 | `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/benchmark-results/full/` |
-| 2 | `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/phase-profile-results-debug/` |
-| 3 | `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/phase-profile-results-alias/` |
+| 1 | `$HOME/.hermes/kanban/workspaces/t_f6bca87379cc/benchmark-results/full/` |
+| 2 | `$HOME/.hermes/kanban/workspaces/t_f6bca87379cc/phase-profile-results-debug/` |
+| 3 | `$HOME/.hermes/kanban/workspaces/t_f6bca87379cc/phase-profile-results-alias/` |

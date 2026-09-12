@@ -287,18 +287,18 @@
 | # | directive |
 |---|---|
 | 1 | Resolved t_c9c07b0e dependency: the manifest pins an exact clean idol-native checkout (revision `9fa95a3e826a37e95e0de1498203ef8818029d0a`, tree `64682fc0ffba89c923854abc087de46444f4a2ab`; entry `tools/mcp/server.id` sha256 `fdeb4d63…`; artifact `bin/idol` sha256 `0f76a51d…`; authority projection `docs/spec/AUTHORITY.json` sha256 `a67c48eb…`; authority revision `c9480b77189c8ce308403bd377b6c509046796e4`). |
-| 2 | The existing `/Users/clp/work/idol-native` checkout is at a more recent HEAD (`f4dec46`, "Project committed upstream law into native authority") and does NOT match the manifest pin. |
+| 2 | The existing `$HOME/work/idol-native` checkout is at a more recent HEAD (`f4dec46`, "Project committed upstream law into native authority") and does NOT match the manifest pin. |
 | 3 | Host fact recorded: |
 
 | # | directive |
 |---|---|
-| 1 | `IDOL_NATIVE_ROOT=/Users/clp/work/idol-native-pinned` |
-| 2 | Created via `git -C /Volumes/d\ 1/hermes-mm/work/idol-native worktree add --detach /Users/clp/work/idol-native-pinned 9fa95a3e826a37e95e0de1498203ef8818029d0a` (2026-09-05). |
+| 1 | `IDOL_NATIVE_ROOT=$HOME/work/idol-native-pinned` |
+| 2 | Created via `git -C /Volumes/d\ 1/hermes-mm/work/idol-native worktree add --detach $HOME/work/idol-native-pinned 9fa95a3e826a37e95e0de1498203ef8818029d0a` (2026-09-05). |
 | 3 | `mcp-pair validate tools/node/dev/mcp.manifest.json idol-native` exits 0 with all five identity checks passing (revision, tree, entry_sha256, artifact_sha256, authority_revision). |
 
 | # | directive |
 |---|---|
-| 1 | The `/Users/clp/work/idol-native` checkout is preserved at HEAD `f4dec46` for any work that needs the post-pin tree; it is NOT used by the mcp-gate. |
+| 1 | The `$HOME/work/idol-native` checkout is preserved at HEAD `f4dec46` for any work that needs the post-pin tree; it is NOT used by the mcp-gate. |
 
 | section |
 |---|---|
@@ -321,7 +321,7 @@
 |---|---|
 | 1 | **Repin to a post-pin revision** that already uses `"{}"` syntax. `clpi/idol-native` has no revision (current `f4dec46` or older `c5ba11b`/`6a50953`) where `tools/mcp/server.id` is `..`-free. The `..`-to-`"{}"` migration is unblocked in upstream idol main (commit range after bf6c596a, e.g. mcp/native.id at ca68ab56 here uses `"{}"`) but has not been backported to idol-native's mcp/server.id. The next idol-native authority re-pin must include the server.id migration, or the mcp-gate cannot pass for `idol-native`. |
 | 2 | **Loosen probe-mcp to tolerate `(cached)`** when the binary is current and runnable. This weakens a check the charter explicitly lists as "lower ceiling to make red go green" and is denied by `CHARTER.md` ("Never lower a ceiling, weaken a gate, delete a test, or edit a `gate/*.sh` threshold"). |
-| 3 | **Pin `IDOL_PAIR_COMPILER=/Users/clp/work/idol-native-pinned/bin/idol`** for the paired path only. The probe-mcp script applies the same `$idol` to both servers, so this also makes the local `idol` path use the old binary — and the old binary's cache layer trips the same `(cached)` check. Workable only if probe-mcp learns a per-server compiler override, which the manifest schema does not carry. |
+| 3 | **Pin `IDOL_PAIR_COMPILER=$HOME/work/idol-native-pinned/bin/idol`** for the paired path only. The probe-mcp script applies the same `$idol` to both servers, so this also makes the local `idol` path use the old binary — and the old binary's cache layer trips the same `(cached)` check. Workable only if probe-mcp learns a per-server compiler override, which the manifest schema does not carry. |
 
 | section |
 |---|---|

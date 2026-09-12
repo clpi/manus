@@ -28,87 +28,87 @@
 | 3 | [mismatch] div/negchain0: byte 0: idol exit 7 != clang exit 252 — known-32bit-limitation: negative folded dividend is zero-extended, then chained through division |
 | 4 | [mismatch] div/negchain1: byte 0: idol exit 149 != clang exit 253 — known-32bit-limitation |
 | 5 | [build_fail] div/d0023: idol build failed (byte 5): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_d0023_b5.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0023_b5.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0024: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0024_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0024_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/d0025: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_d0025_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0025_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0026: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0026_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0026_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/d0027: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_d0027_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0027_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/d0028: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_d0028_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0028_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0029: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0029_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0029_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/d0030: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_d0030_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0030_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0031: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0031_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0031_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0032: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0032_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0032_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/d0033: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_d0033_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0033_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0034: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0034_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0034_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0035: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0035_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0035_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/d0036: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_d0036_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0036_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0037: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0037_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0037_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/r0038: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_r0038_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0038_b0.o'
 
 | # | directive |
 |---|---|
 | 1 | [build_fail] div/d0039: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '/Users/clp/work/idol-main/bench/verify/.work/v_div_d0039_b0.o'
+ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0039_b0.o'
 
 | section |
 |---|---|
