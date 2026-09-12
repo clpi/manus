@@ -87,6 +87,53 @@ for gate in gate/*.sh gate/*/*.sh; do
   fi
 done
 
+# ===================== NATIVE (.id) GATES =====================
+# Gates migrated from shell to Idol live as gate/*.id and are RUN here, by
+# this file, through the compiler they measure. The list is EXPLICIT: the
+# gate/*.id home is heterogeneous -- libraries (gate/bootstrap.id),
+# semantic-scan drivers fed on stdin (gate/admission.id), retired probes
+# (gate/preflight.id) -- and an enumerator would sweep up files that are not
+# gates. One entry is added per migration, in the migration's own commit.
+#
+# The driver itself executes through the direct backend (gatecap needs the
+# direct-native realization), so on a host the compiler refuses with DNB004
+# the gate is NOT MEASURED rather than failed: the same attribution class
+# the .sh gates get from the producer's sentence, via IDOL_DIRECT_NATIVE,
+# which this file already probed above.
+IDOL_GATES='gate/table_apply.id'
+
+idol=${IDOL_BIN:-$repo/zig-out/bin/idol}
+for idgate in $IDOL_GATES; do
+  [ -r "$idgate" ] || continue
+  if [ "${IDOL_DIRECT_NATIVE:-unbuilt}" = no ]; then
+    hostbound=$((hostbound + 1))
+    hostbound_names="$hostbound_names $idgate"
+    printf '%s: NOT MEASURED — the .id driver executes through the direct backend. This host has no direct-native realization: the compiler refused a trivial program with DNB004.\n' "$idgate"
+    continue
+  fi
+  if [ ! -x "$idol" ]; then
+    fail=$((fail + 1))
+    failed="$failed $idgate"
+    printf '%s: no compiler at %s\n' "$idgate" "$idol" >&2
+    continue
+  fi
+  if "$idol" run --backend=direct "$idgate" >"$scratch/gate.log" 2>&1; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1))
+    failed="$failed $idgate"
+    # Same attribution as the .sh loop: a host refusal or an absent sibling
+    # tree is not a law violation.
+    if grep -q 'DNB004\|NOT MEASURED —\|requires Darwin' "$scratch/gate.log"; then
+      hostbound=$((hostbound + 1))
+      hostbound_names="$hostbound_names $idgate"
+    elif [ ! -d "$native/gate" ] && grep -qF "$native" "$scratch/gate.log"; then
+      crosstree=$((crosstree + 1))
+      crosstree_names="$crosstree_names $idgate"
+    fi
+  fi
+done
+
 # ============================ CITATION RESOLUTION ============================
 # gap[212]: a citation to a gate that does not exist is indistinguishable, to a
 # reader, from a citation to a passing one. This RESOLVES each cited path and

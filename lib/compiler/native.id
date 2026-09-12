@@ -1323,7 +1323,10 @@ main: i64 = ()
                     rr = 0
                     cd = 0
                     if digit(rhs:byte(1)) == 1
-                        br = 11 + wopen
+                        bn = "loopbd:" .. dec(wopen)
+                        if hasname(names, bn) == 0
+                            names = names .. bn .. "|"
+                        br = reg(names, bn)
                         code = imm(code, br, num(rhs))
                         rr = br
                         if num(rhs) != 0 and purecount(src, k, lc, ind, lhs) == 1
