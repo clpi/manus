@@ -11,7 +11,7 @@ root=$(git rev-parse --show-toplevel)
 # MECHANICAL ADMISSION — runs FIRST, and actually scans the staged diff.
 #
 # Everything below this block is `idol check gate/*.id`, which TYPECHECKS THE
-# GATE SOURCE and never scans anything (see the NOTE above). gate/admission-all.sh
+# GATE SOURCE and never scans anything (see the NOTE above). gate/admission-all.id
 # is different in kind: POSIX shell + awk + git, reading the staged diff and
 # the working tree. It needs no `zig-out/bin/idol`, so it is placed BEFORE the
 # build check on purpose — a contributor with no build previously got no
@@ -22,15 +22,15 @@ root=$(git rev-parse --show-toplevel)
 # status is the last stage's, and a gate whose failure is swallowed by `tee`
 # cannot fail.
 # ---------------------------------------------------------------------------
-if [ -x "$root/gate/admission-all.sh" ]; then
-  if ! "$root/gate/admission-all.sh"; then
+if [ -x "$root/zig-out/bin/idol" ] && [ -r "$root/gate/admission-all.id" ]; then
+  if ! "$root/zig-out/bin/idol" run --backend=direct "$root/gate/admission-all.id"; then
     echo "" >&2
     echo "COMMIT BLOCKED — mechanical admission gate rejected this diff." >&2
     echo "This is a scan of what you staged, not a typecheck of a gate file." >&2
     exit 1
   fi
 else
-  echo "COMMIT BLOCKED — gate/admission-all.sh is missing or not executable." >&2
+  echo "COMMIT BLOCKED — gate/admission-all.id is missing or the compiler is not executable." >&2
   echo "A missing gate is a failure, not an exemption." >&2
   exit 1
 fi
