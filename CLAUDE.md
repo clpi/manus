@@ -1,80 +1,85 @@
 # Idol operative projection
 
-`docs/spec/law.md` is the SUPREME one-page law and is authoritative over every
-document. `docs/spec/constitution.md` (C0) is its structured long-form expansion
-and the home of the `law.*` identities. This file is a short operative projection
-for agents and implementers. It does not add law. A conflict means this
-projection is wrong and must be repaired; where C0 diverges from
-`docs/spec/law.md`, C0 is corrected to match `docs/spec/law.md`.
+| # | directive |
+|---|---|
+| 1 | `docs/spec/law.md` is the SUPREME one-page law and is authoritative over every document. `docs/spec/constitution.md` (C0) is its structured long-form expansion and the home of the `law.*` identities. |
+| 2 | This file is a short operative projection for agents and implementers. |
+| 3 | It does not add law. |
+| 4 | A conflict means this projection is wrong and must be repaired; where C0 diverges from `docs/spec/law.md`, C0 is corrected to match `docs/spec/law.md`. |
 
-The constitution is structured law documentation, not executable source or a
-pattern library. Canonical implementation remains `.id`; `GAP-145` records the
-separate unclosed lexical and grammar projection.
+| # | directive |
+|---|---|
+| 1 | The constitution is structured law documentation, not executable source or a pattern library. |
+| 2 | Canonical implementation remains `.id`; `GAP-145` records the separate unclosed lexical and grammar projection. |
 
 ## The decomposition (read before writing Idol)
 
 > **A name is a SUBJECT and an EDGE.** The edge is the relation; the subject is
 > the value the relation is about. You write `subject:edge(rest)`.
 
-`strlen(s)` is wrong not because it appears on a list but because `len` is the
-edge and `s` is the subject, so it is `s:len()`. Every naming rule in this file
-is a consequence; learn the decomposition and the consequences stop needing
-recall, because the violating name does not occur to you. A rule list cannot do
-this — it is checked against a name you have already chosen, so its violations
-are by omission.
+| # | directive |
+|---|---|
+| 1 | `strlen(s)` is wrong not because it appears on a list but because `len` is the edge and `s` is the subject, so it is `s:len()`. |
+| 2 | Every naming rule in this file is a consequence; learn the decomposition and the consequences stop needing recall, because the violating name does not occur to you. |
+| 3 | A rule list cannot do this — it is checked against a name you have already chosen, so its violations are by omission. |
 
-The full statement and its four consequences are in `AGENTS.md` § "Read first —
-the decomposition". **The executable version is one command:**
+| # | directive |
+|---|---|
+| 1 | The full statement and its four consequences are in `AGENTS.md` § "Read first — the decomposition". **The executable version is one command:** |
 
-    cd ../idol-native && ./bin/idol run gate/subject.id   # agreement count IS the exit
+| # | directive |
+|---|---|
+| 1 | cd ../idol-native && ./bin/idol run gate/subject.id # agreement count IS the exit |
 
-It places each canonical form beside the retired one it replaces and requires
-them to AGREE on every input, so it is simultaneously the lesson and its proof.
-Prefer it to this file wherever the two could disagree, and prefer running it to
-quoting it: **numbers live in the runner that checks them, never in prose.**
-Every rule this project recorded as an assertion has decayed — a sibling
-`AGENTS.md` asserted a gate exited 34 while it exited 42, in two places at once.
+| # | directive |
+|---|---|
+| 1 | It places each canonical form beside the retired one it replaces and requires them to AGREE on every input, so it is simultaneously the lesson and its proof. |
+| 2 | Prefer it to this file wherever the two could disagree, and prefer running it to quoting it: **numbers live in the runner that checks them, never in prose.** Every rule this project recorded as an assertion has decayed — a sibling `AGENTS.md` asserted a gate exited 34 while it exited 42, in two places at once. |
 
 ## Identity
 
-**Idol** is the language and project identity (`idol`, `.id`). Its supreme law is
-`docs/spec/law.md`, whose structured expansion is `docs/spec/constitution.md`
-— including §67 Idol algebra closure
-(home, subject, world, protocol, witness, injection, union, standard reachability,
-shell/run/outcome, binding census, completion metrics). Do not mint artificial
-secondary language namespaces for graph, value, or relation. No independent algebra
-prompt is authority.
+| # | directive |
+|---|---|
+| 1 | **Idol** is the language and project identity (`idol`, `.id`). |
+| 2 | Its supreme law is `docs/spec/law.md`, whose structured expansion is `docs/spec/constitution.md` — including §67 Idol algebra closure (home, subject, world, protocol, witness, injection, union, standard reachability, shell/run/outcome, binding census, completion metrics). |
+| 3 | Do not mint artificial secondary language namespaces for graph, value, or relation. |
+| 4 | No independent algebra prompt is authority. |
 
-The language and project ship as Idol (`idol`, `.id`, repository `idollang/idol`).
-No production `idol` compiler binary exists yet. The priority is the earliest
-executed SHC authority frontier: bounded bootstrap bridges — including new Zig
-where it is the fastest path to the next transfer — are admitted and preferred
-over stalling, each with a known deletion condition (`law.bridge.death`,
-`law.bootstrap.velocity`). Foreign is forbidden only as permanent architecture,
-semantic authority, or a new foreign semantic kingdom — never as bootstrap
-scaffolding.
+| # | directive |
+|---|---|
+| 1 | The language and project ship as Idol (`idol`, `.id`, repository `idollang/idol`). |
+| 2 | No production `idol` compiler binary exists yet. |
+| 3 | The priority is the earliest executed SHC authority frontier: bounded bootstrap bridges — including new Zig where it is the fastest path to the next transfer — are admitted and preferred over stalling, each with a known deletion condition (`law.bridge.death`, `law.bootstrap.velocity`). |
+| 4 | Foreign is forbidden only as permanent architecture, semantic authority, or a new foreign semantic kingdom — never as bootstrap scaffolding. |
 
-**No `std` anywhere** in Idol source, agents, gates, or teaching examples.
-There is no `std` table, prelude, or namespace. Use layout-projected homes and
-worlds (`fs`, `json`, `os`, `io`, …) with subject-first relations. Never
-`std.*`. **`proc` and `ir` are not source vocabulary** — DNIR is realization
-encoding only. A possessed value supplies the subject; authority belongs
-to worlds; package location supplies neither. Missing admitted vocabulary is
-`SEMANTIC-VOCABULARY-BLOCKED`, not permission to invent another namespace.
+| # | directive |
+|---|---|
+| 1 | **No `std` anywhere** in Idol source, agents, gates, or teaching examples. |
+| 2 | There is no `std` table, prelude, or namespace. |
+| 3 | Use layout-projected homes and worlds (`fs`, `json`, `os`, `io`, …) with subject-first relations. |
+| 4 | Never `std.*`. **`proc` and `ir` are not source vocabulary** — DNIR is realization encoding only. |
+| 5 | A possessed value supplies the subject; authority belongs to worlds; package location supplies neither. |
+| 6 | Missing admitted vocabulary is `SEMANTIC-VOCABULARY-BLOCKED`, not permission to invent another namespace. |
 
-Semantic identity persists while representation changes. The graph entity is
-the semantic identity within one graph incarnation. Names, paths, spans,
-source suffixes, pointers, hashes, fingerprints, intern slots, lowering tags,
-and machine instructions are provenance, coordinates, acceleration, or
-realization. None may select semantic meaning after resolution.
+| # | directive |
+|---|---|
+| 1 | Semantic identity persists while representation changes. |
+| 2 | The graph entity is the semantic identity within one graph incarnation. |
+| 3 | Names, paths, spans, source suffixes, pointers, hashes, fingerprints, intern slots, lowering tags, and machine instructions are provenance, coordinates, acceleration, or realization. |
+| 4 | None may select semantic meaning after resolution. |
 
-One irreducible native meaning has one lowercase word. Facts carry
-qualification. Demand carries need. Realization carries physical choice.
+| # | directive |
+|---|---|
+| 1 | One irreducible native meaning has one lowercase word. |
+| 2 | Facts carry qualification. |
+| 3 | Demand carries need. |
+| 4 | Realization carries physical choice. |
 
 ### Gate scan boundaries
 
-Migration gates that walk unified diffs or path lists use **curried boundary
-symbols**, not mashed compounds or string dispatch:
+| # | directive |
+|---|---|
+| 1 | Migration gates that walk unified diffs or path lists use **curried boundary symbols**, not mashed compounds or string dispatch: |
 
 ```id
 scan(diff)(body) = ()   # diff is a symbol in the curry slot
@@ -86,17 +91,18 @@ dot(io) = (code: str)
     hit(io)(code)
 ```
 
-Never write `scandiff`, `scanline`, `diffhead`, `bareend`, or `scan("diff")`.
-Use `audit`, `head`, `bare`, and `scan(diff)(…)` / `scan(path)(…)` per
-`AGENTS.md` and `gate/idiom.id`. Ingress home checks use
-**`ingress(path)`** — ingress is the subject; never `only(ingress)(path)` or
-`ingressonly`.
+| # | directive |
+|---|---|
+| 1 | Never write `scandiff`, `scanline`, `diffhead`, `bareend`, or `scan("diff")`. |
+| 2 | Use `audit`, `head`, `bare`, and `scan(diff)(…)` / `scan(path)(…)` per `AGENTS.md` and `gate/idiom.id`. |
+| 3 | Ingress home checks use **`ingress(path)`** — ingress is the subject; never `only(ingress)(path)` or `ingressonly`. |
 
 ### Home, world, and protocol algebra
 
-Authoritative law: `docs/spec/constitution.md` §67 Idol algebra closure
-(`law.home.context` through `law.algebra.absolute`; adversarial controls in
-`law.gate.protocol` and `law.gate.algebra`). Session prompts are not authority.
+| # | directive |
+|---|---|
+| 1 | Authoritative law: `docs/spec/constitution.md` §67 Idol algebra closure (`law.home.context` through `law.algebra.absolute`; adversarial controls in `law.gate.protocol` and `law.gate.algebra`). |
+| 2 | Session prompts are not authority. |
 
 | Role | Supplies | Does not supply |
 |---|---|---|
@@ -107,79 +113,86 @@ Authoritative law: `docs/spec/constitution.md` §67 Idol algebra closure
 | **Witness** | Proof of relation constraint satisfaction | World grant, second implementation identity |
 | **Injection** | Required + available facts → unique satisfaction | Object construction, hidden priority, service locators |
 
-Prefer `path:open()`, `file:read()`, `text:len()` over `io:open(path)`,
-`fs:open(path)`, `string:len(text)`. Algebraic world injection omits a world
-only when uniquely satisfiable and witnessed. Protocol satisfaction and world
-grant remain separate facts. **Relation is protocol:** `source: read` not
-`source: readable`. No `trait`, `impl`, `interface`, `implements`, `concept`,
-or adjective protocols (`readable`, `iterable`, `hashable`, …). See
-`law.protocol.one`. Concrete knowledge survives relation constraint crossing.
-The ONE explicit protocol/requirement boundary is `able(...)` — `able(eq)`,
-`able(read)`, `able(to(str))` — meaning the unknown subject must admit the
-demanded relation/application shape. `able` is normally INFERRED and spelled only
-at a real boundary (open generic contract, implementation unavailable,
-higher-order boundary, ambiguity); it mints no trait, dictionary, or vtable and
-grants no authority (`docs/spec/law.md` §9, `able` in C0 §6).
+| # | directive |
+|---|---|
+| 1 | Prefer `path:open()`, `file:read()`, `text:len()` over `io:open(path)`, `fs:open(path)`, `string:len(text)`. |
+| 2 | Algebraic world injection omits a world only when uniquely satisfiable and witnessed. |
+| 3 | Protocol satisfaction and world grant remain separate facts. **Relation is protocol:** `source: read` not `source: readable`. |
+| 4 | No `trait`, `impl`, `interface`, `implements`, `concept`, or adjective protocols (`readable`, `iterable`, `hashable`, …). |
+| 5 | See `law.protocol.one`. |
+| 6 | Concrete knowledge survives relation constraint crossing. |
+| 7 | The ONE explicit protocol/requirement boundary is `able(...)` — `able(eq)`, `able(read)`, `able(to(str))` — meaning the unknown subject must admit the demanded relation/application shape. `able` is normally INFERRED and spelled only at a real boundary (open generic contract, implementation unavailable, higher-order boundary, ambiguity); it mints no trait, dictionary, or vtable and grants no authority (`docs/spec/law.md` §9, `able` in C0 §6). |
 
 ## Architecture
 
-The production direction is:
+| # | directive |
+|---|---|
+| 1 | The production direction is: |
 
 ```text
 source/import -> graph -> demand -> realization -> machine
 ```
 
-Source faces are recognition and provenance. They do not create AST, method,
-binary-operation, primitive, foreign, or backend semantic kingdoms. Equivalent
-faces converge on one relation and one graph identity. Distinct application
-occurrences remain distinct identities.
+| # | directive |
+|---|---|
+| 1 | Source faces are recognition and provenance. |
+| 2 | They do not create AST, method, binary-operation, primitive, foreign, or backend semantic kingdoms. |
+| 3 | Equivalent faces converge on one relation and one graph identity. |
+| 4 | Distinct application occurrences remain distinct identities. |
 
-A value is not a place. A binding is not storage. A pack is not an allocated
-aggregate. Meaning does not imply materialization. Preserve every lawful cheap
-realization until an observable law or demand forces commitment.
+| # | directive |
+|---|---|
+| 1 | A value is not a place. |
+| 2 | A binding is not storage. |
+| 3 | A pack is not an allocated aggregate. |
+| 4 | Meaning does not imply materialization. |
+| 5 | Preserve every lawful cheap realization until an observable law or demand forces commitment. |
 
-DNIR is a compact migration encoding for realization scheduling. It may add
-physical facts but may not rename graph meaning or recover meaning from source
-text, a callee name, a hash, or an opcode.
+| # | directive |
+|---|---|
+| 1 | DNIR is a compact migration encoding for realization scheduling. |
+| 2 | It may add physical facts but may not rename graph meaning or recover meaning from source text, a callee name, a hash, or an opcode. |
 
-Idol and Lua are distinct lawsets hosted by one compiler. Foreign law and
-provenance remain explicit until equivalence is proven; proven equivalents use
-the same graph, demand, and realization machinery. Wasm is an imported lawset,
-not a permanent second optimizer or virtual-machine ontology.
+| # | directive |
+|---|---|
+| 1 | Idol and Lua are distinct lawsets hosted by one compiler. |
+| 2 | Foreign law and provenance remain explicit until equivalence is proven; proven equivalents use the same graph, demand, and realization machinery. |
+| 3 | Wasm is an imported lawset, not a permanent second optimizer or virtual-machine ontology. |
 
-Resolution does not use import, module, package, namespace, require, req, use,
-using, inject, admit, include, or any admission syntax. Files and directories
-contribute ordinary table/home topology derived from source layout; scope decides
-referability; worlds remain authority (`docs/spec/source.md`, `GAP-153`).
-Same-directory references need no dependency syntax — the semantic reference is
-the dependency edge. Visibility is already a graph fact; change scope facts at
-the owner boundary instead of writing admission ceremony in source.
+| # | directive |
+|---|---|
+| 1 | Resolution does not use import, module, package, namespace, require, req, use, using, inject, admit, include, or any admission syntax. |
+| 2 | Files and directories contribute ordinary table/home topology derived from source layout; scope decides referability; worlds remain authority (`docs/spec/source.md`, `GAP-153`). |
+| 3 | Same-directory references need no dependency syntax — the semantic reference is the dependency edge. |
+| 4 | Visibility is already a graph fact; change scope facts at the owner boundary instead of writing admission ceremony in source. |
 
 ## Host boundary
 
-Idol source sees semantic values — not host OS APIs (`docs/spec/host.md`,
-`GAP-154`). Arguments, environment, input, output, error, and cwd are
-root/home-projected values supplied by the launcher. Process execution uses
-structured command values under a process world — not `popen`, opaque shell
-strings, or `os.execute`. Endpoints are embedding-polymorphic; stdin-only is
-not language architecture. Shell is an execution home with command projection,
-not a mode bit. Build world != program world. `--backend=c` is foreign CLI input
-projected to realization facts — not canonical source semantics. Do not rename
-`os.args` / `getenv` / `popen` without semantic decomposition. Host APIs belong
-only at classified bootstrap ingress/egress with deletion gates.
+| # | directive |
+|---|---|
+| 1 | Idol source sees semantic values — not host OS APIs (`docs/spec/host.md`, `GAP-154`). |
+| 2 | Arguments, environment, input, output, error, and cwd are root/home-projected values supplied by the launcher. |
+| 3 | Process execution uses structured command values under a process world — not `popen`, opaque shell strings, or `os.execute`. |
+| 4 | Endpoints are embedding-polymorphic; stdin-only is not language architecture. |
+| 5 | Shell is an execution home with command projection, not a mode bit. |
+| 6 | Build world != program world. `--backend=c` is foreign CLI input projected to realization facts — not canonical source semantics. |
+| 7 | Do not rename `os.args` / `getenv` / `popen` without semantic decomposition. |
+| 8 | Host APIs belong only at classified bootstrap ingress/egress with deletion gates. |
 
 ## Source
 
-Canonical source uses `.id`. New canonical `.id` is admitted — it is the Idol
-source extension. New `.duo` / `.duon` / `.idsem` is forbidden. New foreign
-SEMANTIC AUTHORITY and new permanent foreign subsystems are forbidden; existing
-Zig, C, Lua, shell, and Python are bootstrap or compatibility debt. A new bounded
-Zig bootstrap bridge is admitted when it is the fastest path to the next executed
-SHC transfer, carries a `law.bridge.death` deletion witness, and gains no
-semantic authority (`law.bootstrap.velocity`). Tracked noncanonical `.id`
-content remains SOURCE-ZERO debt; the extension itself is not.
+| # | directive |
+|---|---|
+| 1 | Canonical source uses `.id`. |
+| 2 | New canonical `.id` is admitted — it is the Idol source extension. |
+| 3 | New `.duo` / `.duon` / `.idsem` is forbidden. |
+| 4 | New foreign SEMANTIC AUTHORITY and new permanent foreign subsystems are forbidden; existing Zig, C, Lua, shell, and Python are bootstrap or compatibility debt. |
+| 5 | A new bounded Zig bootstrap bridge is admitted when it is the fastest path to the next executed SHC transfer, carries a `law.bridge.death` deletion witness, and gains no semantic authority (`law.bootstrap.velocity`). |
+| 6 | Tracked noncanonical `.id` content remains SOURCE-ZERO debt; the extension itself is not. |
 
-The current closed lexical and delimiter law is:
+| # | directive |
+|---|---|
+| 1 | The current closed lexical and delimiter law is: |
 
 ```text
 "text"       text, including admitted multiline content
@@ -210,8 +223,10 @@ let any source face choose physical representation.
 Canonical callable result demand is on the binding:
 
 ```id
-main: i64 = ()
-    0
+| # | directive |
+|---|---|
+| 1 | main: i64 = () 0 |
+
 ```
 
 ### Relation projection vs curry
@@ -231,15 +246,22 @@ Three roles after resolution:
 Declaration and invocation stay distinct faces (`call.face`):
 
 ```id
-to(str) = (value)
-    ...
+| # | directive |
+|---|---|
+| 1 | to(str) = (value) ... |
 
-value:to(str)
+| # | directive |
+|---|---|
+| 1 | value:to(str) |
 
-read(number) = (lx, b)
-    ...
+| # | directive |
+|---|---|
+| 1 | read(number) = (lx, b) ... |
 
-lx:read(number)(b)
+| # | directive |
+|---|---|
+| 1 | lx:read(number)(b) |
+
 ```
 
 Read `to(str) = (value)` as: relation `to`, projection `{str}`, subject `value`,
@@ -276,9 +298,10 @@ demanding explicit syntax; never guess.
 **Conversion ladder** (shortest uniquely resolving form wins):
 
 ```text
-level 0   enabled: bool = value          # graph records to(bool) when unique
-level 1   value:to(target)               # ONLY when target is not inferable
-migrate   to(target)(value) → value:to(target) → value
+| # | directive |
+|---|---|
+| 1 | level 0 enabled: bool = value # graph records to(bool) when unique level 1 value:to(target) # ONLY when target is not inferable migrate to(target)(value) → value:to(target) → value |
+
 ```
 
 There is no canonical `value:to()` rung.
@@ -377,18 +400,10 @@ boundary, not backend polish. Read the current executed-authority ledger in
 The dependency order is:
 
 ```text
-lexical identities
--> machine-readable grammar authority
--> generated grammar roles
--> immutable token view
--> executed Idol parser recognition
--> binding and scope
--> graph and application authority
--> demand
--> realization and machine
--> seed builds B
--> B builds C
--> proved B/C closure
+| # | directive |
+|---|---|
+| 1 | lexical identities -> machine-readable grammar authority -> generated grammar roles -> immutable token view -> executed Idol parser recognition -> binding and scope -> graph and application authority -> demand -> realization and machine -> seed builds B -> B builds C -> proved B/C closure |
+
 ```
 
 An `.id` file counts only when it executes in the production path and replaces
@@ -402,9 +417,10 @@ production owner.
 Every material change classifies its effect on:
 
 ```text
-identity facts demand realization runtime compile startup memory artifact
-incremental foreign wasm selfhost agent provenance evidence surface grammar
-vocabulary convergence
+| # | directive |
+|---|---|
+| 1 | identity facts demand realization runtime compile startup memory artifact incremental foreign wasm selfhost agent provenance evidence surface grammar vocabulary convergence |
+
 ```
 
 The performance law is **maximum semantic knowledge, minimum physical state**.
@@ -487,9 +503,10 @@ Optimization converges through three reusable graph engines rather than a
 fixed procession of semantic passes:
 
 ```text
-sparse monotone fact propagation
--> bounded witnessed equivalence retained in the same graph
--> demand/profile/cost-budgeted realization extraction
+| # | directive |
+|---|---|
+| 1 | sparse monotone fact propagation -> bounded witnessed equivalence retained in the same graph -> demand/profile/cost-budgeted realization extraction |
+
 ```
 
 Fact families supply lattices to one dependency worklist; recursive work uses
@@ -511,7 +528,10 @@ reconstruct meaning from formatted text.
 Use one chain:
 
 ```text
-run -> completion -> outcome -> evidence
+| # | directive |
+|---|---|
+| 1 | run -> completion -> outcome -> evidence |
+
 ```
 
 Transport completion is not semantic success. A focused pass is not an
@@ -534,8 +554,10 @@ scope authority. Inspect live claims and the dirty tree, claim exact paths with
 `tools/node/dev/claim acquire`, and serialize heavy commands through:
 
 ```text
-repo="$(git rev-parse --show-toplevel)"
-"$repo/tools/node/dev/idol-lock" -- <command>
+| # | directive |
+|---|---|
+| 1 | repo="$(git rev-parse --show-toplevel)" "$repo/tools/node/dev/idol-lock" -- <command> |
+
 ```
 
 The lock and claim commands are bootstrap coordination transport, not semantic

@@ -2,24 +2,28 @@
 
 ## Read first — the decomposition
 
-Everything below this section is a consequence. Learn the decomposition and you
-will not need to recall the consequences, because the violating name will not
-occur to you.
+| # | directive |
+|---|---|
+| 1 | Everything below this section is a consequence. |
+| 2 | Learn the decomposition and you will not need to recall the consequences, because the violating name will not occur to you. |
 
 > **A name is a SUBJECT and an EDGE.** The edge is the relation; the subject is
 > the value the relation is about. You write `subject:edge(rest)`.
 
-    strlen(s)      wrong — but NOT because it is on a list
-    s:len()        right — `len` is the edge, `s` is the subject
+| # | directive |
+|---|---|
+| 1 | strlen(s) wrong — but NOT because it is on a list s:len() right — `len` is the edge, `s` is the subject |
 
-That is the whole rule, and it is generative in a way a rule list can never be.
-A list is checked against a name you have ALREADY CHOSEN, so its violations are
-by omission: the entry you needed is the one that was not on it. `strlen` has no
-underscore, no capital, no trailing digit, no plural — it passes nearly every
-lexical gate in this tree. No checker can save you. Knowing where the seam falls
-can.
+| # | directive |
+|---|---|
+| 1 | That is the whole rule, and it is generative in a way a rule list can never be. |
+| 2 | A list is checked against a name you have ALREADY CHOSEN, so its violations are by omission: the entry you needed is the one that was not on it. `strlen` has no underscore, no capital, no trailing digit, no plural — it passes nearly every lexical gate in this tree. |
+| 3 | No checker can save you. |
+| 4 | Knowing where the seam falls can. |
 
-Four consequences worth having in hand before you write anything:
+| # | directive |
+|---|---|
+| 1 | Four consequences worth having in hand before you write anything: |
 
 1. **SUBJECT-ONE.** `r(subject, a)` IS `subject:r(a)` — one relation, two source
    faces. Subject-first is preferred because it is the face that COMPOSES:
@@ -42,67 +46,57 @@ Four consequences worth having in hand before you write anything:
    a printer; `void` is INFERRED, never written; `end`, `then`, `elseif` and
    `fun` are Lua vestigials.
 
-**Read the executable version of this section before writing Idol:**
+| # | directive |
+|---|---|
+| 1 | **Read the executable version of this section before writing Idol:** |
 
-    cd ../idol-native && ./bin/idol run gate/subject.id    # agreement count IS the exit
+| # | directive |
+|---|---|
+| 1 | cd ../idol-native && ./bin/idol run gate/subject.id # agreement count IS the exit |
 
-It puts each canonical form beside the retired one it replaces and requires them
-to AGREE on every input, so reading it teaches the decomposition and running it
-proves the teaching is current. Its companions — `gate/access.id`,
-`gate/control.id`, `gate/word.id`, `gate/shadow.id` — do the same for one ruling
-each. `sh gate/all.sh` runs the lot — **in `../idol-native`, which is the tree
-this whole paragraph is standing in**: `subject.id`, `access.id`, `control.id`,
-`word.id` and `shadow.id` exist only there, and so does the `gate/all.sh` that
-registers them (57 commits, first `02776b3`). This repository has its own,
-smaller `gate/all.sh` covering the shell gates in `gate/`. gap[212] read this
-sentence as naming a file that had never existed; it was reading it against the
-wrong repository, which is the same error that produced its headline number.
+| # | directive |
+|---|---|
+| 1 | It puts each canonical form beside the retired one it replaces and requires them to AGREE on every input, so reading it teaches the decomposition and running it proves the teaching is current. |
+| 2 | Its companions — `gate/access.id`, `gate/control.id`, `gate/word.id`, `gate/shadow.id` — do the same for one ruling each. `sh gate/all.sh` runs the lot — **in `../idol-native`, which is the tree this whole paragraph is standing in**: `subject.id`, `access.id`, `control.id`, `word.id` and `shadow.id` exist only there, and so does the `gate/all.sh` that registers them (57 commits, first `02776b3`). |
+| 3 | This repository has its own, smaller `gate/all.sh` covering the shell gates in `gate/`. gap[212] read this sentence as naming a file that had never existed; it was reading it against the wrong repository, which is the same error that produced its headline number. |
 
 ### Numbers live in exactly one place, and that place runs
 
-Do not copy an expected count, exit code, or census total into prose. Every rule
-this project recorded as an ASSERTION has decayed, measured in one day: a sibling
-`AGENTS.md` claimed a gate exited 34 in two places while it exited 42;
-`gate/all.sh` claimed three counting gates agreed at 33 when they were 25, 35 and
-35; a comment asserted two constants "MUST equal" and their drift left ~1,700
-lines of JIT unreachable; `@comp.assert` was retired and kept 32 call sites; and
-an ABI agreement test was imported by nothing and therefore could never fail a
-build; it has since been deleted.
-What held instead was everything that RUNS AND COMPARES. So: state the COMMAND,
-not the number, and when you must pin a number put it in the runner that checks
-it.
+| # | directive |
+|---|---|
+| 1 | Do not copy an expected count, exit code, or census total into prose. |
+| 2 | Every rule this project recorded as an ASSERTION has decayed, measured in one day: a sibling `AGENTS.md` claimed a gate exited 34 in two places while it exited 42; `gate/all.sh` claimed three counting gates agreed at 33 when they were 25, 35 and 35; a comment asserted two constants "MUST equal" and their drift left ~1,700 lines of JIT unreachable; `@comp.assert` was retired and kept 32 call sites; and an ABI agreement test was imported by nothing and therefore could never fail a build; it has since been deleted. |
+| 3 | What held instead was everything that RUNS AND COMPARES. |
+| 4 | So: state the COMMAND, not the number, and when you must pin a number put it in the runner that checks it. |
 
 ### Metaprogramming — accurate, not encouraging
 
-Reach for a **world relation over a directive** wherever one exists; the
-directive namespace is retired, not expanded. `@comp.*`, `@meta.*`,
-`@compiler.*`, `@emit`, `@pipeline`, every `@c.*`, `@host.*`, `@runtime.*` and
-any other compiler/namespace `@` form are not lawful Idol source. The compiler
-may retire such spellings internally, but a new source spelling in any of these
-namespaces is invalid. Enforcement is `gate/idiom.id` and `gate/dialect.sh`;
-get live counts by running them, not from this file.
+| # | directive |
+|---|---|
+| 1 | Reach for a **world relation over a directive** wherever one exists; the directive namespace is retired, not expanded. `@comp.*`, `@meta.*`, `@compiler.*`, `@emit`, `@pipeline`, every `@c.*`, `@host.*`, `@runtime.*` and any other compiler/namespace `@` form are not lawful Idol source. |
+| 2 | The compiler may retire such spellings internally, but a new source spelling in any of these namespaces is invalid. |
+| 3 | Enforcement is `gate/idiom.id` and `gate/dialect.sh`; get live counts by running them, not from this file. |
 
 ### Performance — decisions, not hints
 
-Representation is a **DECISION the compiler makes from FACTS**, never a hint you
-supply; fixed thresholds that select representation by size have been deleted for
-pretending otherwise. **Elimination beats optimisation** — the fastest form of a
-recomputed value is the one that never happens, and that has no size bound. And
-the largest measured win available is usually a **SOURCE** change: merging one
-prefix-plural family cut executed instructions 62.05% because 90.5% of the calls
-recomputed an identical product differing only in which component they returned.
-A gate proves EQUIVALENCE, which is the permission; the measurement is the
-reason; neither substitutes for the other.
+| # | directive |
+|---|---|
+| 1 | Representation is a **DECISION the compiler makes from FACTS**, never a hint you supply; fixed thresholds that select representation by size have been deleted for pretending otherwise. **Elimination beats optimisation** — the fastest form of a recomputed value is the one that never happens, and that has no size bound. |
+| 2 | And the largest measured win available is usually a **SOURCE** change: merging one prefix-plural family cut executed instructions 62.05% because 90.5% of the calls recomputed an identical product differing only in which component they returned. |
+| 3 | A gate proves EQUIVALENCE, which is the permission; the measurement is the reason; neither substitutes for the other. |
 
 ## Authority
 
-`docs/spec/law.md` is the **SUPREME one-page law** of Idol. It is authoritative
-over every other document and supersedes any stale projection wherever they
-diverge; where C0 or any projection below conflicts with `docs/spec/law.md`, that
-text is corrected to match `docs/spec/law.md`. Read it first.
+| # | directive |
+|---|---|
+| 1 | `docs/spec/law.md` is the **SUPREME one-page law** of Idol. |
+| 2 | It is authoritative over every other document and supersedes any stale projection wherever they diverge; where C0 or any projection below conflicts with `docs/spec/law.md`, that text is corrected to match `docs/spec/law.md`. |
+| 3 | Read it first. |
 
-The language law otherwise has one structured home. Read these files before
-editing Idol (`.id`), in this order:
+| # | directive |
+|---|---|
+| 1 | The language law otherwise has one structured home. |
+| 2 | Read these files before editing Idol (`.id`), in this order: |
 
 0. `docs/spec/law.md` — **SUPREME one-page law**: final language + semantic +
  compiler law; authoritative over every document below.
@@ -149,22 +143,25 @@ editing Idol (`.id`), in this order:
 8. `docs/history/optimization-frontier-census.md` — research capability map;
    consult before new optimizer subsystems or IRs.
 
-This file is only the agent workflow and mechanical preflight. It is not a
-second language specification. If it conflicts with C0 or `CLAUDE.md`, stop,
-report the conflict, and repair this projection. Git history is the sole
-historical archive; the active tree is current Idol only (`law.zero.history`).
+| # | directive |
+|---|---|
+| 1 | This file is only the agent workflow and mechanical preflight. |
+| 2 | It is not a second language specification. |
+| 3 | If it conflicts with C0 or `CLAUDE.md`, stop, report the conflict, and repair this projection. |
+| 4 | Git history is the sole historical archive; the active tree is current Idol only (`law.zero.history`). |
 
-The language and project identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
-Active development remains in this repository until release-readiness authorization;
-see `.agents/RELEASE_READINESS.md`. Cursor routers live in `.cursor/rules/`;
-executable canonicality lives under **`gate/`** (home hierarchy — not scattered
-`scripts/*gate*` paths).
+| # | directive |
+|---|---|
+| 1 | The language and project identity is **Idol** (`idol`, `.id`, repository `idollang/idol`). |
+| 2 | Active development remains in this repository until release-readiness authorization; see `.agents/RELEASE_READINESS.md`. |
+| 3 | Cursor routers live in `.cursor/rules/`; executable canonicality lives under **`gate/`** (home hierarchy — not scattered `scripts/*gate*` paths). |
 
 ## Idol harness orientation
 
-Harnesses must **reason in Idol**, not as conventional coding agents with Idol
-syntax pasted onto output. This section is workflow routing only; harness
-reasoning law lives elsewhere.
+| # | directive |
+|---|---|
+| 1 | Harnesses must **reason in Idol**, not as conventional coding agents with Idol syntax pasted onto output. |
+| 2 | This section is workflow routing only; harness reasoning law lives elsewhere. |
 
 | Layer | Path | Role |
 |---|---|---|
@@ -175,7 +172,9 @@ reasoning law lives elsewhere.
 | Live boot payload | `.agents/HARNESS.md` | Revision-bound envelope + template (from `tools/node/dev/generate-harness`) |
 | Mechanical preflight | This file (below) | Gates, claims, path law, host firewall |
 
-Before choosing work or editing:
+| # | directive |
+|---|---|
+| 1 | Before choosing work or editing: |
 
 1. Read `docs/spec/harness-projection.md` § pre-task reduction, § work selection,
    and § **before writing code — audit seams**.
@@ -183,50 +182,53 @@ Before choosing work or editing:
 3. Run `tools/node/dev/generate-harness` (or `orient`, which regenerates it) and
    `tools/node/dev/doctor`.
 
-Every nontrivial change requires a **semantic diff** (`docs/spec/harness-projection.md`
-§ semantic diff) in the completion report. Lexical gate pass on changed lines
-is migration pressure, not semantic convergence proof.
+| # | directive |
+|---|---|
+| 1 | Every nontrivial change requires a **semantic diff** (`docs/spec/harness-projection.md` § semantic diff) in the completion report. |
+| 2 | Lexical gate pass on changed lines is migration pressure, not semantic convergence proof. |
 
-Do not begin from “remove std,” “fix gate,” or “implement process support.”
-Begin from: what fact is missing, what identity disappears, what should cease to
-exist, and whether executed authority, reconstruction debt, or FTCFTW evidence
-improves.
+| # | directive |
+|---|---|
+| 1 | Do not begin from “remove std,” “fix gate,” or “implement process support.” Begin from: what fact is missing, what identity disappears, what should cease to exist, and whether executed authority, reconstruction debt, or FTCFTW evidence improves. |
 
-If 1–9 in pre-task reduction lack answers, deprioritize. If the task only
-renames an abstraction (`std.*` → `process.*`, `req` → local binding), reject.
+| # | directive |
+|---|---|
+| 1 | If 1–9 in pre-task reduction lack answers, deprioritize. |
+| 2 | If the task only renames an abstraction (`std.*` → `process.*`, `req` → local binding), reject. |
 
 ## Monoglot boundary
 
-The destination is an Idol compiler, standard vocabulary, build, tools, gates,
-and documentation projections implemented in Idol.
+| # | directive |
+|---|---|
+| 1 | The destination is an Idol compiler, standard vocabulary, build, tools, gates, and documentation projections implemented in Idol. |
 
-**No `std` anywhere** in new canonical source — not a namespace, table, prelude,
-or migration alias. Vocabulary reaches through layout/home/world projection
-(`path:read()`, `json:encode`, `env[k]`, `args[i]`; `os.env[k]` only when scope
-is contested). The `lib/std/` tree is
-filesystem bootstrap provenance until renamed (GAP-157); it is not authority.
+| # | directive |
+|---|---|
+| 1 | **No `std` anywhere** in new canonical source — not a namespace, table, prelude, or migration alias. |
+| 2 | Vocabulary reaches through layout/home/world projection (`path:read()`, `json:encode`, `env[k]`, `args[i]`; `os.env[k]` only when scope is contested). |
+| 3 | The `lib/std/` tree is filesystem bootstrap provenance until renamed (GAP-157); it is not authority. |
 
-Every canonicality result has one of four states: `canonical`, `migratable`,
-`vocabularyblocked`, `invalid`. Do not invent vocabulary to silence a gate.
+| # | directive |
+|---|---|
+| 1 | Every canonicality result has one of four states: `canonical`, `migratable`, `vocabularyblocked`, `invalid`. |
+| 2 | Do not invent vocabulary to silence a gate. |
 
-New canonical `.id` is admitted — it is the Idol source extension. The priority
-is the earliest executed SHC authority frontier (`law.bootstrap.velocity`): a
-bounded foreign bridge — including new Zig — is admitted and preferred over
-stalling when it is the fastest path to the next executed transfer and carries a
-`law.bridge.death` deletion witness (host owner before, Idol owner after, next
-host boundary). What stays forbidden is a new *permanent* foreign subsystem,
-foreign SEMANTIC AUTHORITY, and a foreign semantic kingdom beside the graph.
-Keep the bridge local, preserve native performance, regenerate (never hand-fork)
-generated artifacts, and move the authority into Idol as soon as the compiler can
-express it. Do not block on a monoglot ideal the native compiler cannot yet
-express — record `IMPLEMENTATION-BLOCKED` and add the smallest unblocking bridge
-rather than idling.
+| # | directive |
+|---|---|
+| 1 | New canonical `.id` is admitted — it is the Idol source extension. |
+| 2 | The priority is the earliest executed SHC authority frontier (`law.bootstrap.velocity`): a bounded foreign bridge — including new Zig — is admitted and preferred over stalling when it is the fastest path to the next executed transfer and carries a `law.bridge.death` deletion witness (host owner before, Idol owner after, next host boundary). |
+| 3 | What stays forbidden is a new *permanent* foreign subsystem, foreign SEMANTIC AUTHORITY, and a foreign semantic kingdom beside the graph. |
+| 4 | Keep the bridge local, preserve native performance, regenerate (never hand-fork) generated artifacts, and move the authority into Idol as soon as the compiler can express it. |
+| 5 | Do not block on a monoglot ideal the native compiler cannot yet express — record `IMPLEMENTATION-BLOCKED` and add the smallest unblocking bridge rather than idling. |
 
-Never route a typed or compile-time value through a boxed compatibility value.
-The semantic value and its native realization remain distinct; compatibility
-front ends do not own Idol meaning.
+| # | directive |
+|---|---|
+| 1 | Never route a typed or compile-time value through a boxed compatibility value. |
+| 2 | The semantic value and its native realization remain distinct; compatibility front ends do not own Idol meaning. |
 
-Presumptively noncanonical shapes whenever written or touched:
+| # | directive |
+|---|---|
+| 1 | Presumptively noncanonical shapes whenever written or touched: |
 
 - namespace activity whose first meaningful value is the subject;
 - module traversal standing in for a subject or world;
@@ -269,7 +271,9 @@ Presumptively noncanonical shapes whenever written or touched:
   prefer minimal source under `law.infer.one`; graph must prove redundancy before
   removal (`law.gate.infer`).
 
-Explicit anti-drift law classes:
+| # | directive |
+|---|---|
+| 1 | Explicit anti-drift law classes: |
 
 - **BOOLEAN-MIRROR-ZERO** (`law.boolean.mirror.zero`) — no boolean flag that
   restates a direct graph fact (`callable`, `possessed`, `operation`, `typed`,
@@ -299,20 +303,23 @@ Explicit anti-drift law classes:
   deletion condition. When Idol law intentionally diverges, the oracle must not
   veto the new behavior.
 
-After parsing, describe meaning in semantic terms. Parser terms such as
-statement, loop node, binary expression, or call expression are valid only
-while discussing recognition. Later boundaries must expose the actual relation,
-values, conditional demand, dependencies, carried values, worlds, result
-demand, places, proofs, provenance, and realization facts.
+| # | directive |
+|---|---|
+| 1 | After parsing, describe meaning in semantic terms. |
+| 2 | Parser terms such as statement, loop node, binary expression, or call expression are valid only while discussing recognition. |
+| 3 | Later boundaries must expose the actual relation, values, conditional demand, dependencies, carried values, worlds, result demand, places, proofs, provenance, and realization facts. |
 
 ## Mechanical preflight
 
-The grammar is closed. New capability does not justify a token, sigil,
-directive, keyword, or special AST ontology.
+| # | directive |
+|---|---|
+| 1 | The grammar is closed. |
+| 2 | New capability does not justify a token, sigil, directive, keyword, or special AST ontology. |
 
-A changed canonical `.id` line, or touched historical `.id` line, is
-noncanonical when it introduces any of these forms. The executable-enforcement
-delta is stated below:
+| # | directive |
+|---|---|
+| 1 | A changed canonical `.id` line, or touched historical `.id` line, is noncanonical when it introduces any of these forms. |
+| 2 | The executable-enforcement delta is stated below: |
 
 - an identifier containing an underscore or uppercase letter;
 - `end`, a semicolon, `then`, or `do` instead of offside structure;
@@ -352,96 +359,89 @@ delta is stated below:
   bootstrap bridge that advances the executed SHC frontier and carries that
   witness is admitted (`law.bootstrap.velocity`).
 
-Canonical lexical meaning is fixed: double quotes are text, single quotes are
-bytes, hash starts a comment, length is the subject relation `len`, and backtick
-is reserved and never executes a process. Compatibility parsing may retain Lua
-comments, long strings, and historical single-quoted text only with explicit
-lawset provenance. Until `GAP-145` provides distinct lexer identities and
-generated grammar roles, do not migrate delimiters by search/replace or infer a
-literal/comment role downstream from token text.
+| # | directive |
+|---|---|
+| 1 | Canonical lexical meaning is fixed: double quotes are text, single quotes are bytes, hash starts a comment, length is the subject relation `len`, and backtick is reserved and never executes a process. |
+| 2 | Compatibility parsing may retain Lua comments, long strings, and historical single-quoted text only with explicit lawset provenance. |
+| 3 | Until `GAP-145` provides distinct lexer identities and generated grammar roles, do not migrate delimiters by search/replace or infer a literal/comment role downstream from token text. |
 
 ## Update face
 
-Canonical Idol prefers `place op= value` only when a witnessed equivalence
-proves it preserves the expanded update's observations. Normalization keeps the
-base relation together with the exact place and update facts; it does not mint
-`addassign`, another compound relation, or a `++` ontology. An admitted compound
-update evaluates a computed place once, so collapsing repeated subject, key, or
-index evaluation requires an explicit equivalence witness.
+| # | directive |
+|---|---|
+| 1 | Canonical Idol prefers `place op= value` only when a witnessed equivalence proves it preserves the expanded update's observations. |
+| 2 | Normalization keeps the base relation together with the exact place and update facts; it does not mint `addassign`, another compound relation, or a `++` ontology. |
+| 3 | An admitted compound update evaluates a computed place once, so collapsing repeated subject, key, or index evaluation requires an explicit equivalence witness. |
 
-The law expressed by `gate/idiom.id` is migration guidance, not semantic proof
-and not permission to rewrite. Its
-`law.update.face` finding identifies only a candidate expanded face. Existing
-compound forms, distinct left/right subjects, declarations, and unwitnessed
-computed places remain negative controls. Semantic classification, a
-graph-owned canonicalizer, and formatting for this equivalence remain blocked
-by `GAP-145`, `GAP-134`, and `GAP-124`.
+| # | directive |
+|---|---|
+| 1 | The law expressed by `gate/idiom.id` is migration guidance, not semantic proof and not permission to rewrite. |
+| 2 | Its `law.update.face` finding identifies only a candidate expanded face. |
+| 3 | Existing compound forms, distinct left/right subjects, declarations, and unwitnessed computed places remain negative controls. |
+| 4 | Semantic classification, a graph-owned canonicalizer, and formatting for this equivalence remain blocked by `GAP-145`, `GAP-134`, and `GAP-124`. |
 
-That blocker is CLEARED. This paragraph used to say direct execution over a
-non-empty diff refuses at DNB001 `concat`, and told every agent not to report
-the gate as executable. Measured at `dec7d509` with a freshly built
-`zig-out/bin/idol`, a 1640-line unified diff on stdin is scanned and judged:
-findings are reported with `[control: pass]` and the gate exits 1, while a diff
-that earns no finding exits 0. Do not take that on this file's word either --
-pipe a diff through it. The gate still makes a LEXICAL added-line judgement, so
-it remains nonsemantic migration pressure rather than a semantic verdict; what
-changed is that it runs. The serialized command is:
+| # | directive |
+|---|---|
+| 1 | That blocker is CLEARED. |
+| 2 | This paragraph used to say direct execution over a non-empty diff refuses at DNB001 `concat`, and told every agent not to report the gate as executable. |
+| 3 | Measured at `dec7d509` with a freshly built `zig-out/bin/idol`, a 1640-line unified diff on stdin is scanned and judged: findings are reported with `[control: pass]` and the gate exits 1, while a diff that earns no finding exits 0. |
+| 4 | Do not take that on this file's word either -- pipe a diff through it. |
+| 5 | The gate still makes a LEXICAL added-line judgement, so it remains nonsemantic migration pressure rather than a semantic verdict; what changed is that it runs. |
+| 6 | The serialized command is: |
 
-    repo="$(git rev-parse --show-toplevel)"
- gate="$(mktemp "${TMPDIR:-/tmp}/idolgate.XXXXXX")" && trap 'rm -f "$gate"' EXIT
- git diff -U0 -- '*.id' '*.id' > "$gate"
- cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gate/idiom.id"
+| # | directive |
+|---|---|
+| 1 | repo="$(git rev-parse --show-toplevel)" gate="$(mktemp "${TMPDIR:-/tmp}/idolgate.XXXXXX")" && trap 'rm -f "$gate"' EXIT git diff -U0 -- '*.id' '*.id' > "$gate" cat "$gate" \| "$repo/zig-out/bin/idol" run "$repo/gate/idiom.id" |
 
-`gate/architecture.id` reads the staged index, so run it after staging or let
-the pre-commit hook run it. The hook also runs `gate/path.id` over every
-staged added or renamed path and over every added line in project teaching and
-implementation surfaces. Do not suppress, bypass, weaken, or route around a
-finding. Safe formatting rewrites require proved semantic equivalence.
-Intent-sensitive findings require a semantic repair, not a regex rewrite.
+| # | directive |
+|---|---|
+| 1 | `gate/architecture.id` reads the staged index, so run it after staging or let the pre-commit hook run it. |
+| 2 | The hook also runs `gate/path.id` over every staged added or renamed path and over every added line in project teaching and implementation surfaces. |
+| 3 | Do not suppress, bypass, weaken, or route around a finding. |
+| 4 | Safe formatting rewrites require proved semantic equivalence. |
+| 5 | Intent-sensitive findings require a semantic repair, not a regex rewrite. |
 
-Path and home names obey the same LAW-ONE as source identifiers (`law.path.name`).
-Concat/mashed file and directory names are never allowed — each semantic unit belongs
-in its own home segment through hierarchy (`compiler/graph.id`), not a compound stem
-(`semantic_graph.id`, `readline.id`, `nativebackend/`). `gate/path.id` enforces
-path separator and taxonomy law. `gate/idiom.id` states the corresponding
-added-line law, but its direct execution is currently blocked as described
-above. Together their law rejects
-compounds in diff path headers, directory components, filename stems, and added-line
-tokens, and namespace-first calls (`string.*`, `std.string.*`, `table.*`, `math.*`,
-`std.*`) on every staged added line in project surfaces.
-Do not mash compound names, strip punctuation, or invent loader syntax. Native
-resolution uses source layout, scope, and worlds (`docs/spec/source.md`,
-`GAP-153`). No import or admission syntax in new canonical source — change
-scope facts at the owner boundary instead.
+| # | directive |
+|---|---|
+| 1 | Path and home names obey the same LAW-ONE as source identifiers (`law.path.name`). |
+| 2 | Concat/mashed file and directory names are never allowed — each semantic unit belongs in its own home segment through hierarchy (`compiler/graph.id`), not a compound stem (`semantic_graph.id`, `readline.id`, `nativebackend/`). `gate/path.id` enforces path separator and taxonomy law. `gate/idiom.id` states the corresponding added-line law, but its direct execution is currently blocked as described above. |
+| 3 | Together their law rejects compounds in diff path headers, directory components, filename stems, and added-line tokens, and namespace-first calls (`string.*`, `std.string.*`, `table.*`, `math.*`, `std.*`) on every staged added line in project surfaces. |
+| 4 | Do not mash compound names, strip punctuation, or invent loader syntax. |
+| 5 | Native resolution uses source layout, scope, and worlds (`docs/spec/source.md`, `GAP-153`). |
+| 6 | No import or admission syntax in new canonical source — change scope facts at the owner boundary instead. |
 
 ## Host boundary (blocking)
 
-Read `docs/spec/host.md` before any work touching arguments, environment,
-process, pipe, shell, transport, endpoints, cwd, PATH, or backend selection.
+| # | directive |
+|---|---|
+| 1 | Read `docs/spec/host.md` before any work touching arguments, environment, process, pipe, shell, transport, endpoints, cwd, PATH, or backend selection. |
 
-Idol source does not call host OS APIs as semantics. **`environment` is not a
-thing** — use `os.env` table under `os` world. **`args`** is `os.args[n]`, not
-`os.args()`. **I/O** uses `io:read` / `io:write`, not `io.read` / `io.write`.
-Do not add `std.*`, `proc.*`, or `ir.*` to new source.
+| # | directive |
+|---|---|
+| 1 | Idol source does not call host OS APIs as semantics. **`environment` is not a thing** — use `os.env` table under `os` world. **`args`** is `os.args[n]`, not `os.args()`. **I/O** uses `io:read` / `io:write`, not `io.read` / `io.write`. |
+| 2 | Do not add `std.*`, `proc.*`, or `ir.*` to new source. |
 
-Before writing such code, state: semantic subject, canonical relation, world
-requirement, home/root projection, foreign ingress/egress boundary, demand. If
-blocked: `SEMANTIC-VOCABULARY-BLOCKED` or `IMPLEMENTATION-BLOCKED` — do not reach
-for host APIs.
+| # | directive |
+|---|---|
+| 1 | Before writing such code, state: semantic subject, canonical relation, world requirement, home/root projection, foreign ingress/egress boundary, demand. |
+| 2 | If blocked: `SEMANTIC-VOCABULARY-BLOCKED` or `IMPLEMENTATION-BLOCKED` — do not reach for host APIs. |
 
-Run `./tools/node/dev/hostcensus` when auditing host debt. Never add `std.`,
-`proc.`, `ir.`, or similar namespace dispatch to new canonical source.
-Added-line host-pattern law: `gate/idiom.id` and `gate/host.id` (temporary until
-graph enforcement, `GAP-154`); `gate/idiom.id` has the direct-run blocker stated
-above.
+| # | directive |
+|---|---|
+| 1 | Run `./tools/node/dev/hostcensus` when auditing host debt. |
+| 2 | Never add `std.`, `proc.`, `ir.`, or similar namespace dispatch to new canonical source. |
+| 3 | Added-line host-pattern law: `gate/idiom.id` and `gate/host.id` (temporary until graph enforcement, `GAP-154`); `gate/idiom.id` has the direct-run blocker stated above. |
 
 ## Gate scan boundaries (LAW-ONE + curry)
 
-Migration gates traverse **added** unified-diff lines only. Never mint a mashed
-compound for this job.
+| # | directive |
+|---|---|
+| 1 | Migration gates traverse **added** unified-diff lines only. |
+| 2 | Never mint a mashed compound for this job. |
 
-**Definition form is `name(...) = (...)`** — never `name(...): type = ()` on
-curried gate bindings.
+| # | directive |
+|---|---|
+| 1 | **Definition form is `name(...) = (...)`** — never `name(...): type = ()` on curried gate bindings. |
 
 | Forbidden | Canonical |
 |---|---|
@@ -462,9 +462,10 @@ curried gate bindings.
 | `):match(`, `):len(`, `:read():` | one relation per line — never single-line method chains |
 | `text = path:read()` | `path:read()` then `:match(pattern)` on next line — no transitive read binding |
 
-**Path file audit uses boundary-curried relation edges and multiline subject-first chains.**
-The path is the first curry boundary; threshold or pattern is the second. Each relation
-owns its line; tail implicit return continues on the next line with a leading `:`:
+| # | directive |
+|---|---|
+| 1 | **Path file audit uses boundary-curried relation edges and multiline subject-first chains.** The path is the first curry boundary; threshold or pattern is the second. |
+| 2 | Each relation owns its line; tail implicit return continues on the next line with a leading `:`: |
 
 ```id
 len(path) = (min: i64)
@@ -485,11 +486,14 @@ if code == 0 and !audit(proof("resident"))("path:read%(")
     code = 2
 ```
 
-Prefix `!` is the canonical negation face — never `not expr`, `if not`, `and not`, or `(not`.
+| # | directive |
+|---|---|
+| 1 | Prefix `!` is the canonical negation face — never `not expr`, `if not`, `and not`, or `(not`. |
 
-**Boundary symbols are not strings.** `diff`, `io`, and `semantic` are symbols in the
-curry slot — the same shape as `to(micron)(inch)` in relation law. The first
-application selects the boundary; the second carries the body:
+| # | directive |
+|---|---|
+| 1 | **Boundary symbols are not strings.** `diff`, `io`, and `semantic` are symbols in the curry slot — the same shape as `to(micron)(inch)` in relation law. |
+| 2 | The first application selects the boundary; the second carries the body: |
 
 ```id
 scan(diff)(body) = ()
@@ -512,57 +516,65 @@ view(edges) = ()
 bit = "scripts/proof/bit.id"
 ```
 
-Line-level work inside a diff boundary uses **`audit(path, no, line)`** — never
-`scanline`. Path-header recognition uses **`head(line)`** — never `diffhead`.
-Bare-line `end` detection uses **`bare(code)`** — never `bareend`.
-Ingress home membership uses **`ingress(path)`** — never `ingressonly` or
-`only(ingress)(path)`; ingress is the subject.
+| # | directive |
+|---|---|
+| 1 | Line-level work inside a diff boundary uses **`audit(path, no, line)`** — never `scanline`. |
+| 2 | Path-header recognition uses **`head(line)`** — never `diffhead`. |
+| 3 | Bare-line `end` detection uses **`bare(code)`** — never `bareend`. |
+| 4 | Ingress home membership uses **`ingress(path)`** — never `ingressonly` or `only(ingress)(path)`; ingress is the subject. |
 
-Executable law sources: `gate/idiom.id`, `gate/host.id`,
-`gate/path.id` (`scan(path)(body)` for path lists, `scan(diff)(body)` for
-namediffs). Gate transport is stdin only — `stdin:read()` via pipe or shell
-redirect (`< file`); no `os.args`, no bash wrappers, no `gatepath`, no `gate.sh`.
-The `gate/idiom.id` direct-run blocker above remains the law/today delta. Run
-other gates with **`idol run gate/<name>.id`** — never **`--backend=c`**. The
-explicit graph-backed C realizer emits orthogonal source; it is not gate
-admission, a direct-native workaround, or a proof path.
-Commit admission runs through `.githooks/pre-commit` (shell orchestrator → direct-backend
-`idol run gate/*`). Never `--backend=c` on gates.
+| # | directive |
+|---|---|
+| 1 | Executable law sources: `gate/idiom.id`, `gate/host.id`, `gate/path.id` (`scan(path)(body)` for path lists, `scan(diff)(body)` for namediffs). |
+| 2 | Gate transport is stdin only — `stdin:read()` via pipe or shell redirect (`< file`); no `os.args`, no bash wrappers, no `gatepath`, no `gate.sh`. |
+| 3 | The `gate/idiom.id` direct-run blocker above remains the law/today delta. |
+| 4 | Run other gates with **`idol run gate/<name>.id`** — never **`--backend=c`**. |
+| 5 | The explicit graph-backed C realizer emits orthogonal source; it is not gate admission, a direct-native workaround, or a proof path. |
+| 6 | Commit admission runs through `.githooks/pre-commit` (shell orchestrator → direct-backend `idol run gate/*`). |
+| 7 | Never `--backend=c` on gates. |
 
-Gate home (`gate/`). The tracked tree and build graph are the live inventory; do
-not maintain a hand-written gate roster here.
+| # | directive |
+|---|---|
+| 1 | Gate home (`gate/`). |
+| 2 | The tracked tree and build graph are the live inventory; do not maintain a hand-written gate roster here. |
 
 ## Path and file names (law.path.name)
 
-Project-controlled path components obey the same LAW-ONE as identifiers:
+| # | directive |
+|---|---|
+| 1 | Project-controlled path components obey the same LAW-ONE as identifiers: |
 
 - **Forbidden:** `snake_case`, `camelCase`, `kebab-case`, mashed stems
   (`semantic_graph.id`, `readline.id`, `nativebackend.zig`)
 - **Required:** one lowercase word per semantic home component, decomposed
   through hierarchy (`compiler/graph.id`, `read/line.id`, `native/backend.zig`)
 
-Never use underscore separators in file or directory names. The stem projects
-the semantic table or home name; qualification belongs in nested homes and
-worlds, not punctuation in a single component.
+| # | directive |
+|---|---|
+| 1 | Never use underscore separators in file or directory names. |
+| 2 | The stem projects the semantic table or home name; qualification belongs in nested homes and worlds, not punctuation in a single component. |
 
-Enforced on staged paths and added lines by `gate/path.id` (`sep`, `mash`,
-`walk`, `verdict`). Positive control rejects `semantic_graph.id` and accepts
-`compiler/graph.id`.
+| # | directive |
+|---|---|
+| 1 | Enforced on staged paths and added lines by `gate/path.id` (`sep`, `mash`, `walk`, `verdict`). |
+| 2 | Positive control rejects `semantic_graph.id` and accepts `compiler/graph.id`. |
 
-Before creating a project-owned path, classify semantic owner, projected home,
-canonical one-word name, origin, and role. If decomposition is unclear, record
-`PATH-SEMANTICS-BLOCKED` rather than minting a compound filename.
+| # | directive |
+|---|---|
+| 1 | Before creating a project-owned path, classify semantic owner, projected home, canonical one-word name, origin, and role. |
+| 2 | If decomposition is unclear, record `PATH-SEMANTICS-BLOCKED` rather than minting a compound filename. |
 
-Callable bindings use result demand on the binder: `name: descriptor = (args) body`.
-Never write suffix or header callable faces: `name = (): type`, `name = (args): type`,
-or `name(): type` — migratable debt ratcheted by `gate/architecture.id` staged
-census (callable.result.suffix), `examples/demand/result.id`, and `scripts/canon.id`.
-Do not reintroduce a `suffix()` substring detector or `if !suffix(` / `if not suffix(` gate controls.
-Length is subject-first: `value:len()` — never `size(x)`, `len(x)`, `rawlen(x)`,
-`string.len(x)`, or `std.string.len(x)` in new canonical source.
-Legacy suffix result annotations (`name(): descriptor`) are migratable debt only.
+| # | directive |
+|---|---|
+| 1 | Callable bindings use result demand on the binder: `name: descriptor = (args) body`. |
+| 2 | Never write suffix or header callable faces: `name = (): type`, `name = (args): type`, or `name(): type` — migratable debt ratcheted by `gate/architecture.id` staged census (callable.result.suffix), `examples/demand/result.id`, and `scripts/canon.id`. |
+| 3 | Do not reintroduce a `suffix()` substring detector or `if !suffix(` / `if not suffix(` gate controls. |
+| 4 | Length is subject-first: `value:len()` — never `size(x)`, `len(x)`, `rawlen(x)`, `string.len(x)`, or `std.string.len(x)` in new canonical source. |
+| 5 | Legacy suffix result annotations (`name(): descriptor`) are migratable debt only. |
 
-Before writing a nontrivial Idol expression, answer:
+| # | directive |
+|---|---|
+| 1 | Before writing a nontrivial Idol expression, answer: |
 
 1. What value is the semantic subject?
 2. What relation is requested?
@@ -579,14 +591,17 @@ Before writing a nontrivial Idol expression, answer:
 12. Is a boolean or negation erasing a semantic case, unknown state, fact, or
     transition that should be consumed directly?
 
-Prefer the representation that preserves the most semantic information and the
-largest lawful realization set with the least source ceremony. Static identity
-uses `value.member`; computed aggregate projection uses `value[key]`; ordinary
-application uses `value(args)`. No face chooses representation.
+| # | directive |
+|---|---|
+| 1 | Prefer the representation that preserves the most semantic information and the largest lawful realization set with the least source ceremony. |
+| 2 | Static identity uses `value.member`; computed aggregate projection uses `value[key]`; ordinary application uses `value(args)`. |
+| 3 | No face chooses representation. |
 
 ## Concurrent lanes
 
-Five disjoint write lanes; do not overlap semantic ownership:
+| # | directive |
+|---|---|
+| 1 | Five disjoint write lanes; do not overlap semantic ownership: |
 
 | Lane | Owner | Scope |
 |---|---|---|
@@ -596,8 +611,10 @@ Five disjoint write lanes; do not overlap semantic ownership:
 | Devin | self-host transfer | one executed production stage into `.id` |
 | AGY | adversarial audit | read-heavy falsification; bounded mechanical repair only |
 
-Read live claims before editing. Never restore shadow authorities removed by
-another owner.
+| # | directive |
+|---|---|
+| 1 | Read live claims before editing. |
+| 2 | Never restore shadow authorities removed by another owner. |
 
 1. Read the local router and `docs/bootstrap.md`, then inspect
    `git status --short --branch`, recent commits, `tools/node/dev/claim list`, every
@@ -609,31 +626,25 @@ another owner.
    `tools/node/dev/gap reserve`; do not create a second tracker or hand-allocate
    a number.
 
-   **An OPEN gap must not narrate a fossil and a blocker in one voice.** A gap
-   accumulates dated measurements and, read top-down, the oldest speaks first.
-   `gaps/GAP-134.md` described a transitional host grammar owner and surviving
-   parser `BinOp` maps four hundred lines above the section recording that both
-   were gone; the living implementation was newer than the closure narrative,
-   which was newer than the earlier section in the same file. An agent who reads
-   the top half implements work already done.
+| # | directive |
+|---|---|
+| 1 | **An OPEN gap must not narrate a fossil and a blocker in one voice.** A gap accumulates dated measurements and, read top-down, the oldest speaks first. `gaps/GAP-134.md` described a transitional host grammar owner and surviving parser `BinOp` maps four hundred lines above the section recording that both were gone; the living implementation was newer than the closure narrative, which was newer than the earlier section in the same file. |
+| 2 | An agent who reads the top half implements work already done. |
 
-   The machine-read answer is the `idol.gap.frontier.v1` block —
-   `<!-- idol-gap-frontier:v1:begin -->`, one fenced JSON object, within the top
-   twelve lines and before the first section. `gate/frontier.sh` owns its
-   contract and fails closed: exactly the six fields, `status` agreeing with an
-   unambiguous `**Status:** OPEN` header, non-empty `current_blockers`, and every
-   `superseded_observations` entry resolving to a real local heading anchor. It
-   self-tests against planted damage. Do not invent a second frontier convention
-   beside it; extend that gate instead.
+| # | directive |
+|---|---|
+| 1 | The machine-read answer is the `idol.gap.frontier.v1` block — `<!-- idol-gap-frontier:v1:begin -->`, one fenced JSON object, within the top twelve lines and before the first section. `gate/frontier.sh` owns its contract and fails closed: exactly the six fields, `status` agreeing with an unambiguous `**Status:** OPEN` header, non-empty `current_blockers`, and every `superseded_observations` entry resolving to a real local heading anchor. |
+| 2 | It self-tests against planted damage. |
+| 3 | Do not invent a second frontier convention beside it; extend that gate instead. |
 
-   Two habits complete it. First, the PROSE that supports the block belongs in a
-   clearly subordinate section — say what is already CROSSED so the next agent
-   does not redo it, and give a COMMAND rather than a count for every claim.
-   Second, group the purely dated measurements under an explicit
-   `## Superseded observations` boundary whose intro says what those sections are
-   still good for, which is usually a ruling and never the state of the tree.
-   Anchors must keep resolving, so move sections, never rename or delete them:
-   this tree preserves research by ancestry. Stop interleaving it.
+| # | directive |
+|---|---|
+| 1 | Two habits complete it. |
+| 2 | First, the PROSE that supports the block belongs in a clearly subordinate section — say what is already CROSSED so the next agent does not redo it, and give a COMMAND rather than a count for every claim. |
+| 3 | Second, group the purely dated measurements under an explicit `## Superseded observations` boundary whose intro says what those sections are still good for, which is usually a ruling and never the state of the tree. |
+| 4 | Anchors must keep resolving, so move sections, never rename or delete them: this tree preserves research by ancestry. |
+| 5 | Stop interleaving it. |
+
 4. Serialize builds and benchmarks through `tools/node/dev/idol-lock`. Until a
    world-backed Idol coordinator is admitted, do not teach a `std.script` or
    MCP text wrapper as canonical authority. A concurrent benchmark is not
@@ -646,16 +657,19 @@ another owner.
 6. Release only claims owned by the current session and leave a durable handoff
    with commands, outcomes, blockers, and remaining debt.
 
-Never use `git stash`. Never use `git reset --hard`. To undo your own commit,
-prefer a path-scoped repair or `git reset --soft` only when it cannot disturb a
-shared branch. Uncommitted work in the shared tree belongs to its author.
+| # | directive |
+|---|---|
+| 1 | Never use `git stash`. |
+| 2 | Never use `git reset --hard`. |
+| 3 | To undo your own commit, prefer a path-scoped repair or `git reset --soft` only when it cannot disturb a shared branch. |
+| 4 | Uncommitted work in the shared tree belongs to its author. |
 
-For performance or lowering work, read `docs/performance.md` before editing and
-append measured evidence afterward. Run the focused correctness checks first,
-then the prescribed locked broad gate. Never hard-code benchmark answers,
-inputs, seeds, iteration counts, or literal-specific recognizers. A performance
-change must improve a transferable realization, runtime path, data structure,
-or algorithm family.
+| # | directive |
+|---|---|
+| 1 | For performance or lowering work, read `docs/performance.md` before editing and append measured evidence afterward. |
+| 2 | Run the focused correctness checks first, then the prescribed locked broad gate. |
+| 3 | Never hard-code benchmark answers, inputs, seeds, iteration counts, or literal-specific recognizers. |
+| 4 | A performance change must improve a transferable realization, runtime path, data structure, or algorithm family. |
 
 ## Learned User Preferences
 
