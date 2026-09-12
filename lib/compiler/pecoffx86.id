@@ -1,0 +1,194 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = (v & 15) + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    hex(v >> 4) .. hex(v)
+
+word: str = (v: i64)
+    pair(v) .. pair(v >> 8) .. pair(v >> 16) .. pair(v >> 24)
+
+quad: str = (v: i64)
+    word(v) .. word(v >> 32)
+
+norm: i64 = (v: i64)
+    if v < 0
+        return v + 4294967296
+    v
+
+align: i64 = (v: i64, a: i64)
+    ((v + a - 1) // a) * a
+
+pad: str = (s: str, n: i64)
+    out = s
+    while out:len() < n * 2
+        out = out .. "00"
+    out
+
+name8: str = (s: str)
+    out = ""
+    i = 1
+    while i <= 8
+        if i <= s:len()
+            out = out .. pair(s:byte(i))
+        else
+            out = out .. "00"
+        i = i + 1
+    out
+
+strhex: str = (s: str)
+    out = ""
+    i = 1
+    while i <= s:len()
+        out = out .. pair(s:byte(i))
+        i = i + 1
+    out
+
+modrm: str = (f: i64, s: i64)
+    pair(192 + (f << 3) + s)
+
+mov64: str = (rd: i64, v: i64)
+    pair(72) .. pair(184 + rd) .. quad(v)
+
+add64: str = (rd: i64, rn: i64)
+    pair(72) .. pair(1) .. modrm(rn, rd)
+
+sub64: str = (rd: i64, rn: i64)
+    pair(72) .. pair(41) .. modrm(rn, rd)
+
+mul64: str = (rd: i64, rn: i64)
+    pair(72) .. pair(15) .. pair(175) .. modrm(rd, rn)
+
+movrr: str = (rd: i64, rn: i64)
+    pair(72) .. pair(137) .. modrm(rn, rd)
+
+subrsp: str = (v: i64)
+    pair(72) .. pair(131) .. pair(236) .. pair(v)
+
+callat: str = (d: i64)
+    pair(255) .. pair(21) .. word(norm(d))
+
+retop: str = ()
+    pair(195)
+
+prog: str = ()
+    c = mov64(0, 6)
+    c = c .. mov64(1, 7)
+    c = c .. mul64(0, 1)
+    c = c .. mov64(1, 2)
+    c = c .. add64(0, 1)
+    c .. sub64(0, 1)
+
+entry: str = (code: str, textrva: i64, iatrva: i64)
+    codelen = code:len() // 2
+    callrva = textrva + 4 + codelen + 3
+    disp = iatrva - (callrva + 6)
+    out = subrsp(40)
+    out = out .. code
+    out = out .. movrr(1, 0)
+    out = out .. callat(disp)
+    out .. retop()
+
+doshead: str = (peoff: i64)
+    out = pair(77) .. pair(90)
+    i = 1
+    while i <= 29
+        out = out .. pair(0) .. pair(0)
+        i = i + 1
+    out .. word(peoff)
+
+stub: str = ()
+    code = "0e1fba0e00b409cd21b8014ccd21"
+    msg = strhex("This program cannot be run in DOS mode.") .. "0d0d0a24"
+    pad(code .. msg, 64)
+
+coffhead: str = (nsect: i64, optsize: i64)
+    out = pair(100) .. pair(134)
+    out = out .. pair(nsect) .. pair(0)
+    out = out .. word(0) .. word(0) .. word(0)
+    out = out .. pair(optsize) .. pair(0)
+    out .. pair(47) .. pair(0)
+
+opthead: str = (codesize: i64, datasize: i64, textrva: i64, idatarva: i64, imagesize: i64, headsize: i64)
+    out = pair(11) .. pair(2)
+    out = out .. pair(0) .. pair(0)
+    out = out .. word(codesize)
+    out = out .. word(datasize)
+    out = out .. word(0)
+    out = out .. word(textrva)
+    out = out .. word(textrva)
+    out = out .. quad(5368709120)
+    out = out .. word(4096)
+    out = out .. word(512)
+    out = out .. pair(6) .. pair(0) .. pair(0) .. pair(0) .. pair(0) .. pair(0) .. pair(0) .. pair(0) .. pair(6) .. pair(0) .. pair(0) .. pair(0)
+    out = out .. word(0)
+    out = out .. word(imagesize)
+    out = out .. word(headsize)
+    out = out .. word(0)
+    out = out .. pair(3) .. pair(0)
+    out = out .. pair(96) .. pair(129)
+    out = out .. quad(1048576)
+    out = out .. quad(4096)
+    out = out .. quad(1048576)
+    out = out .. quad(4096)
+    out = out .. word(0)
+    out = out .. word(16)
+    out = out .. word(0) .. word(0)
+    out = out .. word(idatarva) .. word(40)
+    i = 3
+    while i <= 16
+        out = out .. word(0) .. word(0)
+        i = i + 1
+    out
+
+secthead: str = (name: str, vsize: i64, vaddr: i64, rawsize: i64, rawptr: i64, flags: i64)
+    out = name8(name)
+    out = out .. word(vsize)
+    out = out .. word(vaddr)
+    out = out .. word(rawsize)
+    out = out .. word(rawptr)
+    out = out .. word(0) .. word(0) .. pair(0) .. pair(0) .. pair(0) .. pair(0)
+    out .. word(flags)
+
+idata: str = (base: i64)
+    ilt = base + 40
+    iat = base + 56
+    hint = base + 72
+    dll = base + 86
+    out = word(ilt) .. word(0) .. word(0) .. word(dll) .. word(iat)
+    out = out .. word(0) .. word(0) .. word(0) .. word(0) .. word(0)
+    out = out .. quad(hint) .. quad(0)
+    out = out .. quad(hint) .. quad(0)
+    out = out .. pair(0) .. pair(0) .. strhex("ExitProcess") .. pair(0)
+    out .. strhex("kernel32.dll") .. pair(0)
+
+exe: str = (code: str)
+    peoff = 128
+    codelen = code:len() // 2
+    textlen = codelen + 14
+    textraw = align(textlen, 512)
+    idatavsize = 99
+    idataraw = align(idatavsize, 512)
+    headlen = peoff + 4 + 20 + 240 + 80
+    headraw = align(headlen, 512)
+    textrva = 4096
+    idatarva = 8192
+    textoff = headraw
+    idataoff = headraw + textraw
+    imagesize = align(idatarva + idatavsize, 4096)
+    out = doshead(peoff)
+    out = out .. stub()
+    out = out .. strhex("PE") .. pair(0) .. pair(0)
+    out = out .. coffhead(2, 240)
+    out = out .. opthead(textraw, idataraw, textrva, idatarva, imagesize, headraw)
+    out = out .. secthead(".text", textlen, textrva, textraw, textoff, 1610612768)
+    out = out .. secthead(".idata", idatavsize, idatarva, idataraw, idataoff, 3221225536)
+    out = pad(out, headraw)
+    out = out .. pad(entry(code, textrva, idatarva + 56), textraw)
+    out = out .. pad(idata(idatarva), idataraw)
+    out
+
+main: i64 = ()
+    stdout:write(exe(prog()))
+    0
