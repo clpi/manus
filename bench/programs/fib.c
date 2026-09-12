@@ -1,0 +1,1 @@
+int main(void){unsigned long long t=0;for(unsigned long long o=0;o<2000ULL;o++){unsigned long long a=0,b=1;for(unsigned long long i=0;i<35ULL;i++){unsigned long long c=a+b;a=b;b=c;}t+=a;}return (int)(t&255);}
