@@ -516,10 +516,11 @@ saturate: str = (g: str, maxiter: i64, maxnodes: i64)
         it = it + 1
     g .. ";" .. px(it)
 
-maddcost4: i64 = (g: str, mulclass: i64, othercost: i64, depth: i64, forbid: i64)
+maddbest: str = (g: str, mulclass: i64, othercost: i64, depth: i64, forbid: i64)
     if depth <= 0
-        return 1000000
+        return px(1000000) .. ";" .. px(0 - 1)
     best = 1000000
+    bn = 0 - 1
     n = nn(g)
     i = 0
     while i < n
@@ -532,8 +533,36 @@ maddcost4: i64 = (g: str, mulclass: i64, othercost: i64, depth: i64, forbid: i64
             c = 1 + ecost4(g, l, depth - 1, forbid) + ecost4(g, r, depth - 1, forbid) + othercost
             if c < best
                 best = c
+                bn = i
         i = i + 1
-    best
+    px(best) .. ";" .. px(bn)
+
+maddcost4: i64 = (g: str, mulclass: i64, othercost: i64, depth: i64, forbid: i64)
+    hx(hd(maddbest(g, mulclass, othercost, depth, forbid)), 1)
+
+msubbest: str = (g: str, subcls: i64, minucost: i64, depth: i64, forbid: i64)
+    if depth <= 0
+        return px(1000000) .. ";" .. px(0 - 1)
+    best = 1000000
+    bn = 0 - 1
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == subcls and opof(g, i) == 42
+            l = efind(g, lfof(g, i))
+            r = efind(g, rtof(g, i))
+            if l == forbid or r == forbid
+                i = i + 1
+                continue
+            c = 1 + minucost + ecost4(g, l, depth - 1, forbid) + ecost4(g, r, depth - 1, forbid)
+            if c < best
+                best = c
+                bn = i
+        i = i + 1
+    px(best) .. ";" .. px(bn)
+
+msubcost4: i64 = (g: str, subcls: i64, minucost: i64, depth: i64, forbid: i64)
+    hx(hd(msubbest(g, subcls, minucost, depth, forbid)), 1)
 
 ncost4: i64 = (g: str, i: i64, depth: i64, forbid: i64)
     if depth <= 0
@@ -559,7 +588,11 @@ ncost4: i64 = (g: str, i: i64, depth: i64, forbid: i64)
             base = mc
         return base
     if op == 45
-        return 1 + lc + rc
+        base = 1 + lc + rc
+        mc = msubcost4(g, r, lc, depth - 1, forbid)
+        if mc < base
+            base = mc
+        return base
     if op == 42
         return 3 + lc + rc
     if op == 47
@@ -629,10 +662,54 @@ opchar: str = (op: i64)
         return "&"
     "?"
 
+efuse: str = (g: str, eid: i64, bn: i64)
+    eid = efind(g, eid)
+    op = opof(g, bn)
+    if op == 43
+        l = efind(g, lfof(g, bn))
+        r = efind(g, rtof(g, bn))
+        lc = ecost4(g, l, 19, eid)
+        rc = ecost4(g, r, 19, eid)
+        base = 1 + lc + rc
+        b1 = maddbest(g, l, rc, 19, eid)
+        b2 = maddbest(g, r, lc, 19, eid)
+        c1 = hx(hd(b1), 1)
+        c2 = hx(hd(b2), 1)
+        n1 = hx(tl(b1), 1)
+        n2 = hx(tl(b2), 1)
+        if c1 < base and c1 <= c2 and n1 != 4294967295
+            return "madd;" .. px(n1) .. ";" .. px(r)
+        if c2 < base and n2 != 4294967295
+            return "madd;" .. px(n2) .. ";" .. px(l)
+        return ""
+    if op == 45
+        l = efind(g, lfof(g, bn))
+        r = efind(g, rtof(g, bn))
+        lc = ecost4(g, l, 19, eid)
+        rc = ecost4(g, r, 19, eid)
+        base = 1 + lc + rc
+        b = msubbest(g, r, lc, 19, eid)
+        c = hx(hd(b), 1)
+        mn = hx(tl(b), 1)
+        if c < base and mn != 4294967295
+            return "msub;" .. px(mn) .. ";" .. px(l)
+        return ""
+    ""
+
 e2s: str = (g: str, eid: i64)
     bn = ebest(g, eid)
     if bn < 0
         return ""
+    fz = efuse(g, eid, bn)
+    if fz != ""
+        kind = hd(fz)
+        rest = tl(fz)
+        mn = hx(hd(rest), 1)
+        oc = hx(tl(rest), 1)
+        ml = e2s(g, lfof(g, mn))
+        mr = e2s(g, rtof(g, mn))
+        oo = e2s(g, oc)
+        return "(" .. kind .. " " .. ml .. "," .. mr .. "," .. oo .. ")"
     op = opof(g, bn)
     if op == 108
         return dec(lval(lfof(g, bn), rtof(g, bn)))
@@ -647,3 +724,110 @@ optblock: str = (g: str, eid: i64)
     c = ecost(g2, eid)
     s = e2s(g2, eid)
     px(c) .. ";" .. s
+
+global _ebsrc: str = ""
+global _ebpos: i64 = 1
+
+ebskip: i64 = ()
+    n = _ebsrc:len()
+    while _ebpos <= n and _ebsrc:byte(_ebpos) == 32
+        _ebpos = _ebpos + 1
+    _ebpos
+
+ebprec: i64 = (c: i64)
+    if c == 38
+        return 1
+    if c == 43 or c == 45
+        return 2
+    if c == 42 or c == 47
+        return 3
+    0
+
+ebprimary: str = (g: str)
+    _ebpos = ebskip()
+    c = 0
+    if _ebpos <= _ebsrc:len()
+        c = _ebsrc:byte(_ebpos)
+    if c == 40
+        _ebpos = _ebpos + 1
+        r = ebexpr(g, 1)
+        if r == ""
+            return ""
+        eid = hx(hd(r), 1)
+        g = tl(r)
+        _ebpos = ebskip()
+        if _ebpos > _ebsrc:len()
+            return ""
+        if _ebsrc:byte(_ebpos) != 41
+            return ""
+        _ebpos = _ebpos + 1
+        return px(eid) .. ";" .. g
+    if c == 45
+        _ebpos = _ebpos + 1
+        r = ebprimary(g)
+        if r == ""
+            return ""
+        eid = hx(hd(r), 1)
+        g = tl(r)
+        z = ladd(g, 0)
+        ze = hx(hd(z), 1)
+        g = tl(z)
+        return mknode(g, 45, ze, eid)
+    if c >= 48 and c <= 57
+        v = 0
+        while _ebpos <= _ebsrc:len()
+            d = _ebsrc:byte(_ebpos)
+            if d < 48 or d > 57
+                break
+            v = v * 10 + (d - 48)
+            _ebpos = _ebpos + 1
+        return ladd(g, v)
+    if c == 95 or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+        a = _ebpos
+        while _ebpos <= _ebsrc:len()
+            d = _ebsrc:byte(_ebpos)
+            if d == 95 or (d >= 65 and d <= 90) or (d >= 97 and d <= 122) or (d >= 48 and d <= 57)
+                _ebpos = _ebpos + 1
+            else
+                break
+        return vadd(g, _ebsrc:sub(a, _ebpos - 1))
+    ""
+
+ebexpr: str = (g: str, minp: i64)
+    r = ebprimary(g)
+    if r == ""
+        return ""
+    eid = hx(hd(r), 1)
+    g = tl(r)
+    cont = 1
+    while cont == 1
+        _ebpos = ebskip()
+        c = 0
+        if _ebpos <= _ebsrc:len()
+            c = _ebsrc:byte(_ebpos)
+        pp = ebprec(c)
+        if pp == 0 or pp < minp
+            cont = 0
+        else
+            _ebpos = _ebpos + 1
+            r2 = ebexpr(g, pp + 1)
+            if r2 == ""
+                return ""
+            e2 = hx(hd(r2), 1)
+            g = tl(r2)
+            r3 = mknode(g, c, eid, e2)
+            eid = hx(hd(r3), 1)
+            g = tl(r3)
+    px(eid) .. ";" .. g
+
+ebuild: str = (src: str)
+    _ebsrc = src
+    _ebpos = 1
+    g = mkg(0)
+    r = ebexpr(g, 1)
+    if r == ""
+        return ""
+    _ebpos = ebskip()
+    if _ebpos <= _ebsrc:len()
+        return ""
+    r
