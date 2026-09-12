@@ -229,7 +229,6 @@ M.map_err = map_err
 M.flat_map = flat_map
 M.and_then = and_then
 M.or_else = or_else
-M.to_str = result_to_str
 M.some = some
 M.none = none
 M.is_some = is_some

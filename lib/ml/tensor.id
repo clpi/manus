@@ -118,9 +118,6 @@ set(t: any, row: any, col: any, val: any)
 shape(t: any)
     return { t.rows, t.cols }
 
-tostring = (t: any)
-    return "Tensor(" .. t.rows:to(str) .. "x" .. t.cols:to(str) .. ")"
-
 # ═══════════════════════════════════════════════════════════════
 # Extended operations
 # ═══════════════════════════════════════════════════════════════

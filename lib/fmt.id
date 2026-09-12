@@ -12,11 +12,6 @@ float: str = (v: any, precision: i64)
     "%g":format(v)
   "%." .. precision:to(str) .. "f":format(v)
 
-to_str: str = (v: any)
-  if v == nil
-    return "nil"
-  v
-
 boolean: str = (v: any)
   if v == nil
     return "false"

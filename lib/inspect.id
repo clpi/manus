@@ -124,10 +124,6 @@ std_inspect_diff = (a: any, b: any, prefix: any, diffs: any)
             if prefix != "" path = prefix .. "." .. k:to(str) 
             diffs[diffs:len() + 1] = {path = path, kind = "added", new = v}
 
-# to_str: deep-convert any value to a human-readable string.
-to_str: str = (value: any, indent: any, seen: any)
-    std_inspect_to_str(value, indent, seen)
-
 # deep_equal: recursively compare two values for structural equality.
 deep_equal: bool = (a: any, b: any)
     if a == b return true 
