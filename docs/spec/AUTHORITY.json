@@ -9195,7 +9195,7 @@
           "a lexical binding is lawful only when it denotes an independently meaningful value under its genuine domain name"
         ],
         "enforced_by": [
-          "gate/canonicality.sh",
+          "gate/canonicality.id",
           "tools/node/dev/gapc0"
         ]
       },
@@ -9222,7 +9222,7 @@
           "explicit any descriptors are vocabularyblocked except in compatibility fixtures negative controls and foreign law source for the generic boxed boundary"
         ],
         "enforced_by": [
-          "gate/canonicality.sh",
+          "gate/canonicality.id",
           "tools/node/dev/gapc0"
         ]
       },
@@ -9249,7 +9249,7 @@
           "unit Unit none and NoResult are not parallel zero result ontologies"
         ],
         "enforced_by": [
-          "gate/canonicality.sh",
+          "gate/canonicality.id",
           "tools/node/dev/gapc0"
         ]
       },
@@ -9277,7 +9277,7 @@
           "text carries textual or encoding law that an arbitrary byte sequence does not"
         ],
         "enforced_by": [
-          "gate/canonicality.sh",
+          "gate/canonicality.id",
           "gate/catalog.id"
         ]
       },
@@ -9304,7 +9304,7 @@
           "git history and repository frequency are not language law"
         ],
         "enforced_by": [
-          "gate/canonicality.sh"
+          "gate/canonicality.id"
         ]
       },
       {

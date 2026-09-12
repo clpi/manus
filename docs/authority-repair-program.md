@@ -375,11 +375,11 @@
 | law.zero.history | current | invariant | 67 | tools/node/dev/corpuscensus |
 | law.backend.c.orthogonal | current | invariant | 67 |  |
 | law.filesystem.projection | current | invariant | 67 |  |
-| law.subject.zero | current | invariant | 67 | gate/canonicality.sh, tools/node/dev/gapc0 |
-| law.any.descriptor.zero | current | invariant | 67 | gate/canonicality.sh, tools/node/dev/gapc0 |
-| law.result.zero | current | invariant | 67 | gate/canonicality.sh, tools/node/dev/gapc0 |
-| law.text.byte | current | invariant | 67 | gate/canonicality.sh, gate/catalog.id |
-| law.canonicality | current | invariant | 67 | gate/canonicality.sh |
+| law.subject.zero | current | invariant | 67 | gate/canonicality.id, tools/node/dev/gapc0 |
+| law.any.descriptor.zero | current | invariant | 67 | gate/canonicality.id, tools/node/dev/gapc0 |
+| law.result.zero | current | invariant | 67 | gate/canonicality.id, tools/node/dev/gapc0 |
+| law.text.byte | current | invariant | 67 | gate/canonicality.id, gate/catalog.id |
+| law.canonicality | current | invariant | 67 | gate/canonicality.id |
 | law.constitution.spre.p1 | current | orientation | pre |  |
 | law.constitution.spre.p2 | current | orientation | pre |  |
 | law.constitution.s1.p1 | current | invariant | 1 |  |

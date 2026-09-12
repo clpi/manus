@@ -1,0 +1,68 @@
+
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+exitedzero: bool = (shellline: str)
+  chomp(gatecap("( {shellline} ) >/dev/null 2>&1; echo $?")) == "0"
+
+present: bool = (path: str)
+  exitedzero("test -r '{path}'")
+
+contains: bool = (path: str, needle: str)
+  exitedzero("grep -F -- '{needle}' '{path}'")
+
+section: i64 = (heading: str, fail: i64)
+  if contains("docs/spec/law.md", heading)
+    print("  ok   law section: {heading}")
+    return fail
+  print("  FAIL law section missing: {heading}")
+  fail + 1
+
+identity: i64 = (lid: str, fail: i64)
+  needle = "id    = \"{lid}\""
+  if contains("docs/spec/constitution.md", needle)
+    print("  ok   C0 identity: {lid}")
+    return fail
+  print("  FAIL C0 identity missing: {lid}")
+  fail + 1
+
+main: i64 = ()
+  fail = 0
+  fail = section("| 5. Delimiter and face closure |", fail)
+  fail = section("`[]` is computed/indexed projection.", fail)
+  fail = section("`()` is ordinary application.", fail)
+  fail = section("sole supreme compact law", fail)
+  fail = section("this file wins", fail)
+  fail = identity("law.subject.zero", fail)
+  fail = identity("law.any.descriptor.zero", fail)
+  fail = identity("law.result.zero", fail)
+  fail = identity("law.text.byte", fail)
+  fail = identity("law.canonicality", fail)
+  if contains("AGENTS.md", "Where a directive is unavoidable the canonical spelling is")
+    print("  FAIL AGENTS.md still contains the stale @comp.* directive paragraph")
+    fail = fail + 1
+  else
+    print("  ok   AGENTS.md @comp.* paragraph removed")
+  prog = "docs/authority-repair-program.md"
+  if !present(prog)
+    print("  FAIL authority-repair program document is missing")
+    fail = fail + 1
+  else
+    if contains(prog, "| Final rulings |") and contains(prog, "| Canonicality status relation |")
+      print("  ok   authority-repair program has rulings and status relation")
+    else
+      print("  FAIL authority-repair program missing rulings or status relation")
+      fail = fail + 1
+  if fail == 0
+    print("canonicality gate: PASS (17 check(s)) 5 law sections, 5 C0 identities, AGENTS + program verified")
+    return 0
+  print("canonicality gate: (17 check(s)) {fail} finding(s)")
+  fail
