@@ -1,0 +1,73 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+probe: i64 = (idol: str, work: str, label: str, binding: str)
+  gatecap("cat >'{work}/{label}.id' <<'PROBE'\n{binding}\n\nmain: i64 = ()\n  0\nPROBE\n")
+  rc = digits(chomp(gatecap("'{idol}' compile --backend=direct -o '{work}/out.bin' '{work}/{label}.id' >'{work}/{label}.log' 2>&1 </dev/null; echo $?")))
+  cleaned = gatecap("rm -f '{work}/out.bin'")
+  if rc == 0
+    print("module-zero-precheck: FAIL {label} - an unresolvable home compiled (exit 0)")
+    return 1
+  seen = gatecap("grep -q 'bail site: native-scalar precheck' '{work}/{label}.log'; echo $?")
+  if seen == "0\n"
+    print("module-zero-precheck: FAIL {label} - the pre-graph gate answered a module question")
+    return 1
+  seen = gatecap("grep -q 'DNB004' '{work}/{label}.log'; echo $?")
+  if seen == "0\n"
+    print("module-zero-precheck: FAIL {label} - DNB004 on a subject the host control already cleared")
+    return 1
+  seen = gatecap("grep -q 'producer: graph' '{work}/{label}.log'; echo $?")
+  if seen == "0\n"
+    return 0
+  print("module-zero-precheck: FAIL {label} - refusal did not come from the graph")
+  1
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  else
+    if idol:sub(1, 1) != "/"
+      idol = "{root}/{idol}"
+  work = ""
+  cleaned = ""
+  fail = 0
+  bad = 0
+  if gatecap("test -x '{idol}'; echo $?") == "0\n"
+    work = chomp(gatecap("mktemp -d /tmp/idol-modulezero.XXXXXX"))
+    bad = bad + probe(idol, work, "assign", "grammar = req(\"unresolvable\")")
+    bad = bad + probe(idol, work, "global", "global grammar = req(\"unresolvable\")")
+    bad = bad + probe(idol, work, "pack", "grammar, n = req(\"unresolvable\"), 1")
+    cleaned = gatecap("rm -rf '{work}'")
+  else
+    print("module-zero-precheck: FAIL compiler is not executable: {idol}")
+    fail = 1
+  if bad != 0
+    fail = 1
+  if fail == 0
+    print("module-zero-precheck: 3 subject(s) - every refusal produced by the graph")
+  fail
