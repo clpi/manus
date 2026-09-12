@@ -1,10 +1,6 @@
-# Authority repair program
+# authority-repair-program
 
-P0 canonicality repair: close the authority-projection ambiguities that cause
-agents to independently regenerate the same forbidden classes. The semantic
-direction is settled; the authoring contract is now mechanically verified.
-
-## Final rulings
+## rulings
 
 | Spelling | Role / source law | Status |
 | --- | --- | --- |
@@ -38,48 +34,3 @@ direction is settled; the authoring contract is now mechanically verified.
 | one-use bridge local | source binding in Idol | `vocabularyblocked` unless independent identity |
 | `boxed`, `heap`, `simd`, etc. as semantic names | source identity in Idol | `vocabularyblocked` |
 | legacy/familiar accepted syntax | ingress face in Idol | `accepted-compatibility` |
-
-## Canonicality status relation
-
-```text
-canon(spelling, semantic-role, source-law) -> status
-status ∈ { canonical, accepted-compatibility, migration-only, foreign,
-           fixture-only, implementation-only, vocabularyblocked, invalid }
-```
-
-A status is always (spelling, role, law). The same spelling can be canonical in
-one role and invalid in another.
-
-## Six recurrent transformations
-
-| Mistake | becomes |
-| --- | --- |
-| `self` / `this` / `receiver` | **SUBJECT FACT** |
-| `any`-as-unknown / `void` / redundant `:to(T)` | **INFERENCE / DEMAND FACT** |
-| plural / collection noun | **CARDINALITY / SHAPE FACT** |
-| compound / qualified name | **ENTITY + FACT or SUBJECT + RELATION** |
-| manager / registry / context / adapter | **EXISTING APPLICATION / WORLD / PROJECTION / REALIZATION** |
-| `@comp` / `std` / module / foreign ontology | **WORLD or FOREIGN-LAW PROVENANCE** |
-
-## Reduction test for every new name
-
-1. What independent semantic thing exists?
-2. What is merely a fact about that thing?
-3. What is its subject?
-4. What is its independently meaningful relation?
-5. Is plurality being encoded in the name?
-6. Is representation/stage/target/provenance/status encoded in the name?
-7. Does world/application/projection/demand already own the proposed responsibility?
-8. Would the identity disappear if one qualifying fact changed?
-9. Can the compiler uniquely infer the proposed spelling's information?
-10. Is this actually foreign/compatibility/fixture vocabulary rather than Idol?
-
-If the proposed identity fails any applicable question: **DELETE / DECOMPOSE /
-INFER**, not "find a better synonym."
-
-## Repository corollary
-
-Git history and repository frequency have weight zero in language-law inference.
-The active tree is current Idol, current foreign interop, and currently executed
-bounded bootstrap bridges only. Historical migration material is in git, not in
-current law.
