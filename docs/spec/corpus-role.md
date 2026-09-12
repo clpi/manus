@@ -1,31 +1,43 @@
 # Corpus role (ZERO-HISTORY)
 
-Projection of `law.zero.history`. Git is the sole historical archive.
+| # | directive |
+|---|---|
+| 1 | Projection of `law.zero.history`. |
+| 2 | Git is the sole historical archive. |
 
 ## Durable states
 
-Only two corpus states exist in the active tree:
+| # | directive |
+|---|---|
+| 1 | Only two corpus states exist in the active tree: |
 
 | state | meaning | agent retrieval |
 |---|---|---|
 | `current` | teaches or exercises current Idol law | include by default |
 | `foreign` | current foreign law (Lua, C, Wasm, host oracle) | exclude unless requested |
 
-A bootstrap bridge is an **implementation dependency**, not a corpus state.
+| # | directive |
+|---|---|
+| 1 | A bootstrap bridge is an **implementation dependency**, not a corpus state. |
 
-Deleted durable labels: `historical`, `legacy`, `migration`, `compat`, `verified`,
-`proof`, `deprecated`, `old`, pass-number archive.
+| # | directive |
+|---|---|
+| 1 | Deleted durable labels: `historical`, `legacy`, `migration`, `compat`, `verified`, `proof`, `deprecated`, `old`, pass-number archive. |
 
 ## Marking
 
-First line of `.id` when classification matters:
+| # | directive |
+|---|---|
+| 1 | First line of `.id` when classification matters: |
 
 ```id
 # @corpus current
 # @corpus foreign
 ```
 
-Mechanical check: `tools/node/dev/corpuscensus`.
+| # | directive |
+|---|---|
+| 1 | Mechanical check: `tools/node/dev/corpuscensus`. |
 
 ## Rules
 

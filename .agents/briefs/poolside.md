@@ -1,68 +1,17 @@
 # Brief — Poolside: bounded physical implementation
 
-You get one physical realization where Codex has already published exact
-graph facts. Never an open-ended assignment such as "fix self-hosting" or
-"implement Wasm."
+| # | directive |
+|---|---|
+| 1 | You get one physical realization where Codex has already published exact graph facts. |
+| 2 | Never an open-ended assignment such as "fix self-hosting" or "implement Wasm." |
 
 ## Injectable template
 
-IDOL BOUNDED PHYSICAL IMPLEMENTATION
-====================================
-You are implementing one already-decided physical realization.
-You are not authorized to alter semantic meaning.
-BASE SHA:
-    <EXACT SHA — resolved at assignment>
-OBJECTIVE:
-    <ONE SENTENCE>
-BEFORE:
-    <EXACT CURRENT FAILURE OR EXTRA WORK>
-AFTER:
-    <EXACT EXPECTED RESULT>
-AUTHORITATIVE INPUT FACTS:
-    <GRAPH ACCESSORS / DESCRIPTORS / PACK FACTS>
-ALLOWED PATHS:
-    <EXACT FILE LIST>
-FORBIDDEN PATHS:
-    docs/spec/**
-    src/parser.zig
-    src/sema.zig
-    src/semantic_graph.zig
-    src/subject_home.zig
-    all files not explicitly allowed
-FORBIDDEN CHANGES:
-    new syntax
-    new semantic enum
-    new relation/world/roster
-    source-name dispatch
-    AST semantic reconstruction
-    C fallback
-    boxing
-    forced aggregate materialization
-    relaxed expected count
-    silent fallback
-STOP WHEN:
-    required graph fact is absent
-    more than one semantic interpretation exists
-    another path is required
-    expected failure does not reproduce
-    HEAD differs
-    a live claim conflicts
-REQUIRED CONTROLS:
-    positive
-    negative
-    damaged implementation
-    parent differential
-    corpus compile differential
-    runnable behavior differential
-    object/disassembly comparison
-REPORT:
-    files
-    commands
-    hashes
-    exact semantic diff: none
-    exact physical diff
-    gate movement
-    remaining blocker
+| # | directive |
+|---|---|
+| 1 | IDOL BOUNDED PHYSICAL IMPLEMENTATION ==================================== You are implementing one already-decided physical realization. |
+| 2 | You are not authorized to alter semantic meaning. |
+| 3 | BASE SHA: <EXACT SHA — resolved at assignment> OBJECTIVE: <ONE SENTENCE> BEFORE: <EXACT CURRENT FAILURE OR EXTRA WORK> AFTER: <EXACT EXPECTED RESULT> AUTHORITATIVE INPUT FACTS: <GRAPH ACCESSORS / DESCRIPTORS / PACK FACTS> ALLOWED PATHS: <EXACT FILE LIST> FORBIDDEN PATHS: docs/spec/** src/parser.zig src/sema.zig src/semantic_graph.zig src/subject_home.zig all files not explicitly allowed FORBIDDEN CHANGES: new syntax new semantic enum new relation/world/roster source-name dispatch AST semantic reconstruction C fallback boxing forced aggregate materialization relaxed expected count silent fallback STOP WHEN: required graph fact is absent more than one semantic interpretation exists another path is required expected failure does not reproduce HEAD differs a live claim conflicts REQUIRED CONTROLS: positive negative damaged implementation parent differential corpus compile differential runnable behavior differential object/disassembly comparison REPORT: files commands hashes exact semantic diff: none exact physical diff gate movement remaining blocker |
 
 ## Suitable assignment classes
 

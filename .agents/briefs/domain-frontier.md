@@ -1,6 +1,8 @@
 # Domain-Frontier Reorientation Brief
 
-Read, in order:
+| # | directive |
+|---|---|
+| 1 | Read, in order: |
 
 1. `docs/spec/law.md`
 2. `docs/research/domain-frontier-map.md`
@@ -31,7 +33,9 @@ Read, in order:
 
 ## Refusals
 
-Do not treat any of these as current law without an exact bounded proof:
+| # | directive |
+|---|---|
+| 1 | Do not treat any of these as current law without an exact bounded proof: |
 
 - generic “faster than C”;
 - unqualified “fastest,” “smallest,” or “best-in-class”;
@@ -47,4 +51,7 @@ Do not treat any of these as current law without an exact bounded proof:
 
 ## Stop condition for surface work
 
-No new homepage, dashboard, Atlas, Registry, Observatory, IDE, Live, API-description, or MCP-description feature is justified unless it projects an exact current-law artifact or admitted evidence record that already exists. A truthful empty surface is a successful result.
+| # | directive |
+|---|---|
+| 1 | No new homepage, dashboard, Atlas, Registry, Observatory, IDE, Live, API-description, or MCP-description feature is justified unless it projects an exact current-law artifact or admitted evidence record that already exists. |
+| 2 | A truthful empty surface is a successful result. |

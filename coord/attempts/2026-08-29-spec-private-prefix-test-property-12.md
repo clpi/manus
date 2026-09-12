@@ -1,8 +1,8 @@
 # attempt: spec-private-prefix-test-property-12-2026-08-29
 
-opened: 2026-08-29T05:10:00-07:00
-closed: 2026-08-29T05:10:00-07:00
-actor: self
+| # | directive |
+|---|---|
+| 1 | opened: 2026-08-29T05:10:00-07:00 closed: 2026-08-29T05:10:00-07:00 actor: self |
 
 ## observed fixture set
 
@@ -22,11 +22,13 @@ actor: self
 
 ## result
 
-PASS. Commit landed at `c0718aa3` on `clpi/idol/main`. The property
-test's LCG seed is unchanged (305419896, the same glibc constants
-the shell version used). The script still produces the SAME 64 cases
-in the SAME order, so the bitwise differential oracle still agrees.
+| # | directive |
+|---|---|
+| 1 | Commit landed at `c0718aa3` on `clpi/idol/main`. |
+| 2 | The property test's LCG seed is unchanged (305419896, the same glibc constants the shell version used). |
+| 3 | The script still produces the SAME 64 cases in the SAME order, so the bitwise differential oracle still agrees. |
 
 ## if rejected (not applicable)
 
-n/a
+| # | directive |
+|---|---|

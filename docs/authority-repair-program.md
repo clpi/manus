@@ -2,7 +2,10 @@
 
 ## Final rulings
 
-Projected law records. Source: `docs/spec/AUTHORITY.json` rulings.
+| # | directive |
+|---|---|
+| 1 | Projected law records. |
+| 2 | Source: `docs/spec/AUTHORITY.json` rulings. |
 
 | law | status | kind | section | enforced_by |
 |---|---|---|---|---|

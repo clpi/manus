@@ -1,15 +1,20 @@
 # COLLISION-ZERO — machinery ownership closure
 
-Projection of C0 machinery law. Idol already owns application resolution,
-projection/reachability, anchored facts, worlds, demand, transformation,
-realization, target selection, and provenance. No second owner may be named.
+| # | directive |
+|---|---|
+| 1 | Projection of C0 machinery law. |
+| 2 | Idol already owns application resolution, projection/reachability, anchored facts, worlds, demand, transformation, realization, target selection, and provenance. |
+| 3 | No second owner may be named. |
 
 ## Deny (semantic machinery)
 
-When a project-owned identifier or path stem names something that **selects**
-where semantic work goes, it is a collision — regardless of spelling.
+| # | directive |
+|---|---|
+| 1 | When a project-owned identifier or path stem names something that **selects** where semantic work goes, it is a collision — regardless of spelling. |
 
-Presumptive machinery roles:
+| # | directive |
+|---|---|
+| 1 | Presumptive machinery roles: |
 
 ```text
 router gateway dispatcher dispatch registry manager factory adapter broker
@@ -18,14 +23,16 @@ pipeline scheduler loader resolver bridge shim proxy wrapper frontend backend
 context session runtime service provider driver host framework container
 ```
 
-Renaming `router` → `broker` → `service` does **not** repair the role.
+| # | directive |
+|---|---|
+| 1 | Renaming `router` → `broker` → `service` does **not** repair the role. |
 
 ## PROTOCOL-NAME-ZERO
 
-Never use `able`, `ible`, or `*able`/`*ible` as semantic identifiers — including
-as gate helper names. `able` encodes protocol/algebra machinery, not a domain
-noun. Bare `able`/`ible` and suffix forms (`readable`, `writable`, …) are
-denied; protocol satisfaction is a relation/application fact on the subject.
+| # | directive |
+|---|---|
+| 1 | Never use `able`, `ible`, or `*able`/`*ible` as semantic identifiers — including as gate helper names. `able` encodes protocol/algebra machinery, not a domain noun. |
+| 2 | Bare `able`/`ible` and suffix forms (`readable`, `writable`, …) are denied; protocol satisfaction is a relation/application fact on the subject. |
 
 ## Already owned (use these, not machinery)
 
@@ -41,8 +48,10 @@ denied; protocol satisfaction is a relation/application fact on the subject.
 
 ## Application closure (same law family as `args(n)`)
 
-Bracket index on a table/home is migratable debt only. Canonical added lines use
-application:
+| # | directive |
+|---|---|
+| 1 | Bracket index on a table/home is migratable debt only. |
+| 2 | Canonical added lines use application: |
 
 ```id
 "scripts/proof/bit.id":read()
@@ -51,19 +60,22 @@ args(1)
 env["KEY"]
 ```
 
-Never teach or write `semantic[ingest]`, `proof[view]`, `home[slot]`, or
-`check(semantic)(slot)` on canonical lines.
+| # | directive |
+|---|---|
+| 1 | Never teach or write `semantic[ingest]`, `proof[view]`, `home[slot]`, or `check(semantic)(slot)` on canonical lines. |
 
 ## Foreign exception
 
-Domain objects may keep domain names when modeling an **external** thing
-(HTTP proxy, network router, API gateway, device driver). They must not name
-compiler/language machinery.
+| # | directive |
+|---|---|
+| 1 | Domain objects may keep domain names when modeling an **external** thing (HTTP proxy, network router, API gateway, device driver). |
+| 2 | They must not name compiler/language machinery. |
 
 ## Enforcement
 
-`gate/idiom.id` enforces on added lines via decomposed checks — no mashed
-selector kingdom:
+| # | directive |
+|---|---|
+| 1 | `gate/idiom.id` enforces on added lines via decomposed checks — no mashed selector kingdom: |
 
 - `collision(name)` in `eq` — identifier/path stem role classification
 - `flag(..., "router(", ...)` (and sibling selector calls) in `adj`
@@ -72,8 +84,9 @@ selector kingdom:
   `"scripts/proof/bit.id":read()` / `audit(path)(pattern)`
 - `check(semantic` — slot-dispatch machinery; use path `:read()` on the home
 
-Graph canonicalization (`GAP-124`) remains the production owner; the gate is
-migration pressure only.
+| # | directive |
+|---|---|
+| 1 | Graph canonicalization (`GAP-124`) remains the production owner; the gate is migration pressure only. |
 
 ## Required audit targets (bootstrap debt)
 
@@ -91,7 +104,9 @@ src/c_frontend.zig
 src/explain_pipeline.zig
 ```
 
-Tracked in `gaps/GAP-167.md`.
+| # | directive |
+|---|---|
+| 1 | Tracked in `gaps/GAP-167.md`. |
 
 ## Redress algorithm
 

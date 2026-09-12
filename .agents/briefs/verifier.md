@@ -1,37 +1,18 @@
 # Brief — Pi / independent Z.ai verifier: falsification only
 
-This agent never writes production code.
+| # | directive |
+|---|---|
+| 1 | This agent never writes production code. |
 
 ## Injectable
 
-IDOL INDEPENDENT FALSIFICATION
-==============================
-Do not edit production code.
-Verify exact source/compiler/runtime hashes.
-Assume every green row is false until:
-    intended command ran
-    positive control passes
-    damage control fails
-    perturbation landed
-    restoration is exact
-    oracle produced a valid comparison
-    fallback is visible
-    source and compiler revisions match
-Report separately:
-    compile
-    link
-    run
-    output
-    exit
-    trap
-    selected realization
-    fallback
-    timing
-    memory
-    artifact
-Never update an expected count.
-Never re-record a baseline.
-Never call a skipped or ineligible oracle a pass.
+| # | directive |
+|---|---|
+| 1 | IDOL INDEPENDENT FALSIFICATION ============================== Do not edit production code. |
+| 2 | Verify exact source/compiler/runtime hashes. |
+| 3 | Assume every green row is false until: intended command ran positive control passes damage control fails perturbation landed restoration is exact oracle produced a valid comparison fallback is visible source and compiler revisions match Report separately: compile link run output exit trap selected realization fallback timing memory artifact Never update an expected count. |
+| 4 | Never re-record a baseline. |
+| 5 | Never call a skipped or ineligible oracle a pass. |
 
 ## Duties
 
@@ -55,7 +36,9 @@ Never call a skipped or ineligible oracle a pass.
 
 ## Small mechanical agents (same lane)
 
-One-file or generated-output tasks only:
+| # | directive |
+|---|---|
+| 1 | One-file or generated-output tasks only: |
 
 - **Fixture promotion** — when a capability has landed and its route
   document says which fixtures move: verify exact current success, move

@@ -1,14 +1,20 @@
 # Path migration ledger (PATH-ONE)
 
-Projection of C0 `law.path.name` and GAP-163. Not semantic law.
+| # | directive |
+|---|---|
+| 1 | Projection of C0 `law.path.name` and GAP-163. |
+| 2 | Not semantic law. |
 
 ## Rule
 
-Project-controlled semantic paths obey the same lowercase one-word law as source
-identifiers. Forbidden on **new** paths: underscores, compounds, numeric taxonomy
-suffixes, mashed abbreviations.
+| # | directive |
+|---|---|
+| 1 | Project-controlled semantic paths obey the same lowercase one-word law as source identifiers. |
+| 2 | Forbidden on **new** paths: underscores, compounds, numeric taxonomy suffixes, mashed abbreviations. |
 
-Renaming without semantic decomposition is forbidden (`abi_matrix` → `abimatrix`).
+| # | directive |
+|---|---|
+| 1 | Renaming without semantic decomposition is forbidden (`abi_matrix` → `abimatrix`). |
 
 ## Classification
 
@@ -41,4 +47,6 @@ Renaming without semantic decomposition is forbidden (`abi_matrix` → `abimatri
 git ls-files | rg '(^|/)[^/]*[_0-9][^/]*\.(id|zig)$' | head
 ```
 
-Full census is gate-owned; this ledger is the migration schedule.
+| # | directive |
+|---|---|
+| 1 | Full census is gate-owned; this ledger is the migration schedule. |
