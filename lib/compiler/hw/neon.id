@@ -586,7 +586,10 @@ abi: str = (code: i64)
     ""
 
 slpabi: str = ()
-    "x0|d|x1|a|x2|b|ret|void"
+    "x0|d|x1|a|x2|b|c0|elem-advance|ret|void"
+
+tailstrat: str = ()
+    "loop|cbz-scalar-epilogue|red|cbz-scalar-epilogue|red2x|cbz-scalar-epilogue|slp|driver-scalar-remainder"
 
 cost: str = (desc: str, ilp: i64, trip: i64)
     kind = cut(desc, 124, 0)
