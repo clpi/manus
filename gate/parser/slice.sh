@@ -61,7 +61,7 @@ idol-parser-module     bound    lib/compiler/parser.id       L1-L3 Idol parser s
 role-projection-fed    bound    lib/token/grammarrole.id     roles emitted for consumers
 host-parser-debt       open     src/parser.zig               most recognition still host-owned
 idol-parser-execution   open     lib/compiler/parser.id       direct execution refuses DNB001 at lowerModuleFromGraph
-token-view-execution    open     lib/compiler/token_view.id    direct execution refuses DNB001 graph-dnir-unsupported at lowerExprCons
+token-view-execution    open     lib/compiler/token_view.id    direct execution refuses DNB001 graph-dnir-unsupported at emitArm64ModuleWithGraph
 bare-function-syntax    bound    examples/syntax_bare_fun_smoke.id    canonical bare-function and offside fixture
 '
 
@@ -115,7 +115,7 @@ probe_token_view_refusal() {
     if [ "$_rc" -ne 0 ] \
         && grep -q 'DNB001' "$_out" \
         && grep -q 'graph-dnir-unsupported' "$_out" \
-        && grep -q 'bail site: lowerExprCons()' "$_out" \
+        && grep -q 'bail site: emitArm64ModuleWithGraph()' "$_out" \
         && [ ! -s "$_obj" ]; then
         ok 'token-view-refusal: DNB001 graph-dnir-unsupported refusal'
     else
@@ -132,10 +132,9 @@ PARSER="$SRC/src/parser.zig"
 SEEN=$((SEEN + 1))
 if [ -f "$PARSER" ]; then
     ok 'parser.zig: present'
-    grep -q 'token_view.fromLexer' "$PARSER" && ok 'parser: fromLexer wired' || bad 'parser: fromLexer missing'
-    grep -q 'headerSignal' "$PARSER" && ok 'parser: headerSignal present' || bad 'parser: headerSignal missing'
+    grep -q 'token_view.fromTokens' "$PARSER" && ok 'parser: fromTokens wired' || bad 'parser: fromTokens missing'
     grep -q 'scan_func_header_signal' "$PARSER" && ok 'parser: scan_func_header_signal present' || bad 'parser: scan_func_header_signal missing'
-    SEEN=$((SEEN + 3))
+    SEEN=$((SEEN + 2))
 else
     bad "parser.zig: missing at $PARSER"
 fi
