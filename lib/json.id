@@ -91,7 +91,7 @@ encode: str = (val: any)
 # Recursive-descent over a {s=string, i=index} cursor table. Passes the cursor
 # explicitly to avoid nested-function codegen quirks.
 
-json_skip_ws(cur: any)
+skip(cur: any)
     s = cur.s
     n = s:len()
     while cur.i <= n
@@ -194,25 +194,25 @@ json_number: any = (cur)
     num_str:to(i64)
 
 json_value: any = (cur)
-    json_skip_ws(cur)
+    skip(cur)
     s = cur.s
     if cur.i > s:len() return nil
     b = s:byte(cur.i)
     if b == 123
         cur.i = cur.i + 1
         obj = {}
-        json_skip_ws(cur)
+        skip(cur)
         if cur.s:byte(cur.i) == 125
             cur.i = cur.i + 1
             return obj
         while true
-            json_skip_ws(cur)
+            skip(cur)
             key = json_string(cur)
-            json_skip_ws(cur)
+            skip(cur)
             cur.i = cur.i + 1
             val = json_value(cur)
             obj[key] = val
-            json_skip_ws(cur)
+            skip(cur)
             b2 = cur.s:byte(cur.i)
             if b2 == 44
                 cur.i = cur.i + 1
@@ -226,7 +226,7 @@ json_value: any = (cur)
         cur.i = cur.i + 1
         arr = {}
         arrn = 0
-        json_skip_ws(cur)
+        skip(cur)
         if cur.s:byte(cur.i) == 93
             cur.i = cur.i + 1
             return arr
@@ -234,7 +234,7 @@ json_value: any = (cur)
             val = json_value(cur)
             arrn += 1
             arr[arrn] = val
-            json_skip_ws(cur)
+            skip(cur)
             b2 = cur.s:byte(cur.i)
             if b2 == 44
                 cur.i = cur.i + 1
@@ -262,6 +262,6 @@ decode: any = (s: str)
     cur = {}
     cur.s = s
     cur.i = 1
-    json_skip_ws(cur)
+    skip(cur)
     json_value(cur)
 

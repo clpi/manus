@@ -103,8 +103,8 @@ marshal: str = (v: any)
       return out:concat()
   "null"
 
-# skip_ws: skip whitespace in the parser.
-skip_ws = (p: any)
+# skip: skip whitespace in the parser.
+skip = (p: any)
   while p.pos <= p.s:len()
     b = p.s:byte(p.pos)
     if b == 32 or b == 9 or b == 10 or b == 13
@@ -117,7 +117,7 @@ skip_ws = (p: any)
 parse_value: any = (p: any)
   if has(.err)(p)
     return nil
-  skip_ws(p)
+  skip(p)
   if p.pos > p.s:len()
     p.err = "unexpected end of input"
     return nil
@@ -126,12 +126,12 @@ parse_value: any = (p: any)
     # parse object
     p.pos = p.pos + 1
     obj = {}
-    skip_ws(p)
+    skip(p)
     if p.pos <= p.s:len() and p.s:sub(p.pos, p.pos) == "}"
       p.pos = p.pos + 1
       return obj
     while true
-      skip_ws(p)
+      skip(p)
       if p.pos > p.s:len()
         p.err = "unterminated object"
         return nil
@@ -172,7 +172,7 @@ parse_value: any = (p: any)
           key_out[key_out:len() + 1] = kch
         p.pos = p.pos + 1
       key = key_out:concat()
-      skip_ws(p)
+      skip(p)
       if p.pos > p.s:len() or p.s:sub(p.pos, p.pos) != ":"
         p.err = "expected colon"
         return nil
@@ -181,7 +181,7 @@ parse_value: any = (p: any)
       if has(.err)(p)
         return nil
       obj[key] = val
-      skip_ws(p)
+      skip(p)
       if p.pos > p.s:len()
         p.err = "unterminated object"
         return nil
@@ -198,7 +198,7 @@ parse_value: any = (p: any)
     # parse array
     p.pos = p.pos + 1
     arr = {}
-    skip_ws(p)
+    skip(p)
     if p.pos <= p.s:len() and p.s:sub(p.pos, p.pos) == "]"
       p.pos = p.pos + 1
       return arr
@@ -207,7 +207,7 @@ parse_value: any = (p: any)
       if has(.err)(p)
         return nil
       arr[arr:len() + 1] = val
-      skip_ws(p)
+      skip(p)
       if p.pos > p.s:len()
         p.err = "unterminated array"
         return nil
@@ -326,7 +326,7 @@ unmarshal: any = (s: str)
   v = parse_value(parser)
   if has(.err)(parser)
     return nil
-  skip_ws(parser)
+  skip(parser)
   if parser.pos <= s:len()
     return nil
   v
