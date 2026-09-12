@@ -1,0 +1,179 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+need: i64 = (path: str, label: str)
+  if gatecap("test -r '{path}' >/dev/null 2>&1; echo $?") == "0\n"
+    return 0
+  print("architecture-negative: FAIL {label} missing: {path}")
+  1
+
+scan: i64 = (path: str, pat: str, label: str)
+  if digits(chomp(gatecap("grep -Eq '{pat}' '{path}' >/dev/null 2>&1; echo $?"))) == 0
+    print("architecture-negative: FAIL {label}")
+    return 1
+  print("architecture-negative: ok   {label}")
+  0
+
+found: i64 = (path: str, frag: str)
+  digits(chomp(gatecap("grep -Fq '{frag}' '{path}' >/dev/null 2>&1; echo $?")))
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  dnir = "{root}/src/graph/lower.zig"
+  sema = "{root}/src/sema.zig"
+  graph = "{root}/src/graph.zig"
+  injection = "{root}/.agents/ARCHITECTURE_INJECTION.md"
+  parser = "{root}/lib/compiler/parser.id"
+  lexer = "{root}/lib/compiler/lexer.id"
+  debt = "{root}/docs/projections/canonical-source-debt.md"
+  violations = 0
+  examined = 0
+  hit = need(injection, "architecture-injection")
+  violations = violations + hit
+  if hit == 0
+    examined = examined + 1
+  hit = need(dnir, "dnir_lower")
+  violations = violations + hit
+  if hit == 0
+    examined = examined + 1
+  hit = need(sema, "sema")
+  violations = violations + hit
+  if hit == 0
+    examined = examined + 1
+  examined = examined + 1
+  violations = violations + scan(dnir, "fn loadSiblingModuleConsts", "NO-SOURCE-IO-BELOW-GRAPH: loadSiblingModuleConsts forbidden in dnir_lower")
+  examined = examined + 1
+  violations = violations + scan(dnir, "fn parseSiblingModule", "NO-SOURCE-IO-BELOW-GRAPH: parseSiblingModule forbidden in dnir_lower")
+  examined = examined + 1
+  violations = violations + scan(dnir, "mergeForeignModuleConstsForFields", "NO-SOURCE-IO-BELOW-GRAPH: mergeForeignModuleConstsForFields forbidden in dnir_lower")
+  examined = examined + 1
+  violations = violations + scan(dnir, "mergeForeignModuleRecordsForFields", "NO-SOURCE-IO-BELOW-GRAPH: mergeForeignModuleRecordsForFields forbidden in dnir_lower")
+  examined = examined + 1
+  violations = violations + scan(dnir, "mergeForeignModuleRecordReturns", "NO-SOURCE-IO-BELOW-GRAPH: mergeForeignModuleRecordReturns forbidden in dnir_lower")
+  examined = examined + 1
+  violations = violations + scan(dnir, "readFileAlloc", "NO-SOURCE-IO-BELOW-GRAPH: readFileAlloc forbidden in dnir_lower")
+  examined = examined + 1
+  violations = violations + scan(dnir, "readFile\\(", "NO-SOURCE-IO-BELOW-GRAPH: readFile forbidden in dnir_lower")
+  examined = examined + 1
+  violations = violations + scan(dnir, "parseFile\\(", "NO-SOURCE-IO-BELOW-GRAPH: parseFile forbidden in dnir_lower")
+  examined = examined + 1
+  violations = violations + scan(graph, "break :blk .\{ .obj = c.func, .key = c.args[0] \};", "DELIMITER-CLOSURE: aggregateIndexSite must not accept .call")
+  examined = examined + 1
+  if found(dnir, "if (ctx.require_graph_facts) return false;") == 0 and found(dnir, "fn tryAssignRecordCallFromExportMap") == 0
+    print("architecture-negative: ok   GRAPH-RECORD-RETURN-ONE export-map guard present")
+  else
+    print("architecture-negative: FAIL GRAPH-RECORD-RETURN-ONE: tryAssignRecordCallFromExportMap must refuse when require_graph_facts")
+    violations = violations + 1
+  examined = examined + 1
+  violations = violations + scan(dnir, "fn filterCheckedCallOperands\\(", "GRAPH-FACT-TRUST: filterCheckedCallOperands must be removed")
+  examined = examined + 1
+  violations = violations + scan(dnir, "fn callValueForApplication\\(", "GRAPH-FACT-TRUST: callValueForApplication must be removed")
+  examined = examined + 1
+  violations = violations + scan(dnir, "fn filterCallArgumentOperands\\(", "GRAPH-FACT-TRUST: filterCallArgumentOperands must be removed")
+  examined = examined + 1
+  violations = violations + scan(dnir, "fn filterRecordAssignOperands\\(", "GRAPH-FACT-TRUST: filterRecordAssignOperands must be removed")
+  examined = examined + 1
+  violations = violations + scan(dnir, "expandableRecordForName", "NO-NAME-RECORD-INFERENCE: expandableRecordForName must not infer records from local names")
+  examined = examined + 1
+  if found(dnir, "fn recordFieldsPresent(") == 0
+    print("architecture-negative: WARN NO-RECORD-HISTORY-INFERENCE: recordFieldsPresent still infers from lowering history (debt)")
+  else
+    print("architecture-negative: ok   NO-RECORD-HISTORY-INFERENCE: recordFieldsPresent removed")
+  examined = examined + 1
+  violations = violations + scan(sema, "first home that declares it wins", "NO-HOME-SEMANTIC-PRIORITY: first-wins home ordering forbidden")
+  examined = examined + 1
+  violations = violations + scan(sema, "subjectFirstForeignHomesForConformance", "NO-HOME-SEMANTIC-PRIORITY: conformance→home registry forbidden")
+  examined = examined + 1
+  violations = violations + scan(sema, "subjectFirstForeignHomeCandidates", "NO-HOME-SEMANTIC-PRIORITY: ordered home candidate registry forbidden")
+  examined = examined + 1
+  if found(sema, "Sorted alphabetically so collection order is never semantic") == 0
+    print("architecture-negative: ok   RESOLUTION-PERMUTATION: foreign_module_homes documents order independence")
+  else
+    print("architecture-negative: FAIL RESOLUTION-PERMUTATION: foreign_module_homes must document order independence")
+    violations = violations + 1
+  examined = examined + 1
+  if found(sema, "RESOLUTION-PERMUTATION resolveUniqueForeignRelations does not first-win") == 0
+    print("architecture-negative: ok   RESOLUTION-PERMUTATION: unit test must guard non-first-wins resolution")
+  else
+    print("architecture-negative: FAIL RESOLUTION-PERMUTATION: unit test must guard non-first-wins resolution")
+    violations = violations + 1
+  examined = examined + 1
+  if found(graph, "verifyCheckedApplicationOperandPacks") == 0
+    print("architecture-negative: ok   GRAPH-ARG-EXACT: verifyCheckedApplicationOperandPacks present in graph lift")
+  else
+    print("architecture-negative: FAIL GRAPH-ARG-EXACT: verifyCheckedApplicationOperandPacks missing from graph lift")
+    violations = violations + 1
+  examined = examined + 1
+  if found(dnir, "fn exprIsStr(") == 0
+    print("architecture-negative: WARN NO-BACKEND-TYPE-GUESS: exprIsStr still re-derives string shape in lowering (debt)")
+  else
+    print("architecture-negative: ok   NO-BACKEND-TYPE-GUESS: exprIsStr removed from lowering")
+  hit = need(parser, "parser.id")
+  violations = violations + hit
+  if hit == 0
+    examined = examined + 1
+  examined = examined + 1
+  violations = violations + scan(parser, "return \\\"\\\\(typedecl", "RETIRED-TYPE-ALIAS-PROJECTION: typedecl emission forbidden in lib/compiler/parser.id")
+  examined = examined + 1
+  violations = violations + scan(parser, "\" \\\\(type \" .. proj_type", "RETIRED-TYPE-ALIAS-PROJECTION: (type …) wrapper forbidden in lib/compiler/parser.id")
+  examined = examined + 1
+  violations = violations + scan(lexer, "word(start, n, \"alias\") return 51", "RETIRED-TYPE-ALIAS-PROJECTION: alias keyword forbidden in lib/compiler/lexer.id")
+  examined = examined + 1
+  if found(sema, "pub fn foreignModuleIntConstant") == 0 and found(sema, "peekForeignHome") != 0
+    print("architecture-negative: ok   POST-RESOLUTION-PATH-ZERO: sema publishes checked foreign module constant occurrences without an unchecked loader")
+  else
+    print("architecture-negative: FAIL POST-RESOLUTION-PATH-ZERO: sema must expose checked foreignModuleIntConstant occurrences and no peekForeignHome bypass")
+    violations = violations + 1
+  examined = examined + 1
+  if found(graph, "fn liftForeignConstantFieldSites") == 0 and found(graph, "fn liftForeignModuleConstants") == 0
+    print("architecture-negative: ok   POST-RESOLUTION-PATH-ZERO: graph lifts foreign module constants")
+  else
+    print("architecture-negative: FAIL POST-RESOLUTION-PATH-ZERO: graph must publish foreign constant value facts")
+    violations = violations + 1
+  examined = examined + 1
+  if found(dnir, "fn exactValue") == 0 and found(dnir, "return self.graph.valueByAst(expression);") == 0 and found(dnir, "ctx.occurrences.exactValue") == 0 and found(dnir, "by_exact_value") != 0
+    print("architecture-negative: ok   POST-RESOLUTION-PATH-ZERO: DNIR consumes the graph-owned occurrence value index")
+  else
+    print("architecture-negative: FAIL POST-RESOLUTION-PATH-ZERO: DNIR must ask graph valueByAst and must not rebuild by_exact_value")
+    violations = violations + 1
+  examined = examined + 1
+  if found(dnir, "if (ctx.require_graph_facts) return false;") == 0 and found(dnir, "recordExportMapAssignable") == 0
+    print("architecture-negative: ok   LINKAGE-DOES-NOT-DEFINE-MEANING: export-map record inference guarded on graph-required paths")
+  else
+    print("architecture-negative: FAIL LINKAGE-DOES-NOT-DEFINE-MEANING: export map must not define semantics when require_graph_facts")
+    violations = violations + 1
+  if gatecap("test -r '{debt}' >/dev/null 2>&1; echo $?") == "0\n"
+    examined = examined + 1
+    if found(debt, "Capability") == 0
+      print("architecture-negative: ok   MONOLITH-PROBE-ONLY: monolith.id marked as probe in structural debt record")
+    else
+      print("architecture-negative: FAIL MONOLITH-PROBE-ONLY: monolith.id must declare capability-probe status in structural debt record")
+      violations = violations + 1
+  if violations == 0
+    print("architecture-negative gate: PASS ({examined} check(s))")
+    return 0
+  print("architecture-negative gate: FAIL {violations} violation(s) in {examined} check(s)")
+  violations
