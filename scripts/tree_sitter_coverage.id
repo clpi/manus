@@ -1,42 +1,8 @@
-# tree-sitter recognition gate — `zig build tree-sitter-coverage`.
-#
-# Tree-sitter is one of the toolchain hosts. gaps/GAP-049
-# records that the grammar did not build at all until 2026-08-08, and that the
-# setup script had been printing `-- tree-sitter generate failed` in the same
-# shape it uses for genuinely optional steps, which is how a dead grammar
-# stayed unremarked for a long time. This gate exists so that cannot recur:
-# it runs the generator, measures the corpus, and RATCHETS.
-#
-# What it ratchets is the number of UNRECOGNISED files, not the number of
-# recognised ones. A count-of-recognised floor reddens when somebody deletes a
-# `.id` file, which is not a regression; a ceiling on failures reddens only
-# when the grammar loses ground or when a new file lands that it cannot read,
-# and both of those are worth stopping for.
-#
-# Three ways this gate could report a confident wrong number, all handled:
-#
-#   1. `SDKROOT` unset. The tree-sitter CLI compiles `parser.c` itself, and
-#      without `SDKROOT` that compile fails on `stdlib.h`, so EVERY file is
-#      reported unparseable — a 0/N that looks like a catastrophic regression
-#      and is really a missing environment variable. Resolved explicitly
-#      below, and the gate refuses to measure if it cannot be resolved.
-#   2. `tree-sitter` not installed. Reported as a hard failure rather than a
-#      skip: a coverage gate that silently skips is worse than no gate.
-#   3. The counter itself being broken. Every run POSITIVE-CONTROLS the
-#      detector against two files it writes itself — one valid, one with a
-#      deliberate syntax error — and refuses to trust its own number unless
-#      the valid one is recognised AND the broken one is not.
 
-# The most failures allowed. Measured 2026-08-08 at 15 of 759 tracked files.
-# Lower it whenever the real number drops; never raise it without saying which
-# file regressed and why.
 ceiling = 15
 
 grammardir = "ext/tree-sitter-idol"
 
-# The tree-sitter CLI builds parser.c with the host compiler, so it needs the
-# macOS SDK on its include path. `xcrun` is the authority; an already-exported
-# SDKROOT wins so a CI image can pin one.
 _sdkroot: str = ()
   raw = os.env("SDKROOT")
   if raw == nil
@@ -46,41 +12,22 @@ _sdkroot: str = ()
     return fromenv
   script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
 
-# Every shell command the gate runs goes through here, so the SDK path is
-# never accidentally dropped from one of them.
-#
-# `export SDKROOT=…; cmd`, NOT the `SDKROOT=… cmd` prefix form. Every command
-# here begins `cd ext/tree-sitter-idol && tree-sitter …`, and a variable
-# prefixed onto that binds to the `cd` alone — tree-sitter runs on the far
-# side of the `&&` without it. The prefix form silently produced an empty
-# result for every command, which `to(i64)("")` turned into a confident 0.
 _sh: str = (sdk: str, cmd: str)
   script.capture("export SDKROOT='" .. sdk .. "'; " .. cmd)
 
 _shstatus: i64 = (sdk: str, cmd: str)
   script.status("export SDKROOT='" .. sdk .. "'; " .. cmd)
 
-# Count files whose tree carries an ERROR / MISSING / UNEXPECTED node.
-# `tree-sitter parse #quiet #paths` prints one line per FAILING file and
-# nothing at all for a clean one, so the failure count is the line count.
 _failures: i64 = (sdk: str, listfile: str)
   out: str = _sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | grep -c . ")
   return to(i64)(script.chomp(out))
 
-# Prove the detector can distinguish a good file from a bad one BEFORE
-# believing anything it says about the corpus. A gate that reports 0/N is
-# usually broken, not green.
 _control: bool = (sdk: str, dir: str)
   good = dir .. "/control_good.id"
   bad = dir .. "/control_bad.id"
   script.capture("printf 'add(a: i64, b: i64): i64\\n    a + b\\nend\\n' > '" .. good .. "'")
-  # An unclosed parenthesis and a dangling operator: not an Idol program under
-  # any reading, so the parser must produce an error node for it.
   script.capture("printf 'add(a: i64, b: i64: i64\\n    a + +\\nend\\n' > '" .. bad .. "'")
 
-  # `fs_tmpdir` is already absolute, so these paths must NOT be prefixed
-  # with $PWD: an unreadable path makes tree-sitter print nothing to stdout,
-  # which the counter would read as "recognised" for both controls.
   script.capture("printf '%s\\n' '" .. good .. "' > '" .. dir .. "/good.txt'")
   script.capture("printf '%s\\n' '" .. bad .. "' > '" .. dir .. "/bad.txt'")
 
@@ -111,8 +58,6 @@ main: i64 = ()
     stdout:write("  the grammar cannot be built or measured; install it rather than skipping this gate\n")
     return 1
 
-  # The generator, checked. This is the step scripts/setup-nvim.id used to
-  # swallow with `>/dev/null 2>&1`.
   genstatus = _shstatus(sdk, "cd " .. grammardir .. " && tree-sitter generate")
   if genstatus != 0
     stdout:write("tree_sitter_coverage: FAIL — tree-sitter generate exited " .. genstatus:to(str) .. "\n")
@@ -120,9 +65,6 @@ main: i64 = ()
     return 1
   print("tree_sitter_coverage: tree-sitter generate ok")
 
-  # The generator warns rather than fails on a conflict entry that is no
-  # longer needed. Left alone those accumulate until nobody knows which of
-  # them are load-bearing, so the gate treats one as a failure.
   genout = _sh(sdk, "cd " .. grammardir .. " && tree-sitter generate 2>&1")
   if script.chomp(genout) != ""
     stdout:write("tree_sitter_coverage: FAIL — tree-sitter generate emitted warnings\n")
@@ -134,10 +76,6 @@ main: i64 = ()
   if not _control(sdk, tmp)
     return 1
 
-  # git ls-files is the authority on what is tracked; the `-f` test drops
-  # entries that are staged-deleted so a mid-rebase tree cannot fake a
-  # failure out of a missing file.
-  #
   listfile = tmp .. "/corpus.txt"
   script.capture("git ls-files '*.id' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
   total = to(i64)(script.chomp(script.capture("grep -c . '" .. listfile .. "'")))

@@ -1,43 +1,13 @@
-# Lua-host corpus gate — the hosted-language constructs the idol front end
-# must accept, walked through the CLI on real files.
-#
-# PORTED from src/lua_superset_corpus.zig, deleted in the same commit. That
-# file carried twelve cases (five lexer, seven parser) as Zig string literals
-# and drove Lexer + Parser directly with duo mode on. The cases now live as
-# real files under examples/luahost/ and are checked through `duo check`,
-# which is a strictly WIDER path: the Zig test stopped after parse, and this
-# also runs sema. One case (CF-0, if/then/end) needed its two names declared
-# to survive that widening; the construct under test is unchanged, and the
-# fixture says so in its own header.
-#
-# What the corpus is actually for, restated against P0.4: this
-# compiler hosts Lua as a FIRST-CLASS source language, so long strings, long
-# comments, bracket levels, repeat/until and local function are not a legacy
-# courtesy — they are input the front end owes an answer on. The old file's
-# title called them a "superset", which is the deleted doctrine; the cases
-# themselves were never about that and are kept verbatim.
-#
-# THE ZIG TEST HAD NO NEGATIVE CONTROL, and that is the reason this file is
-# longer than the thing it replaces. A corpus walker that globs zero files
-# passes. A `duo check` that has stopped reporting failure passes. Both are
-# measured below, by value, and printed either way.
-#
-# Every command runs through a shell string on purpose: the loop belongs to
-# the shell, which already knows how to glob and how to count exit statuses.
 
-# Absolute, because `duo check` is invoked with a repo-relative fixture path.
 here: str = ()
   std.script.chomp(std.script.capture("pwd"))
 
-# The compiler under test. std.script.id bin() is relative and would resolve
-# to nothing if this gate is ever run with a cwd outside the repo.
 compiler: str = (root: str)
   "{root}/zig-out/bin/idol"
 
 shout = (msg: str)
   print("luahost: {msg}")
 
-# One shell integer, chomped and converted subject-first.
 tally: i64 = (cmd: str)
   std.script.chomp(std.script.capture(cmd)):to(i64)
 
@@ -49,29 +19,19 @@ main: i64 = ()
   bin = compiler(root)
   bad = 0
 
-  # CONTROL 1 — the runner itself. Without this a status() that has stopped
-  # reporting failure turns every assertion below into a tautology.
   if std.script.status("false") == 0
     shout("FAIL — control: status() called `false` a success")
     bad = bad + 1
 
-  # CONTROL 2 — the compiler exists. A missing binary makes every check
-  # fail for a reason that has nothing to do with the corpus.
   if not present(bin)
     shout("FAIL — no compiler at {bin}; run `zig build` first")
     bad = bad + 1
 
-  # CONTROL 3 — the corpus is not empty. The Zig original could not fail
-  # this way because its cases were compiled in; a globbing gate can, and
-  # a confident 0/0 is the failure mode this repo has already paid for.
   total = tally("cd {root} && ls examples/luahost/*.id 2>/dev/null | wc -l")
   if total < 12
     shout("FAIL — corpus holds {total} case(s), fewer than the 12 ported")
     bad = bad + 1
 
-  # CONTROL 4 — `duo check` still convicts. An unterminated long string is
-  # the tightest negative for this corpus: it is the SAME lexer path every
-  # positive case exercises, one byte short of closing.
   work = std.script.chomp(std.script.capture("mktemp -d"))
   deny = "{work}/deny.id"
   std.script.run("printf 'x = [[unterminated\\n' > {deny}")
@@ -80,8 +40,6 @@ main: i64 = ()
     bad = bad + 1
   std.script.run("rm -rf {work}")
 
-  # The corpus itself. Every case must be accepted; the shell counts the
-  # rejections so one bad fixture does not hide the ones after it.
   fails = tally("cd {root} && n=0; for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || n=$((n+1)); done; echo $n")
   if fails != 0
     shout("FAIL — {fails} of {total} corpus case(s) rejected")

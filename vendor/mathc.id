@@ -1,7 +1,3 @@
-# vendor/mathc - C math library bindings via @ffi
-# Usage: local m = mathc
-#        or at compile time: duo compile myapp.id #link m
-# (-lm is already linked by default, so no #link needed for math)
 
 @ffi("sin")
 sin_c: f64 = (x: f64)

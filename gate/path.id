@@ -1,13 +1,3 @@
-## TEACHING-STATUS: canonical
-# gate/path — LAW-ONE path/name migration preflight. NOT semantic authority.
-#
-# Classification: temporary migration approximation for path stems and separators.
-# Production authority approximated: filename law in docs/spec/source.md and
-# GAP-124 graph obligations for source-line semantics.
-# Deletion gate: GAP-124 closes graph-backed canonicality on staged diffs.
-#
-# Gate transport: Idol only — stdin via stdin:read(). No os.args, no --backend=c.
-#   idol run gate/path.id < idolgate-body.txt
 
 transport: str = ()
   text = stdin:read()
@@ -73,20 +63,12 @@ known: bool = (word: str)
     i = i + 1
   false
 
-# Static vocabulary only. Dynamic git-derived stems belong in build-world
-# preparation piped through stdin, not io.popen inside this gate.
 seed: bool = ()
   true
 
 foreign: bool = (path: str)
   path:len() >= 4 and path:sub(1, 4) == "ext/"
 
-# THIRD DEFECT, off-by-one: "benchmarks/" is ELEVEN characters, so the guard
-# `path:len() >= 12 and path:sub(1, 12) == "benchmarks/"` compared a 12-char
-# substring against an 11-char literal and could never be true. The historical
-# exemption this gate declares for benchmarks/ was dead code, and all 160
-# tracked benchmarks/ paths were being judged. The sibling vendor/ clause is
-# 7/7 and was always correct, which is why only benchmarks/ leaked.
 historical: bool = (path: str)
   path:len() >= 11 and path:sub(1, 11) == "benchmarks/" or path:len() >= 7 and path:sub(1, 7) == "vendor/"
 
@@ -126,7 +108,6 @@ sep: bool = (name: str)
     i = i + 1
   false
 
-# numeric suffix taxonomy on a path word. Subject-first: name:tail().
 tail: bool = (name: str)
   n = name:len()
   if n < 2
@@ -138,15 +119,6 @@ tail: bool = (name: str)
     i = i - 1
   i == 0 or alpha(name:sub(i, i)) or name:sub(i, i) == "_"
 
-# A stem is mashed when it decomposes into TWO OR MORE canonical words, not
-# merely two. The single-cut form of this test could only see a 2-word mash:
-# it missed `zerohistorycensus` (zero + history + census) because no one cut
-# leaves two known halves — "zero" | "historycensus" and "zerohistory" |
-# "census" each have one unknown side. Segment the whole stem instead.
-# `reach` is a flag string: reach:sub(k + 1, k + 1) is "1" when the prefix of
-# length k is a concatenation of known words. reach:sub(1, 1) is the empty
-# prefix. known(name) already returned false, so a "1" at n + 1 can only come
-# from two or more segments.
 mash: bool = (name: str)
   if known(name)
     return false
@@ -246,26 +218,9 @@ mediatorhome: bool = (name: str)
     return false
   member(mediatorhomes, name)
 
-# `filename` was itself a mashed compound (file + name) by this gate's own
-# law — the repaired gate rejected the diff that repairs it. Decomposed to
-# the single canonical word `file`: "this where names a file".
 file: bool = (where: str)
   where:len() > 0 and where:sub(where:len(), where:len()) != ":"
 
-# Three subject kinds reach verdict(), and they are not the same subject:
-#   "lib/compiler/graph.id"     a file leaf        canonical.md §26
-#   "lib/compiler/graph.id:"    a directory part   canonical.md §27
-#   "lib/compiler/graph.id:12"  a token on a line  canonical.md §25
-# file() only separates the first two, so judge() — which passes
-# "{path}:{no}" — had every identifier occurrence on an added line judged as
-# though it were a file leaf. The §26 stem patterns are anchored to `\.id$`
-# and the §27 patterns to a whole directory component; they classify a
-# DECLARED path component, not an occurrence. Applying them to line tokens
-# rejected `view(edges) = ()` — the exact decomposition AGENTS.md prescribes
-# as the canonical remedy for `viewedges` — because `edges` is on the §26
-# plural-cardinality list. A gate that rejects the remedy it demands cannot
-# be satisfied. Line tokens keep the §25 lexical shape (sep, numeric tail)
-# and mash review, which is the scope AGENTS.md states for added lines.
 lineref: bool = (where: str)
   n = where:len()
   if n == 0
@@ -438,16 +393,6 @@ wide: bool = (code: str)
     i = i + 1
   false
 
-# FOURTH DEFECT, line-arm false positive. tail() is a PATH-STEM taxonomy law
-# ("graph2" — version is provenance; canonical.md §26). judge() applied it to
-# every glyph token on an added line, so it rejected bare numeric literals
-# (`10`, `11`) — which are not names at all — and every primitive width type
-# (`i64`, `u8`, `f64`), which are language-reserved, not project-controlled
-# path components. Since AGENTS.md mandates the binding face
-# `name: descriptor = (args) body`, that made the line arm reject essentially
-# every Idol line the project writes: i64 alone appears 3920 times in lib/.
-# Nobody hit it because the pre-commit hook never runs this gate (it calls
-# `idol check`, not `idol run`), so the two defects masked each other.
 widths = " i8 i16 i32 i64 u8 u16 u32 u64 f16 f32 f64 usize isize "
 
 judge: i64 = (path: str, no: i64, line: str)
@@ -536,7 +481,6 @@ diff: i64 = (body: str)
     i = i + 1
   hits
 
-# GAP-201: a gate that examines zero subjects must fail, never pass.
 count: i64 = (body: str)
   total = 0
   line = ""
@@ -564,20 +508,12 @@ tree: i64 = (body: str)
     print("gate/path: tree listing carried zero paths — GAP-201")
     return 3
   hits = list(body)
-  # THE COUNT IS NOT THE EXIT STATUS. Returning `hits` made the process exit
-  # the finding count truncated mod 256, so 256, 512 or 768 findings all exit
-  # 0 and read as a clean pass — and the banner said `[tree: pass]`
-  # unconditionally regardless. Measured on the real tree: 2265 findings,
-  # exit 217, banner "pass". A survey that reports its own volume as success
-  # is worse than no survey. One finding is a failure; the count goes in the
-  # message where a reader can see it.
   if hits == 0
     print("gate/path: 0 finding(s) on tracked project paths  [tree: pass]")
     return 0
   print("gate/path: {hits} finding(s) on tracked project paths  [tree: FAIL]")
   1
 
-# Decode IDOLGATE section protocol from input body.
 feed: i64 = (body: str)
   m = ""
   a = ""

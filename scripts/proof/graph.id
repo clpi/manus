@@ -1,5 +1,3 @@
-# GAP-124 graph identity / edge closure proof - structural roles only.
-# Admission: idol check only (direct backend). Never --backend=c.
 
 graph = "src/graph.zig"
 query = "src/graph_query.zig"

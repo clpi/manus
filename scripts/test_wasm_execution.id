@@ -1,17 +1,3 @@
-# WASI execution test harness.
-#
-# Duo replacement for scripts/test_wasm_execution.sh (monoglot census).
-#
-# For every program below: compile to .wasm via `duo compile #target
-# wasm32-wasi`, run under wasmtime, assert stdout EXACTLY, and (where wabt is
-# present) check module structure — memory export, _start export,
-# wasi_snapshot_preview1 imports, and the absence of the deprecated
-# __wasi_unstable ABI.
-#
-# The corpus is .lua and .id INPUT compiled to wasm, not harness source.
-#
-# Requirements: wasmtime, and optionally wabt (wasm-validate, wasm-objdump).
-# Run after `zig build`.
 
 _TMP = "/tmp/duo_wasm_exec_test"
 
@@ -43,16 +29,11 @@ _env_or: str = (n: str, d: str)
 _stem: str = (p: str)
   script.chomp(script.capture("basename " .. p .. " | sed 's/\\.[^.]*$//'"))
 
-# Compile to wasm. Returns the .wasm path, or "" on failure. Compiler stderr
-# is kept so a failure can name its cause instead of just "compile failed".
 _compile: str = (duo: str, src: str)
   w = _TMP .. "/" .. _stem(src) .. ".wasm"
   if script.run(duo .. " compile " .. src .. " --target wasm32-wasi -o " .. w .. " 2>" .. _TMP .. "/err") != 0
     return ""
   if not script.fs_exists(w)
-    # GAP-19's shape: the compiler can report success and write nothing,
-    # or write the wrong format. Existence is checked separately from the
-    # exit status for exactly that reason.
     return ""
   w
 
@@ -108,7 +89,6 @@ _assert_structure = (duo: str, wasmtime: str, objdump: str, label: str, src: str
     _ok(label .. " — imports wasi_snapshot_preview1")
   else
     _bad(label .. " — missing wasi_snapshot_preview1 imports")
-  # Inverted on purpose: finding this is the FAILURE.
   if _contains(d, "__wasi_unstable")
     _bad(label .. " — unexpected __wasi_unstable import")
   else
@@ -123,7 +103,6 @@ main: i64 = ()
 
   print("=== WASI Execution Tests ===")
 
-  # src, label, expected stdout, and whether to also check module structure.
   cases = {
     {
       "examples/wasm/hello.lua",
@@ -185,10 +164,6 @@ main: i64 = ()
       if c(4)
         _assert_structure(duo, wasmtime, objdump, _stem(c(1)), c(1))
 
-  # A validate sweep over the WHOLE corpus, not just the eight cases above.
-  # The named cases assert behaviour; this asserts that nothing in
-  # examples/wasm/ compiles to a malformed module, including files no case
-  # mentions — which is how a new example gets covered the day it lands.
   print("")
   print("--- wasm-validate sweep over examples/wasm/ ---")
   if not (_have("wasm-validate") and _have(wasmtime))

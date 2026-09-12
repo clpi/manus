@@ -19,8 +19,6 @@ envor: str = (name: str, fallback: str)
 
 tally: i64 = (pattern: str)
   home = envor("DUO_ROOT", ".")
-  # GAP-220 / GAP-201: `git ls-files | grep -c` at the head of a pipe answers 0
-  # in a tree with no `.git`, and this file's only output is that number.
   if cap("cd '{home}' && sh gate/subject.sh >/dev/null 2>&1; echo $?") != "0"
     print("census/language/supplement: FAIL zero subjects — the census did not run (GAP-201)")
     return -1

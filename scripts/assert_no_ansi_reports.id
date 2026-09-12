@@ -1,6 +1,3 @@
-# assert_no_ansi_reports.id — verify ANSI escape handling in test reporter output.
-# Replaces scripts/assert_no_ansi_reports.sh
-# Run: idol run scripts/assert_no_ansi_reports.id
 
 duo: str = ()
   bin = gatecap("sh -c 'if [ -n \"$DUO\" ]; then printf %s \"$DUO\"; else printf %s ./zig-out/bin/idol; fi'")
@@ -13,14 +10,12 @@ fail = (msg: str)
   print(msg)
   os.exit(1)
 
-# assert_escape_free: fail if ESC bytes appear in the captured output file
 assert_escape_free_file = (label: str, tmpfile: str)
   found = os.execute("LC_ALL=C grep -q $'\\033' '{tmpfile}' 2>/dev/null")
   if found == 0
     fail("ANSI escape sequence leaked in {label}")
   print("ok no-ansi {label}")
 
-# assert_has_escape: fail if ESC bytes do NOT appear in the captured output file
 assert_has_escape_file = (label: str, tmpfile: str)
   found = os.execute("LC_ALL=C grep -q $'\\033' '{tmpfile}' 2>/dev/null")
   if found != 0

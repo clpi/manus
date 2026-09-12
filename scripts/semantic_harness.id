@@ -1,23 +1,4 @@
-# The semantic harness: ONE source, N projection targets.
-#
-# What this replaces, and why it is not a rewrite of native_differential.sh.
-#
-# That script compares the two backends on EXIT STATUS ALONE # it sends both
-# binaries' stdout to /dev/null. Two backends that print different answers
-# therefore "agree" as long as both exit 0, which is the entire failure mode a
-# behavioural differential exists to catch. Measured on the current corpus the
-# 49 entries do agree on stdout, so this locks in a clean baseline rather than
-# reporting a fresh bug # but the hole was structural, not hypothetical.
-#
-# The second difference is shape. A2 asks for targets as COLUMNS, not suites:
-# a projection target is a row in `targets()`, and adding wasm or the @lua
-# adapter is one table entry, not another script. Correctness becomes a matrix
-# and drift becomes a diff.
-#
-# Exit 0 iff every column agrees with the reference column on every entry.
 
-# Targets are DATA. This is the extension point: one entry per projection of
-# the same semantics. The first entry is the reference column.
 targets: any = ()
   {
     { name = "native", backend = "direct" },
@@ -27,14 +8,9 @@ targets: any = ()
 corpus_glob: str = ()
   "examples/native_differential/*.id"
 
-# Bound every run: a miscompiled loop does not fail, it spins.
 run_timeout: str = ()
   "10"
 
-# FNV-flavoured, reduced mod a prime below 2^31 at every step. Deliberately NOT
-# a u64 hash: a u64 result above i64 max collapses to 0 when it flows through an
-# accumulator expression, which would silently fingerprint every output as 0 and
-# make the whole harness report agreement unconditionally.
 fingerprint: i64 = (s: str)
   h = 2166136261
   n = s:len()
@@ -42,11 +18,6 @@ fingerprint: i64 = (s: str)
     h = (h * 31 + s:byte(i)) % 1000000007
   h
 
-# One (entry, target) cell. Exit status and stdout fingerprint are packed into
-# a single i64 so the whole cell compares with `==`; the pack stays under 2^53,
-# so it survives boxing intact.
-#   -1  = the target could not compile this entry at all
-#   else  status * 2^32 + fingerprint(stdout)
 probe: i64 = (src: str, backend: str, bin: str, out_file: str)
   build = std.script.id_bin() .. " compile " .. src .. " --backend=" .. backend .. " --emit exe -o " .. bin
   if std.script.status(build) != 0
@@ -84,19 +55,10 @@ main: i64 = ()
       out_file = bin .. ".out"
       cell = probe(src, t.backend, bin, out_file)
 
-      # A COMPILE-FAIL is never evidence of agreement. Comparing cells
-      # alone, two columns that both failed to build compared EQUAL and
-      # the entry passed # which is how this harness first reported
-      # "0 diverged" on a corpus the native backend cannot compile at
-      # all. Any column that fails to build fails the entry outright.
       if cell == -1
         bad = bad .. "    " .. t.name .. ": COMPILE-FAIL\n"
       else
         if ref_name == ""
-          # First column that actually built becomes the reference.
-          # Seeding it unconditionally from column 1 printed
-          # "vs : exit=0 fp=0" whenever the reference itself failed
-          # to compile, comparing against a value that never existed.
           ref = cell
           ref_name = t.name
         else

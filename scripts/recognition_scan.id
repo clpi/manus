@@ -1,127 +1,8 @@
-# RECOGNITION — §0a, made executable. Reaffirmed by §0h.
-#
-# The ruling: *"no `std.mem` / `std.fmt` / `std.math`. Pure ops are VALUE EDGES
-# (`x:abs()`, `s:copy()`); worlds are the ONLY capability namespaces. Idiom
-# recognition lowers to intrinsics UNDER WITNESS — `why(realization)` answers."*
-# §2 AUDIT v4 names a **recognition scan** as a row. This file is that row.
-#
-# WHY IT IS A SEPARATE GATE AND NOT A ROW INSIDE audit100, stated rather than
-# quietly decided. audit100 ratchets one budget per denied SPELLING, and the
-# whole finding here is that one spelling is TWO different rules with two
-# different blockers and two different repairs. A single `math.` budget would
-# average them and hide exactly the thing worth seeing. audit100 is also at
-# budget on every row; a new row there buys a merge conflict, not a signal.
-#
-# THE SPLIT, which is the point of the file. `math.` is one namespace wearing
-# two faces:
-#
-#   pure    abs floor sqrt min max pi cos sin pow log exp ceil …
-#           NO capability. §0a says these are VALUE EDGES on the descriptor:
-#           `x:abs()`, `(2.5):floor()`. Repair is a surface that does not
-#           exist yet — see BLOCKER 1.
-#
-#           THE OBVIOUS SHORTCUT IS FORECLOSED, and it is worth writing down
-#           because it is what a hurried migration would reach for: moving the
-#           pure ops into some other namespace — `numeric`, `num.`, a
-#           renamed `math` — is NOT a repair. The prelude ruling says std has NO
-#           MODULE TREE and that WORLDS ARE THE ONLY NAMESPACES, so a fresh
-#           namespace for capability-free ops is the same defect respelled,
-#           and it would move this row to zero while changing nothing. The
-#           only legal destination is the descriptor.
-#   rand    math.random / math.randomseed
-#           NOT pure. Ambient authority, and §0a says worlds are the ONLY
-#           capability namespaces — which is also precisely what U1
-#           (`std@{ ambient = false }`) demands. Repair is a world. See
-#           BLOCKER 2.
-#   sub     math.fft / math.stats / math.prng / math.geometry …
-#           MODULE references, not ops. They ride the `math.` spelling but the
-#           ruling is about op namespaces, so they are reported and not
-#           ratcheted — a ratchet on them would be measuring a directory name.
-#   ns      mem / fmt / math — the three the ruling names outright.
-#
-# THE LEVERAGE, and it is the reason this file exists on the same night as the
-# capability scan: `rand` is not a side note. It is the ENTIRE `rand` class of
-# U1 — 50 sites across 14 modules, the third-largest ambient class in
-# `lib/std`. gaps/GAP-061.md reported `rand` at ZERO because it grepped for
-# `rand(`; this tree spells it `math.random(`. Retiring `math.random` and
-# closing U1's rand class are THE SAME EDIT. `zig build capability-scan` is the
-# instrument that proves it: every converted site must lower ITS number too.
-#
-# WHAT GAP-071 MEASURED AND WHAT IT MISSED. GAP-071 records this ruling's
-# distance as `math. 16 files / mem. 1 / fmt. 1`. Those are the
-# DOTTED-NAMESPACE counts. The dominant spelling in this tree is BARE `math.`,
-# which GAP-071 never counted and which AUDIT v4 denies by name. It is 79
-# files. A deny row measured at 16 that is really 79 reads as nearly-satisfied
-# when it is not, which is the exact failure GAP-061 and GAP-071 were both
-# written to stop repeating.
-#
-# THE TWO BLOCKERS, PROBED LIVE rather than asserted, because a blocker
-# recorded in prose is a blocker nobody notices lifting:
-#
-#   BLOCKER 1 — the value-edge surface DOES NOT EXIST. `x:abs()` on a scalar
-#   does not compile. The compiler lowers the receiver away entirely and emits
-#   a call to an undeclared `a__abs()` with ZERO arguments. That is worse than
-#   a missing feature: it is a shape that would bind to any same-named free
-#   function and silently drop the subject. `probecompile` below compiles the
-#   target form on every run and reports whether it still fails.
-#
-#   BLOCKER 2 — there is no WORLD. `world` appears nowhere in `lib/std` except
-#   one line of prose, and `docs/spec/grammar.md` (NORMATIVE) does
-#   not contain the word at all. There is no construct to move `math.random`
-#   behind. `grammar` below greps the normative grammar on every run.
-#
-#   §0h RAISES the cost of this blocker rather than lowering it:
-#   worlds are now the only namespaces std has at all, so the construct that
-#   `math.random` is waiting on is the same construct the whole prelude graph
-#   is waiting on. This row cannot be closed by a local edit in `lib/std`, and
-#   any commit claiming to have closed it should be read closely.
-#
-# Both probes are PAIRED with a positive control, because "the target form
-# failed to compile" and "nothing compiles / the grep is broken" are the same
-# red otherwise. A probe that cannot distinguish those two is not a probe.
-#
-# THE RATCHET. `pure`, `rand` and `ns` carry budgets; `sub` is reported only.
-# Budgets are EXACT — no headroom, for the reason capability_scan gives:
-# headroom is a licence to add one more, and one more is the only kind of
-# regression anyone introduces. Lowering a budget is the whole point; raising
-# one needs a sentence in the commit message.
-#
-# Sites are counted in LINES, not occurrences, so a line calling `math.floor`
-# twice counts once. This is the same convention capability_scan uses.
-#
-# TWO NUMBERS THAT LOOK WRONG AND ARE NOT, recorded so nobody re-derives them:
-#
-#   `rand` reads 51 here and 50 in capability_scan. The difference is
-#   `lib/math.id:200-201`, `M.random = math.random` and its `randomseed`
-#   twin — RE-EXPORT ALIASES, not calls. capability_scan's pattern requires a
-#   trailing `(` and cannot see them; its own header lists aliases as a known
-#   blind spot. This row does not require the paren, because an alias that
-#   hands `math.random` to every importer IS the ambient reach, and it is the
-#   single site whose removal would delete the most authority in the tree.
-#
-#   `sub` reads 0, and a 0 on a fresh probe is usually a broken probe. It is
-#   not one here: the detector fires on its own example under the control
-#   below, and the submodules DO exist — they are spelled `std.math.fft`, so
-#   they land on the `ns` row. There is no BARE `math.fft` in the tree. The
-#   row stays because the spelling is one edit away from appearing.
-#
-# POPULATION. Tracked `lib/**/*.id` — the shipped standard library, the
-# thing the ruling is about. The rest of the tree is REPORTED so the number is
-# not mistaken for a whole-repo claim.
-#
-# Exit 0 at or under budget · 1 over · 3 the scan could not run.
-#
-# RECOGNITION_PURE_FLOOR / _RAND_FLOOR / _NS_FLOOR override the budgets.
-# RECOGNITION_SHOW=1 prints the per-module offender list.
 
 q = "'"
 
 comments = "(^|:)[0-9][0-9]*:[[:space:]]*--"
 
-# Every pattern requires the op to be preceded by something that is neither an
-# identifier character nor a dot, so `std.math.floor` and `mymath.floor` are
-# both declined by the bare rows. `std.math.` is the `ns` row's business, and a
-# site counted twice would make the two budgets move together for no reason.
 purepat = "(^|[^A-Za-z0-9_.:])math\\.(abs|floor|ceil|sqrt|min|max|pi|huge|cos|sin|tan|cosh|sinh|tanh|acos|asin|atan|pow|log|exp|ldexp|clamp|sign|modf|fmod|rad|deg|erf|maxinteger|mininteger|type)([^A-Za-z0-9_]|$)"
 
 randpat = "(^|[^A-Za-z0-9_.:])math\\.(random|randomseed)([^A-Za-z0-9_]|$)"
@@ -132,54 +13,27 @@ nspat = "(^|[^A-Za-z0-9_.:])std\\.(mem|fmt|math)([^A-Za-z0-9_]|$)"
 
 space = " "
 
-# The shell prefix every count shares. No list file on purpose: a fixed path
-# under /tmp is a shared mutable surface and this repository has already had
-# one run's numbers printed under another run's banner because of it. `-H`
-# because a single-file xargs batch drops the path prefix and would take the
-# module census with it.
 head: str = (root: str)
   "cd {root} && git ls-files 'lib/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
 
-# Matching lines, whole-line comments dropped.
 hits: i64 = (root: str, pat: str)
   pre: str = head(root)
   cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
 
-# Distinct modules holding at least one site of this class.
 modules: i64 = (root: str, pat: str)
   pre: str = head(root)
   cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort -u | wc -l"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
 
-# The same class over everything tracked that is NOT lib/std. Reported so the
-# lib/std budget is never read as a whole-repo claim.
-#
-# THIS FILE EXCLUDES ITSELF, for the reason audit100 gives about its own
-# corpus: the patterns are DATA, and a scanner whose haystack contains its own
-# needles measures itself. Caught rather than reasoned: staging this file moved
-# `outside` from 50/4/42/0 to 56/6/48/1 with nothing in the tree having
-# changed — every one of those six new "sites" was a regex literal in the
-# lines above. The lib/std rows never had the problem (this file is not in
-# lib/std) but the exclusion is written against the pathspec, not the
-# directory, so moving the file cannot silently reintroduce it.
-# GAP-220 / GAP-201: this enumerates '*.id' MINUS lib/, which is a DIFFERENT
-# pathspec from the `lib/*.id` one the total/control rows above guard, and its
-# rows are reported rather than ratcheted — so a zero here reads as "nothing
-# outside std does this", the answer the scan is hoping for. `gate/subject.sh`
-# runs first inside the same shell, and its refusal becomes a sentinel the
-# caller cannot mistake for a clean zero.
 outside: i64 = (root: str, pat: str)
   cmd: str = "cd {root} && sh gate/subject.sh '*.id' >/dev/null 2>&1 || \{ printf 1000000; exit 0; \}; git ls-files '*.id' | grep -v -E {q}^lib/{q} | grep -v -E {q}^scripts/recognition{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
 
-# One synthetic line through the ENTIRE filter chain.
 probe: i64 = (pat: str, line: str)
   cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -n -E {q}{pat}{q} | grep -v -E {q}{comments}{q} | wc -l"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
 
-# The same line with NO filter. `probe` alone cannot tell "the filter deleted
-# it" from "the pattern never matched it"; every filter check is a PAIR.
 raw: i64 = (pat: str, line: str)
   cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
@@ -197,43 +51,23 @@ row = (name: str, sites: i64, mods: i64, rest: i64, note: str)
   d = pad(rest:to(str), 9)
   print("  {a}{b}{c}{d}  {note}")
 
-# A detector must see its own example and decline ordinary Duo. Both halves,
-# or the row is either dead or noise.
 sound: bool = (pat: str, example: str)
   good: i64 = probe(pat, example)
   bad: i64 = probe(pat, "  x = f(y) + 1")
   good == 1 and bad == 0
 
-# BLOCKER 1, live. Builds the target form §0a asks for and RUNS it, asserting
-# the VALUE: `(-3.0):abs()` must be 3.0. Returns 1 only if the program compiles
-# AND answers correctly. The caller pairs this with `probecontrol`; on its own
-# a 0 cannot tell a missing feature from a missing compiler.
-#
-# `duo compile`, NEVER `duo check`. This is not a stylistic preference and it
-# cost a false green to learn: `duo check` EXITS 0 on `a:abs()`. It is the
-# CODEGEN that rejects it, and the first draft of this gate reported BLOCKER 1
-# as LIFTED because check answered green on a form that cannot be built. A
-# probe that stops before the stage that fails is not a probe.
-#
-# And it runs the binary rather than trusting the build, because `x:abs()`
-# returning the WRONG SIGN would compile perfectly.
 probecompile: i64 = (root: str, bin: str, work: str)
   src: str = "{work}/probe.id"
   body: str = "main(): i64\\n    a: f64 = -3.0\\n    r: f64 = a:abs()\\n    if r == 3.0 return 0 end\\n    1\\nend\\n"
   cmd: str = "cd {work} && printf {q}{body}{q} > {src} && {root}/{bin} compile {src} -o {work}/probe.out >/dev/null 2>&1 && {work}/probe.out >/dev/null 2>&1 && echo 1 || echo 0"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
 
-# The positive control for BLOCKER 1: the SAME pipeline, the same binary, the
-# same scratch directory, the same asserted VALUE — carrying the spelling that
-# works today. If this reads 0 the apparatus is broken and the blocker verdict
-# must be WITHHELD rather than reported as confirmed.
 probecontrol: i64 = (root: str, bin: str, work: str)
   src: str = "{work}/control.id"
   body: str = "main(): i64\\n    a: f64 = -3.0\\n    r: f64 = a:abs()\\n    if r == 3.0 return 0 end\\n    1\\nend\\n"
   cmd: str = "cd {work} && printf {q}{body}{q} > {src} && {root}/{bin} compile {src} -o {work}/control.out >/dev/null 2>&1 && {work}/control.out >/dev/null 2>&1 && echo 1 || echo 0"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
 
-# BLOCKER 2, live: does the NORMATIVE grammar know the word `world` at all?
 grammar: i64 = (root: str, word: str)
   cmd: str = "cd {root} && grep -c -i -E {q}{word}{q} docs/spec/grammar.md 2>/dev/null || echo 0"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
@@ -255,15 +89,12 @@ main: i64 = ()
       print("recognition scan: FAIL — 0 std modules found; the scan did not run")
       code = 3
 
-  # Control 1: the pipeline itself. Every count rides this exact shell; if
-  # the control reads 0 every row below is a lie rather than a clean result.
   if code == 0
     alive: i64 = hits(root, "[a-zA-Z]")
     if alive == 0
       print("recognition scan: FAIL — the control pattern matched 0 lines of std; the grep pipeline is broken and every row below would read a confident 0")
       code = 3
 
-  # Control 2: every detector, both halves.
   if code == 0
     broken = ""
     if not sound(purepat, "  y = x:floor()")
@@ -278,14 +109,11 @@ main: i64 = ()
       print("recognition scan: FAIL — class {broken} either missed its own example or matched ordinary Duo; a 0 from it would be a broken detector, not a clean corpus")
       code = 3
 
-  # Control 2b: the bare rows must DECLINE the dotted namespace, or `pure`
-  # and `ns` would move together and neither budget would mean anything.
   if code == 0
     if probe(purepat, "  y = x:floor()") != 0
       print("recognition scan: FAIL — the pure pattern also matches math.; the pure and ns budgets would double-count the same site")
       code = 3
 
-  # Control 3: the comment filter, paired.
   if code == 0
     if raw(purepat, "-- y = x:floor()") != 1
       print("recognition scan: FAIL — the comment control line is not matched by the pure pattern at all, so what follows would test nothing")
@@ -325,7 +153,6 @@ main: i64 = ()
     print("  read as a whole-repo claim. sites are LINES: a line calling math.floor")
     print("  twice counts once, the convention capability_scan uses.")
 
-    # BLOCKER 1, probed live and PAIRED.
     bin: str = std.script.getenv("DUO_BIN", "zig-out/bin/idol")
     work: str = std.script.chomp(std.script.capture("mktemp -d 2>/dev/null"))
     ctl: i64 = probecontrol(root, bin, work)
@@ -350,8 +177,6 @@ main: i64 = ()
       print("    HAS LIFTED and the `pure` row is convertible. Start with the")
       print("    smallest module and verify each conversion BY VALUE.")
 
-    # BLOCKER 2, probed live and PAIRED: `world` must be absent from the
-    # normative grammar while a control word it certainly contains is not.
     wg: i64 = grammar(root, "world")
     cg: i64 = grammar(root, "expression")
     print("")
@@ -380,8 +205,6 @@ main: i64 = ()
       print("  modules by math. site count:")
       stdout:write(std.script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
 
-    # THE RATCHET. Measured 2026-08-08 in a detached worktree, so no
-    # session's uncommitted edits are inside the number.
     purecap: i64 = to(i64)(std.script.getenv("RECOGNITION_PURE_FLOOR", "512"))
     randcap: i64 = to(i64)(std.script.getenv("RECOGNITION_RAND_FLOOR", "51"))
     nscap: i64 = to(i64)(std.script.getenv("RECOGNITION_NS_FLOOR", "13"))

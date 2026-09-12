@@ -1,7 +1,3 @@
-# Public safety pre-scan (tracked + staged files).
-# Exit 0 = no hits; exit 1 = review required.
-#
-# One gatecap round-trip via embedded scan payload (native gatecap cannot chain).
 
 chomp: str = (text: str)
   if not text:len()

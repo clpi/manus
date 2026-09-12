@@ -1,107 +1,8 @@
-# treesitter emit — the grammar projection, as far as it honestly goes today.
-#
-# The host requires tree-sitter to be "a generated grammar
-# projection (output, never authored)". gaps/GAP-049 records why it was not:
-# three pieces were missing — a declarative production source, an emitter, and
-# a differential. The first landed as docs/spec/grammar.md. THIS FILE
-# is the second. `zig build tree-sitter-coverage` is the third.
-#
-# WHAT THIS EMITS, and what it does not. The output file
-# ext/tree-sitter-idol/grammar.js is split by two markers into GENERATED parts
-# and an AUTHORED residue. Everything outside the markers is emitted from the
-# registries below; everything between them is carried through byte for byte
-# and COUNTED. The count is the number gaps/GAP-049 is measured by, and
-# printing it is the only honest way to say "partially generated".
-#
-# The residue is not a formatting convenience. docs/spec/grammar.md §3 states
-# the structural productions as EBNF, but for the PASS-100 surface, and the
-# tracked corpus is still overwhelmingly pre-Pass-100 — `match`, `enum`,
-# `concept`, `local`, `fun`. Projecting §3 over the residue would drop editor
-# recognition from 755 of 775 files to almost none. That is a language
-# decision (GAP-049's "second reason"), not a build-system one, so this
-# emitter refuses to make it and says why instead.
-#
-# WHAT IS GENUINELY DERIVED rather than transliterated:
-#
-#   long string levels 0..2   one rule per level from ONE template, with the
-#                             body alternation that excludes the closer
-#                             COMPUTED from the level. It used to be three
-#                             hand-written lines whose alternations had to be
-#                             got right by eye.
-#   quoted string tokens      one template, two quote characters.
-#   binary and unary operators  one table of spelling, level and
-#                             associativity — which is what a precedence
-#                             table IS. The levels are the ranks of
-#                             roleprecedence in lib/compiler/token.id.
-#
-# THE CHECK FOUND A REAL DEFECT THE DAY IT WAS WRITTEN, which is the argument
-# for the whole approach. The authored table numbered `or` 11 and `^` 4, and
-# in tree-sitter a HIGHER number binds TIGHTER, so the entire binary
-# precedence table was inverted end to end. Verified by value before it was
-# believed: `x = 2 + 3 * 4` parsed as `(2 + 3) * 4` and `a or b and c` as
-# `(a or b) and c`. The recognition gate could not see it — no ERROR node is
-# produced by a wrong tree — and no reader was going to diff twenty-five
-# `prec.left` lines against Lua by eye. A table that is DATA gets compared;
-# a table that is code gets read past.
-#
-# WHERE THE OPERATOR TABLE IS CHECKED, and why not here. It used to be checked
-# against docs/spec/grammar.md §2 — a file whose own first paragraph says it
-# "is not a grammar authority and must not be used to hand-build parser
-# tables" — and the comparison walked ADJACENT ROWS ONLY. Both halves were
-# wrong, and together they reported 0 divergences while 6 pairs of 276
-# disagreed with the real owner, `lib/compiler/token.id`. The §2 reader,
-# `specrows`, and the `spec` row are deleted rather than repaired: a second
-# place that answers "which binds tighter" is the thing GAP-145 is counting.
-#
-# The check now runs against the ARTIFACT, from the owner's own generated
-# projection, over every pair, with a planted inversion as its positive
-# control:
-#
-#     sh gate/gap-145-consumer.sh
-#
-# That matters because this generator cannot currently execute at all:
-# `slurp` uses `f:read("a")` and the direct backend refuses with
-# DNB001 method-unresolved:read, so `zig build treesitter-projection` — the
-# byte-identity control on this projection — has been dead. A control that
-# cannot run is how the tracked grammar.js acquired hand-authored GAP-145
-# comment and literal identities this generator does not emit.
-#
-# THE OFFSIDE LAYER IS NOT EMITTED AND CANNOT BE. grammar.md §1 defines
-# NEWLINE / INDENT / DEDENT. tree-sitter has no offside layer; it needs an
-# EXTERNAL SCANNER, which is a C file, and `ls ext/tree-sitter-idol/src` has
-# none. That is why examples/layout/offside.id parses as one ERROR node from
-# [0,0] to end of file. Emitting an `externals` block without the scanner
-# would make the generated parser fail to LINK, which is worse than the hole.
-#
-# WHY THE REGISTRIES ARE SPACE-SEPARATED STRINGS and !tables: a table does
-# not survive a function boundary in this compilation path. Measured — a
-# table pushed to inside a callee reads `#t == 0` in the caller, and so does
-# one returned from a callee. scripts/audit100.id carries its budgets the
-# same way for the same reason. Positive-controlled below: the row-length
-# check refuses to run if the parallel rows are not all the same length.
-#
-# Env:
-#   TSEMIT_OUT     where to write (default the tracked grammar.js)
-#   TSEMIT_CHECK   set to 1 to compare instead of writing — the gate mode
-#   TSEMIT_RESIDUE bootstrap only: take the residue from this file when the
-#                  output has no markers yet
-#
-# Exit 0 emitted or identical · 1 the check found a difference · 3 the emitter
-# could not run (no output, no residue, no spec — a confident success is
-# usually a broken gate, so every path here is positive-controlled).
 
 grammarpath = "ext/tree-sitter-idol/grammar.js"
 markbegin = "@@residue:begin"
 markend = "@@residue:end"
 
-# The read itself is the subject-first byte face, `path:read()`, which is
-# FAIL-CLOSED: an absent file refuses (`read-refused:absent:<path>`) instead of
-# answering a value — the NULL-into-`strlen` trap this file's GAP-145 record
-# measured. Three consumers here rely on absent -> "" (the bootstrap slurp of
-# the not-yet-emitted output, the TSEMIT_RESIDUE seed, and check-mode), so the
-# already-executable open/close handle probe keeps that contract in front of
-# the fail-closed read. A structured absent|present outcome stays open under
-# GAP-154/GAP-118; this guard is not it.
 slurp: str = (path: str)
     f = io.open(path, "r")
     if f == nil
@@ -118,8 +19,6 @@ spill: bool = (path: str, body: str)
         done = true
     done
 
-# `n` copies of `s`. The long-string delimiters need exactly this: the number
-# of `=` signs IS the level.
 tile: str = (s: str, n: i64)
     acc: str = ""
     i: i64 = 0
@@ -137,10 +36,7 @@ lines: i64 = (s: str)
             n -= 1
     n
 
-# ── The head registry ────────────────────────────────────────────────────────
 
-# The banner. `count` is the residue line count — the one number in this file
-# that is measured rather than declared.
 banner: str = (count: i64)
     n: str = count:to(str)
     b: str = "/**\n"
@@ -1313,19 +1209,9 @@ exprtail: str = ()
     b
 
 residuemark: str = ()
-    # ONE LINE. The begin marker has to be a single line, because `carve`
-    # starts capturing at the line AFTER it: a two-line marker puts its second
-    # line inside the residue, where the next regeneration emits it again
-    # above the copy it just carried. Caught by running the emitter twice.
     "    // {markbegin} — AUTHORED to {markend}, carried verbatim; see the banner.\n"
 
-# ── The token registry ───────────────────────────────────────────────────────
 
-# A long string at level `lv`. The delimiters are `[` + lv `=` + `[`, and the
-# body is "any character that is not `]`, or a `]` run shorter than my own
-# closer". A single token DFA cannot remember how many `=` it opened with, so
-# the exclusion has to be spelled out per level — exactly the kind of thing a
-# generator should do and a person should not.
 longlevel: str = (lv: i64)
     eqs: str = tile("=", lv)
     body: str = "/[^\\]]/"
@@ -1337,8 +1223,6 @@ longlevel: str = (lv: i64)
     body = "{body}, /\\]{eqs}[^\\]]/"
     "      seq('[{eqs}[', repeat(choice({body})), ']{eqs}]'),\n"
 
-# One template, two quote characters. The escape class is the quote itself
-# plus the backslash, which is the only thing that differs between them.
 quoted: str = (rulename: str, quote: str, wrap: str)
     b: str = "    {rulename}: $ => token(seq(\n"
     b = "{b}      {wrap}{quote}{wrap},\n"
@@ -1350,18 +1234,6 @@ quoted: str = (rulename: str, quote: str, wrap: str)
     b = "{b}    )),\n"
     b
 
-# ── The literal identity registry ─────────────────────────────────────────────
-#
-# GAP-145 O1: literal identity is not authored here. The owner's generated
-# bridge src/grammar_role_table.zig — regenerated from lib/compiler/token.id by
-# gate/grammar-projection.sh, byte-pinned to it — carries one row per quoted
-# literal identity with its owner spelling in `.spell`. This registry reads
-# those rows and emits the identity layer plus the `string` union; nothing in
-# this file decides which literal identities exist.
-#
-# The count is a demand, not a convenience: a fifth quoted identity appearing
-# in the owner without this reader learning its physical rule is a silent
-# recognition hole, so the emitter refuses instead of guessing.
 identities: str = ()
     body: str = slurp("src/grammar_role_table.zig")
     if body == ""
@@ -1431,11 +1303,6 @@ identities: str = ()
     "{out}{union}"
 
 
-# GAP-145 O1: numeric literal identity is not authored here either. The same
-# bridge carries the non-quoted literal rows — .literal_kind = true without
-# .quoted — and this registry reads them and emits the `number` union, so a
-# new numeric identity in the owner refuses here instead of silently losing
-# its union membership. The count is a demand for the same reason as above.
 numerics: str = ()
     body: str = slurp("src/grammar_role_table.zig")
     if body == ""
@@ -1495,12 +1362,6 @@ numerics: str = ()
         os.exit(2)
     union = "{union}    ),\n"
     "{out}{union}"
-# GAP-145 O1: keyword literal spellings are owner facts too. `nil`, `true` and
-# `false` are rows of the owner's bridge (.kind = .kw_nil / .kw_true /
-# .kw_false) with the spelling in `.spell`; typing them here by hand is the
-# same independent authorship the registry above removed. One fail-closed
-# read per spelling: absent bridge, absent row, or unterminated .spell
-# refuses instead of guessing.
 spell: str = (kind: str)
     body: str = slurp("src/grammar_role_table.zig")
     if body == ""
@@ -1533,13 +1394,6 @@ spell: str = (kind: str)
         os.exit(2)
     found
 
-# GAP-145 O1: the literal_pattern membership is an owner fact, not a choice
-# typed here. Rows carrying `.pattern = true` with `.literal_kind` or
-# `.keyword` are exactly the literal pattern members the owner admits: the
-# six literal identities (deduplicated here into their number/string unions)
-# and the three keyword spellings, in bridge order. This registry walks them
-# and emits the member list; a new pattern literal in the owner refuses here
-# instead of silently losing its member slot. The counts are demands.
 literalpattern: str = ()
     body: str = slurp("src/grammar_role_table.zig")
     if body == ""
@@ -1660,27 +1514,10 @@ tokens: str = ()
     b = "{b}    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,\n"
     b
 
-# ── The operator table ───────────────────────────────────────────────────────
-#
-# This IS the precedence table, and it is the reason this generator exists.
-#
-#   spell   the operator, as the lexer spells it
-#   level   the tree-sitter binding power — HIGHER BINDS TIGHTER
-#   spec    the level docs/spec/grammar.md §2 gives it, counting the other way
-#           (§2 is tightest-first), or 0 where §2 does not list it at all
-#   assoc   left, or right for the one right-associative operator
-#
-# The rows are parallel and the lengths are checked before anything is
-# emitted. `cat` stands for the concatenation operator, spelled out at use, so
-# that this file never places that spelling beside a quote — CLAUDE.md §1's
-# `concatlit` row is a text rule and applies to the generator too.
 
 spell: str = ()
     "or and < > <= >= ~= != == in | & ~ << >> |> cat + - * / // % ^"
 
-# The owner spelling an enumerated bar maps to. `~=` shares the `.neq`
-# identity's spelling `!=`; `cat` is this file's avoidance-spelling for the
-# concat bar, whose owner spelling is `..`.
 opkey: str = (sp: str)
     if sp == "~="
         return "!="
@@ -1688,9 +1525,6 @@ opkey: str = (sp: str)
         return ".."
     sp
 
-# The one bridge row whose `.spell` equals `key` and whose `.infix = true`.
-# Absent bridge or row refuses: the enumeration above and the owner must not
-# drift apart silently.
 oprow: str = (key: str)
     body: str = slurp("src/grammar_role_table.zig")
     if body == ""
@@ -1716,8 +1550,6 @@ oprow: str = (key: str)
         os.exit(2)
     found
 
-# The owner's associativity for one enumerated bar, read off the bridge row.
-# `.nonassoc` collapses to `left` because tree-sitter has no nonassoc face.
 opassoc: str = (key: str)
     row: str = oprow(key)
     at: i64 = row:find(".assoc = .")
@@ -1736,38 +1568,9 @@ opassoc: str = (key: str)
         return "left"
     side
 
-# Tree-sitter binding power. Tighter binds higher. These are the RANKS of
-# `roleprecedence` in `lib/compiler/token.id`, the one grammar-fact owner —
-# not a translation of a documentation table.
-#
-# |> 1 · or 2 · and 3 · comparisons and `in` 4 · | 5 · ~ 6 · & 7 · << >> 8 ·
-# cat 9 · + - 10 · * / // % 11 · unary 12 · ^ 13
-#
-# WHAT MOVED, and why it was invisible. The previous row put `cat` at 6 —
-# LOOSER than `|`, `~`, `&` and the shifts — while the owner gives
-# `roleprecedence(kindconcat) = 16`, tighter than all five. So `a | b .. c`
-# grouped as `(a | b) .. c` in every editor and as `a | (b .. c)` in the
-# compiler. `~` was tied with `|` where the owner separates them.
-#
-# The in-file check could not see any of it: it compared ADJACENT ROWS ONLY,
-# and `cat` and `|` are fourteen rows apart. Six pairs of 276 diverged and the
-# report said zero. The authority comparison now lives where it can be run
-# against the ARTIFACT rather than against this table:
-#
-#     sh gate/gap-145-consumer.sh
-#
-# which reads `src/grammar_role_table.zig` — the generated projection of the
-# owner — and compares EVERY PAIR, with a planted inversion as its positive
-# control.
 level: str = ()
     "2 3 4 4 4 4 4 4 4 4 5 7 6 8 8 1 9 10 10 11 11 11 11 13"
 
-# The operator associativity row, ordered by `spell()` above. NO LONGER
-# AUTHORED: each entry is the owner's `.assoc` read off the bridge row for that
-# bar (`opassoc`), so this file is not a second producer of an associativity
-# fact (`law.fact.producer.one`). `.nonassoc` renders `left` because
-# tree-sitter has no nonassoc face; `cat` and `^` are the owner's two
-# right-associative bars.
 assoc: str = ()
     sp: str = spell()
     parts = sp:split(" ")
@@ -1792,9 +1595,7 @@ field: str = (row: str, n: i64)
 
 width: i64 = (row: str)
     parts = row:split(" ")
-    #parts
 
-# A note printed immediately above the row it explains.
 opnote: str = (idx: i64)
     b: str = ""
     if idx == 8
@@ -1852,7 +1653,6 @@ operators: str = ()
     b = "{b}    ),\n"
     b
 
-# ── The tail registry ────────────────────────────────────────────────────────
 
 tail: str = ()
     dash: str = "\u{2500}"
@@ -1892,19 +1692,6 @@ tail: str = ()
     b = "{b}}\n"
     b
 
-# ── The row-parity control ───────────────────────────────────────────────────
-#
-# The operator rows are parallel, and parallel rows that drift silently assign
-# the wrong precedence to the wrong operator. That is the whole failure mode a
-# table-as-data is meant to remove, so it is refused here before a byte is
-# emitted.
-#
-# THIS IS NOT AN AUTHORITY COMPARISON, and it no longer pretends to be. What
-# stood here read docs/spec/grammar.md §2 — which opens by saying it is not a
-# grammar authority — and compared adjacent rows only. It printed 0
-# divergences while 6 pairs of 276 disagreed with `lib/compiler/token.id`.
-# `gate/gap-145-consumer.sh` does that comparison now, against the emitted
-# artifact, from the owner's generated projection, over every pair.
 
 report: i64 = ()
     sp: str = spell()
@@ -1926,10 +1713,7 @@ report: i64 = ()
         print("  authority comparison: sh gate/gap-145-consumer.sh (all pairs, artifact side)")
     bad
 
-# ── Splice ───────────────────────────────────────────────────────────────────
 
-# Everything between the two markers, verbatim, the marker lines themselves
-# excluded. Empty when the markers are absent, which is the bootstrap path.
 carve: str = (body: str)
     rows = body:split("\n")
     out: str = ""
@@ -2042,9 +1826,6 @@ main: i64 = ()
     ngen: str = gen:to(str)
     print("  emitted  {ngen} generated lines of {ntotal} total")
 
-    # Positive control on the emitter itself. A build that lost the operator
-    # table or the residue would still look like a plausible file; these are
-    # the two absences that must never be reported as success.
     hasop: i64 = body:find("binary_expression")
     hasmod: i64 = body:find("module.exports")
     hasres: i64 = body:find("conflicts")

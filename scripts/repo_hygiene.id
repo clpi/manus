@@ -1,17 +1,4 @@
-# Repository hygiene gate (forbidden root artifacts).
-#
-# Duo replacement for scripts/repo_hygiene.sh, closing removal-ledger entry
-# RL-12, whose gate reads "repo_hygiene.id + zig build repo-hygiene".
-#
-# Every rule here exists because the artifact it names actually got committed
-# once. The root file literally called "-" was a 1 MB accident from the audit
-# audit; the tracked `_*.out` probes are what agent sessions leave behind.
-#
-# Failures are counted, never short-circuited: a hygiene gate that stops at the
-# first hit makes you re-run it once per problem.
 
-# git ls-files is the authority on what is TRACKED. A file existing on disk is
-# not a violation — only a tracked one ships.
 _tracked: bool = (pattern: str)
   out = script.capture("sh gate/subject.sh --any " .. pattern .. " 2>/dev/null | head -1")
   script.chomp(out) != ""
@@ -21,10 +8,6 @@ _report: bool = (bad: bool, msg: str)
     stdout:write("repo_hygiene: FAIL — " .. msg .. "\n")
   bad
 
-# GAP-220: every _tracked() probe reads "no" in a tree with no `.git`, so this
-# gate reported a perfectly clean repository having examined nothing. "No" is
-# the LAWFUL answer to each individual probe here, so the zero-subject ruling
-# is waived (`--any`) and the tree ruling is asserted once, here.
 _treeok: bool = ()
   script.chomp(script.capture("sh gate/subject.sh --tree >/dev/null 2>&1; echo $?")) == "0"
 
@@ -35,17 +18,13 @@ main: i64 = ()
     stdout:write("repo_hygiene: REFUSED — not a git work tree; every tracked-file probe would answer no\n")
     return 3
 
-  # Root file literally named "-" (1 MB accident from the audit).
   if _report(script.fs_exists("-"), "root file '-' must be removed")
     fails = fails + 1
 
-  # Tracked benchmark scratch: should not be in a release tree.
   for _i, f in { ".all_bench_output.log", ".run_all_bench_cmds.sh" }
     if _report(_tracked(f), "tracked scratch file " .. f .. " (git rm or archive)")
       fails = fails + 1
 
-  # Root probe binaries from agent sessions. Untracked ones count too: these
-  # are litter on disk, not just in the index.
   probes = script.chomp(script.capture("ls _*.out 2>/dev/null | head -1"))
   if _report(probes != "", "root _*.out probe binaries present (delete or gitignore)")
     fails = fails + 1
@@ -54,20 +33,16 @@ main: i64 = ()
   if _report(rootforeign != "", "root foreign scratch script {rootforeign} present (delete or move into idol)")
     fails = fails + 1
 
-  # Tracked *.out must never ship; local gitignored copies are fine.
   if _report(_tracked("'*.out'"), "tracked *.out files in repository (git rm)")
     fails = fails + 1
 
-  # Tracked benchmark / reference binaries.
   for _i, f in { "benchmark_c", "benchmark_c_fastmath", "benchmark_c_zigcc", "default.profraw" }
     if _report(_tracked(f), "tracked build artifact " .. f .. " (git rm)")
       fails = fails + 1
 
-  # The local Duo cache must not be tracked.
   if _report(_tracked(".id/"), "tracked .id/ cache directory (git rm -r --cached .id/)")
     fails = fails + 1
 
-  # Agent-local settings must not be tracked.
   for _i, d in { ".poolside", ".serena", ".antigravitycli", ".kiro", ".junie" }
     if _report(_tracked(d), "tracked agent-local directory " .. d .. "/")
       fails = fails + 1

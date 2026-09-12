@@ -1,125 +1,6 @@
-# U1 — `std@{ ambient = false }`, made executable.
-#
-# The capability mandate commits to ZERO AMBIENT AUTHORITY IN STD from the first
-# release: fs / net / clock / rand — and process/environment — reach programs
-# only through worlds. §4 names the instrument (`std@{ ambient = false }`,
-# run on every std module, forever) and §6 makes that one row effective
-# IMMEDIATELY rather than at 0.1. The mandate and gaps/GAP-061.md record the
-# honest starting distance. This file is the instrument those two documents
-# point at.
-#
-# WHAT IT MEASURES. Every tracked `lib/**/*.id` file, one grep pass per
-# capability class, counting CALL-SHAPED reaches at non-comment positions.
-# Six ratcheted classes plus one reported-only class:
-#
-#   fs      io.open / io.lines / os.remove / fs.* and the libc file surface
-#   net     net.* / http.* and the socket surface
-#   clock   os.clock / os.time / os.date and the libc time surface
-#   rand    math.random / rand / arc4random / getrandom
-#   proc    os.getenv / os.execute / io.popen / system / fork / exec
-#   fault   abort / exit / panic / kill — authority over the PROCESS
-#   stdio   io.write / io.read / io.type — REPORTED, NOT RATCHETED
-#
-# `fault` is a capability and !an escape hatch, which is why it is a row.
-# A failure that unwinds a WORLD is ordinary; a call that takes the process
-# down reaches past every world above it, and a std module that can do that
-# holds authority no caller granted it.
-#
-# WHY `stdio` IS REPORTED AND NOT RATCHETED, stated rather than quietly
-# decided: `print` is the same authority as `io.write` and lives in nearly
-# every module in the tree, so a ratchet that counts one and !the other is
-# measuring spelling. U1 names fs/net/clock/rand explicitly, and routing
-# console output through a world is a different and larger task. The row is
-# printed so that decision is visible instead of invisible.
-#
-# WHAT COUNTS AS MEDIATED, and the two ways a reach stops being counted.
-#
-#   * The op acquires a RECEIVER. Every class pattern requires the op to be
-#     preceded by something that is not a dot, so `world.clock()` — the shape
-#     the repair actually takes — is not a reach at all, and the count falls
-#     the moment a world is threaded. This is also the largest source of
-#     under-counting: `self.clock()` and `t.time()` are invisible for the
-#     same reason.
-#   * The line still names the ambient op but carries a world receiver
-#     somewhere on it (`world.now(os.clock())`). That is what the `mediated`
-#     column counts, and it is deliberately generous — a rule that refuses to
-#     notice the repair is a rule nobody repairs against.
-#
-# Today `mediated` is ZERO across all of std: worlds are threaded nowhere in
-# `lib/std`. That is the finding, not a broken probe, and the paired controls
-# below are what earn the right to say so.
-#
-# NOTHING HERE IS ENFORCED, and the `E` column says so on every run. audit100
-# draws the same distinction and it is the important one: an ENFORCED row is
-# text `duo check` REFUSES, so its count is residue; a COUNTED row is text
-# anyone can still write, and the budget is the only pressure on it. All six
-# classes here are COUNTED. Enforcement arrives with the anchor, not with a
-# bigger regex.
-#
-# THIS IS A PROXY AND SAYS SO. GAP-061 names the bias and it is unchanged
-# here: a grep measures REACH, not authority. The instrument §4 actually
-# specifies is the ANCHOR — `std@{ ambient = false }` as a protocol check
-# over the module graph — and that waits on protocol anchoring running over
-# std, which §22 still owes. Two differences from the one-off grep recorded
-# in GAP-061, both of which move the number:
-#
-#   * `@c.emit` payloads ARE scanned. GAP-061 lists them as a blind spot:
-#     `lib/os.id` and `lib/io.id` obtain capability through raw C
-#     that no regex over Duo call syntax can see. The libc names sit in every
-#     class pattern here precisely so the C inside those payloads is counted.
-#   * `rand` and `net` are NOT zero. GAP-061 reports both at zero and flags
-#     the zero as suspicious in the same breath ("a zero on a fresh probe is
-#     usually a broken probe"). It was: the probe looked for `rand(` and
-#     `random`, and this tree spells it `math.random(` — 50 sites across 14
-#     modules. `net` is 9 sites in `lib/net.id`, five of them the
-#     bodyless DECLARATIONS of `connect` / `listen` / `accept` / `send` /
-#     `recv` — ambient authority in its strongest form, a free function any
-#     caller can reach with no world in hand.
-#
-# WHAT IT CANNOT SEE, so nobody has to rediscover it: a reach inside a
-# trailing comment is counted (only whole-line comments are stripped); a
-# reach spelled through an alias or a table field is not counted; authority
-# obtained by reading a global is not counted. Pressure, not proof.
-#
-# POPULATION. Tracked `lib/**/*.id` only, and that is a CHOICE with a
-# known hole: Duo also lives inside Zig fixtures and inside `tools/wasm/src`,
-# and neither is std. U1 is a rule about the STANDARD LIBRARY — what a
-# program gets without asking — so the population is the shipped std surface.
-# A module reachable only from a test is not shipped and is not counted.
-#
-# CONTROLS, run on EVERY invocation, because this repository has shipped a
-# gate that zeroed sixteen of seventeen rows and exited 0:
-#
-#   1. the file set is non-empty and the grep pipeline matches its control
-#      pattern — otherwise every class count below is a confident zero;
-#   2. EVERY class pattern is fired at a synthetic call it MUST recognise and
-#      at ordinary Duo it MUST decline, through the same filter chain the
-#      corpus scan uses. The first half is the "prove it fails when an
-#      ambient call is added to a clean module" control, run on every
-#      invocation rather than once by hand; the second half catches a
-#      match-everything pattern whose budget would be measuring noise;
-#   3. the comment filter and the mediation filter are each fired at a line
-#      the pattern DOES match, and each must delete it. Both checks are
-#      PAIRED with an unfiltered probe, because "the filter deleted it" and
-#      "the pattern never matched it" are the same green otherwise — and the
-#      first draft of this gate got the mediation control green for exactly
-#      the wrong reason.
-#
-# THE RATCHET. Two budgets, both measured, both lowered whenever the count
-# falls: total ambient sites, and the number of std modules holding at least
-# one. Raising either needs a sentence in the commit message. The budget is
-# allowed to be large — U1 is a commitment with a measured distance, and a
-# gate that is red on the day it ships is a gate nobody runs.
-#
-# Exit 0 at or under budget · 1 over · 3 the scan could not run.
-#
-# CAPABILITY_SITE_FLOOR / CAPABILITY_MODULE_FLOOR override the budgets.
-# CAPABILITY_SHOW=1 prints the per-module offender list.
 
 q = "'"
 
-# Matches the `path:12:` prefix grep -n writes, and the `1:` prefix it writes
-# for stdin, so the same filter serves the corpus scan and the probe.
 comments = "(^|:)[0-9][0-9]*:[[:space:]]*--"
 
 mediator = "(^|[^A-Za-z0-9_.])world[.:]"
@@ -142,59 +23,33 @@ bar = "|"
 
 space = " "
 
-# The shell prefix every count shares: the tracked std corpus, NUL-joined,
-# fed to one grep. There is no list file on purpose — a fixed path under /tmp
-# is a shared mutable surface, and this repository has already had one run's
-# banner printed over another run's numbers because of exactly that. `-H`
-# because a single-file xargs batch drops the path prefix and would take the
-# module census with it.
 head: str = (root: str)
   "cd {root} && git ls-files 'lib/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
 
-# Matched lines, comment lines dropped, world-mediated lines dropped.
 ambient: i64 = (root: str, pat: str)
   pre: str = head(root)
   cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
   to(i64)(script.chomp(script.capture(cmd)))
 
-# gap[100]: the same reach measured OUTSIDE lib/std. Every number above it is
-# lib/std ONLY, and a budget that states no denominator reads as though it
-# covered the tree. Measured 2026-08-09: os.* alone is 156 sites inside
-# lib/std and 461 outside it, so the ratchet was pressing on a quarter of the
-# surface it names while reporting PASS. Reported, deliberately NOT ratcheted
-# yet — a budget is only honest once someone has agreed to hold it.
 beyond: i64 = (root: str, pat: str)
   pre: str = "cd {root} && git ls-files '*.id' | grep -v {q}^lib/{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
   cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
   to(i64)(script.chomp(script.capture(cmd)))
 
-# The complement: matched, non-comment, and DOES carry a world receiver.
 threaded: i64 = (root: str, pat: str)
   pre: str = head(root)
   cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -E {q}{mediator}{q} | wc -l"
   to(i64)(script.chomp(script.capture(cmd)))
 
-# Distinct modules holding at least one ambient reach of this class.
 modules: i64 = (root: str, pat: str)
   pre: str = head(root)
   cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort -u | wc -l"
   to(i64)(script.chomp(script.capture(cmd)))
 
-# One synthetic line through the ENTIRE filter chain. This is the control
-# surface: it asks whether a class still recognises the call it was written
-# for, and whether the two filters still delete what they claim to delete,
-# without depending on the corpus containing any particular text.
 probe: i64 = (pat: str, line: str)
   cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -n -E {q}{pat}{q} | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
   to(i64)(script.chomp(script.capture(cmd)))
 
-# The same line with NO filters. `probe` alone cannot tell "the filter
-# deleted it" from "the pattern never matched it", and the first draft of
-# this gate got a green mediation control for the second reason: the probe
-# line was `world.clock()`, which every class pattern already declines
-# because the op is preceded by a dot. A filter control that passes when the
-# filter is removed is not a control. Every filter check below is therefore a
-# PAIR — raw must see it, probe must not.
 raw: i64 = (pat: str, line: str)
   cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
   to(i64)(script.chomp(script.capture(cmd)))
@@ -212,8 +67,6 @@ row = (name: str, sites: i64, mods: i64, thru: i64, note: str)
   d = pad(thru:to(str), 10)
   print("  {a}{b}{c}{d}   {note}")
 
-# A class detector must see its own example and decline ordinary Duo. Both
-# halves, or the row is either dead or noise.
 sound: bool = (pat: str, example: str)
   good: i64 = probe(pat, example)
   bad: i64 = probe(pat, "  x = f(y) + 1")
@@ -236,25 +89,17 @@ main: i64 = ()
       print("capability_scan: FAIL — 0 std modules found; the scan did not run")
       code = 3
 
-  # GAP-220 / GAP-201: `beyond()` enumerates '*.id' MINUS lib/, a different
-  # pathspec from the one the guard above covers, and its rows are reported
-  # rather than ratcheted — so a zero there reads as "nothing outside std does
-  # this", which is the answer the scan is hoping for.
   if code == 0
     if script.chomp(script.capture("cd {root} && sh gate/subject.sh '*.id' >/dev/null 2>&1; echo $?")) != "0"
       print("capability_scan: FAIL — the beyond-std enumeration is not trustworthy here (GAP-220)")
       code = 3
 
-  # Control 1: the pipeline itself. Every count below rides this exact
-  # shell; if the control reads 0 the pipeline is broken and every class row
-  # is a lie rather than a clean result.
   if code == 0
     alive: i64 = ambient(root, "[a-zA-Z]")
     if alive == 0
       print("capability_scan: FAIL — the control pattern matched 0 lines of std; the grep pipeline is broken and every class row below would read a confident 0")
       code = 3
 
-  # Control 2: every detector, both halves.
   if code == 0
     broken = ""
     if not sound(fspat, "  h = io.open(path)")
@@ -275,7 +120,6 @@ main: i64 = ()
       print("capability_scan: FAIL — class {broken} either missed its own example call or matched ordinary Duo; a 0 from it would be a broken detector, not a clean module")
       code = 3
 
-  # Control 3a: the comment filter, paired.
   if code == 0
     if raw(clockpat, "-- t = os.clock()") != 1
       print("capability_scan: FAIL — the comment control line is not matched by the clock pattern at all, so what follows would test nothing")
@@ -285,7 +129,6 @@ main: i64 = ()
       print("capability_scan: FAIL — the comment filter does not delete a commented reach; every count would be inflated by prose")
       code = 3
 
-  # Control 3b: the mediation filter, paired.
   if code == 0
     if raw(clockpat, "  t = world.now(os.clock())") != 1
       print("capability_scan: FAIL — the mediation control line is not matched by the clock pattern at all, so a green mediation check would prove nothing")
@@ -359,11 +202,6 @@ main: i64 = ()
       print("  modules by ambient site count:")
       stdout:write(script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
 
-    # THE RATCHET. Measured 2026-08-08 at 878e0d1 in a detached worktree,
-    # so no session's uncommitted edits are inside the number. Both
-    # budgets are EXACT — no headroom, because headroom is a licence to
-    # add one more ambient call, and one call is the only kind of
-    # regression anyone ever introduces.
     sitecap: i64 = to(i64)(std.script.getenv("CAPABILITY_SITE_FLOOR", "278"))
     modcap: i64 = to(i64)(std.script.getenv("CAPABILITY_MODULE_FLOOR", "53"))
     over: i64 = 0
@@ -373,23 +211,6 @@ main: i64 = ()
     if reached > modcap
       print("capability_scan: FAIL — ambient modules {reached} exceeds the ratchet {modcap}")
       over = over + 1
-    # gap[100] rung 5, the shippable increment. Full enforcement — `duo
-    # check` REFUSING an ambient reach — cannot land while 616 sites still
-    # make one; it would red the tree on the day it shipped, and a gate
-    # nobody can run is not enforcement. What CAN land is the ratchet
-    # extended to the column that had none: the 338 sites outside lib/std
-    # were measured and printed but free to grow without limit, which is
-    # how the 278-site budget came to cover 45% of the reach it named.
-    # Set at the measured value, so it passes today and can only fall.
-    #
-    # 341, not the 338 first measured: this session added three ambient
-    # sites of its own, in scripts/proof/mkdir.id, scripts/proof/worldreach.id
-    # and scripts/proof/ambientfold.id, which reach std.os.exit to signal WHICH
-    # direction failed. The ratchet caught them on its first run, which is
-    # the whole point of holding a column instead of printing it. Named
-    # here rather than absorbed silently — a budget raised without a reason
-    # in the commit message is how the previous column stopped meaning
-    # anything.
     outcap: i64 = to(i64)(std.script.getenv("CAPABILITY_OUTSIDE_FLOOR", "341"))
     if out > outcap
       print("capability_scan: FAIL — ambient sites outside lib/std {out} exceeds the ratchet {outcap}")

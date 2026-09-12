@@ -1,34 +1,3 @@
-# SH-04 coverage — what fraction of real Idol source can the SELF-HOSTED parser
-# parse?
-#
-# The parser corpus proof shows the projection is CORRECT on 55
-# hand-written cases. It cannot say how much of the language those cases reach.
-# This walks lib/std and reports how many files parse_status accepts. That
-# number has to reach 100% before SH-04 is anything but `porting`, and it is the
-# only honest way to say how far along the self-hosted parser actually is.
-#
-# 2026-08-07: 44/245 when this number first existed, then 245/245 the same day.
-#
-# It GATES now. `PARSER_COVERAGE_FLOOR` (default 256) is a ratchet: the number
-# only goes up. Every regression this session was invisible to the 55-case
-# projection proof and visible only here — a guard that silently dropped 33
-# files, a speculation that truncated expression statements, a lambda arm that
-# ate the wrong `end`. A floor is what stops the next one.
-#
-# Two things this file is deliberately careful about:
-#
-#   * It terminates. An earlier version of this walk did not finish in ten
-#     minutes; the cause was a parser loop that could iterate without consuming
-#     a token, now fixed structurally by the `stalled` guard in parser.id. A
-#     scripts/ entry that hangs is worse than no measurement, because the next
-#     agent wires it into a gate.
-#   * `lib/os/linux.id` is NO LONGER skipped. GAP-017 is closed: a lexer
-#     error is now a rejection the caller can count, not a process abort, so a
-#     bad file costs one row instead of truncating the run. The skip existed
-#     only to keep that truncation visible; with the cause gone, the file
-#     rejoins the denominator.
-#
-# Layout homes only — no req, no std namespace traversal, no process env antipattern.
 
 head: str = (root: str)
   "find {root}/lib/std -name '*.id' 2>/dev/null"

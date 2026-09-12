@@ -1,7 +1,3 @@
-# Self-hosting completion ledger. Entry shc: i64 = ().
-# ledger/shc -- current blockers
-# File facts only. Window compare, never :has.
-# Native whole-string `==` is false above 15 bytes; keep needles short.
 
 seen: bool = (text: str, needle: str)
   n = text:len()

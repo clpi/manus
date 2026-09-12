@@ -1,8 +1,3 @@
-## TEACHING-STATUS: canonical
-# gate/census — repository-wide LAW-ONE name debt census (blocking).
-#
-# Gate transport: Idol only — stdin:read() pipe. No os.args, no --backend=c.
-# File is the body of gate.census — no main, no census = { } wrapper.
 
 transport: str = ()
   text = stdin:read()

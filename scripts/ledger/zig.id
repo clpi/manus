@@ -1,8 +1,3 @@
-# Tracked Zig bootstrap ledger for the self-hosting target.
-#
-# scripts/census/language proves the count is bounded. This file prints the exact
-# tracked bootstrap files, including build.zig, so the remaining queue is
-# inspectable from idol.
 
 capture: str = (shellline: str)
   gatecap(shellline)
@@ -92,13 +87,6 @@ show: i64 = (name: str, files: any)
       print("  {files[i]}")
   count
 
-# GAP-220 / GAP-201. ZERO IS THIS LEDGER'S GOAL, so an empty enumeration
-# cannot simply be scored a failure — and that is exactly what made the vacuous
-# case so dangerous here. A tree with no `.git` answers zero for every pathspec,
-# and this file then prints its BEST POSSIBLE verdict having examined nothing.
-# So the enumerator is live-wired instead: `gate/subject.sh` is asked for a
-# pathspec this repository cannot lack, and a zero there is the enumerator
-# being broken, never the debt being retired.
 subject: i64 = (root: str)
   status("cd '{root}' && sh gate/subject.sh '*.id'")
 

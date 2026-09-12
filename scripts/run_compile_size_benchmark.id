@@ -1,47 +1,3 @@
-# Compile time + binary size, Idol against C. A TRACKING benchmark: it reports,
-# it does not fail when Idol is slower or larger.
-#
-# ledger/perf contract: compile size benchmark
-# oracle: compile_size: FAIL
-# negative: compile_size: PASS
-# verdict: artifact size and compile-time evidence
-#
-# Idol replacement for scripts/run_compile_size_benchmark.sh (monoglot census,
-# G11). The shell version was the last tracked .sh in the repo and it carried
-# TWO foreign languages, not one: 439 lines of bash plus two inline python3
-# heredocs (39 lines) — one the wall-clock timer, one the ML float comparison.
-# Both are arithmetic, which is exactly what the census says belongs in Idol.
-#
-# WHAT IS STILL SHELLED OUT, and why none of it is reasoning:
-#   uname / xcrun / mktemp / cp / rm     environment facts and file moves
-#   stat -f%z, wc -l                     one number, read back and compared here
-#   grep '^RESULT ' | sort               selecting and ordering lines; the
-#                                        COMPARISON of those lines is Idol
-#   the compilers themselves             the thing being measured
-# No branch, no ratio and no tolerance is computed by foreign machinery.
-#
-# THE ONE MEASUREMENT DIFFERENCE, stated rather than buried. The shell version
-# timed with python's perf_counter around a child runner, which forks and
-# execs the compiler directly. Idol's process primitive goes through system(3),
-# which inserts a /bin/sh between this process and the compiler and costs
-# about 3.6 ms every call. So the harness MEASURES that floor — the min over
-# eight runs of an empty command, which spawns the shell and nothing else —
-# subtracts it, and PRINTS the value it subtracted, so the correction is
-# visible rather than assumed. Against the shell version's last run every
-# deterministic column is identical and compile_s agrees closely; the
-# correction is what makes the second half of that true.
-#
-# SOURCES ARE STREAMED TO DISK, NOT BUILT IN MEMORY. The 10k workload is a
-# 205 KB source. Accumulating it with string interpolation is quadratic AND
-# hits a live native-backend defect: a 1500-iteration append loop sitting
-# beside a few i64 scalars compiles clean under #backend=direct and then
-# SEGFAULTS before its first print (exit 139), while runs the same
-# program correctly. Writing each block straight to an open file handle is
-# linear and steps around it.
-#
-# Env: RUNS, CHAIN_FUNCS_1K (or CHAIN_FUNCS), CHAIN_FUNCS_10K, CC, STRIP,
-# SDKROOT, ZIG, DUO_ROOT. Exit 0 report produced, 1 a workload disagreed with
-# C, a capture came back short, or a compile failed.
 
 sh: str = (cmd: str)
     std.script.chomp(std.script.capture(cmd))
@@ -64,9 +20,6 @@ digits: str = (n: i64, w: i64)
         o = "0{o}"
     o
 
-# Seconds with six places, from integer nanoseconds. `to(str)` on an f64 does
-# not compile, and a float round trip would put the last digit at the mercy of
-# the printer; this arithmetic is exact in i64.
 secs: str = (ns: i64)
     v: i64 = ns
     if v < 0
@@ -76,8 +29,6 @@ secs: str = (ns: i64)
     frac: str = digits(micro % 1000000, 6)
     "{whole}.{frac}"
 
-# a / b to three places, half-up, entirely in i64. Reproduces awk's "%.3f" on
-# every value this benchmark has produced; checked against the shell run.
 ratio: str = (a: i64, b: i64)
     out = "n/a"
     if b > 0
@@ -161,9 +112,6 @@ stripmode = stripflag()
 cflags = "-O3 -ffast-math -march=native -flto -fomit-frame-pointer {trim}"
 work = sh("mktemp -d 2>/dev/null")
 
-# The min of `runs` wall times, less the shell-spawn floor. A failed compile is
-# fatal: a benchmark that quietly times a command which did not run is the
-# frozen-literal failure mode in another costume.
 mintime: i64 = (label: str, cmd: str, floor: i64)
     log = "{work}/compile.log"
     quiet = "{cmd} > '{log}' 2>&1"
@@ -395,9 +343,6 @@ workload(name: str, idolsrc: str, csrc: str, idolout: str, cout: str,
     pairrows(name, idolsrc, csrc, idolout, cout, idolns, cns)
     resultrow(name, duoanswer)
 
-# Sorted RESULT rows, with the count checked against what the program is
-# supposed to emit. A capture that silently produced 0 rows would otherwise
-# compare two empty lists and call them equal.
 capturerows = (label: str, want: i64, bin: str, out: str)
     rc: i64 = script.run("'{bin}' > '{out}.raw' 2>'{out}.err'")
     script.run("grep '^RESULT ' '{out}.raw' | sort > '{out}'")

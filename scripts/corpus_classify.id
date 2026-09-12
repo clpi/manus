@@ -1,68 +1,4 @@
-# corpus_classify — re-derive the .id corpus classification, and report what
-# the classification is NOT confident about.
-#
-# The rules live in ONE executed producer: `lib/compiler/lexer.id` sourceentry*.
-# `docs/spec/corpus.md` is its mechanically checked text projection for tools
-# that cannot call the producer yet. This file reads that projection and never
-# restates the roster.
-#
-# WHY THIS IS SEPARATE FROM audit100. audit100 ENFORCES the deny table over the
-# canonical partition; it needs the partition and stops there. This gate
-# ADJUDICATES the partition itself: it regenerates the per-file manifest
-# (`docs/corpus_manifest.md`) and, more usefully, names the files whose class
-# came from a policy default rather than from evidence. A classification nobody
-# re-derives rots into a list of paths that used to be true.
-#
-# THREE THINGS IT MEASURES
-#
-#   1. COUNTS PER CLASS, plus the count per RULE. A rule that matches zero
-#      files is dead — either the files moved or the rule was aspirational.
-#      Dead rules are printed, because a manifest whose rules no longer bind is
-#      how a partition drifts without anyone noticing.
-#
-#   2. TIER. How much of the path a rule actually pins:
-#        exact    the rule names the file             — an adjudication
-#        family   the rule pins two or more segments  — a purpose
-#        default  the rule pins one segment           — a POLICY, not evidence
-#      `examples/ -> historical` is a default over 250+ files. That is a
-#      defensible policy and it is also the single largest unexamined claim in
-#      the manifest, so it is reported as such rather than counted as known.
-#
-#   3. CONTRADICTIONS — where the class and the evidence disagree. These are
-#      the finding; the counts are just the frame.
-#        C1  historical, but a gate references it. "Unmaintained" is false for
-#            a file `build.zig` runs. Either the class or the gate is wrong.
-#        C2  canonical, no inbound reference, and outside lib/. The stdlib is
-#            reached by `req`, so absence of a build.zig mention proves nothing
-#            there — but a `tools/` or `scripts/` file nothing runs is scratch
-#            sitting inside the partition the deny table is enforced against.
-#        C3  canonical, but the file carries a generator marker. `generated`
-#            exists precisely so the fix lands in the generator.
-#        C4  canonical, but the file embeds C, Lua or another language. Named,
-#            not failed: `lib/std` embedding C is sanctioned, while
-#            `examples/c_emit_*` is classified `foreign` for doing the same
-#            thing. The inconsistency is real and belongs in the open.
-#
-# SELF-EXCLUSION. This file is kept out of its own reference haystack. Its text
-# contains corpus paths as DATA; a walker that greps for the names it prints
-# reports itself. GAP-16 cost this repo a day on exactly that shape.
-#
-# POSITIVE CONTROL. Every zero here is checked before it is believed: no rules,
-# no files, no canonical set, or an empty reference haystack all exit 3. A
-# confident 0 from a gate run in the wrong directory is this repo's most
-# expensive recurring bug.
-#
-# Exit 0 pass · 1 a tracked file matches no rule · 3 the gate could not run.
-#
-# CORPUS_CLASSIFY_EMIT=1   print one `class tier ref path` row per file, which
-#                          is what regenerates docs/corpus_manifest.md.
 
-# Canonical spelling, 2026-08-08. The helpers used to carry `_` prefixes and the
-# reports used to be `..` ladders; both are §1 deny rows that `audit100`
-# ratchets, and this file held 58 of one and 52 of the other. The behaviour is
-# unchanged and was checked that way: the full report and the
-# CORPUS_CLASSIFY_EMIT manifest were captured before and after and are
-# byte-identical.
 
 here = "scripts/corpus_classify.id"
 listing = "/tmp/duo_corpus_classify.list"
@@ -85,16 +21,11 @@ cut: any = (s: str)
   out
 
 starts: bool = (s: str, prefix: str)
-  #s >= #prefix and s:sub(1, #prefix) == prefix
   void
 
 ends: bool = (s: str, suffix: str)
-  #s >= #suffix and s:sub(#s - #suffix + 1, #s) == suffix
   void
 
-# Whitespace-separated field n (1-based) of a line, "" when absent. `seen` only
-# ever increases, so the first field that matches `want` is the only one that
-# can, and the answer is carried to the tail rather than returned early.
 field: str = (line: str, want: i64)
   out: str = ""
   n: i64 = line:len()
@@ -148,9 +79,6 @@ depth: i64 = (prefix: str)
     i = i + 1
   c
 
-# How much of the path the rule pins. See the header: `default` means the
-# class came from a policy over a whole top-level tree, not from evidence
-# about the file.
 tier: str = (prefix: str)
   out: str = "family"
   if ends(prefix, ".id")
@@ -165,7 +93,6 @@ pad: str = (s: str, width: i64)
     out = "{out} "
   out
 
-# One shell round trip; the caller decides whether an empty answer is fatal.
 shell: str = (cmd: str)
   std.script.capture(cmd)
 
@@ -182,7 +109,6 @@ main: i64 = ()
     print("corpus_classify: FAIL — missing {spec}")
     return 3
 
-  # Checked producer projection as parallel arrays: first match wins.
   rcls = {}
   rpre = {}
   rpin = {}
@@ -206,17 +132,6 @@ main: i64 = ()
     print("corpus_classify: FAIL — git ls-files found 0 .id files; the census did not run")
     return 3
 
-  # The reference haystack: what a gate could plausibly run. build.zig and
-  # CI are the entry points; scripts/*.id are the gates themselves. This
-  # file is excluded from it (see SELF-EXCLUSION in the header).
-  #
-  # The group is a SUBSHELL, not a `{ …; }` brace group: a brace in a string
-  # literal is an interpolation hole, and `{ cat build.zig` would
-  # be read as one. `( … )` groups identically for a redirect.
-  # GAP-220 / GAP-201: the haystack below is guarded only IN AGGREGATE by
-  # `haybytes == 0`, and `cat build.zig` alone keeps that nonzero — so the
-  # `git ls-files 'scripts/*.id'` arm could contribute nothing and every UNREF
-  # verdict would still be reported as measured.
   if shell("cd {root} && sh gate/subject.sh 'scripts/*.id' >/dev/null 2>&1 && printf y || printf n") != "y"
     print("corpus_classify: FAIL — the gate-source arm of the haystack is not trustworthy here (GAP-220)")
     return 3
@@ -226,19 +141,10 @@ main: i64 = ()
     print("corpus_classify: FAIL — reference haystack is empty; every UNREF would be a lie")
     return 3
 
-  # One grep for every name, rather than one grep per file. Paths and bare
-  # basenames both count as a reference.
-  # Paths, bare basenames, AND parent directories. The directory matters:
-  # `scripts/native_differential.id` walks a whole folder, so every fixture
-  # in it is run by name-less enumeration. Counting only filenames would
-  # report 60-odd live gate fixtures as dead scratch.
   pats: str = ""
   for i, f in files
     b: str = base(f)
     pats = "{pats}{f}\n{b}\n"
-    # Only NESTED directories, and every one of them up the chain. A bare
-    # top-level name like `examples` or `lib` occurs in unrelated prose and
-    # would mark the whole tree live, so it is excluded.
     d: str = parent(f)
     while depth(d) >= 1
       pats = "{pats}{d}\n"
@@ -248,10 +154,6 @@ main: i64 = ()
   for i, h in cut(shell("grep -o -F -f {needles} {haystack} 2>/dev/null | sort -u"))
     refs(h) = 1
 
-  # A subtree carrying its own `build.id` is an APPLICATION. It is reached
-  # by its own build entry point, not by duo's gates, so "no inbound
-  # reference from build.zig" says nothing about it. Derived, not listed:
-  # adding another in-tree app must not require editing this gate.
   approot = {}
   napp = 0
   for i, f in files
@@ -307,9 +209,6 @@ main: i64 = ()
       ncanon = ncanon + 1
       if f != here
         canon = "{canon}{root}/{f}\n"
-      # C2: scratch inside the enforced partition. Two exemptions, both
-      # earned: lib/ is reached by `req` so build.zig never names it,
-      # and an application subtree is reached by its own build.id.
       inapp: bool = false
       adir: str = parent(f)
       while adir != ""
@@ -328,7 +227,6 @@ main: i64 = ()
       nneg = nneg + 1
     else(cls == "historical")
       nhist = nhist + 1
-      # C1: "unmaintained past-epoch evidence" that a gate still runs.
       if referenced
         nc1 = nc1 + 1
         if nc1 <= 12
@@ -410,7 +308,6 @@ main: i64 = ()
     sdead: str = dead:to(str)
     print("  !! {sdead} rule(s) match nothing. A rule that binds no file is not a rule.")
 
-  # C3 and C4 read the canonical partition's CONTENT, so they need the list.
   std.script.fs_write(listing, canon)
   listed: i64 = to(i64)(std.script.chomp(shell("wc -l < {listing}")))
   if listed == 0

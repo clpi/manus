@@ -1,6 +1,3 @@
-# path:mkdir / mkdirall / copy — verified BY VALUE (GAP-157: no std).
-#
-# exit 0 all good; 1..6 names the broken direction.
 
 base = "/tmp/duofsproof"
 

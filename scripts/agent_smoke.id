@@ -1,7 +1,3 @@
-# Agent tier-0 gate — Idol-native scripting.
-# Safe for parallel agent sessions; does NOT run bench/ml-bench/gpu-bench.
-# run: idol run scripts/agent_smoke.id
-# serialized: tools/node/dev/idol-lock -- ./zig-out/bin/idol run scripts/agent_smoke.id
 
 chomp: str = (text: str)
   if not text:len()

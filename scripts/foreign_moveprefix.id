@@ -1,6 +1,3 @@
-# Sidecar for foreign_census moveprefix — plain grep via sh() only.
-# The full census file triggers broken C-backend codegen when count+grep
-# share a function body; this minimal script keeps the classifier honest.
 
 chomp: str = (text: str)
   n = text:len()

@@ -1,18 +1,3 @@
-# Honest benchmark: Duo vs C on runtime-seeded, unfoldable workloads.
-#
-# ledger/perf contract: honest benchmark
-# oracle: honest: FAIL
-# negative: honest: PASS
-# verdict: no precomputation — runtime-seeded workloads only
-#
-# Duo replacement for scripts/run_honest_benchmark.sh (monoglot census).
-#
-# "Honest" is the whole point: inputs come from a runtime-seeded PRNG so the
-# compiler cannot constant-fold the work away. That failure mode is not
-# hypothetical # run_cross_benchmark reports "Duo vs C: 1221x faster" because
-# its fib(40) folds to a constant and it times an empty loop (789fb74).
-#
-# examples/bench_honest_c.c stays C: it is the baseline being measured.
 
 _RUNS = 5
 _SLACK = 1.03
@@ -38,8 +23,6 @@ _lpad: str = (s: str, w: i64)
     o = " " .. o
   o
 
-# `to(str)` on an f64 does not compile (undeclared `tostring`), so fixed-point
-# output is assembled from integers.
 _fx: str = (x: f64, places: i64)
   scale = 1
   i = 0
@@ -67,8 +50,6 @@ _known: bool = (name: str)
       return true
   false
 
-# Rows tagged `tag` as name->value. Used for both RESULT (correctness) and
-# Time (timing); keeping one reader means the two channels cannot drift.
 _rows: any = (text: str, tag: str)
   r = {}
   n = 0
@@ -114,15 +95,10 @@ main: i64 = ()
   dres = _rows(script.capture("HONEST_SEED=" .. seed .. " " .. dbin .. " 2>/dev/null"), "RESULT")
   cres = _rows(script.capture("HONEST_SEED=" .. seed .. " " .. cbin .. " 2>/dev/null"), "RESULT")
 
-  # A short RESULT set is a failed run wearing the costume of a passing one:
-  # with zero rows every comparison below is vacuously satisfied.
   for _i, p in { { "Duo", dres }, { "C", cres } }
     if p(2)("__n") != _ROWS:to(str)
       return _fail(p(1) .. " RESULT count mismatch: got " .. p(2)("__n") .. " expected " .. _ROWS:to(str))
 
-  # matmul and nbody are floating point and compared within 1e-9; the other
-  # four are integer checksums and must match EXACTLY. A blanket tolerance
-  # would let a wrong hash slide.
   checks = {
     { "matmul", "Matmul checksum", true },
     { "qsort", "Qsort checksum", false },
@@ -160,8 +136,6 @@ main: i64 = ()
         return _fail(pair(1) .. " timing run " .. to(str)(r + 1) .. " Time count mismatch: got " .. t("__n") .. " expected " .. _ROWS:to(str))
       for k, v in t
         if k != "__n"
-          # An unrecognised name means the corpus changed under the
-          # harness; silently binning it would drop a benchmark.
           if not _known(k)
             return _fail(pair(1) .. " timing run reported unknown benchmark: " .. k)
           fv = to(f64)(v)

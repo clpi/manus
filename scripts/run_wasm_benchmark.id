@@ -1,18 +1,3 @@
-# WASM runtime benchmark with a ratcheted wall-clock baseline.
-#
-# ledger/perf contract: wasm benchmark
-# oracle: wasm: FAIL
-# negative: wasm: PASS
-# verdict: wasmtime runtime oracle axis
-#
-# Duo replacement for scripts/run_wasm_benchmark.sh (monoglot census).
-#
-# Compiles examples/benchmark_wasm.lua to wasm32-wasi, runs it under every
-# runtime on PATH, checks correctness, times each, and gates against
-# benchmarks/wasm_baseline.txt: a runtime more than 10% slower than its
-# recorded time fails the build.
-#
-# Usage: idol run scripts/run_wasm_benchmark.id # [--reset-baseline] [--runs N]
 
 _BENCHES = 40
 _REGRESS_PCT = 10.0
@@ -36,9 +21,6 @@ _lpad: str = (s: str, w: i64)
         o = " " .. o
     o
 
-# `to(str)` on an f64 does not compile, so fixed-point comes from integers.
-# Negative values matter here: a delta percentage can be either sign, and
-# flooring a negative toward zero would report an improvement as a regression.
 _fx: str = (x: f64, places: i64)
     neg = false
     v = x
@@ -69,8 +51,6 @@ _fields: any = (l: str)
         if w != "" o[o:len() + 1] = w
     o
 
-# "RESULT <id> <value>" lines, joined, so two runtimes can be compared as one
-# string rather than field by field.
 _result_block: str = (text: str)
     out = ""
     n = 0
@@ -88,10 +68,6 @@ _result_count: i64 = (block: str)
             return to(i64)(f[2])
     0
 
-# Wall clock via time.monotonic. The shell version needed a two-stage
-# fallback # `/usr/bin/time -f %e`, and if that produced something
-# unparseable, bash's own TIMEFORMAT='%R' -- because GNU and BSD `time` differ.
-# An in-process clock has neither problem and no fork per sample.
 _wall_seconds: f64 = (cmd: str)
     t0 = std.time.monotonic()
     std.script.run(cmd .. " >/dev/null 2>&1")
@@ -188,8 +164,6 @@ main: i64 = ()
     print("=== Compiling benchmark to WASM ===")
     duo = "./zig-out/bin/idol"
     std.script.run(duo .. " compile " .. _SRC .. " --target wasm32-wasi -o " .. wasm)
-    # Existence is checked separately from the exit status: the compiler can
-    # report success and write nothing, or the wrong format (GAP-19).
     if !std.script.fs_exists(wasm)
         print("ERROR: WASM compilation failed — " .. wasm .. " not produced.")
         os.exit(1)
@@ -205,8 +179,6 @@ main: i64 = ()
         os.exit(1)
     print("  PASS All " .. _BENCHES:to(str) .. " RESULT lines present")
 
-    # Two runtimes disagreeing on a RESULT is a wasm codegen bug, not a
-    # performance note, so it fails before any timing is reported.
     if names:len() >= 2
         second = _result_block(std.script.capture(cmds[2] .. " 2>/dev/null"))
         if first == second
@@ -260,8 +232,6 @@ main: i64 = ()
                 .. _lpad(_fx(base, 3), 11) .. "  " .. _lpad(_fx(delta, 1) .. "%", 8)
                 .. "  " .. status)
 
-    # The baseline only moves on a PASSING run. Saving after a regression
-    # would ratchet the slowdown in and the gate would never fire again.
     if !gate_fail
         print("")
         _save_baseline(baseline, names, times, runs)

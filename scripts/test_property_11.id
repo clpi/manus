@@ -1,22 +1,3 @@
-# Property 11: the C backend emits C that a strict compiler accepts.
-#
-# Duo replacement for scripts/test_property_11.sh (monoglot census).
-#
-# Nine modules go through `duo dump-c` and then `clang -fsyntax-only -Wall
-# -Wextra -pedantic -std=c11`. Two of them additionally assert on the SHAPE of
-# the generated C: a native pointer index and a typed function parameter must
-# stay direct C, not degrade into boxed runtime calls.
-#
-# The corpus is deliberately written in the OLD surface # `function ... -> t`,
-# `local`, `then`, `while ... do`, `type X =`, `string.sub`, `tostring`. Those
-# are deny-list forms for new Duo, and that is exactly why they belong here:
-# this gate exists to prove the compiler still lowers what it accepts. Do not
-# "modernise" the corpus; it would stop testing the legacy paths.
-#
-# The sources are [[raw strings]], which take no interpolation. That matters:
-# every record literal below contains braces, and in an ordinary string
-# `{ x = 1, y = 2 }` would be read as a hole and rewritten (GAP-16 # the same
-# class of self-inflicted corpus damage that broke spec_conformance once).
 
 _TMP = "/tmp/duo-prop11"
 
@@ -27,10 +8,6 @@ clang: str = ()
     return "xcrun clang"
   "clang"
 
-# Emit one module and syntax-check its C. Returns the generated .c path, or
-# "" if the module did not survive. Failures are COUNTED, not fatal: the
-# shell version ran under `set -e` and aborted on the first bad module, so a
-# run told you about one failure at a time.
 _check_module: str = (name: str, src: str, cc: str)
   duo_file = _TMP .. "/" .. name .. ".id"
   c_file = _TMP .. "/" .. name .. ".c"
@@ -52,8 +29,6 @@ _check_module: str = (name: str, src: str, cc: str)
   print("ok   " .. name)
   c_file
 
-# A shape assertion on the emitted C. `grep -F` # fixed string, no regex #
-# because these patterns contain `(*f)` and `[i]`.
 _c_contains = (path: str, needle: str, why: str)
   if path == ""
     return
@@ -81,9 +56,6 @@ main: i64 = ()
 
   _check_module("bitwise", "function bits(a: i64, b: i64, s: i64) -> i64\n  local x: i64 = (a & b) | (a ~ b)\n  local y: i64 = (a & 65535) << s\n  local z: i64 = y >> s\n  return x + z + (~b)\nend\n\nlocal n: i64 = bits(123456, 7890, 3)\n", cc)
 
-  # A pointer index must stay a typed C index. If this degrades into a
-  # boxed runtime call the module still COMPILES, which is why the shape is
-  # asserted and !merely the exit status.
   ni = _check_module("native_indexing", "function pointer_read(xs: *i32, i: i64) -> i32\n  return xs[i]\nend\n", cc)
   _c_contains(ni, "return xs[i];", "native pointer indexing did not remain a direct typed C index")
 

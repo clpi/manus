@@ -1,140 +1,6 @@
-# The capability matrix, PER CAPABILITY.
-#
-# The two reports next door answer population questions.
-# scripts/capability_matrix.id asks "how far does the corpus get" and
-# scripts/capability_table.id asks "how far does each FIXTURE get". Neither
-# answers the question §22 is actually asked in review, which is "does THIS
-# capability work, and how far along the pipeline". A per-file table cannot
-# answer it, because one capability is demonstrated by several files and one
-# file demonstrates several capabilities.
-#
-# So the rows here are CAPABILITIES and the columns are the pipeline of §22:
-#
-#     lexical compatibility -> one canonical syntax graph -> one semantic graph
-#     -> relations/trie/worlds/demand/witnesses -> derived phase views
-#     -> representation choice -> native execution
-#
-#     D  described    the fixture states its intent: its FIRST line is a `--`
-#                     comment. A program with no statement of intent is a
-#                     program, not evidence. First line, not any line, so a
-#                     `-- x` buried at line 40 does not earn the rung.
-#     P  parsed       `duo fmt` exits 0 on a COPY of the fixture. fmt needs a
-#                     parse and nothing after it, which is the cleanest split
-#                     between the front end and sema this CLI offers — `duo
-#                     check` reports parse and sema failures through one
-#                     channel. ON A COPY because fmt REWRITES ITS ARGUMENT IN
-#                     PLACE and drops comments (gap[048]); a measurement must
-#                     not be able to write to what it measures.
-#     S  semantic     `duo check <f>` exits 0.
-#     G  graph        `duo graph <f>` exits 0, emits JSON, and that JSON
-#                     CONTAINS THE ROW'S DECLARED GRAPH KEY — the schema
-#                     string that would have to be present for the exported
-#                     semantic graph to be said to represent this capability.
-#                     The key is PRINTED with the row so the reader can judge
-#                     it. A row whose key is `-` declares that the graph
-#                     schema has NO slot for this capability at all, and its
-#                     cell is `?`, never a `✓`. See the G NOTES section: the
-#                     JSON carries no `edges` array for any fixture, so the
-#                     relation half of this pipeline stage is unexported
-#                     repo-wide and no row can honestly claim it.
-#     C  c path       `#emit exe` links, the binary RUNS without
-#                     hanging, AND its observable equals the value the fixture
-#                     DECLARES. Compiling is not running and running is not
-#                     answering. A fixture that declares nothing scores
-#                     `partial` here however cleanly it runs: it produced an
-#                     answer and nothing in the tree says the answer is right.
-#     N  native       `--backend=direct #emit exe` links and the binary runs.
-#                     ONLY `--backend=direct`: plain `duo compile` FALLS BACK
-#                     to C and still prints `ok compile`.
-#     W  witnessed    the two backends ran and AGREE on stdout and on exit
-#                     status. Under `native_only/` the C backend cannot
-#                     compile the program at all and is therefore not an
-#                     oracle, so the fixture's own `# expect-exit: N` is the
-#                     witness and the direct binary's exit status must equal
-#                     it. Same rule scripts/native_differential.id uses.
-#     H  hosted       the SELF-HOSTED front end accepts the fixture:
-#                     `std.compiler.parser.parse_status` — the Duo-written
-#                     parser running on the Duo-written lexer — returns 0.
-#                     This is the only column that asks a question about the
-#                     compiler written in Duo rather than the compiler written
-#                     in Zig, which is what "hosted" can mean today.
-#
-# A CELL IS AGGREGATED OVER THE ROW'S FIXTURES: every fixture reached it `✓`,
-# some reached it `partial`, none reached it `—`. A row with NO FIXTURE prints
-# `—` across and is named under NO FIXTURE, which is the most valuable line in
-# the report — it is the list of capabilities this repository asserts and has
-# never demonstrated.
-#
-# WHAT IS CURATED AND WHAT IS MEASURED. Someone has to say "this file
-# demonstrates recursion"; that judgement is the `rows` table below and it is
-# three columns of plain text you can read and check. Nothing else is
-# asserted. Every ✓ is the exit status or the stdout of a command run against
-# that file on this machine, and a listed fixture that does not exist is EXIT
-# 3 rather than a quietly shorter row.
-#
-# POSITIVE CONTROLS ARE MANDATORY AND BUILT IN, because a matrix like this
-# fails by reporting a confident all-✓, not by reporting something wrong.
-# Four controls run before the table is printed, and the table is not printed
-# if any of them does not fire:
-#
-#     syntax   a copy of a fixture with unparseable text appended — loses P
-#     type     a copy with a type error appended     — keeps P, loses S
-#     value    a copy whose `# expect:` is falsified — drops C from matched
-#              to merely-ran. Its baseline is checked first: the intact
-#              fixture must MATCH its own declared value, or falsifying it
-#              proves nothing.
-#     hosted   the self-hosted parser must not answer the same for every
-#              fixture. A pair comparison was tried here and was wrong; see
-#              the comment at the check.
-#
-# The value control is the one that matters most: it is the only thing between
-# this report and the class of defect §3 of CLAUDE.md was written about, where
-# a harness reported agreement it had not measured.
-#
-# DENY FIXTURES are the fifth, and they are real corpus files rather than
-# copies. A row may name fixtures that MUST BE REJECTED — the diagnostic is
-# the capability. They are reported in their own section, with the LAYER that
-# rejected them, and a deny fixture that is ACCEPTED fails the run. They are
-# also the reason the P and S columns are known to discriminate over real
-# corpus files rather than only over damaged copies.
-#
-# MEASURED CONTROL, 2026-08-08. Two corpus fixtures were deliberately broken
-# and the report caught both. `examples/layout/offside.id`'s `bump` changed
-# from `n + 10` to `n + 11`: exit 3, "does not match its own `# expect:`" —
-# it is the value control's baseline, so the report refused to run at all
-# rather than print a table whose C column it could no longer defend.
-# `examples/native_differential/rec4_return.id` given a `to(str)` concat the
-# direct backend refuses: the `record return` row went N ✓ -> partial and
-# W ✓ -> partial, and nothing else moved. Both were restored.
-#
-# HOW THIS RECONCILES WITH `zig build capability-matrix`, which is the
-# neighbouring report and reads `proven 86, checked 316` over 361 programs.
-# Two definitions differ ON PURPOSE and neither is a disagreement:
-#
-#   * its `native` is "the direct backend produced an object". This N also
-#     RUNS the binary, so N here is a subset of native there.
-#   * its `proven` is the STRICT differential and refuses `native_only/`
-#     outright, because the C backend cannot compile those programs and is not
-#     an oracle for them; it names the three fixtures in that gap. This W
-#     accepts the fixture's own `# expect-exit: N` there, which is what the
-#     BLOCKING gate `zig build native-differential` accepts. So W is looser
-#     than its `proven` on exactly `native_only/` and identical everywhere
-#     else. `parser_token_stream.id` is the visible case: `native, no C path`
-#     there, W ✓ here.
-#
-# Exit 0 pass · 1 a deny fixture was accepted · 3 the report could not run or a
-# control did not fire.
-#
-# Env: DUO, CAPROWS_JOBS, CAPROWS_TIMEOUT, CAPROWS_WORK.
 
 work = std.script.getenv("CAPROWS_WORK", "/tmp/duo-capability-rows")
 
-# name | graph key (`-` = the schema has no slot for this) | fixtures | deny
-#
-# The fixture lists are the curated half and the ONLY curated half. Read them
-# against the files: each named file must actually exercise the row's
-# capability, and a file that stops doing so should be removed rather than
-# have its row re-explained.
 rows = {
   {
     "implicit tail return",
@@ -244,47 +110,12 @@ rows = {
     {}
   }
 }
-# No fixture, deliberately — gap[059]. The two parsers in this tree
-# disagree about what `X@rel` MEANS: `lib/compiler/parser.id:1386`
-# projects `(anchor base name)`, which is the retrieval rule, while the Zig front
-# end folds infix `@` into MATMUL and `duo check` exits 0 on
-# `i64@to(str)` with a tensor deprecation warning before codegen dies on
-# an undeclared `to`. A fixture has to assert something, and either
-# reading it asserted would convert that disagreement into a claim. `—`
-# plus a NO FIXTURE line is what an undecided capability is worth.
-# The graph fact a tokenizer would have to carry is its TOKEN DESCRIPTOR.
-# Not `enum_shape`, which was the first key here and read `—`: the token
-# kinds in these fixtures are written `kind = { eof = 0, … }`, a data
-# descriptor, and the graph lifts an `enum_shape` only for the inline
-# case-set form. That is a real difference between two spellings of the
-# same idea, and it belongs in the caseset row rather than being papered
-# over by widening this key until it matches.
-# `-`, not `"kind":"table_shape"`. These three fixtures are POSITIONAL
-# tables (`t = { 10, 20, 30 }`) and the graph's `table_shape` is lifted
-# from DESCRIPTORS only: `duo graph` on table_const_index.id emits two
-# nodes, `module` and `main`, with `"table_shapes":[]`. There is no schema
-# slot for an anonymous table, so this is a `?` and !a `—`.
 
-# Every unique fixture, and every row's membership, are derived from `rows`.
-#
-# The four tables that hold them are LOCAL TO `main` and threaded through
-# `remember` as arguments. They were module-scope `x = {}` bindings, which is
-# the `mwrapper` deny row (`audit100` cannot tell a mutable accumulator from an
-# `M = {}` module wrapper), and nothing outside `main` ever read them — the
-# module scope was reach this file never used.
 nofixture = ""
 denyrows = ""
 denyfail = 0
 denytotal = 0
 
-# One newline-terminated block from a table of lines.
-#
-# NOT `lines:join("\n")`, which is the canonical spelling and MISCOMPILES here:
-# in a `str`-returning function it emits `lua_invoke(__fn, 2, duo_args)` with
-# neither identifier declared, and the C compiler rejects the whole program.
-# Before that it silently produced the string `nil`, so the shell probe was a
-# three-byte file and the sweep reported 0 records for 32 fixtures. Worth
-# keeping the note: the failure mode was a WRITTEN nil, not a crash.
 weave: str = (lines: any)
   out = ""
   for i, line in lines
@@ -297,10 +128,6 @@ remember = (files: any, seen: any, path: str)
     seen(path) = 1
     files(files:len() + 1) = path
 
-# A path flattened into a filename, so two fixtures with the same basename in
-# different directories cannot share a work file. `parser_native.id` and a
-# future `native_only/parser_native.id` would otherwise overwrite each other's
-# graph JSON and the row would read whichever finished last.
 slot: str = (path: str)
   out = ""
   i: i64 = 1
@@ -314,23 +141,6 @@ slot: str = (path: str)
     i = i + 1
   out
 
-# The per-fixture probe, emitted as shell for the same reason
-# scripts/capability_matrix.id emits one: measuring a fixture is six or seven
-# process spawns and Duo has no process pool. Duo still does every bit of the
-# REASONING — this writes seven digits and a path and decides nothing.
-#
-# EVERY STATUS IS READ WITHOUT A PIPE. `cmd | tail; echo $?` reads tail, and
-# that exact shape produced a false green in this session: `duo compile
-# #backend=direct` piped to `tail` reported 0 for a program the direct
-# backend had REFUSED, because the status belonged to tail. Unpiped, the same
-# command reports 1.
-#
-# ONE LINE PER TABLE ELEMENT, joined — not a `..` ladder. Two reasons and both
-# matter. The shell is READABLE this way, which is the point of writing it out
-# at all; and `..` beside a string literal is a CLAUDE.md §1 deny row that
-# `audit100` ratchets, so a 40-rung concatenation ladder in a `scripts/` file
-# costs the repo 97 deny hits for nothing. Measured: the ladder form of this
-# one function was the whole of this file's concatlit contribution.
 probetext: str = (duo: str, tprefix: str)
   lines = {
     "exitmatch() \{",
@@ -402,27 +212,8 @@ probetext: str = (duo: str, tprefix: str)
     "printf \"%s%s%s%s%s%s%s\\t%s\\n\" $des $par $chk $gra $cst $nat $wit \"$f\"",
     "rm -f $t.cb $t.db $t.co $t.ce $t.do $t.de $t.fmt.id"
   }
-  # fmt rewrites in place and deletes comments; the copy takes it.
-  # The declared answer, and which observable it is declared over.
-  # cst: 0 no C answer · 1 ran, nothing declared · 2 ran and matched.
-  # The witness. Under native_only the C backend is not an oracle and
-  # the fixture's own declared answer is; everywhere else it is
-  # agreement, on BOTH stdout and status, because a backend that returns
-  # the right code and prints the wrong text has still miscompiled.
   weave(lines)
 
-# The self-hosted front end, driven over a list file so the Duo-written parser
-# is loaded once rather than once per fixture. `global P = std.compiler.parser`
-# and the manual line walk are both copied from
-# scripts/parser_corpus_coverage.id, which is the only other caller and which
-# documents why the walk is by hand.
-#
-# THE GENERATED SOURCE CONTAINS NO `{`. It is a Duo string literal in a Duo
-# file, so a `{st}` written for the generated program is interpolated by THIS
-# program instead — the first version emitted `print("" .. st .. "\t" ..
-# path)` with `st` and `path` resolved here, where neither exists, and the C
-# compiler reported two undeclared identifiers inside a 2000-column literal.
-# Joining with `..` in the generated text keeps the two levels apart.
 hosttext: str = ()
   lines = {
     "global P = std.compiler.parser",
@@ -467,9 +258,6 @@ tab: i64 = (rec: str)
     i = i + 1
   i
 
-# Display-width padding. Every cell is seven columns wide, and every cell text
-# is ASCII or one of four fixed glyphs, so the pad is chosen by the glyph
-# rather than computed from a byte length that would be wrong for `✓` and `—`.
 cellof: str = (reach: i64, total: i64, gap: bool)
   if gap
     return "   ?   "
@@ -501,10 +289,6 @@ main: i64 = ()
   if not std.script.fs_exists(duo)
     print("capability_rows: FAIL — no compiler at {duo}; run `zig build`")
     return 3
-  # A matrix measured with yesterday's binary is a confident report about a
-  # build nobody has. capability_matrix.id caught a stale binary twice while
-  # it was being written; this is the same refusal, not a nested `zig build`,
-  # which would contend for the build cache lock.
   stale = script.chomp(script.capture("find src -name \"*.zig\" -newer {duo} 2>/dev/null | head -3"))
   if stale != ""
     print("capability_rows: FAIL — {duo} is older than src/; run `zig build`")
@@ -518,12 +302,6 @@ main: i64 = ()
 
   script.run("rm -rf {work} && mkdir -p {work}/w {work}/g {work}/c")
 
-  # Collect fixtures, and REFUSE a row that names a file that is not there.
-  # A missing fixture must not read as a shorter row; that is how a
-  # capability quietly stops being measured.
-  #
-  # Indexed interpolation is intentionally used below so this report cannot
-  # quietly regress to printing `{r[1]}` as literal text.
   for ri, r in rows
     for fi, f in r(3)
       if not script.fs_exists(f)
@@ -539,10 +317,6 @@ main: i64 = ()
     print("capability_rows: FAIL — no fixtures at all; the report is not wired")
     return 3
 
-  # THE THREE CONTROLS. Built from the corpus so they exercise the same
-  # probe, damaged in three different places so they fail three different
-  # columns. `ctlvalue` is derived from a fixture that DECLARES a value —
-  # without one there is nothing to falsify and the control would be vacuous.
   good = "examples/layout/offside.id"
   if not script.fs_exists(good)
     print("capability_rows: FAIL — the control source {good} is gone")
@@ -569,9 +343,6 @@ main: i64 = ()
   if script.status("sh {work}/probe.sh --oracle-control {oracleout} {oracleerr}") != 0
     print("capability_rows: FAIL — exit-oracle controls accepted matching status with stdout/stderr")
     return 3
-  # `xargs -n 2` so each worker gets the path AND its work slot; the slot is
-  # computed here rather than in shell because the shell form would need a
-  # `tr` per fixture and this one is exact.
   joined = ""
   for i, f in files
     joined = joined .. f .. "\n" .. slot(f) .. "\n"
@@ -591,8 +362,6 @@ main: i64 = ()
     print("capability_rows: FAIL — {got} records for {want} fixtures; the sweep lost files")
     return 3
 
-  # The hosted column. The self-hosted front end is compiled once; a rebuild
-  # costs about eight seconds and doing it per fixture would dominate the run.
   hostsrc = "{work}/hostprobe.id"
   hostbin = "{work}/hostprobe.bin"
   script.fs_write(hostsrc, hosttext())
@@ -615,9 +384,6 @@ main: i64 = ()
     print("capability_rows: FAIL — hosted probe answered {got} of {want}; H is not measured")
     return 3
 
-  # CONTROLS FIRST, table second. A report that prints its matrix before
-  # checking that it can detect a failure has already told the reader
-  # something it has not earned.
   cs = probe(ctlsyntax)
   ct = probe(ctltype)
   cv = probe(ctlvalue)
@@ -637,13 +403,6 @@ main: i64 = ()
     print("capability_rows: FAIL — the value control still MATCHES a falsified")
     print("  `# expect:`; the C column is not checking values. record {cv}")
     return 3
-  # H's control is that the column is NOT CONSTANT, not that a chosen pair
-  # differs. The pair form was tried and was wrong: it compared the syntax
-  # control against examples/layout/offside.id, which the self-hosted
-  # parser ALREADY rejects (it has not learned offside layout), so two
-  # correct rejections read as a broken probe. A column that answers the
-  # same thing for everything is the failure worth catching, and this
-  # catches it whatever the fixture list becomes.
   hostyes = 0
   hostno = 0
   for i, f in files
@@ -661,9 +420,6 @@ main: i64 = ()
   print("")
   print("  capability matrix, PER CAPABILITY, generated from fixtures")
   print("")
-  # The header is built from the same 7-wide, 1-space cell geometry as the
-  # body rather than typed as one literal, so a column cannot drift out from
-  # under its heading when a cell glyph changes width.
   head = "  " .. pad("capability", 24)
   rule = "  " .. pad("----------", 24)
   for i, cn in { "D", "P", "S", "G", "C", "N", "W", "H" }
@@ -677,9 +433,6 @@ main: i64 = ()
     gk = r(2)
     fs = r(3)
     nf = fs:len()
-    # A row with no fixture has nothing to say about the graph either. `?`
-    # means "measured, and the schema has no slot"; `—` means "nothing was
-    # measured". Printing `?` for an unfixtured row would claim the first.
     gapg = gk == "-" and nf > 0
     d = 0
     p = 0
@@ -697,8 +450,6 @@ main: i64 = ()
         p = p + 1
       if digit(rec, 3) == 1
         s = s + 1
-      # G asks two things and both must hold: the graph ran, and the
-      # key it would have to carry is in what it emitted.
       if digit(rec, 4) == 1 and std.script.status("grep -qF '{gk}' {work}/g/" .. slot(f) .. ".json 2>/dev/null") == 0
         g = g + 1
       if digit(rec, 5) == 2
@@ -709,10 +460,6 @@ main: i64 = ()
         w = w + 1
       if host(f) == "0"
         h = h + 1
-    # C is three-valued at the fixture too: matched a declared value, or
-    # merely ran. `partial` at the row can therefore mean "some fixtures
-    # matched" or "every fixture ran and none declared anything", and the
-    # C NOTES section below says which.
     cran = 0
     for fi, f in fs
       if digit(probe(f), 5) >= 1
@@ -724,10 +471,6 @@ main: i64 = ()
     if nf == 0
       nofixture = nofixture .. "    {nm}\n"
 
-    # A deny fixture is rejected when SEMA rejects it, and the row also
-    # records whether the PARSER did, because those are different claims
-    # about a diagnostic: an offside mis-indent that only sema catches has
-    # been caught by the wrong layer.
     for fi, f in r(4)
       denytotal = denytotal + 1
       rec = probe(f)
@@ -758,9 +501,6 @@ main: i64 = ()
     stdout:write(denyrows)
     print("")
 
-  # The G column's repo-wide caveat, measured rather than remembered. The
-  # pipeline stage these columns come from is "relations / trie / worlds /
-  # demand / witnesses"; the exported graph is nodes only.
   edges = 0
   for i, f in files
     if script.status("grep -qF '\"edges\"' {work}/g/" .. slot(f) .. ".json 2>/dev/null") == 0

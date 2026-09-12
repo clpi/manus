@@ -1,33 +1,6 @@
-# SH-10 — the symbol owner, proven BY VALUE and against the bootstrap.
-#
-# `lib/compiler/symbol.id` is the idol-native owner of C symbol emission.
-# This is its differential: the idol rule must answer what the bootstrap
-# answers, for every name that matters, and it must answer for names the
-# bootstrap has never seen.
-#
-# WHY A DIFFERENTIAL AND NOT A UNIT TEST. `law.differential`: old is oracle,
-# new is candidate, the differential judges. A unit test on the idol rule alone
-# would prove the rule is self-consistent, which is not the question. The
-# question is whether it agrees with the compiler that ships.
-#
-# THE SCHEME CHANGED, AND THIS FILE PINNED THE OLD ONE BY VALUE. It wanted
-# `duo_fn_<name>` / `duo_entry_main` / `<mod>__<name>` — `codegen.zig`'s C-path
-# scheme, from the RETIRED emitter. The host answers `idol_<home>__<name>` with
-# `main` bare (`home_resolve.relationSymbol`). Both this file and
-# `lib/compiler/symbol.id` are re-stated against that law, and two rows are ADDED
-# for the symbol alphabet, which the old scheme had no notion of.
-#
-# WHY THE ROWS ARE THE ROWS. Four of them are idol's OWN VOCABULARY — `case`
-# (§0.3), `union` (§0.5), `register` (§0b), `default` (the `?.` repair
-# spells `get(.y, default)`). Three are the libc names that BIND SILENTLY
-# rather than failing: `read`, `write`, `open`. `abs` is the one measured
-# returning libc's answer — `abs(21)` printed 21. `main` is the exception.
-#
-# Exit 0 pass · 1 a row disagreed · 3 the harness could not run.
 
 sym = symbol
 
-# Every row: the idol name, and the C symbol the rule must produce.
 names = {
   "case",
   "union",
@@ -57,9 +30,6 @@ main: i64 = ()
   print("  the idol-native symbol owner (SH-10), by value")
   print("")
 
-  # CONTROLS FIRST. A row printed before the rule is shown to discriminate is
-  # a number nobody should act on — and this file's whole claim is that the
-  # rule is not the identity function.
   if sym.module("compiler.lexer", "read") == "read"
     print("CONTROL FAILED: the rule is the identity — it mangles nothing")
     os.exit(3)
@@ -80,8 +50,6 @@ main: i64 = ()
     check(nm, "idol_compiler_lexer__{nm}")
     i = i + 1
 
-  # The exception, asserted separately because it is the one row that would
-  # silently pass if `symbol` returned the prefix for everything.
   check2: str = sym.symbol("compiler.lexer", "main")
   if check2 == "main"
     print("  ok   main -> {check2}   (the exception)")
@@ -89,8 +57,6 @@ main: i64 = ()
     print("  FAIL main -> {check2}, wanted main")
     fail = fail + 1
 
-  # A module name must NOT be prefixed twice: `<mod>__<name>` is already
-  # closed, and prefixing it again is the mistake this row exists to catch.
   mo: str = sym.module("wire", "read")
   if mo == "idol_wire__read"
     print("  ok   wire.read -> {mo}")
@@ -98,10 +64,6 @@ main: i64 = ()
     print("  FAIL wire.read -> {mo}, wanted idol_wire__read")
     fail = fail + 1
 
-  # THE SYMBOL ALPHABET. A home is a DOTTED path and a file name may hold
-  # anything the file system allows; a hyphenated file once emitted
-  # `.globl _idol_odd-name__f`, which the assembler refuses. Every byte outside
-  # [A-Za-z0-9_] becomes `_`, and this row is the only one that exercises it.
   dot: str = sym.module("compiler.lexer", "read")
   if dot == "idol_compiler_lexer__read"
     print("  ok   dotted home -> {dot}   (alphabet applied)")

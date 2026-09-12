@@ -1,4 +1,3 @@
-# output home — write relation via io world (no @c, no lua).
 
 say: i64 = (text: str)
   stdout:write(text)

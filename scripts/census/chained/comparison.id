@@ -1,38 +1,11 @@
-# Pass 57 C3 — corpus census for chained comparisons (`0 <= i < n`).
-#
-# C3 rules that the surface form stays behind the escape hatch unless corpus
-# frequency clears the bar, and that this be "a measurement, !a debate".
-# This is the measurement, in Duo so it is reproducible and so the repo stays
-# single-language.
-#
-# What counts as a site: `A op B and B op C` where the MIDDLE term is identical
-# on both sides of the `and` — that is the shape `0 <= i < n` would replace.
-# `a < b and c < d` is !a site; neither is `a < b and b == c` (only the
-# ordering operators <, <=, >, >= chain).
-#
-# Deliberately conservative: it counts only what the sugar would actually
-# absorb. A looser matcher would inflate the number and weaken the evidence.
-#
-# Run: CENSUS_PATHS="a.id b.id" idol run scripts/census/chained/comparison.id
-# Paths come from the environment, NOT argv: duo-compiled binaries do !# populate Lua's `arg` (it reads back nil), so an argv-driven script silently
-# scans nothing and reports a reassuring zero.
-# Prints one line per site plus a total. Exit 0 always — this reports, it does
-# !gate.
 
-# Bound with `req`, never called as the dotted `std.str.sub`: the dotted form
-# resolves through a loader that returns nil for a native-direct module, and
-# the call segfaults rather than erroring. Same defect that broke the Duo lexer.
 
-# Denominator for the ratio C3 is judged on. Counted by the same walk that
-# finds the sites, so numerator and denominator cannot drift apart.
 ands = 0
 files = 0
 
 idbyte: bool = (c: i64)
   c >= 97 and c <= 122 or c >= 65 and c <= 90 or c >= 48 and c <= 57 or c == 95 or c == 46
 
-# Scan left from `i` (1-based, inclusive) over an identifier/path, returning the
-# start index, or 0 when there is no identifier there.
 idstart: i64 = (s: str, i: i64)
   j = i
   while j >= 1 and idbyte(s:byte(j))
@@ -41,7 +14,6 @@ idstart: i64 = (s: str, i: i64)
     return 0
   j + 1
 
-# Scan right from `i` over an identifier/path, returning the end index, or 0.
 idstop: i64 = (s: str, i: i64)
   n = s:len()
   j = i
@@ -64,8 +36,6 @@ skipr: i64 = (s: str, i: i64)
     j = j + 1
   j
 
-# Length of an ordering operator at `i`, or 0. `==` and `~=` are NOT ordering
-# operators and must !match; `<=`/`>=` are checked before `<`/`>`.
 ordop: i64 = (s: str, i: i64)
   n = s:len()
   c = s:byte(i)
@@ -86,16 +56,13 @@ lineof: i64 = (s: str, upto: i64)
     i = i + 1
   ln
 
-# Count sites in one source, printing each.
 scan: i64 = (src: str, path: str)
   n = src:len()
   found = 0
   i = 1
   while i + 4 <= n
-    # locate " and "
     if src:byte(i) == 32 and src:byte(i + 1) == 97 and src:byte(i + 2) == 110 and src:byte(i + 3) == 100 and src:byte(i + 4) == 32
       ands = ands + 1
-      # LEFT of `and`: ... op B
       le = skipl(src, i - 1)
       bs = idstart(src, le)
       if bs > 0
@@ -106,20 +73,17 @@ scan: i64 = (src: str, path: str)
         if oplen == 0 and opl >= 1
           oplen = ordop(src, opl)
         if oplen > 0
-          # RIGHT of `and`: C op ...
           rs = skipr(src, i + 5)
           re = idstop(src, rs)
           if re > 0
             ao = skipr(src, re + 1)
             if ordop(src, ao) > 0
-              # middle terms must be the SAME token
               if src:sub(bs, le) == src:sub(rs, re)
                 found = found + 1
                 print("{path}:{lineof(src, bs)}  {src:sub(bs, le)}")
   i = i + 1
   found
 
-# Root sequence — paths from the environment.
 paths = os.env("CENSUS_PATHS")
 if not paths
   print("set CENSUS_PATHS to a space-separated list of .id files")

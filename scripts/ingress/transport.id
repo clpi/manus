@@ -1,4 +1,3 @@
-# Shared gate transport — Idol only. Stdin via stdin:read(). No os.args, no --backend=c.
 
 transport: str = ()
   text = stdin:read()

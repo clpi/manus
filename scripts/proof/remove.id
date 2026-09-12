@@ -1,8 +1,3 @@
-# path:remove — verified BY VALUE, both directions (GAP-157: no std).
-#
-# Each step returns on failure so later steps cannot overwrite the exit code.
-#
-# exit 0 all good; 1..5 names the broken direction.
 
 base = "/tmp/idolproofremove"
 

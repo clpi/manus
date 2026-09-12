@@ -1,14 +1,3 @@
-# test_plugin.id — verify the Neovim plugin files are structurally valid.
-#
-# Duo replacement for tests/test_plugin.sh (monoglot census).
-#
-# Checks the required files exist and that Neovim can load the ftdetect script
-# headless. Does NOT require Neovim: a missing nvim skips the live test and
-# still reports the file-existence results.
-#
-# The plugin's own .vim and lua/duo/init.lua stay as they are -- Neovim's
-# runtime reads vimscript and Lua, so those are a HOST requirement, the same
-# class as examples/metal_compute.m. A Duo file there would simply not load.
 
 _ROOT = "tests"
 
@@ -23,8 +12,6 @@ _bad = (msg: str)
   print("FAIL: " .. msg)
   _fail = _fail + 1
 
-# grep -c exits nonzero on no match, so the COUNT is what is read, not the
-# status: capture keeps stdout either way and "" means no match.
 _grep: bool = (pattern: str, path: str)
   n = script.chomp(script.capture("grep -cE \"" .. pattern .. "\" " .. path .. " 2>/dev/null"))
   n != "" and n != "0"

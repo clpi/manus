@@ -1,11 +1,3 @@
-# PROJECTION-ONE debt census (law.projection.one · law.gate.projection).
-#
-# Reports projection-related spellings in tracked .id. Classify before rewrite.
-#
-# Bootstrap shell ingress via gatecap (GAP-155) — not script / process.*.
-# Uses grep for patterns containing '(' — gatecap strips rg regex escapes.
-#
-# Run from repository root: idol run scripts/projection_census.id
 
 chomp: str = (text: str)
   if text:len() == 0
@@ -27,12 +19,6 @@ main: i64 = ()
     print("projection_census: fail no root — run from repository root")
     return 3
 
-  # GAP-220 / GAP-201. EVERY enumeration below is `git ls-files` at the HEAD OF
-  # A PIPELINE, so its exit status is destroyed before anything can read it:
-  # with a stale pathspec, or in a tree with no `.git`, every row reads 0 and
-  # this census prints a perfect, meaningless report. `gate/subject.sh` owns
-  # the ruling — a gate that examines zero subjects must FAIL — and this asks
-  # it in the one position where a status survives a pipe.
   if cap("sh gate/subject.sh '*.id' >/dev/null 2>&1; echo $?") != "0"
     print("projection_census: FAIL zero subjects — the census did not run (GAP-201)")
     return 3

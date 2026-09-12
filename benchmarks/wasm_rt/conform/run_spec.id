@@ -1,21 +1,3 @@
-# WebAssembly spec-conformance harness for ward.
-#
-# Duo replacement for benchmarks/wasm_rt/conform/run_spec.py (monoglot census:
-# this is TOOLING, not a fixture # a harness is a program).
-#
-# Converts each .wast in the official testsuite to JSON + .wasm via wast2json,
-# then replays every `assert_return` / `assert_trap` against ward, comparing to
-# the value THE SPEC ITSELF states # not to another runtime. That is the point:
-# a differential against wasmtime only proves agreement, not correctness.
-#
-# ward is driven through WARD_INVOKE / WARD_ARGS rather than CLI flags, so the
-# harness does not depend on ward's option parsing.
-#
-# Usage: WARD=/path/to/ward duo run run_spec.id # [suite] [--only a,b]
-#
-# The Python version used a ThreadPoolExecutor (--jobs). This runs serially:
-# the comparison is per-assertion and order-independent, so parallelism is a
-# speed choice, not a semantic one. #jobs is accepted and ignored.
 
 _MASK32 = 0xFFFFFFFF
 
@@ -39,9 +21,6 @@ _lpad(s: str, w: i64): str
         o = " " .. o
     o
 
-# True when bit pattern n is a NaN in type t. The spec gives NaN symbolically
-# ("nan:canonical" / "nan:arithmetic"); ward returns the bit pattern, so the
-# comparison has to happen in bits.
 _is_nan_bits: bool = (t: str, n: i64)
     if t == "f32"
         return (n & 0x7F800000) == 0x7F800000 and (n & 0x007FFFFF) != 0
@@ -50,10 +29,6 @@ _is_nan_bits: bool = (t: str, n: i64)
             and (n & 0x000FFFFFFFFFFFFF) != 0
     false
 
-# Spec values are UNSIGNED decimal strings; for f32/f64 they are IEEE bit
-# patterns. Comparing in the type's own width is what makes 4294967295 and -1
-# the same i32 # without the mask this harness reports false failures on every
-# negative result.
 _norm: str = (t: str, s: any)
     if type(s) == "table"
         parts = {}
@@ -66,9 +41,6 @@ _norm: str = (t: str, s: any)
     if t == "i32" or t == "f32" return to(str)(n & _MASK32) 
     n:to(str)
 
-# One argument as a scalar string. v128 lanes arrive as a list and are not
-# expressible through the env-var protocol; the caller reports those as
-# unrunnable rather than crashing or silently passing.
 _arg_str: str = (v: any)
     if type(v) == "table" return "" 
     v:to(str)
@@ -127,10 +99,6 @@ main: i64 = ()
                         if k == "module"
                             cur_mod = td .. "/" .. cmd.filename
                         else
-                            # Validation-only assertions need a validator entry
-                            # point, not an invoke. Counted as SKIPPED, never
-                            # as passing: silently passing them would inflate
-                            # the conformance number with tests never run.
                             act = cmd.action
                             runnable = (k == "assert_return" or k == "assert_trap")
                                 and act != nil and act.type == "invoke" and cur_mod != ""
@@ -152,7 +120,6 @@ main: i64 = ()
                                         .. argstr .. "' " .. ward .. " run " .. cur_mod
                                         .. " 2>/dev/null | tail -1")
                                     if k == "assert_trap"
-                                        # A trap must not produce a value.
                                         if out == ""
                                             ok = ok + 1
                                         else
@@ -168,15 +135,6 @@ main: i64 = ()
                                             et = exp[1].type
                                             want = _norm(et, exp[1].value)
                                             have = out
-                                            # EMPTY OUTPUT IS NOT ZERO.
-                                            # `to(i64)("")` returns 0, not nil,
-                                            # so an absent ward result would
-                                            # normalise to "0" and compare
-                                            # EQUAL to every expected zero.
-                                            # Measured: that inflated i32 from
-                                            # 10 pass to 135 against the Python
-                                            # original's 10. A missing answer
-                                            # must never satisfy an assertion.
                                             n = nil
                                             if out != "" n = to(i64)(out) 
                                             if n != nil
@@ -206,9 +164,6 @@ main: i64 = ()
 
     executed = tot_ok + tot_bad
     pct = 0
-    # Round, do not truncate: 10/374 is 2.673%, which the Python original
-    # prints as 2.7%. Truncating would report 2.6% and look like a
-    # divergence on every run.
     if executed > 0 pct = (tot_ok * 1000 + executed / 2) / executed 
     print("")
     print("executed " .. executed:to(str) .. " assertions: " .. tot_ok:to(str)

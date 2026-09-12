@@ -1,29 +1,4 @@
-# Cross-language benchmark: Duo (Lua AOT) vs C vs Lua vs LuaJIT.
-#
-# ledger/perf contract: cross benchmark
-# oracle: cross: FAIL
-# negative: cross: PASS
-# verdict: LuaJIT cross-language timing axis
-#
-# Duo replacement for scripts/run_cross_benchmark.sh (monoglot census).
-#
-# examples/benchmark_c.c and examples/benchmark_pure.lua stay as they are:
-# they are the OTHER LANGUAGES being measured. Converting them would delete
-# the comparison this script exists to make.
-#
-# The shell version carried five awk programs (time extraction, result
-# extraction, min-of-N, strict compare, loose compare, geometric mean). All of
-# them are ordinary Duo here, which is the point # the arithmetic a benchmark
-# reports should be readable in the same language as the benchmark.
 
-# 21, not 23. Time lines are read POSITIONALLY out of four programs, so this
-# list only stays correct while all four emit the same rows in the same order.
-# gap[096] removed Fibonacci(40) and Table array from the speed table of
-# examples/benchmark.lua, examples/benchmark_c.c and examples/benchmark_pure.lua
-# alike # Duo's codegen substitutes an O(n) iteration and an n(n+1)/2 closed
-# form for those two kernels, so the rows compared ALGORITHMS rather than
-# codegen. Their RESULT rows are untouched and still compared. Bitcount is not
-# in this table's first 23 at all.
 _BENCHES = 21
 _RUNS = 3
 _OUT = "/tmp/duo_cross_bench"
@@ -72,9 +47,6 @@ _lpad: str = (s: str, w: i64)
     out = " " .. out
   out
 
-# Six decimals, from integer millionths. `to(str)` on an f64 does not compile
-# (it lowers to an undeclared `tostring`), so every float shown here is
-# assembled from integers. Matches the shell version's %10.6f.
 _f6: str = (x: f64)
   n = to(i64)(x * 1000000.0 + 0.5)
   whole = n / 1000000
@@ -84,12 +56,6 @@ _f6: str = (x: f64)
     fs = "0" .. fs
   whole:to(str) .. "." .. fs
 
-# `to(f64)` is NOT a validating parse: to(f64)("Fibonacci(40)"), to(f64)("Time")
-# and to(f64)("seconds") all return 0.0, not nil. Testing `!= nil` to find "the
-# first numeric field" therefore matched the benchmark's NAME and reported
-# 0.000000 for all four languages # a table that looks like a measurement
-# instead of a parse failure. This is the shell awk's
-# ^[0-9]+(\.[0-9]+)?(e-?[0-9]+)?$ written out.
 _numeric: bool = (s: str)
   if s == ""
     return false
@@ -113,8 +79,6 @@ _lines: any = (text: str)
       out(out:len() + 1) = t
   out
 
-# "RESULT <name> <value>" -> a name->value table. This is the correctness
-# channel; the timing channel is separate and must not be confused with it.
 _results: any = (text: str)
   r = {}
   for _i, l in _lines(text)
@@ -124,26 +88,16 @@ _results: any = (text: str)
         r(parts(2)) = parts(3)
   r
 
-# Every numeric field on a line mentioning "Time". The shell awk took the
-# FIRST numeric field, so this does too # taking the last would silently
-# pick up an iteration count on some lines.
 _times: any = (text: str)
   ts = {}
   for _i, l in _lines(text)
     if l:find("Time", 1, true) != nil
-      # The benchmark separates its fields with TABS, not spaces:
-      # "Fibonacci(40) Time \t9.99e-07\tseconds". Splitting on " " alone
-      # yielded one unsplittable field per line, every time parsed as
-      # nil, and a table of 0.000000 across all four languages # which
-      # looks like a measurement rather than a parse failure.
       for _j, w in l:gsub("\t", " "):split(" ")
         if ts:len() < _BENCHES and _numeric(w)
           ts(ts:len() + 1) = to(f64)(w)
           break
   ts
 
-# Minimum across runs, per benchmark slot. The MINIMUM, not the mean: slow
-# samples are machine noise.
 _min_times: any = (cmd: str)
   best = {}
   r = 0
@@ -163,8 +117,6 @@ _is_int: bool = (s: str)
     return false
   to(f64)(to(i64)(v)) == v
 
-# Strict: integers must match exactly, floats within 1e-4. Duo must agree with
-# reference C or the gate fails # that is the whole contract.
 _compare_strict = (ref: any, got: any)
   bad = 0
   for k, a in ref
@@ -186,8 +138,6 @@ _compare_strict = (ref: any, got: any)
   else
     _fail = 1
 
-# Loose: Lua and LuaJIT are reported, never gating. Their float formatting
-# differs legitimately, so only integers are compared.
 _compare_loose = (label: str, ref: any, got: any)
   print("  C vs " .. label .. ":")
   bad = 0
@@ -226,9 +176,6 @@ main: i64 = ()
     print("cross_benchmark: FAIL — reference C did not compile")
     return 1
 
-  # Lua 5.5 removed math.pow; the corpus still calls it. Rewritten to `^`
-  # into a temp copy rather than edited in place # the corpus is shared
-  # with the LuaJIT run and with other harnesses.
   fixed = _OUT .. "/benchmark_pure.lua"
   std.script.run("sed 's/math\\.pow(\\(.*\\), \\(.*\\))/\\1 ^ \\2/g' examples/benchmark_pure.lua > " .. fixed)
 
@@ -282,9 +229,6 @@ main: i64 = ()
       if name == nil
         name = "bench-" .. i:to(str)
       print(_pad(name, 16) .. " " .. _lpad(_f6(d), 10) .. " " .. _lpad(_f6(c), 10) .. " " .. _lpad(_f6(l), 10) .. " " .. _lpad(_f6(j), 10))
-      # Geometric mean of the ratios: the mean of logs, exponentiated.
-      # An arithmetic mean of speedups is dominated by whichever
-      # benchmark happens to be most lopsided.
       if d > 0.0 and c > 0.0
         dc = dc + c / d:log()
         dl = dl + l / d:log()

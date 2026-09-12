@@ -1,29 +1,3 @@
-## TEACHING-STATUS: canonical
-# gate/idiom — staged-diff MIGRATION PREFLIGHT only. NOT semantic authority.
-#
-# File is the body of gate.idiom — no main, no idiom = { } wrapper.
-# Canonical external invocation when parent gate state matters: gate:idiom(diff).
-#
-# Gate transport: Idol only — stdin via stdin:read(). No os.args, no --backend=c.
-#   git diff -U0 ... | idol run gate/idiom.id
-#
-# Gate scan law (agents: AGENTS.md § Gate scan boundaries):
-#   NEVER mash relation + boundary: auditq, routeq, rulesq, ruleq, scanq, judgeq are forbidden.
-#   Decompose: audit(q)(...), route(q)(...), eq(q)(...), rule(q)(...), scan(q)(body).
-#   Loud variants are separate bindings: audit(...), route(...), eq(...), rule(...), scan(...).
-#   Phase owners stay one word: lex, face, realm, term, deny, edge, home, adj — not auditqpre.
-#   NEVER fake world/selector currying: hit(io), dot(io), dot(os), dot(std) are forbidden.
-#   Text scans orient on possessed subject code: code:has(...) plus call-boundary checks via nsdot.
-#   len(path) = (min: i64) — path string boundary; call path:len(min).
-#   audit(path) = (pattern: str) — required pattern; call path:audit(pattern).
-#   hit(path) = (pattern: str) — forbidden pattern; call path:hit(pattern).
-#   scan(q)(body) — q is the quiet boundary; call scan(q)(body) in controls.
-#   audit(q)(path, no, line) — quiet added-line audit; audit(path, no, line) prints.
-#   route(q)(path) — quiet path-home audit; route(path) prints.
-#   eq(q)(where, name) — quiet path-component check; eq(where, name) prints.
-#   rule(q)(path, no, code, pat, law, fix) — quiet pattern row; rule(...) prints.
-#   rules(q)(path, no, code) — quiet rule bundle; rules(path, no, code) prints.
-#   Never scandiff / scanline / diffhead / bareend / flat len(path, min).
 
 transport: str = ()
   text = stdin:read()
@@ -33,29 +7,15 @@ transport: str = ()
     return ""
   text
 
-# Runs a POSITIVE CONTROL before any verdict.
 
-# Pattern rows live in rules() — no module-level keyed table (direct-native).
 
 word: bool = (c: str)
   alpha(c) or upper(c) or digit(c) or c == "_"
 
-# Worlds (io, os) are authority — never namespace.method(). One word per binding;
-# world and owner are arguments across the relation, not mashed into the name.
-# Exception: bootstrap foreign ingress in scripts/ingress/* only (GAP-155).
-# Operation-first conversion projection at a call site — not declaration head.
 commentline: bool = (code: str)
   s = strip(code)
   s:len() >= 1 and s:sub(1, 1) == "#"
 
-# Detector homes may quote forbidden sigils. `@` IS THE CURRENT-WORLD ACCESSOR
-# (docs/spec/law.md §4): bare `@` is the current world, `@member` accesses a
-# world member (`@target`, `@env`), `@member = v` mutates a member place,
-# postfix `thing@world` / `thing@` qualifies, `@{ k = v }` injects, `@(` evals,
-# `@@` is diff. INVALID: `@.member` and `@:member` — `@` already accesses, so
-# there is no `@.` namespace step and no `@:` subject dispatch. Retired
-# host-escape directive spellings — @comp @c @host @runtime @emit @asm — are not
-# world members and stay forbidden.
 cited: bool = (path: str)
   path:len() >= 5 and path:sub(1, 5) == "gate/"
 
@@ -125,9 +85,7 @@ dot__os = (code: str)
 dot__std = (world: str, code: str)
   code:find("std." .. world, 1, true)
 
-# Needle membership is subject-first only: hay:has(needle). Never has(hay, needle).
 
-# Subject-first law: scanned source must use subject:rel(...), never rel(subject) or world:rel(...).
 subject__has = (code: str)
   callfirst("has(", code)
 
@@ -424,7 +382,6 @@ adj: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, "[[", "lexical", "use \\\" text \\\" — double quotes admit multiline content", quiet)
   hits
 
-# lowercase letter, for the LAW-ONE [a-z]_[a-z] check
 alpha: bool = (c: str)
   c >= "a" and c <= "z"
 
@@ -434,7 +391,6 @@ upper: bool = (c: str)
 digit: bool = (c: str)
   c >= "0" and c <= "9"
 
-# true when code introduces a Lua dash comment outside strings
 dash: bool = (code: str)
   n = code:len()
   quote = ""
@@ -462,9 +418,6 @@ dash: bool = (code: str)
     i = i + 1
   false
 
-# Strip comments and string bodies so a rule cannot fire on prose or on this
-# file's own rule table. Quotes are replaced by spaces, not removed, so column
-# numbers stay true.
 strip: str = (line: str)
   out = ""
   n = line:len()
@@ -487,9 +440,6 @@ strip: str = (line: str)
     i = i + 1
   out
 
-# LAW-ONE has no spelling exemptions. Qualification belongs to levels and
-# homes; an underscore in idol source is migration debt regardless of where it
-# occurs in an identifier.
 under: bool = (code: str)
   n = code:len()
   i = 1
@@ -499,8 +449,6 @@ under: bool = (code: str)
     i = i + 1
   false
 
-# Uppercase is not a descriptor convention in idol. Cases, descriptors,
-# bindings, homes, relations, and generated identities share the same law.
 capital: bool = (code: str)
   n = code:len()
   i = 1
@@ -536,7 +484,6 @@ token: bool = (code: str, sought: str)
     i = i + 1
   false
 
-# Concatenation with `..` is forbidden everywhere — use `{}` interpolation.
 bridge: bool = (code: str)
   n = code:len()
   quote = ""
@@ -560,7 +507,6 @@ bridge: bool = (code: str)
     i = i + 1
   false
 
-# Operation-first relation call — rel(...), never rel(subject). Subject-first: subject:rel(...).
 callfirst: bool = (needle: str, code: str)
   if commentline(code) or docline(code)
     return false
@@ -579,7 +525,6 @@ callfirst: bool = (needle: str, code: str)
     i = i + 1
   false
 
-# Relation declaration head read(number) = or gate boundary len(path)(min) — not a call site.
 callfirstrel: bool = (rel: str, code: str)
   needle = "{rel}("
   if not callfirst(needle, code)
@@ -595,7 +540,6 @@ callfirstrel: bool = (rel: str, code: str)
       return false
   true
 
-# eq() at value call sites — path admission is route/eq(q) only; relation store is eq(desc)(desc) =.
 subject__eq = (code: str)
   if commentline(code) or docline(code)
     return false
@@ -622,7 +566,6 @@ subject__eq = (code: str)
     i = i + 1
   false
 
-# Scan past whitespace after the RHS place name and detect an arithmetic op.
 opafter: bool = (code: str, k: i64)
   n = code:len()
   pos = k
@@ -634,7 +577,6 @@ opafter: bool = (code: str, k: i64)
       return true
   false
 
-# true when code uses place = place op value instead of canonical place op= value
 expand: bool = (code: str)
   n = code:len()
   i = 1
@@ -661,7 +603,6 @@ expand: bool = (code: str)
     i = i + 1
   false
 
-# a bare `end` occupying its own line
 bare: bool = (code: str)
   t = ""
   n = code:len()
@@ -711,7 +652,6 @@ digitonly: bool = (name: str)
     i = i + 1
   true
 
-# numeric suffix taxonomy on a path word. Subject-first: name:tail().
 tail: bool = (name: str)
   if admitted(name) or digitonly(name)
     return false
@@ -850,9 +790,6 @@ route: i64 = (path: str)
     hits = hits + eq("{path}:", part)
   hits
 
-# CATALOG-ZERO: do not probe deleted registry paths. path:exists is
-# IMPLEMENTATION-BLOCKED on direct native; absence of the fact is the
-# ratchet. This seed proves the gate still carries the two laws.
 seed: bool = ()
   body = "gate/idiom.id":read()
   if not body
@@ -1048,7 +985,6 @@ term: i64 = (path: str, no: i64, code: str, quiet: bool)
       pi = pi + 1
   hits
 
-# the decimal number starting at i
 num: i64 = (s: str, i: i64)
   v = 0
   n = s:len()
@@ -1139,16 +1075,12 @@ feed: i64 = (body: str, quiet: bool)
 scan__q = (body: str)
   feed(body, true)
 
-# Scan ONLY THE LINES THIS DIFF ADDS. Path stems judged on NEW/RENAMED paths only.
 scan: i64 = (body: str)
   feed(body, false)
 
 probescan: i64 = (body: str)
   scan__q(body)
 
-# POSITIVE CONTROL. Every detector must fire on a line built to trip it, and
-# must stay silent on a canonical line. A gate that cannot convict its own
-# exhibit reports 0 because it is broken, not because the tree is clean.
 control: bool = ()
   ok = true
   if not bare("    end")

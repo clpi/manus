@@ -1,5 +1,3 @@
-# APPLICATION-CONSUMER-ZERO — per-field provenance audit for lowering.
-# Entry application: i64 = ().
 
 seen: bool = (text: str, needle: str)
   n = text:len()
@@ -11,9 +9,6 @@ seen: bool = (text: str, needle: str)
     i = i + 1
   false
 
-# A ROW THAT CANNOT FAIL IS NOT EVIDENCE. This returned 0 unconditionally, so
-# the ledger could print PASS while listing surviving reconstruction. The rows
-# now report, and the verdict names accessor readiness and closure separately.
 debtrow: i64 = (label: str, needle: str, text: str)
   if seen(text, needle)
     print("  open {label} still reconstructed ({needle})")
@@ -65,11 +60,6 @@ application: i64 = ()
   if seen(lower, "applicationSubject") and seen(backend, "applicationSubject")
     print("  ok   subject consumed via graph.applicationSubject")
   print("FACT-CARDINALITY-ONE")
-  # THE UNION IS THE FACT; THE FILE IT SITS IN IS NOT. Grepping only
-  # semantic_graph.zig reported "Card union missing" the moment the union moved
-  # to semantic_identity.zig behind a re-export -- a behaviour-preserving code
-  # move failing a ledger whose whole subject is not reconstructing semantics
-  # from text.
   card = seen(graph, "pub const Card = union") or seen(identity, "pub const Card = union")
   if card
     print("  ok   Card unknown/none/one on ApplicationFact")
@@ -86,17 +76,6 @@ application: i64 = ()
   debt += debtrow("subject backend", "fact.subject", backend)
   debt += debtrow("subject query", "return fact.subject", query)
   debt += debtrow("native_ir subject", "fact.subject", "src/native/ir.zig":read())
-  # THE ROW THAT COULD NOT PASS. This grepped src/sema.zig for the string
-  # "applicationFact" -- which is that file's OWN accessor definition, present
-  # by construction -- so it reported open forever and was the sole reason the
-  # ledger printed "closure OPEN". It measured SHC (is sema gone yet) and not
-  # consumer reconstruction (does anything downstream read a host-shaped fact),
-  # which is what this ledger is for. A row whose only zero is the deletion of
-  # the checker is not a worklist row.
-  #
-  # The consumer question, asked of the consumers: exactly two call sites read
-  # `checked.applicationFact`, both in the graph lift, so the host-shaped fact
-  # has ONE producer-side ingress and no downstream reader. These rows can move.
   debt += debtrow("sema fact in lowering", "applicationFact(", lower)
   debt += debtrow("sema fact in backend", "applicationFact(", backend)
   if !seen(lower, "applicationArguments")
@@ -106,41 +85,16 @@ application: i64 = ()
   if !seen(lower, "applicationArguments")
     debt += 1
   print("checked-path DNIR identity (GAP-137)")
-  # "an empty application census cannot authorize an identity-free call_direct
-  # or callee-text selection" -- so the readiness predicate must know whether
-  # the module was lowered with graph facts required, and must refuse a
-  # call_direct with no occurrence when it was. `moduleIsChecked` derives that
-  # from the resident graph the module already carries; it is not a new field.
   ir = "src/native/ir.zig":read()
   fail += graphok("checked module derived from graph", "fn moduleIsChecked", ir)
   fail += graphok("identity-free call refused when checked", "if (checked) return false;", ir)
   fail += graphok("checked target continuity", "applicationTarget(application) != i.target", ir)
   fail += graphok("checked provenance continuity", "applicationProvenance(application) == null", ir)
   print("syntax backdoors below resolution")
-  # A shape member's descriptor came from re-resolving the AST AliasDef behind
-  # `ast_ref` whenever the graph had none -- a consumer recovering a fact from
-  # the spelling (law.fallback.zero).
-  # THE NEEDLE IS THE CONSTRUCT, NOT THE NAME. Grepping the helper's name
-  # matched the tombstone comment that records its deletion, so removing the
-  # backdoor left the row open. The backdoor IS the cast: taking a graph
-  # `ast_ref` back to a descriptor declaration.
   debt += debtrow("descriptor from shape AST", "ast.AliasDef = @ptrCast", lower)
   print("bootstrap faces still selected by callee text (GAP-155)")
-  # THE ROW THAT KEEPS THIS LEDGER HONEST. Deleting the callee-text escape from
-  # the readiness predicate did not delete callee text from lowering: the
-  # GAP-155 subject faces still emit a call_direct whose only identity is the
-  # symbol string, because the graph publishes no application for them. A
-  # verdict of CLOSED while `text:tail()` lowers to a bare symbol would be this
-  # file's own complaint -- a row that cannot fail -- wearing the other sign.
-  #
-  # The needle is the EMITTER, because the emit it performs is the debt and a
-  # needle carrying the symbol string would have to spell a quote inside a
-  # string. This row closes when the graph publishes an application for the
-  # subject tail relation and the checked path answers it.
   debt += debtrow("subject tail", "fn lowerSubjectTail", lower)
   print("one refusal names one cause")
-  # Three independent orelse choices across two diagnostics emitted the
-  # occurrence of one refusal beside the missing fact of another.
   debt += debtrow("cause splice in DNB formatter", "diag.lowering.note() orelse diag.note()", backend)
   fail += graphok("one selected cause", "fn selectedCause", backend)
   if fail
@@ -150,11 +104,5 @@ application: i64 = ()
     print("ledger/application: accessors PASS, closure OPEN ({debt} reconstruction row(s))")
     print("APPLICATION-CONSUMER-ZERO is NOT satisfied; accessors exist, consumers still reconstruct")
     return 0
-  # AND WHAT THIS LEDGER CANNOT SEE, so a zero here is never read as closure of
-  # the gap: sema remains the checker and `sema.ApplicationFact` remains
-  # host-shaped (two producer-side call sites, no downstream reader -- that is
-  # an SHC frontier, not consumer reconstruction); `ast_ref` still crosses as a
-  # provenance KEY at nine sites, which is a bridge with an owner, not a
-  # backdoor. Rows measure text, and text is not the graph.
   print("ledger/application: accessors PASS, every measured row CLOSED")
   0

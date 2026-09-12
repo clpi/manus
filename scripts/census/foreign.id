@@ -1,5 +1,3 @@
-# U8 foreign census. Entry census: i64 = ().
-# Direct backend only. Includes *.lua in population. No --backend=c.
 
 chomp: str = (text: str)
   n = text:len()

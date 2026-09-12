@@ -1,14 +1,3 @@
-## TEACHING-STATUS: canonical
-# gate/admission — semantic-admission firewall for canonical native operations.
-#
-# Every ADDED canonical line operation must classify as exactly one of:
-#   canonical.relation | descriptor.application | grammar.face | world.projection
-#   foreign.provenance | compatibility.operation
-# Anything else fails closed.
-#
-# Authority: C0 §67 law.binding.census · law.gate.algebra · law.lua.redirect
-# Transport: stdin unified diff (added lines only), Idol only.
-# Relation census projection: gate/catalog.id (documentation; lookups below — no req).
 
 transport: str = ()
   text = stdin:read()

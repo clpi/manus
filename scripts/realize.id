@@ -1,48 +1,3 @@
-# The realization plan + persistent semantic cache gate.
-#
-# PORTED from the deleted realization tests (158 lines, 6 tests) and
-# the codegen-realization tests (55 lines, 1 test), both deleted in
-# the same commit. Every one of those tests drove Lexer -> Parser -> sema ->
-# realization.buildFromGraph / compile_semantic_cache.refreshFromCheckedModule
-# IN PROCESS and asserted on Zig structs. Two shipping verbs already print
-# exactly that state, so the port asserts the CLI:
-#
-#   duo explain  -> realizations (the plan), optimization_outcomes (what
-#                   codegen actually did with it), knowledge_snapshot
-#                   (the shape fingerprint)
-#   duo realize  -> reuse_audit (fresh / reused / invalidated),
-#                   persistent_state (the cache entries, with `stale`),
-#                   invalidation (the edges, with their kind)
-#
-# The Zig originals, and where each landed:
-#
-#   module plan selects native aggregate for sealed Point  -> R1
-#   persistent reuse rejects fingerprint drift             -> R3
-#   fingerprint changes when shape identity changes        -> R2
-#   merge reports invalidated on fingerprint drift         -> R3
-#   compile cache refresh reuses then invalidates          -> R3, R4
-#   entity removal marks stale cache entry                 -> R5
-#   codegen logs realization.representation for Point      -> R6
-#
-# WHAT THE PORT NEEDED FROM THE COMPILER. `optimization_outcome.writeJson`
-# printed only `reason`, a prose string, while the outcome record already
-# CARRIED `entity`, `before_repr` and `after_repr`. The Zig test asserted the
-# last two by field, so from outside the process they had to become fields:
-# that projection landed in the same commit and changed no semantics.
-#
-# WHY THE RUNS ARE SANDBOXED. The persistent cache is
-# `.id/cache/semantic/state.json` RELATIVE TO CWD, and the fresh -> drift ->
-# removal sequence is the assertion — a stale entry from an earlier run, or a
-# concurrent session compiling in the repo root, would decide the answer. The
-# gate builds an empty directory and runs every `duo realize` from inside it,
-# so the cache it reads is the one it wrote.
-#
-# WHAT THE PORT COULD NOT KEEP. Two Zig tests reached functions no verb calls:
-# `semantic_fingerprint.compute` on two synthetic descriptor_deps strings, and
-# `persistent_semantic_state.canReuse` on a hand-built Entry. Both are the
-# SAME fact one layer down from what R2 and R3 assert through real modules —
-# a shape change moves the fingerprint, and a moved fingerprint refuses reuse
-# — so the coverage is kept and only the synthetic inputs are lost.
 
 here(): str
     std.script.chomp(std.script.capture("pwd"))
@@ -60,9 +15,6 @@ present(path: str): bool
     std.script.status("test -e {path}") == 0
 end
 
-# One `duo realize` run, captured. Captured rather than re-run per assertion
-# because each run MUTATES the cache: greping the same command three times
-# would advance the fresh/invalidated sequence three times.
 record(bin: str, dir: str, fixture: str, out: str): bool
     std.script.status("cd {dir} && {bin} realize {fixture} >{out} 2>/dev/null") == 0
 end
@@ -71,14 +23,10 @@ explained(bin: str, fixture: str, out: str): bool
     std.script.status("{bin} explain {fixture} >{out} 2>/dev/null") == 0
 end
 
-# Does a captured JSON document hold `want`? Split on commas first so a
-# field's own value cannot be matched across a neighbouring field.
 held(path: str, want: str): bool
     std.script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
 end
 
-# The FIRST fingerprint in an explain document: the sealed record's shape
-# identity. Two modules differing only in a field must not agree here.
 mark(path: str): str
     std.script.chomp(std.script.capture("tr ',' '\\n' < {path} | grep -o '\"fingerprint\":\"[0-9a-f]*\"' | head -1"))
 end
@@ -89,13 +37,11 @@ main: i64 = ()
     dir = "/tmp/duo-realize-gate"
     bad = 0
 
-    # CONTROL 1 — the runner convicts.
     if std.script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
     end
 
-    # CONTROL 2 — the compiler is here.
     if !present(bin)
         shout("FAIL — no compiler at {bin}; run `zig build` first")
         bad += 1
@@ -105,8 +51,6 @@ main: i64 = ()
     two = "{root}/examples/realization_point_v2.id"
     gone = "{root}/examples/realization_norecord.id"
 
-    # CONTROL 3 — the fixtures are here. Held over a missing file is false for
-    # every want, which reads as a wall of real failures.
     if !present(one)
         shout("FAIL — missing fixture {one}")
         bad += 1
@@ -125,21 +69,17 @@ main: i64 = ()
         bad += 1
     end
 
-    # The plan, and what codegen did with it. One explain run, two ports.
     plan = "{dir}/plan.json"
     if !explained(bin, one, plan)
         shout("FAIL — `duo explain` did not run on the sealed-record fixture")
         bad += 1
     end
 
-    # CONTROL 4 — held() can answer NO. Without this a grep that has stopped
-    # matching, or an explain that has stopped printing, scores a clean sweep.
     if held(plan, "duo-realize-this-string-does-not-exist")
         shout("FAIL — control: held() matched a string that is not in the output")
         bad += 1
     end
 
-    # R1 — one representation variable; storage class does not select or catalog.
     if !held(plan, "\"variable_count\":1")
         shout("FAIL — R1: the sealed record produced no realization variable")
         bad += 1
@@ -161,7 +101,6 @@ main: i64 = ()
         bad += 1
     end
 
-    # R6 — C-emit must not log a representation it does not own.
     if held(plan, "\"transformation\":\"realization.representation\"")
         shout("FAIL — R6: C-emit logged a representation it did not own")
         bad += 1
@@ -171,8 +110,6 @@ main: i64 = ()
         bad += 1
     end
 
-    # R2 — shape identity moves when the shape moves. A third field on Point
-    # must change the fingerprint the snapshot publishes.
     drift = "{dir}/drift.json"
     if !explained(bin, two, drift)
         shout("FAIL — R2: `duo explain` did not run on the drifted fixture")
@@ -189,8 +126,6 @@ main: i64 = ()
         bad += 1
     end
 
-    # R3 — an empty cache admits the entry FRESH; the same entity at a drifted
-    # shape is INVALIDATED, and the reason names the fingerprint.
     fresh = "{dir}/fresh.json"
     if !record(bin, dir, one, fresh)
         shout("FAIL — R3: `duo realize` did not run on the sealed-record fixture")
@@ -205,7 +140,6 @@ main: i64 = ()
         bad += 1
     end
 
-    # R4 — and the drift raises exactly one fingerprint_change edge.
     stale = "{dir}/stale.json"
     if !record(bin, dir, two, stale)
         shout("FAIL — R4: `duo realize` did not run on the drifted fixture")
@@ -228,9 +162,6 @@ main: i64 = ()
         bad += 1
     end
 
-    # R5 — realizing a module the entity has LEFT marks the cached entry stale
-    # and raises an entity_removed edge. This is the one assertion that needs
-    # the two runs above to have happened first, in this cache.
     dropped = "{dir}/dropped.json"
     if !record(bin, dir, gone, dropped)
         shout("FAIL — R5: `duo realize` did not run on the record-free fixture")

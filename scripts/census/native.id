@@ -1,48 +1,4 @@
-# BAIL CAUSES ARE LAYERED, AND A RANKING OF THEM IS NOT A WORKLIST.
-#
-# The precheck reports the FIRST refusal and stops. `pass12_m1_bench` reports
-# `runtime-global:os`; neutralize `os.clock()` and the SAME PROGRAM reports
-# `runtime-global:string`; neutralize that and it reports `lowerBinop —
-# concat`. One program, three causes, one line of output.
-#
-# So counting first-reported causes measures CHECK ORDER, !work. Measured
-# 2026-08-09: a triage built that way called `runtime-global:string` seven
-# programs when it is the first cause of ZERO, and sized a cluster at eleven
-# when it was three. Two agents dispatched off that ranking independently found
-# it wrong, and both spent their first hour discovering the same thing.
-#
-# If you need a worklist, peel: fix the reported cause, re-measure, record what
-# appears underneath. A row is only actionable when its LAST cause is known.
 
-# The native census — coverage over the REACHABLE set, !the file count.
-#
-# "Native 100%" was unmeasurable, for three reasons this gate fixes.
-#
-#   1. `duo compile` FALLS BACK to the C backend and reports `ok compile`, so a
-#      naive sweep scores ~100% and means nothing. Only #backend=direct is an
-#      honest native answer.
-#   2. Most files under examples/ have no entry point at all. Counting them as
-#      failures put the real number at 1/60 in an earlier reading; the real
-#      denominator is the programs that BUILD, !the files that exist.
-#   3. Some programs cannot be native BY CONSTRUCTION. A compiler proof fixture
-#      whose body is `global C = compiler.emit_c` exists to drive the C
-#      emitter — asking it to compile to native ARM64 is asking a test of the C
-#      backend to stop using the C backend. 14 of them are in the corpus, and
-#      counting them made a 90% ceiling look like a 61% failure.
-#
-# So the census reports three numbers, and the RATIO IS OVER THE REACHABLE SET.
-# A program is unreachable when it binds a `compiler.*` module — EITHER as
-# `global A = compiler.arm64` OR as `L = lexer`. Both
-# spellings mean the same thing: this program's purpose is exercising the
-# compiler's own emitter, which is !a native-lowering target.
-#
-# The `req` spelling was missed at first, and four compiler proofs sat in the
-# BAIL bucket looking like a worklist row (`mod-top-stmt:global_decl`) when
-# they were never reachable. A denominator is only honest if its exclusion
-# rule covers every spelling of the thing being excluded.
-#
-# NATIVE_FLOOR (default 88) ratchets: a fix raises it, a regression fails the
-# gate. Exit 0 pass, 1 below the floor, 3 the census could !run.
 
 chomp: str = (text: str)
   n = text:len()
@@ -78,9 +34,6 @@ census: i64 = ()
   rest2 = rest:gsub("^%d+%s+", "")
   unreachable = tonum(rest2:match("^%d+"))
 
-  # Positive control. A census whose numerator AND denominator are both zero
-  # is broken, !perfect — the exact failure mode that made an earlier
-  # language gate report a confident 0/N from a worktree.
   if ok == 0
     print("census/native: FAIL — 0 programs compiled natively; the sweep is broken")
     return 3

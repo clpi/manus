@@ -1,4 +1,3 @@
-# gatecap tally positive control — redirect then cap("cat …"):to(i64).
 
 chomp: str = (text: str)
   n = text:len()

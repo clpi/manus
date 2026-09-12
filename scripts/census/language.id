@@ -1,5 +1,3 @@
-# Language census. MAIN-ZERO. Entry census: i64 = ().
-# Tracked-file ratchet: sh/py 0, js <= 4, zig <= 106, c/h <= 23.
 
 chomp: str = (text: str)
   n = text:len()

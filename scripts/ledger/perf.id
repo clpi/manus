@@ -1,7 +1,3 @@
-# Performance evidence index — contract presence, not complete proof.
-#
-# Same IMPLEMENTATION-BLOCKED curry note as scripts/ledger/ftcftw.id:
-# audit(path)(pattern) SIGSEGV on direct native. Restore when that run lives.
 
 look: bool = (path: str, pattern: str)
   body = path:read()

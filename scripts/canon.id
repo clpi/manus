@@ -1,5 +1,3 @@
-# Graph-fact verdict core for GAP-124. No verdict receives a home spelling.
-# The four integers intern the canonical finding states for a scalar SHC proof.
 
 valid: i64 = 0
 migrate: i64 = 1

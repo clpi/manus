@@ -1,67 +1,3 @@
-# U2 — `build@deterministic`, made executable.
-#
-# U2: determinism by default, bit-reproducible builds. It is on
-# the unretrofittable list for a measured reason — reproducibility cost Debian
-# a decade of retrofitting, and the retrofit is still not finished. §4 spells
-# the anchor `build@deterministic` as "double-build fingerprint identity".
-# This is that, as a build step.
-#
-# MECHANISM. Build the compiler TWICE into two prefixes with two separate
-# cache directories, then compare every installed artifact byte for byte.
-#
-# THE SEPARATE CACHE DIRECTORIES ARE THE WHOLE TEST. `scripts/reproducibility_
-# smoke.id` — this gate's narrow ancestor, still wired as `zig build
-# reproducibility-smoke` — deletes `zig-out` and rebuilds into the SAME cache.
-# A warm cache does not recompile; it copies the artifact it already has. Two
-# copies of one file are byte-identical no matter how nondeterministic the
-# compiler is, so that shape can pass on a build system with no determinism at
-# all. Here each build gets its own cache and cannot see the other's output,
-# so identity means two independent compiles agreed.
-#
-# IT NEVER TOUCHES `zig-out`. Both builds go to a private scratch directory
-# from `mktemp -d`, so this gate can run beside other sessions without
-# deleting the binary they are testing against, and two runs of it cannot
-# collide. A fixed path under /tmp is a shared mutable surface and this
-# repository has already had one run's banner printed over another run's
-# numbers because of exactly that.
-#
-# WHAT DIVERGENCE MEANS, AND NAMING THE SOURCE. A differing artifact is not a
-# verdict, it is a bug report, so the gate diagnoses rather than just failing:
-#
-#   size          differing sizes mean content, not ordering
-#   bytes         how many bytes differ, and the offset of the first
-#   accounting    every differing byte attributed: LC_UUID, the ad-hoc code
-#                 signature, and the residue. A label without an accounting
-#                 is a guess
-#   build path    each build's own scratch path found in the RAW BYTES of its
-#                 own artifact — the classic path-dependence failure, the one
-#                 that makes a build reproducible only from the directory it
-#                 was made in. This gate builds in two DIFFERENT directories
-#                 on purpose, so it can see what a same-path rebuild cannot
-#   timestamp     the records that carry an object path also carry its mtime
-#   ordering      same size, scattered differences, no path and no UUID delta
-#                 — iteration order, hash traversal, or parallel emission
-#
-# The embedded paths themselves are PRINTED, because a classification nobody
-# can check is a guess with a label on it.
-#
-# CONTROLS, every run. A gate whose green state is "nothing differed" is the
-# exact shape that passes when its comparison is broken (CLAUDE.md §3:
-# positive-control every zero):
-#
-#   1. both prefixes are non-empty and contain `bin/idol` — otherwise "all
-#      artifacts identical" is a statement about the empty set;
-#   2. the comparator says a file is identical to ITSELF;
-#   3. the comparator says a file DIFFERS from a one-byte-mutated copy of
-#      itself. Without 3, a comparator that answers "identical" to everything
-#      produces a perfect green.
-#
-# Exit 0 identical · 1 an artifact differs · 3 the gate could not run.
-#
-# ZIG                 the compiler to build with (default `zig`)
-# DETERMINISM_OPT     optimize mode (default ReleaseFast; Debug is faster and
-#                     is a weaker claim, so the report names which it ran)
-# DETERMINISM_KEEP=1  leave the scratch directory for inspection
 
 space = " "
 
@@ -88,23 +24,15 @@ status: i64 = (cmd: str)
 sh: i64 = (cmd: str)
   status("{cmd}")
 
-# `test -f` rather than the std helper, deliberately: the helper is spelled
-# with an underscore and this gate adds zero deny points to audit100.
 here: bool = (path: str)
   sh("test -f {path}") == 0
 
-# Byte identity. `cmp -s` is the comparator the whole gate rests on, which is
-# why it is fired at a known-equal and a known-different pair below.
 same: bool = (a: str, b: str)
   sh("cmp -s {a} {b}") == 0
 
 count: i64 = (cmd: str)
   cap(cmd):to(i64)
 
-# One clean build into its own prefix with its own cache. Returns the number
-# of installed files, or -1 if the build failed — a failed build must never
-# read as "the artifacts differ", which is a claim about determinism rather
-# than about a broken tree.
 build: i64 = (zig: str, opt: str, work: str, tag: str)
   out: str = "{work}/out{tag}"
   cache: str = "{work}/cache{tag}"
@@ -116,24 +44,12 @@ build: i64 = (zig: str, opt: str, work: str, tag: str)
     made = 0 - 1
   made
 
-# Everything the two artifacts can tell us about WHY they differ, as an
-# ACCOUNTING rather than a label: every differing byte is attributed to a
-# named region or left in a residue that the report prints. A classification
-# nobody can check is a guess with a label on it.
-#
-# THE PATH SEARCH GREPS THE RAW FILE, not `strings`. On macOS `strings`
-# without `-a` reads only __TEXT, and the first draft of this gate used it and
-# reported "0 strings differ · SOURCE ORDERING" for a binary whose __LINKEDIT
-# held `/cachea/o/…` against `/cacheb/o/…` in plain ASCII. It classified a
-# textbook build-path dependence as mystery ordering because it never looked
-# at the segment the paths were in.
 diagnose = (a: str, b: str, work: str, path: str)
   sizea: i64 = count("wc -c < {a}")
   sizeb: i64 = count("wc -c < {b}")
   bytes: i64 = count("cmp -l {a} {b} 2>/dev/null | wc -l")
   firstat: str = cap("cmp {a} {b} 2>&1 | head -1 | sed -e 's/.*differ: //'")
 
-  # Mach-O: the linker's UUID, and the ad-hoc code signature that hashes it.
   uuida: str = cap("otool -l {a} 2>/dev/null | grep -m1 uuid | tr -d ' ' | sed -e 's/uuid//'")
   uuidb: str = cap("otool -l {b} 2>/dev/null | grep -m1 uuid | tr -d ' ' | sed -e 's/uuid//'")
   uuidbytes: i64 = 0
@@ -144,7 +60,6 @@ diagnose = (a: str, b: str, work: str, path: str)
   if sigoff != ""
     sigbytes = count("cmp -l {a} {b} 2>/dev/null | awk -v s={sigoff} '$1 > s' | wc -l")
 
-  # The build directory, in the raw bytes of each artifact.
   patha: i64 = count("grep -a -o {work}/cachea {a} 2>/dev/null | wc -l")
   pathb: i64 = count("grep -a -o {work}/cacheb {b} 2>/dev/null | wc -l")
   outa: i64 = count("grep -a -o {work}/outa {a} 2>/dev/null | wc -l")
@@ -152,11 +67,6 @@ diagnose = (a: str, b: str, work: str, path: str)
   embedded: i64 = patha + pathb + outa + outb
   residue: i64 = bytes - uuidbytes - sigbytes
 
-  # The line that decides whether this is a compiler problem or a metadata
-  # problem: differing bytes BELOW __LINKEDIT, less the 16-byte LC_UUID that
-  # sits in the Mach-O header. If that is zero, the code and the data agree
-  # and only the wrapper disagrees — a much narrower claim than "the build
-  # is nondeterministic", and a much cheaper one to fix.
   linkedit: str = cap("otool -l {a} 2>/dev/null | grep -A4 __LINKEDIT | grep -m1 fileoff | tr -s ' ' | cut -d' ' -f3")
   codebytes: i64 = 0 - 1
   if linkedit != ""
@@ -218,8 +128,6 @@ main: i64 = ()
       print("build_determinism: FAIL — the second build did not complete; this is a broken tree, not a determinism finding. Log: {work}/logb")
       code = 3
 
-  # Control 1: the population. "Every artifact matched" over zero artifacts
-  # is the confident zero this repository keeps paying for.
   if code == 0
     print("  artifacts {counta} and {countb} installed files")
     if counta == 0
@@ -230,7 +138,6 @@ main: i64 = ()
       print("build_determinism: FAIL — no bin/idol in the first prefix; the compiler itself is not among the artifacts being compared")
       code = 3
 
-  # Controls 2 and 3: the comparator, both directions.
   if code == 0
     witness: str = "{work}/outa/bin/idol"
     if not same(witness, witness)
@@ -266,8 +173,6 @@ main: i64 = ()
       print("")
       print("  DIVERGENT ARTIFACTS — the source of each, named:")
       sh("diff {work}/hasha {work}/hashb | grep '^<' | sed -e 's/^< //' -e 's/^[0-9a-f]*  //' > {work}/bad")
-      # Read back by line index rather than splitting in Duo: the split
-      # would need `string.`, which this gate does not use.
       i: i64 = 1
       while i <= differing and i <= 5
         line: str = cap("sed -n '{i}p' {work}/bad")
@@ -277,12 +182,6 @@ main: i64 = ()
       if differing > 5
         print("    … and {differing} in total; the rest are listed in {work}/bad with DETERMINISM_KEEP=1")
 
-    # THE RATCHET, and it is the same shape as U1's: the honest state is
-    # RED, so the budget is the measured baseline and the job of the gate
-    # is to stop it growing while the sources named above are fixed. A
-    # gate that is red on the day it ships is a gate people learn to skip;
-    # one that says "1 known-divergent artifact, here is why, and it must
-    # not become 2" gets read. Measured 2026-08-08 at 878e0d1: 1 of 1.
     cap0: i64 = (os.env("DETERMINISM_ARTIFACT_FLOOR") or "1"):to(i64)
     print("")
     if differing > cap0
@@ -295,10 +194,6 @@ main: i64 = ()
     if differing == 0
       print("build_determinism: PASS — {counta} artifacts byte-identical across two independent compiles with separate caches ({opt}). U2 holds for this build.")
 
-  # BOUND, not called bare: a trailing side-effecting call at the close of
-  # `main` overwrites the process exit status with ITS status. See
-  # gaps/GAP-070.md — this gate printed FAIL and exited 0 until the cleanup
-  # result was bound to a name.
   if (os.env("DETERMINISM_KEEP") or "") == ""
     swept: i64 = sh("rm -rf {work}")
   code

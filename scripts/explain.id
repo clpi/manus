@@ -1,36 +1,3 @@
-# `duo explain` contract + enrichment gate.
-#
-# PORTED from the deleted contract and explain test files,
-# both deleted in the same commit. Four Zig tests drove Lexer -> Parser ->
-# sema -> explain pipeline in process and asserted on in-memory structs. Every
-# one of those assertions is already a field of the JSON `duo explain` prints,
-# so the port asserts on the SHIPPING output instead of on internals:
-#
-#   contract: `@noalloc` + mem.alloc yields an outcome
-#             transformation=contract.noalloc, status=rejected, with a reason
-#   contract: the same module WITHOUT the allocation yields no outcome at all
-#   repairs:  the blocker noalloc heap alloc offers exactly two candidates
-#   explain:  a sealed record reaches the snapshot with a nonzero fingerprint
-#             and an assumption whose subject is that record
-#
-# The fixtures were already on disk — the Zig files carried
-# byte-identical copies as string literals, which is the second source of
-# truth this repo keeps paying for. There is now one.
-#
-# WHAT THE PORT FOUND. The explain smoke fixture began with a C-style
-# comment marker, which the idol lexer refuses. `duo explain` did not
-# DIAGNOSE it: it printed a raw Zig stack trace and exited 1. The fixture had
-# been broken for as long as nothing ran it, because the Zig test that owned
-# its content never opened the file. The marker is repaired in this commit;
-# the unhandled trace is filed as a finding rather than fixed here, because
-# the repair belongs in main.zig, and H-8 says an emission is graph data.
-#
-# WHAT THE PORT COULD NOT KEEP. The Zig contract test asserted the pipeline
-# RETURNS error.NoAllocViolation. The CLI does not surface that: `duo check`,
-# `duo compile` AND `duo explain` all exit 0 on the violating module, and the
-# rejection is visible only as a line of JSON. That is not a porting loss —
-# it is the finding that the contract is not enforced anywhere a user stands.
-# This gate therefore asserts the JSON, and the enforcement gap is filed.
 
 here: str = ()
   script.chomp(script.capture("pwd"))
@@ -44,9 +11,6 @@ shout = (msg: str)
 present: bool = (path: str)
   script.status("test -e {path}") == 0
 
-# Does `duo explain fixture` print a line holding `want`? Exit status cannot
-# answer this: explain exits 0 on the violating module too, which is the whole
-# reason these assertions read the output rather than the status.
 says: bool = (bin: str, fixture: str, want: str)
   script.status("{bin} explain {fixture} 2>/dev/null | tr ',' '\\n' | grep -q -F '{want}'") == 0
 
@@ -55,12 +19,10 @@ main: i64 = ()
   bin = compiler(root)
   bad = 0
 
-  # CONTROL 1 — the runner convicts.
   if script.status("false") == 0
     shout("FAIL — control: status() called `false` a success")
     bad = bad + 1
 
-  # CONTROL 2 — the compiler is here.
   if not present(bin)
     shout("FAIL — no compiler at {bin}; run `zig build` first")
     bad = bad + 1
@@ -69,8 +31,6 @@ main: i64 = ()
   bust = "{root}/examples/noalloc_fail.id"
   shape = "{root}/examples/explain_smoke.id"
 
-  # CONTROL 3 — the fixtures are here. A `says` over a missing file is
-  # false for every want, which reads as a wall of real failures.
   if not present(ok)
     shout("FAIL — missing fixture {ok}")
     bad = bad + 1
@@ -81,14 +41,10 @@ main: i64 = ()
     shout("FAIL — missing fixture {shape}")
     bad = bad + 1
 
-  # CONTROL 4 — `says` can answer NO. Without this a grep that has stopped
-  # matching, or an explain that has stopped printing, scores a clean sweep.
   if says(bin, ok, "duo-explain-this-string-does-not-exist")
     shout("FAIL — control: says() matched a string that is not in the output")
     bad = bad + 1
 
-  # The contract, both sides. The pair is the assertion: the rejection must
-  # appear for the allocating module and must NOT appear for its twin.
   if not says(bin, bust, "\"transformation\":\"contract.noalloc\"")
     shout("FAIL — noalloc violation produced no contract.noalloc outcome")
     bad = bad + 1
@@ -105,7 +61,6 @@ main: i64 = ()
     shout("FAIL — the non-allocating twin reported outcomes")
     bad = bad + 1
 
-  # The repair candidates. Two, by count, for the named blocker.
   if not says(bin, bust, "\"diagnostic_id\":\"noalloc_heap_alloc\"")
     shout("FAIL — no repair set was attached to the noalloc blocker")
     bad = bad + 1
@@ -113,8 +68,6 @@ main: i64 = ()
     shout("FAIL — the noalloc blocker did not offer exactly two repairs")
     bad = bad + 1
 
-  # The enrichment. A sealed record must reach the snapshot with an
-  # identity, and must carry the shape assumption that identity licenses.
   if not says(bin, shape, "\"name\":\"Point\"")
     shout("FAIL — the sealed record never reached the knowledge snapshot")
     bad = bad + 1

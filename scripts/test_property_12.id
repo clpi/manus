@@ -1,17 +1,6 @@
-# Property 12: bitwise correctness, Duo vs C, differentially.
-#
-# Duo replacement for scripts/test_property_12.sh (monoglot census).
-#
-# Generates 64 pseudo-random cases, emits the SAME cases as a Duo program and
-# a C program, runs both, and diffs the output. C is the oracle here, so
-# examples of it stay C by construction # the generated .c is the reference,
-# not a source file.
 
 _TMP = "/tmp/duo-prop12"
 
-# The exact LCG the shell version used, seed included, so this generates the
-# SAME 64 cases: any divergence in the report is a real bitwise divergence and
-# not a different corpus. glibc's constants, masked to 31 bits.
 seed = 305419896
 
 rand: i64 = ()
@@ -46,17 +35,8 @@ main: i64 = ()
     ss = shift:to(str)
     sp = positive:to(str)
 
-    # The generated Duo still uses `local`, exactly as the shell version
-    # emitted it. The canon lists `local` as dead, so this corpus is due a
-    # refresh # but changing what the differential FEEDS the compiler is a
-    # different change from porting the harness, and would quietly alter
-    # what the test proves.
     d = d .. "local a" .. si .. ": i64 = " .. sa .. "\n" .. "local b" .. si .. ": i64 = " .. sb .. "\n" .. "local s" .. si .. ": i64 = " .. ss .. "\n" .. "local p" .. si .. ": i64 = " .. sp .. "\n" .. "print(a" .. si .. " & b" .. si .. ")\n" .. "print(a" .. si .. " | b" .. si .. ")\n" .. "print(a" .. si .. " ~ b" .. si .. ")\n" .. "print(~a" .. si .. ")\n" .. "print(p" .. si .. " << s" .. si .. ")\n" .. "print(p" .. si .. " >> s" .. si .. ")\n"
 
-    # Duo's binary `~` is XOR and unary `~` is NOT, which is why the C
-    # side pairs them with `^` and `~` respectively. Getting that mapping
-    # backwards would make the test pass on a compiler that had them
-    # swapped.
     c = c .. "    int64_t a" .. si .. " = " .. sa .. "LL;\n" .. "    int64_t b" .. si .. " = " .. sb .. "LL;\n" .. "    int64_t s" .. si .. " = " .. ss .. "LL;\n" .. "    int64_t p" .. si .. " = " .. sp .. "LL;\n" .. "    printf(\"%lld\\n\", (long long)(a" .. si .. " & b" .. si .. "));\n" .. "    printf(\"%lld\\n\", (long long)(a" .. si .. " | b" .. si .. "));\n" .. "    printf(\"%lld\\n\", (long long)(a" .. si .. " ^ b" .. si .. "));\n" .. "    printf(\"%lld\\n\", (long long)(~a" .. si .. "));\n" .. "    printf(\"%lld\\n\", (long long)(p" .. si .. " << s" .. si .. "));\n" .. "    printf(\"%lld\\n\", (long long)(p" .. si .. " >> s" .. si .. "));\n"
 
     i = i + 1
@@ -81,9 +61,6 @@ main: i64 = ()
     print("[Property 12] FAIL — C reference did not run")
     return 1
 
-  # diff's STATUS is the assertion; its output is the report. The shell
-  # version ran `diff -u` under `set -e`, so a divergence aborted before the
-  # SUCCESS line # correct, but it never said the word FAIL.
   if std.script.run("diff -u " .. c_out .. " " .. duo_out) != 0
     print("[Property 12] FAIL — Duo and C disagree on bitwise results")
     return 1

@@ -1,52 +1,4 @@
-# gate/treesitter/agreement.id — the second grammar authority, measured
-# against the first.
-#
-# GAP-134 / law.grammar.one. `ext/tree-sitter-idol/grammar.js` is an EDITOR
-# PROJECTION and must consume the one grammar-fact owner. It does not: it
-# carries its own binding-power ladder, authored in scripts/treesitter_emit.id.
-# Two authored ladders that must merely "agree" is the shape docs/spec/law.md
-# §4 forbids. This gate does not repair that. It makes the disagreement EXACT
-# and fails closed on any disagreement that is not already pinned.
-#
-# TWO INPUTS, AND THE OWNER SIDE IS THE PRODUCTION ONE.
-#
-#   src/grammar_role_table.zig       the owner's generated bridge — one row per
-#                                    producer slot carrying identity, SPELLING,
-#                                    infix face, precedence and associativity
-#   ext/tree-sitter-idol/grammar.js  the editor projection under test
-#
-# An earlier version took spelling from `src/lexer.zig`'s switch. That was the
-# host differential oracle, not the production authority: had the production
-# lexer changed a spelling without the oracle following, this gate would have
-# reported AGREEMENT while the compiler and the editor actually disagreed.
-# Spelling now has one producer, `lib/compiler/token.id`, and `src/lexer.zig`
-# answers `spelling()` out of the SAME generated row read here. Reading a
-# generated file is an act of reading the owner precisely because
-# `gate/grammar-projection.sh` regenerates privately and fails unless the
-# tracked bytes are identical.
-#
-# WHY THE SCANS ARE REPEATED INLINE. Substring search, line walk, field split
-# and numeric scan want to be four shared relations. They cannot be:
-# `gate/vocabulary.sh` refuses every new module-scope declaration that takes
-# parameters, and the only door it leaves — an underscore-private name —
-# `gate/idiom.id` forbids in `.id` source under LAW-ONE. A relation nested in
-# an enclosing body would be the way out and does not lower
-# (`DNB001 ... missing: func-body`). A relation with NO parameters is lawful in
-# both directions, so the structure below is zero-parameter relations and the
-# primitives are written out where they are used. `lib/compiler/token.id`
-# `zigrow` carries the same duplication for the same reason. Fold them into
-# shared relations when the freeze lifts (GAP-224).
-#
-# Run: idol run gate/treesitter/agreement.id
-# Exit 0 agreement is exactly the pinned baseline
-#      1 a divergence appeared, or a pinned one is gone and the pin is stale
-#      3 a reader returned nothing, which is how a broken gate reports success
 
-# ── the editor projection's operator table ───────────────────────────────────
-#
-# One line per binary row tree-sitter declares: `<spelling> <level> <side>`.
-# `side` is `none` where tree-sitter writes a bare `prec(` and resolves no
-# conflict, which is how it spells what the owner calls `nonassoc`.
 
 editor(): str
   ts = "ext/tree-sitter-idol/grammar.js":read()
@@ -103,16 +55,6 @@ editor(): str
     i = e + 1
   out
 
-# ── the join ─────────────────────────────────────────────────────────────────
-#
-# One line per INFIX identity the owner declares:
-#
-#   <spelling> <owner precedence> <owner associativity> <editor level> <editor side>
-#
-# Every owner field comes off the SAME bridge row, so no join can pair one
-# identity's spelling with another's binding power. `absent` in the last field
-# is an operator the editor grammar does not carry; it is not a spelling any
-# token has.
 
 joined(): str
   own = "src/grammar_role_table.zig":read()
@@ -233,16 +175,6 @@ joined(): str
     i = e + 1
   out
 
-# ── the comparison ───────────────────────────────────────────────────────────
-#
-# Order is compared PAIRWISE and never by value: the two ladders count in the
-# same direction but on different scales, and only the induced order is a
-# shared fact. Associativity is compared directly, because `nonassoc` declared
-# `prec.left` is the difference between refusing `a < b < c` and accepting it.
-#
-# Returns the divergence keys, one per line, and decides nothing about them.
-# One traversal, one result: an earlier shape ran this twice under a selector
-# and the two runs disagreed.
 
 keys(): str
   tab = joined()
@@ -250,7 +182,6 @@ keys(): str
   size = tab:len()
   out = ""
 
-  # coverage and associativity
   i = 1
   while i <= size
     e = i
@@ -283,7 +214,6 @@ keys(): str
         out = "{out}assoc {spell} {assoc} {side}\n"
     i = e + 1
 
-  # operators the editor grammar recognizes and the owner does not own
   tsize = ts:len()
   i = 1
   while i <= tsize
@@ -312,7 +242,6 @@ keys(): str
       out = "{out}extra {spell}\n"
     i = e + 1
 
-  # induced binding order, every pair both tables carry
   i = 1
   while i <= size
     ei = i
@@ -396,9 +325,6 @@ keys(): str
     i = ei + 1
   out
 
-# ── the pinned baseline ──────────────────────────────────────────────────────
-#
-# Print each divergence with its state; return how many are NOT pinned.
 
 loose(): i64
   found = keys()
@@ -430,8 +356,6 @@ loose(): i64
     i = e + 1
   bad
 
-# Pins that no longer describe a divergence. A baseline that only grows is not
-# a ratchet, so a stale pin is a failure and not a courtesy.
 
 stale(): i64
   found = keys()
@@ -461,7 +385,6 @@ stale(): i64
     i = e + 1
   gone
 
-# How many pins the baseline carries, comments and blanks excluded.
 
 held(): i64
   pins = "gate/treesitter/agreement.baseline":read()
@@ -478,7 +401,6 @@ held(): i64
     i = e + 1
   n
 
-# Non-empty lines of a text.
 
 rows(): i64
   found = keys()

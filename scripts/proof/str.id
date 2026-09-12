@@ -1,4 +1,3 @@
-# Proof for str length/substr staying native without an embedded C length shim.
 
 work = "/tmp/idolproofstr"
 idol = "./zig-out/bin/idol"

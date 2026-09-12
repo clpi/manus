@@ -1,14 +1,3 @@
-## TEACHING-STATUS: canonical
-# gate/host — TEMPORARY MIGRATION FIREWALL for host API debt on ADDED lines.
-#
-# Classification: TEMPORARY MIGRATION FIREWALL (docs/spec/host.md, GAP-155).
-# Authority: semantic gate + graph host-boundary obligations (GAP-124, GAP-155).
-# Deletion condition: production semantic enforcement on staged diff.
-#
-# Blocks NEW direct host API spellings on staged additions in project surfaces.
-# This is not semantic authority — spelling mutation must not evade graph law.
-#
-# Gate transport: Idol only — stdin via stdin:read(). No os.args, no --backend=c.
 
 transport: str = ()
   text = stdin:read()
@@ -167,11 +156,6 @@ strip: str = (line: str)
 
 scandr: i64 = (path: str, no: i64, code: str)
   hits = 0
-  # RETRACTED under world reconciliation v2. This rule failed on `io:read(`
-  # and demanded `stdin:read()`. v2 rules the other way: `io` is an ordinary
-  # world VALUE and a legitimate subject, while `stdin`/`stdout`/`stderr` are
-  # host provenance and not native semantic concepts. The dot form stays a
-  # violation — a home is not a namespace — so only the colon rule is dropped.
   hits = hits + rowh(path, no, code, "host.read", "io.read(", "law.relation.read", "io:read() — subject-first; a home is not a namespace")
   hits = hits + rowh(path, no, code, "host.write", "io.write(", "law.relation.write", "io:write(x) or endpoint:write(x) — subject-first")
   hits

@@ -1,6 +1,3 @@
-# EVIDENCE-SUBJECT-ONE - file facts ratchet (GAP-154 bootstrap).
-# subject revision: 29f62035
-# evidence revision: 59093d7b
 
 look: bool = (path: str, pattern: str)
   body = path:read()

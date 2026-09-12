@@ -1,4 +1,3 @@
-# vscodeemit — project the vscode extension host from idol.
 
 script = script
 targetpath = "ext/vscode-idol/extension.js"

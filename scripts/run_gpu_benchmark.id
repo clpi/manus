@@ -1,25 +1,7 @@
-# run_gpu_benchmark.id — build and run the GPU (Metal) vs CPU matmul benchmark.
-#
-# ledger/perf contract: gpu benchmark
-# oracle: gpu: FAIL
-# negative: gpu: PASS
-# verdict: Metal GPU matmul axis
-#
-# Duo replacement for scripts/run_gpu_benchmark.sh (monoglot census).
-#
-# Requirements: macOS with a Metal-capable GPU, Xcode command line tools, and
-# a built Duo compiler. OPT-IN — not part of the CI gate.
-#
-# examples/metal_compute.m stays Objective-C: it is a Metal SHADER HOST, and
-# Duo has no Metal binding. That is a fact-loss ledger row, not something this
-# script can fix by shelling differently.
 
 _OUT_DIR = "/tmp/duo_gpu_bench"
 _EX = "examples"
 
-# No ANSI here. The repo has an assert_no_ansi_reports gate, and a benchmark
-# whose output is scraped should not carry escape codes; the shell version's
-# colours were the only thing lost in this port.
 _step = (msg: str)
   print(msg)
 
@@ -49,9 +31,6 @@ main: i64 = ()
 
   _step("[2/3] Compiling bench_gpu_metal.id...")
   csrc = _OUT_DIR .. "/bench_gpu_metal.c"
-  # dump-c writes to STDOUT, so the redirect is the output path. A failure
-  # here leaves an empty .c that clang would reject with a confusing error,
-  # which is why the status is checked before clang runs.
   if std.script.run(duo .. " dump-c " .. _EX .. "/bench_gpu_metal.id > " .. csrc) != 0
     print("ERROR: duo dump-c failed")
     return 1
@@ -67,9 +46,6 @@ main: i64 = ()
   print("")
   _step("[3/3] Running benchmark...")
   print("-----------------------------------------------")
-  # `run`, not `status`: status routes the child's output to /dev/null to
-  # read its code back, and the benchmark's numbers ARE the deliverable.
-  # Zero-vs-nonzero is all this needs, which is exactly what run can give.
   code = std.script.run(bin)
   print("-----------------------------------------------")
   if code != 0

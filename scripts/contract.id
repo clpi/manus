@@ -1,30 +1,3 @@
-# Declared-contract enforcement gate: `@noalloc` and `@pure`, asserted at the
-# verbs a USER STANDS AT, plus the lexer rejection diagnostic.
-#
-# WHY THIS GATE EXISTS. GAP-090 measured `@noalloc` as decorative:
-#
-#     idol check   examples/contracts/noalloc_fail.id    exit 0
-#     idol compile examples/contracts/noalloc_fail.id    exit 0
-#     idol explain examples/contracts/noalloc_fail.id    exit 0, rejection as JSON
-#
-# The contract was checked in exactly one place, `codegen.zig`'s guardNoAlloc,
-# which only runs while the C backend is emitting. The default backend is
-# `direct`, so the default path never checked at all: `` was the ONLY
-# red. A user could write `@noalloc`, violate it and ship. The Zig test that
-# claimed to cover this asserted `error.NoAllocViolation` out of
-# `explain_pipeline.runForProvenance` — a pipeline no CLI verb reaches — so it
-# was green in the suite and absent in the product for its whole life.
-#
-# The check now lives in `parse_and_check`, the single funnel every verb shares.
-# This gate asserts through the SHIPPING CLI and by EXIT CODE, because "it
-# compiled" is what let the hole persist. Every status here is read from a
-# command with no pipe on it: `cmd | grep; echo $?` measures grep, and that is
-# how a broken commit got shipped as verified once already.
-#
-# FIXTURE HOMES. Positives sit beside the pair they belong to in
-# `examples/contracts/`; negatives sit in `examples/compile_fail/`, which
-# `docs/spec/corpus.md` classifies `negative` — denied text IS the assertion
-# there, so the deny-table scan correctly skips them.
 
 here: str = ()
   std.script.chomp(std.script.capture("pwd"))
@@ -38,36 +11,18 @@ shout = (msg: str)
 present: bool = (path: str)
   std.script.status("test -e {path}") == 0
 
-# The verb's OWN exit status. No pipe: a pipeline reports its last stage, and
-# this gate's whole subject is whether the compiler itself refuses.
 code: i64 = (bin: str, verb: str, fixture: str)
   std.script.status("{bin} {verb} {fixture} >/dev/null 2>&1")
 
-# `duo compile` needs somewhere to put the artifact; /dev/null keeps the repo
-# clean and repo-hygiene green.
 codecompile: i64 = (bin: str, flags: str, fixture: str)
   std.script.status("{bin} compile {flags} {fixture} -o /dev/null >/dev/null 2>&1")
 
-# Does the verb's combined output hold `want`? Diagnostics go to stderr and the
-# explain render goes to stdout, so both are folded in.
 mentions: bool = (bin: str, verb: str, fixture: str, want: str)
   script.status("{bin} {verb} {fixture} 2>&1 | grep -q -F '{want}'") == 0
 
-# The same question for a `want` that contains an APOSTROPHE — a diagnostic
-# quoting a name (`function 'leak'`) cannot travel inside single quotes, and a
-# shell that ends the quote early greps for the wrong thing and answers a
-# confident NO. Two helpers rather than one escaping rule, because the JSON
-# assertions carry double quotes and these carry single ones.
 mentionsq: bool = (bin: str, verb: str, fixture: str, want: str)
   script.status("{bin} {verb} {fixture} 2>&1 | grep -q -F \"{want}\"") == 0
 
-# `compile` under an explicit backend, asserting on the MESSAGE and !only on
-# the status. Measured 2026-08-09: with the attribute stripped, `` on
-# the violating fixture still exits 1, because the emitted C for `mem.alloc`
-# under ARC calls undeclared `duo_retain`/`duo_release` — a separate pre-existing
-# C-backend defect. A nonzero-status row would therefore have PASSED for the
-# wrong reason under its own break control, which is a false green with a
-# positive control attached. Naming the diagnostic is what makes the row real.
 compilesays: bool = (bin: str, flags: str, fixture: str, want: str)
   script.status("{bin} compile {flags} {fixture} -o /dev/null 2>&1 | grep -q -F '{want}'") == 0
 
@@ -76,18 +31,14 @@ main: i64 = ()
   bin = compiler(root)
   bad = 0
 
-  # CONTROL 1 — the runner can convict.
   if script.status("false") == 0
     shout("FAIL — control: status() called `false` a success")
     bad = bad + 1
 
-  # CONTROL 2 — and can acquit. A `status` stuck at nonzero would turn every
-  # rejection assertion below into a free pass.
   if script.status("true") != 0
     shout("FAIL — control: status() called `true` a failure")
     bad = bad + 1
 
-  # CONTROL 3 — the compiler is here.
   if not present(bin)
     shout("FAIL — no compiler at {bin}; run `zig build` first")
     bad = bad + 1
@@ -98,8 +49,6 @@ main: i64 = ()
   purebad = "{root}/examples/compile_fail/pure_module_state.id"
   lexbad = "{root}/examples/compile_fail/lex_slash_comment.id"
 
-  # CONTROL 4 — the fixtures are here. A missing file is refused by every
-  # verb, which reads as a wall of passing rejection assertions.
   if not present(naok)
     shout("FAIL — missing fixture {naok}")
     bad = bad + 1
@@ -116,13 +65,10 @@ main: i64 = ()
     shout("FAIL — missing fixture {lexbad}")
     bad = bad + 1
 
-  # CONTROL 5 — `mentions` can answer NO. Without it a grep that has stopped
-  # matching, or a diagnostic that has stopped printing, sweeps clean.
   if mentions(bin, "check", naok, "duo-contract-this-string-does-not-exist")
     shout("FAIL — control: mentions() matched a string that is not in the output")
     bad = bad + 1
 
-  # @NOALLOC, the honouring half. Every verb must ACCEPT.
   if code(bin, "check", naok) != 0
     shout("FAIL — `check` rejected the module that honours @noalloc")
     bad = bad + 1
@@ -133,9 +79,6 @@ main: i64 = ()
     shout("FAIL — the honouring module was diagnosed anyway")
     bad = bad + 1
 
-  # @NOALLOC, the violating half. Every verb must REFUSE. The `--backend=direct`
-  # row is the one this gate exists for: it is the DEFAULT path, and it was the
-  # path that exited 0 while `` exited 1.
   if code(bin, "check", nabad) == 0
     shout("FAIL — `check` accepted a module that violates @noalloc")
     bad = bad + 1
@@ -158,8 +101,6 @@ main: i64 = ()
     shout("FAIL — `run` accepted a module that violates @noalloc")
     bad = bad + 1
 
-  # The diagnostic itself, not merely the status. It must name the function
-  # and the allocation site, and it must carry repair edges rather than prose.
   if not mentionsq(bin, "check", nabad, "@noalloc violated in function 'leak'")
     shout("FAIL — the @noalloc diagnostic did not name the function")
     bad = bad + 1
@@ -170,15 +111,10 @@ main: i64 = ()
     shout("FAIL — the @noalloc diagnostic carried no repair edge")
     bad = bad + 1
 
-  # `explain` still RENDERS. Its job is to project the graph, and the
-  # rejection with its repair set is part of that projection; the repair for
-  # exit 0 was the exit, not the render.
   if not mentions(bin, "explain", nabad, "\"transformation\":\"contract.noalloc\"")
     shout("FAIL — `explain` stopped rendering the contract outcome")
     bad = bad + 1
 
-  # @PURE, both halves. The negative fixture ran and printed its FIRST call's
-  # answer twice before this was checked; see the fixture header.
   if code(bin, "check", pureok) != 0
     shout("FAIL — `check` rejected the module that honours @pure")
     bad = bad + 1
@@ -195,9 +131,6 @@ main: i64 = ()
     shout("FAIL — the honouring @pure module was diagnosed anyway")
     bad = bad + 1
 
-  # THE LEXER REJECTION, H-8. The old emission was the bare Zig error name
-  # with no file, no span and no repair. Three positive assertions and one
-  # ABSENCE assertion, because the absence is what "no raw error name" means.
   if code(bin, "check", lexbad) == 0
     shout("FAIL — `check` accepted a file the lexer refuses")
     bad = bad + 1

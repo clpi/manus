@@ -1,4 +1,3 @@
-#!/usr/bin/env duo
 
 content = fs.read_file("benchmark_evidence.json")
 if content == nil

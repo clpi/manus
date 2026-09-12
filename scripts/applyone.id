@@ -1,34 +1,4 @@
-#!/usr/bin/env idol
-# APPLY-ONE gate — c0 §43 `law.brace`, §44 `law.apply.one` / `law.pack.shape`.
-#
-# WHY A GATE AND NOT JUST A FIXTURE. The positive fixture and the negative twin
-# are only evidence when they are read TOGETHER: either alone passes under a
-# compiler that had picked one reading for every brace, which is the state
-# gap[088] measured. This runner is what makes them one fact.
-#
-# WHAT IT MEASURES, all three outcomes the law enumerates:
-#
-#   callable subject  -> applies, and the brace face AGREES with the paren face
-#   neither           -> refuses, and refuses with a diagnostic
-#   descriptor        -> CONSTRUCTS, by value, and WITHOUT allocating a table
-#
-# THE DESCRIPTOR ROW WAS INVERTED BY gap[092] AND THAT IS SAID OUT LOUD, so a
-# reader who skims is not told the gap is still open. This header used to read
-# "descriptor -> OWED (gap[092]); reported, and reported as owed", and the row
-# asserted the direction the descriptor subject FAILED in, carrying the comment
-# "when it lands this row goes RED, which is the point". IT LANDED. The row did
-# exactly what it was built to do — it went red the day the gap closed — and it
-# is the ROW that changed, not the measurement. Nothing was loosened; rows 4
-# through 7 assert strictly more than the single inverted row did, including
-# the one assertion `law.pack.shape` actually turns on.
-#
-# Exit 0 = the measured state matches the recorded state. Nonzero = drift.
 
-# `global` matches every other runner in scripts/ and is not decoration here: a
-# module-scope binding that is later ASSIGNED emits `duo_g__name` against a
-# `duo_g_name` declaration and the C compiler refuses the file. That defect is
-# unrelated to APPLY-ONE and is recorded on gap[092]; this is the convention
-# that steps around it.
 chomp: str = (text: str)
     if text == nil or text:len() == 0
         return ""
@@ -58,19 +28,12 @@ report: void = (ok: bool, what: str, detail: str)
             print("      {detail}")
         failures += 1
 
-# Run a file and hand back its combined output. Exit status is returned
-# SEPARATELY and never inferred from the text: `cmd | tail` reports the exit of
-# `tail`, and a gate built on that has already shipped a broken commit here.
 capture: str = (cmd: str)
     cap("{cmd} 2>&1")
 
 status: i64 = (cmd: str)
     cap("( {cmd} ) > /dev/null 2>&1; echo $?"):to(i64)
 
-# Literal substring test, as a VALUE EDGE. The rows added by gap[092] may not
-# reach for `string.find` (§0.8, a Lua module idiom); the older rows in this
-# file still carry it and that debt is FROZEN by idiomgate rather than gated,
-# which is the whole point of scanning added lines only.
 has: bool = (hay: str, needle: str)
     n = hay:len()
     m = needle:len()
@@ -83,29 +46,16 @@ has: bool = (hay: str, needle: str)
         i += 1
     false
 
-# How many lines of a file match a needle. `grep -c` prints `0` and exits
-# NONZERO when there are none, so the count is read from the TEXT and the exit
-# status is deliberately not consulted — `cmd | tail` reporting the exit of
-# `tail` is the defect this file's own header already warns about. `tr` strips
-# the trailing newline in the shell, so the conversion never sees one and
-# `:to(i64)` never has to route.
 counted: i64 = (path: str, needle: str)
     capture("grep -c {needle} {path} | tr -d '\\n'"):to(i64)
 
-# How many heap tables the emitted C builds — the number `law.pack.shape` is
-# about.
 allocs: i64 = (cpath: str)
     counted(cpath, "lua_table_new_with_capacity")
 
-# A file written through `sh`. See ROW 7 for why this does not go through
-# `std.script`.
 put: void = (path: str, body: str)
     status("printf '%s' '{body}' > '{path}'")
 
 main: void = ()
-    # ROW 1 — the POSITIVE twin, by VALUE. Six prints, and the pair that must
-    # agree is the third and fourth: the brace face and the paren face applied
-    # to one callable. "It compiled" is not the assertion; the digits are.
     pos = "examples/pack/apply.id"
     out = capture("{duo} run {pos}")
     hasvalues = out:find("3", 1, true) != nil
@@ -115,16 +65,9 @@ main: void = ()
         hasvalues = false
     report(hasvalues, "positive twin answers by value (3 4 7 7 9 1)", out)
 
-    # ROW 2 — the two faces AGREE. §44: "parenthesized, braced and string faces
-    # project onto the SAME application relation". The fixture prints `braced`
-    # then `parened` from one callable and one pack; a single `7` where two are
-    # expected is the failure this row exists for, so count them.
     faces = out:find("7\n7", 1, true) != nil
     report(faces, "brace face and paren face project onto one relation", out)
 
-    # ROW 3 — the NEGATIVE twin refuses. c0 §43: "subject is NEITHER ->
-    # diagnostic, never a guess." Both halves are checked: nonzero status AND a
-    # diagnostic. A silent nonzero would satisfy the first alone.
     neg = "examples/compile_fail/apply_one_neither.id"
     negrc = status("{duo} check {neg}")
     negout = capture("{duo} check {neg}")
@@ -133,60 +76,21 @@ main: void = ()
         refused = false
     report(refused, "neither-case refuses, and names the subject", negout)
 
-    # ROW 4 — the neither-case names BOTH HOMES. §43's third outcome is not
-    # only "refuse"; the sentence is part of the ruling, because "call to
-    # undeclared function" was the call path narrating its own unconditional
-    # win over a rule that consults two spaces. A refusal naming one home is
-    # the old defect wearing a nonzero exit code, so it is measured separately
-    # from ROW 3 rather than folded into it.
     homes = has(negout, "descriptor") and has(negout, "callable")
     report(homes, "neither-case names BOTH homes consulted, not just the call path", negout)
 
-    # ROW 5 — the DESCRIPTOR subject CONSTRUCTS, by value. This is the row that
-    # was inverted; see the header.
     dpos = "examples/projection/descriptor.id"
     dout = capture("{duo} run {dpos}")
     drc = status("{duo} run {dpos}")
     dvalues = drc == 0 and has(dout, "3\n4\n21\n21\n0.75")
     report(dvalues, "descriptor subject constructs, by value (3 4 21 21 0.75)", dout)
 
-    # ROW 6 — a descriptor that RESOLVES can still REFUSE, and that failure is
-    # not the neither-case. The subject is found, it IS a descriptor, and the
-    # pack hands it a label it has no field for. Without this row the
-    # resolution could regress into building a table with `z` as a KEY: no
-    # diagnostic, and a `point` carrying a field the descriptor never declared.
     lab = "examples/compile_fail/apply_one_label.id"
     labrc = status("{duo} check {lab}")
     labout = capture("{duo} check {lab}")
     labref = labrc != 0 and has(labout, "has no field") and has(labout, "'z'")
     report(labref, "a resolved descriptor refuses a label it has no field for", labout)
 
-    # ROW 7 — `law.pack.shape`: "A BRACED ARGUMENT NEED NOT MATERIALIZE A
-    # TABLE." The one assertion here that a printed digit cannot make, because
-    # a heap table prints the same digits two registers do. So it is measured
-    # on the EMITTED C, and as a DIFFERENTIAL rather than a bare grep — a bare
-    # grep for zero is the shape that has shipped a false green in this repo.
-    #
-    #   a  `q = point{ x = 3.0, y = 4.0 }`   the applied face, UNDER TEST
-    #   b  `q: point = { x = 3.0, y = 4.0 }` the typed binding, KNOWN not to
-    #                                        allocate — the negative control
-    #   c  `q = { x = 3.0, y = 4.0 }`        an anonymous pack, KNOWN to
-    #                                        allocate — the POSITIVE control
-    #
-    # `a == b` alone would pass if the counter were broken and answered a
-    # constant, which is why `c` is here and must come out STRICTLY HIGHER. A
-    # gate reporting 0/N is usually broken rather than green.
-    #
-    # This row also convicts a subtler regression than the emitter's: measured
-    # 2026-08-09 the construction site was ALREADY a compound literal while `a`
-    # still emitted 6053 lines of boxed runtime against `b`'s 128, because the
-    # native precheck had not been told a descriptor subject constructs. The
-    # count catches that; a grep of the construction line alone would not have.
-    # The stem is built ONCE and both the source path and the emitted-C path
-    # are derived from it. `idol run f.id` leaves its C at `/tmp/duo_<stem>.c`,
-    # a path that COLLIDES between concurrent runs — five sessions write this
-    # branch, and two of them measuring the same name have compared one file to
-    # itself before. The clock makes the stem this run's own.
     stem = "applyoneshape{os.time():to(str)}"
     fa = "/tmp/{stem}a.id"
     fb = "/tmp/{stem}b.id"
@@ -194,28 +98,6 @@ main: void = ()
     ca = "/tmp/duo_{stem}a.c"
     cb = "/tmp/duo_{stem}b.c"
     cc = "/tmp/duo_{stem}c.c"
-    # Written through the SHELL, not through `std.script`. Its canonical
-    # `s.write` / `s.read` aliases resolve and do NOTHING — measured
-    # 2026-08-09: `s.write` leaves the file empty and `s.read` answers nil,
-    # while `s.fs_write` / `s.fs_read` beside them work. That is the
-    # "a resolving ambient path is not a working one" shape, and it is a real
-    # defect in `lib/script.id`, reported and !repaired here. The
-    # underscored spellings are the ones that work and LAW-ONE forbids them on
-    # a new line, so these rows take the third road and let `sh` do it.
-    # Both payloads carried the RETIRED descriptor sigil until fd85e7b8 freed
-    # it (`law.injection.only`: `@{ … }` is world derivation, a descriptor is
-    # an ordinary table). The migration missed this generator because it emits
-    # its subjects from string literals, so a grep for a declaration never saw
-    # them — and the row measured nothing: measured at ce03c7eb, fa and fb both
-    # died at the parser with "'@{ … }' is world injection, not descriptor
-    # construction", so `allocs` read a C file that was never written.
-    # The field separator is the second repair. 72e35402 canonicalized this
-    # script to process/os/env forms and rewrote `y = 4.0` to `y: 4.0` inside
-    # all three payloads on the way past — a pack field became a type
-    # annotation, and even the UNTOUCHED third program stopped parsing with
-    # "expected type, got 'float'". Restored to the spelling 2c3c9d69 wrote.
-    # After both: all three check clean and reach three DISTINCT direct-backend
-    # outcomes, which is the three-outcome reading the row exists to take.
     put(fa, "point: { x: f64, y: f64 }\nmain(): void\n    q = point{ x = 3.0, y = 4.0 }\n    print(q.x)\n")
     put(fb, "point: { x: f64, y: f64 }\nmain(): void\n    q: point = { x = 3.0, y = 4.0 }\n    print(q.x)\n")
     put(fc, "main(): void\n    q = { x = 3.0, y = 4.0 }\n    print(q.x)\n")

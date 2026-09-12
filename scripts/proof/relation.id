@@ -1,5 +1,3 @@
-# GAP-103 relation identity - structural admission only.
-# Never --backend=c. C-run ser/answer rows are deleted (law.bridge.death).
 
 target = "src/relation.zig"
 fixture = "examples/conversion/relation.id"

@@ -1,4 +1,3 @@
-# SHC + FTCFTW closure - file facts only. Run ledgers directly for execution proof.
 
 closure: i64 = ()
   print("closure: file facts")

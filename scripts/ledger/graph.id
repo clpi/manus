@@ -1,5 +1,3 @@
-# Graph sovereignty audit — TAG-AUTHORITY, FACT-CARDINALITY, GRAPH-SOVEREIGNTY.
-# Entry graph: i64 = ().
 
 seen: bool = (text: str, needle: str)
   n = text:len()

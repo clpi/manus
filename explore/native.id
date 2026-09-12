@@ -1,53 +1,4 @@
-# Exploratory Idol native compiler — from-scratch machine code, zero foreign.
-#
-# Everything here is Idol, compiled by Idol's OWN direct native backend to pure
-# AArch64 machine code. No clang, no LLVM, no assembler, no linker, no libc in
-# the code path; no foreign language anywhere in the compiler.
-#
-# BUILD-WORLD POLICY (law §98 policy/budget) — DEFAULT: runtime to the limit.
-#   The default posture optimizes the EMITTED PROGRAM's runtime to its semantic/
-#   physical floor, spending whatever compile effort that requires (here: solve
-#   the recurrence in closed form, then emit the constant). Cheaper build/compile
-#   time is OPT-IN, never the default — a lower optimization budget is requested
-#   explicitly and is allowed to produce slower runtime. Runtime dominance is
-#   never traded away to make the compiler faster unless the caller opts in.
-#
-# FTCFTW (law.ftcftw.dominance, law.realization.contract, law.observation.minimum)
-#   Realization strategy = lawful nonexecution. The compiler evaluates the whole
-#   closed program at compile time (recursive descent, real precedence + parens)
-#   and emits ONLY the constant answer as the minimal `movz/movk x0,#k ; ret`.
-#   For a closed expression that IS the semantic/physical floor: the fastest C
-#   (clang -O2) constant-folds to the same `mov;ret`. So this TIES the floor —
-#   OPTIMAL, which the law counts as FTCFTW closure. Nothing is strictly faster
-#   than `mov;ret`. STRICT dominance over C is realized across a whole family of
-#   workloads that clang -O3 AND gcc-16 keep O(N): fold/lcg, pow, geo (O(log N)
-#   map exponentiation), fib (O(log N) fast doubling), and sumi/sumsq/sumcube
-#   (O(1) division-free Faulhaber). Each is a constant-coefficient linear
-#   recurrence over Z/2^31 solved by the shared engine below; verified against
-#   the C exit byte for every one (see explore/frontier.txt).
-#
-# Backend reality (S0 native subset, honest): tables are function-local and
-# fixed-size; no push/print/global-mutation; and NESTED `while` bodies are
-# miscompiled. So nesting is expressed only through function recursion, every
-# loop is flat and flag-controlled, and the single observable is the exit code.
-#
-# Scope: non-negative integer literals and + - * / with parentheses; the named
-# recurrence workloads name(N); and a GENERAL affine-loop form
-#   loop N x0 : BODY(x)
-# where BODY is an arbitrary expression in the variable x. The compiler recovers
-# the affine map (A,B) structurally by evaluating BODY at x=0,1,2, verifies
-# linearity, and emits the O(log N) exponentiation — winning loops it has never
-# seen, with no name list. Nonlinear BODY -> sentinel 248 (honest, never wrong).
-# And a GENERAL polynomial-sum form
-#   sum N : BODY(i)   =   Sum_{i=1..N} BODY(i)   for polynomial BODY, degree <= 3
-# recovered by Newton forward differences and emitted as an O(1) closed form.
-# Degree > 3 -> sentinel 249 (honest, never wrong).
-# Deletion witness (law.bridge.death): retire explore/ when the production .id
-# realization emits native directly for this subset.
 
-# ---- position/value packing (single-return threading, no shared state) -------
-# base must exceed any packed value; ring values are < 2^31, so 2^32 is safe and
-# leaves headroom for the small parse position in the high part.
 base = 4294967296
 ring = 2147483647
 inv3 = 715827883
@@ -69,7 +20,6 @@ pos: i64 = (z: i64)
 val: i64 = (z: i64)
   z - quo(z, base) * base
 
-# ---- AArch64 encoders (one 32-bit word each; ARM-manual verified) ------------
 movz: i64 = (d: i64, imm: i64, hw: i64)
   3531603968 | hw << 21 | (imm & 65535) << 5 | d
 
@@ -79,11 +29,6 @@ movk: i64 = (d: i64, imm: i64, hw: i64)
 ret: i64 = ()
   3596551104
 
-# ---- recursive-descent front end (precedence, parentheses, variable x) -------
-# The evaluator carries a binding `xv` for the variable `x` (byte 120), so a loop
-# body like `1103515245 * x + 12345` is a real expression in x. Evaluating it at
-# x = 0, 1, 2 recovers the affine coefficients — structural recurrence detection,
-# no name list. factor := spaces ('(' expr ')' | 'x' | digits) spaces
 factor: i64 = (src: str, p: i64, xv: i64)
   n = src:len()
   q = p
@@ -139,7 +84,6 @@ factor: i64 = (src: str, p: i64, xv: i64)
         ts = 1
   pk(q, fv)
 
-# term := factor (('*' | '/') factor)*
 term: i64 = (src: str, p: i64, xv: i64)
   n = src:len()
   f = factor(src, p, xv)
@@ -161,7 +105,6 @@ term: i64 = (src: str, p: i64, xv: i64)
         acc = quo(acc, val(r))
   pk(q, acc)
 
-# expr := term (('+' | '-') term)*
 expr: i64 = (src: str, p: i64, xv: i64)
   n = src:len()
   t = term(src, p, xv)
@@ -183,15 +126,7 @@ expr: i64 = (src: str, p: i64, xv: i64)
         acc = (acc - val(r)) & ring
   pk(q, acc)
 
-# ---- closed-form / O(log N) recurrence engine (ring = mod 2^31) --------------
-# Every workload below is a constant-coefficient linear recurrence over Z/2^31,
-# realized by MAP EXPONENTIATION (O(log N)) or a division-free CLOSED FORM (O(1)).
-# The fastest C/gcc/gfortran/Rust/Go/Zig keep each as an O(N) loop; here each is
-# O(log N) or O(1) and reproduces the C exit byte exactly. Only multiply, add,
-# subtract, shift, and mask are used (all proven in the S0 backend); no division,
-# no matrices, one flat `while` with `if` inside — the shape that compiles.
 
-# affine map x -> aa*x + cc applied nn times to seed (LCG fold, geometric sum).
 affine: i64 = (aa: i64, cc: i64, seed: i64, nn: i64)
   ra = 1
   rc = 0
@@ -211,7 +146,6 @@ affine: i64 = (aa: i64, cc: i64, seed: i64, nn: i64)
     k = k >> 1
   (ra * seed + rc) & ring
 
-# a^nn mod 2^31 by exponentiation-by-squaring.
 powmod: i64 = (a: i64, nn: i64)
   r = 1
   b = a & ring
@@ -223,7 +157,6 @@ powmod: i64 = (a: i64, nn: i64)
     k = k >> 1
   r
 
-# Fibonacci F(nn) mod 2^31 by fast doubling (F(0)=0, F(1)=1).
 fib: i64 = (nn: i64)
   top = 0
   t = nn
@@ -247,7 +180,6 @@ fib: i64 = (nn: i64)
       b = (c + d) & ring
   a
 
-# Sum_{i=1..nn} i (mod 2^31): halve the even factor of N,N+1 via >>1 — no divide.
 sumi: i64 = (nn: i64)
   o = nn + 1
   res = 0
@@ -259,7 +191,6 @@ sumi: i64 = (nn: i64)
     res = nn & ring * hh & ring & ring
   res
 
-# Sum_{i=1..nn} i^2 (mod 2^31) = N(N+1)(2N+1)/6; /2 via >>1, /3 via inv3 (odd).
 sumsq: i64 = (nn: i64)
   o = nn + 1
   tw = nn + nn + 1
@@ -275,12 +206,10 @@ sumsq: i64 = (nn: i64)
   p = fa * fb & ring * fc & ring
   p * inv3 & ring
 
-# Sum_{i=1..nn} i^3 (mod 2^31) = (Sum i)^2.
 sumcube: i64 = (nn: i64)
   t = sumi(nn)
   t * t & ring
 
-# C(nn+1,3) = (nn-1) nn (nn+1) / 6, division-free: >>1 an even factor, inv3 for /3.
 binom3: i64 = (nn: i64)
   a = nn - 1
   b = nn + 1
@@ -294,8 +223,6 @@ binom3: i64 = (nn: i64)
   p = p * b & ring & ring
   p * inv3 & ring
 
-# C(nn+1,4) = (nn-2)(nn-1)nn(nn+1)/24, division-free: remove 3 factors of 2 (two
-# evens among 4 consecutive, one a multiple of 4) via >>, then inv3 for /3.
 binom4: i64 = (nn: i64)
   a = nn - 2
   b = nn - 1
@@ -326,10 +253,6 @@ binom4: i64 = (nn: i64)
   p = p * he & ring & ring
   p * inv3 & ring
 
-# Sum_{i=1..nn} BODY(i) for a polynomial BODY of degree <= 3, via Newton forward
-# differences d0..d3 of BODY at i=0..3 and the hockey-stick identity
-#   Sum C(i,k) = C(nn+1,k+1):  Sum BODY = d0*nn + d1*C(nn+1,2) + d2*C(nn+1,3)
-#   + d3*C(nn+1,4). No monomial division needed; differences are integer.
 polysum: i64 = (d0: i64, d1: i64, d2: i64, d3: i64, nn: i64)
   s = d0 * nn & ring & ring
   s = (s + d1 * sumi(nn)) & ring
@@ -337,8 +260,6 @@ polysum: i64 = (d0: i64, d1: i64, d2: i64, d3: i64, nn: i64)
   s = (s + d3 * binom4(nn)) & ring
   s & ring
 
-# ---- recognizer bodies (own frames — keeps run() under the backend's spill cap)
-# doloop:  loop N x0 : BODY(x)   -> O(log N) affine-map exponentiation.
 doloop: i64 = (src: str)
   q = 5
   s1 = 1
@@ -389,7 +310,6 @@ doloop: i64 = (src: str)
     r = affine(aa, bb, x0 & ring, nn) & 255
   r
 
-# dosum:  sum N : BODY(i)   -> O(1) polynomial-sum closed form (degree <= 3).
 dosum: i64 = (src: str)
   q = 5
   s1 = 1
@@ -428,8 +348,6 @@ dosum: i64 = (src: str)
     r = polysum(f0, e1, e2, e3, nn) & 255
   r
 
-# ---- compile: text -> value -> FLOOR machine code ----------------------------
-# Returns the evaluated result. Sentinels: 250 encoder mismatch, 251 above floor.
 run: i64 = (src: str)
   good = 0
   if movz(0, 9, 0) == 3531604256
@@ -441,23 +359,11 @@ run: i64 = (src: str)
   if good != 3
     return 250
 
-  # GENERAL affine-loop recognizer (structural, not a name list):
-  #   loop N x0 : BODY(x)
-  # means x starts at x0 and is updated x <- BODY(x), N times. The compiler
-  # evaluates BODY at x = 0,1,2 to recover the affine map (A,B) = (BODY(1)-BODY(0),
-  # BODY(0)), verifies linearity (BODY(2) == 2A+B), and emits the O(log N)
-  # exponentiation of that map. Any affine body the fastest C keeps O(N) is won
-  # here with ZERO prior knowledge of the specific recurrence. Nonlinear body
-  # -> sentinel 248 (honest: not yet solved), never wrong code.
   n = src:len()
   isloop = 0
   if n >= 4
     if src:byte(1) == 108 and src:byte(2) == 111 and src:byte(3) == 111 and src:byte(4) == 112
       isloop = 1
-  # GENERAL polynomial-sum recognizer (structural):  sum N : BODY(i)
-  # = Sum_{i=1..N} BODY(i) for any polynomial BODY of degree <= 3. The compiler
-  # samples BODY at i=0..4, forms Newton differences, verifies degree via the
-  # 4th difference, and emits the closed form (O(1)); the fastest C keeps it O(N).
   issum = 0
   if n >= 4
     if src:byte(1) == 115 and src:byte(2) == 117 and src:byte(3) == 109 and src:byte(4) == 32
@@ -506,11 +412,6 @@ run: i64 = (src: str)
       if fc == 115 and nl == 7
         result = sumcube(nn) & 255
 
-  # realization: the FLOOR of `return result` is `movz/movk x0,#result ; ret`
-  # — exactly what clang -O2 folds a closed expression to (OPTIMAL / ties the
-  # floor). The encoders (movz/movk/ret) are verified by the `good == 3` gate
-  # above; the single observable of the S0 subset is the exit code, so `result`
-  # is returned rather than streamed as a file (host file-output is not in S0).
   result
 
 main: i64 = ()

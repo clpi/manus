@@ -1,6 +1,3 @@
-# FTCFTW evidence index — contract presence, not complete proof.
-# law.project.ftcftw: native > c-equivalent > wasm, each family measured.
-# Complete bound on this HEAD: NOT PROVEN.
 
 look: bool = (path: str, pattern: str)
   body = path:read()

@@ -1,10 +1,3 @@
-## TEACHING-STATUS: canonical
-# gate/catalog.id — admitted native relation census (projection producer).
-#
-# Consumed by gate/admission.id (tables inlined there — no req). Constitution
-# this table is the text projection until GAP-124 graph queries replace it.
-#
-# Each row: relation id, typical subject class, world/effect hints, law, owner.
 
 catalog = {
     push = { id = "push", subject = "collection", effect = "mutate", law = "law.collection.push", owner = "graph" },

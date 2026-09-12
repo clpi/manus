@@ -24,8 +24,6 @@ digits: i64 = (text: str)
   v
 
 main: i64 = ()
-  # GAP-220 / GAP-201: the enumeration below is a bare `git ls-files`
-  # redirected into a file, and its status was never read at all.
   if cap("sh gate/subject.sh >/dev/null 2>&1; echo $?") != "0"
     print("proof/fwmin: FAIL zero subjects — the probe examined nothing (GAP-201)")
     return 3

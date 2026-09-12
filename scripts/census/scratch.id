@@ -1,8 +1,3 @@
-# Root scratch census for the self-hosting hygiene target.
-#
-# Tracked sh/py debt is already counted by scripts/census/language. This catches
-# the local-root case that git ls-files cannot see: throwaway foreign scripts
-# left beside the compiler checkout.
 
 chomp: str = (text: str)
   if text:len() == 0

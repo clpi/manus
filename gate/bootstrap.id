@@ -1,9 +1,3 @@
-## TEACHING-STATUS: canonical
-# gate/bootstrap — direct-native capture helpers for gate scripts (GAP-155 ingress).
-#
-# gatecap(shellline) and os.execute(shellline) lower to idol_process_capture /
-# idol_os_execute in src/idol_io_bootstrap.c on the direct backend only.
-# No command:any, no :open, no --backend=c.
 
 capture: str = (shellline: str)
   gatecap(shellline)

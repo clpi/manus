@@ -1,4 +1,3 @@
-# IEEE754 reinterpret: subject-first to(bit) over view-class edges.
 
 type bit = i64
 

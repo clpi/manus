@@ -1,9 +1,3 @@
-## TEACHING-STATUS: canonical
-# gate/build — named step only. Not a second idiom runner.
-#
-# Scan:  git diff -U0 -- '*.id' | idol run gate/idiom.id
-# Check: idol check gate/idiom.id
-# Outcome is that run or check — not a reconstructed shell status.
 
 print("gate/build: transport is stdin to gate/idiom.id")
 0

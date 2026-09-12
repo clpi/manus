@@ -1,47 +1,3 @@
-# constitution §47 · `law.c.floor` / `law.perf.floor` / `law.perf.dominance`,
-# measured rather than asserted.
-#
-# WHAT THIS GATE IS FOR. §47 says C stops being the optimization ceiling and
-# becomes ONE CANDIDATE the compiler costs and can choose. Three laws landed as
-# constitutional text with nothing behind them; `gaps/GAP-096` recorded the
-# consequence — clearing the benchmark folds makes the comparison MEASURABLE
-# but not MONOTONE, because "the C-equivalent realization as a candidate the
-# compiler costs and can choose" was architecture the tree did not have.
-#
-# It has a slice of it now, and this gate is the instrument that says how big
-# the slice is. Half the rows read the `c_floor` block of `duo explain` (the
-# PLAN); half compile and run the same programs through both backends (the
-# WORLD). Every row is one of those two things and never a belief.
-#
-# WHAT IT DOES NOT CLAIM, stated first so no reader has to infer it:
-#
-#   * Nothing here is a idol-versus-C dominance claim. The comparison is
-#     idol's DIRECT lowering against idol's own C-EQUIVALENT lowering of the
-#     same graph. awk appears once, as an answer oracle.
-#   * The measured latency verdict on the fixture is UNRESOLVED and the gate
-#     says so. Under §3 and GAP-096 a difference smaller than the run-to-run
-#     spread is noise with a favourable sign, and this gate will not credit
-#     one. A row reading "no measured win" is this gate working.
-#
-# THE ROWS
-#
-#   P0  the explain document parses and holds lowering variables      control
-#   C1  every lowering variable carries `lower.cequiv`, baseline      law.c.floor
-#   C2  the baseline survives on a callable native CAN lower          law.c.floor
-#   F1  the floor is RETAINED, and `why(skip)` says why by number     law.perf.floor
-#   D1  adding a semantic fact does not shrink the candidate set      law.perf.dominance
-#   D2  ... and the fact was not inert: the viable count grew         anti-tautology
-#   D3  the plan's legality matches what the backend actually does    plan vs world
-#   M0  both lowerings and an oracle print the SAME ANSWER            §3, precondition
-#   M1  measured compile wall time, both lowerings                    published
-#   M2  measured binary size, both lowerings                          published
-#   M3  measured latency + tail, and the §49 `latency` frontier       published
-#   M4  the resolution rule can both fire and decline                 control
-#
-# FAILING is: a missing baseline candidate, a shrunk candidate set, an inert
-# fact, a plan that disagrees with the backend, an answer mismatch, or a
-# control that does not behave. A measured LOSS for the native lowering is not
-# a failure — it is the floor doing its job, and it is published.
 
 work = "/tmp/duo-cfloor"
 runs = 5
@@ -53,13 +9,6 @@ failed = 0
 here: str = ()
     std.script.chomp(std.script.capture("pwd"))
 
-# Two runners, and the difference cost a debugging pass worth recording. The
-# first draft routed everything through `quiet`, which appends
-# `>/dev/null 2>&1`. A command carrying its own `>out` then has two stdout
-# redirections, the last one wins, the capture file is created EMPTY and the
-# exit status is still 0 — every downstream row read an empty document and the
-# gate reported a confident absence. `shell` is for commands that own their
-# redirections; `quiet` only for commands that have none.
 quiet: i64 = (cmd: str)
     std.script.status("{cmd} >/dev/null 2>&1")
 
@@ -77,9 +26,6 @@ note: void = (tag: str, ok: bool, detail: str)
         failed += 1
     rows = "{rows}  {mark} {tag}  {detail}\n"
 
-# An integer read out of a shell pipeline. `to(i64)` never fails and `tonumber`
-# answers 0 on garbage, so -1 marks "nothing came back" and every caller treats
-# a non-positive answer as suspect.
 count: i64 = (cmd: str)
     out = grab("{cmd} 2>/dev/null | tr -d ' \\n'")
     n = -1
@@ -90,14 +36,9 @@ count: i64 = (cmd: str)
 explained: bool = (bin: str, src: str, out: str)
     shell("{bin} explain {src} >{out} 2>/dev/null") == 0
 
-# The JSON fragment for one lowering variable, on a line of its own. Splitting
-# on the variable-id marker is what keeps a field from being read out of a
-# NEIGHBOURING variable — the same trap `scripts/realize.id` splits commas to
-# avoid, one level up.
 slice: bool = (doc: str, name: str, out: str)
     shell("sed 's/\"id\":\"realize.lowering:/\\n@@@/g' {doc} | grep '^@@@{name}\"' >{out} 2>/dev/null") == 0
 
-# ... and the fragment for one candidate inside a variable's fragment.
 pick: bool = (blk: str, cand: str, out: str)
     shell("sed 's/\"id\":\"lower\\./\\n###/g' {blk} | grep '^###{cand}\"' >{out} 2>/dev/null") == 0
 
@@ -107,15 +48,6 @@ field: i64 = (path: str, key: str)
 holds: bool = (path: str, want: str)
     quiet("grep -q -F '{want}' {path}") == 0
 
-# Wall times in whole milliseconds. INTEGER milliseconds on purpose: every
-# float here would be parsed out of process output and `to(f64)` cannot report
-# a bad parse, so the seconds are never floated at all. `/usr/bin/time -p` is
-# specified to print exactly two decimals, so deleting the point turns `0.53`
-# into 53 CENTISECONDS and one multiply finishes it. `sort -n` picks the
-# extreme before the point is removed, while the value is still ordered.
-#
-# `pos` selects the end of the sorted column: 1 is the best time, `runs` the
-# worst. One sampler, two questions, no second copy to drift.
 timed: i64 = (cmd: str, n: i64, pos: i64)
     log = "{work}/timed.txt"
     quiet("rm -f {log}")
@@ -129,9 +61,6 @@ timed: i64 = (cmd: str, n: i64, pos: i64)
         ms = centi * 10
     ms
 
-# GAP-096's rule, restated for two wall-clock samples instead of one table: a
-# gap smaller than either candidate's own run-to-run spread is not a result.
-# Answers 1 when `a` is resolvably faster, -1 when `b` is, 0 when neither.
 resolved: i64 = (amin: i64, amax: i64, bmin: i64, bmax: i64)
     floor = amax - amin
     if bmax - bmin > floor
@@ -152,7 +81,6 @@ main: i64 = ()
     quiet("rm -rf {work}")
     quiet("mkdir -p {work}")
 
-    # ── the PLAN ────────────────────────────────────────────────────────────
     sdoc = "{work}/strong.json"
     wdoc = "{work}/weak.json"
     if !explained(bin, strong, sdoc)
@@ -162,9 +90,6 @@ main: i64 = ()
         print("cfloor: FAIL — `duo explain` produced no document for the `any` fixture")
         return 3
 
-    # P0. A gate reporting zero findings over zero subjects is broken, not
-    # green. Every row below reads the same document, so this control guards
-    # all of them at once.
     lowered = field(sdoc, "lowerings")
     note("P0 control", lowered >= 2, "lowering variables in the plan: {lowered} (mix, main)")
     if lowered < 2
@@ -172,17 +97,10 @@ main: i64 = ()
         print("cfloor: FAIL — the plan holds no lowering variables; nothing below was measured")
         return 3
 
-    # C1. law.c.floor over the WHOLE document: the number of C-equivalent
-    # baselines equals the number of lowering variables. Not one example of a
-    # baseline — no variable without one.
     baselines = count("grep -o 'C-equivalent lowering (baseline)' {sdoc} | wc -l")
     note("C1 law.c.floor", baselines == lowered,
         "callables carrying a C-equivalent baseline: {baselines} of {lowered}")
 
-    # C2. The interesting half of law.c.floor. `mix` is fully typed, so the
-    # direct backend can lower it — and the baseline is STILL a candidate.
-    # "C is a candidate, never the optimization ceiling" fails here if the plan
-    # drops the floor as soon as native becomes available.
     smix = "{work}/strong-mix.json"
     if !slice(sdoc, "mix", smix)
         print("cfloor: FAIL — no `realize.lowering:mix` variable in the typed plan")
@@ -192,10 +110,6 @@ main: i64 = ()
     note("C2 law.c.floor", stotal == 2 and sviable == 2 and holds(smix, "\"baseline\":true"),
         "typed callable keeps both: total={stotal} viable={sviable}")
 
-    # F1. law.perf.floor. The selection is the baseline, and the reason is a
-    # NUMBER rather than a preference: zero of the twelve relevant dimensions
-    # carry a fact on both candidates, so there is no comparison to win and the
-    # floor stands. `missing=12` is the honest size of the hole, printed.
     snative = "{work}/strong-native.json"
     _ = pick(smix, "native", snative)
     skipped = holds(snative, "\"unseats\":false")
@@ -206,8 +120,6 @@ main: i64 = ()
     note("F1 law.perf.floor", chosen and kept and skipped and missing == 12 and compared == 0,
         "floor retained; why(skip): relation=insufficient compared={compared} missing={missing} of 12 · unseats=false")
 
-    # D1/D2. law.perf.dominance, measured across the fixture pair. `weak.id`
-    # is `fact.id` with `any` where the descriptors are — one fact removed.
     wmix = "{work}/weak-mix.json"
     if !slice(wdoc, "mix", wmix)
         print("cfloor: FAIL — no `realize.lowering:mix` variable in the `any` plan")
@@ -219,24 +131,11 @@ main: i64 = ()
     note("D2 control", wviable == 1 and sviable == 2,
         "the fact was not inert: viable {wviable} -> {sviable}")
 
-    # D3. The plan says `lower.native` is invalid for the `any` version and
-    # valid for the typed one. The backend is asked the same question with a
-    # real compile. A legality fact nothing obeys is decoration.
     wdirect = quiet("{bin} compile {weakf} --backend=direct -o {work}/w.bin")
     sdirect = quiet("{bin} compile {strong} --backend=direct -o {work}/s.bin")
     note("D3 plan vs world", wdirect != 0 and sdirect == 0,
         "--backend=direct refuses the `any` version ({wdirect}) and accepts the typed one ({sdirect})")
 
-    # ── the WORLD ───────────────────────────────────────────────────────────
-    #
-    # M0. §3, and it gates every number after it: no speed figure is compared
-    # until the two lowerings and an INDEPENDENT oracle agree on the answer.
-    #
-    # The oracle is awk running the same recurrence. Not C — a `.c` file in the
-    # tree is a §0f MONOGLOT finding, and the point of an oracle is that it was
-    # not built by the thing under test, which awk satisfies and a idol-hosted
-    # Lua run would not. It costs about ten seconds and it is the row that
-    # makes every number below it mean anything.
     _ = quiet("{bin} compile {strong} -o {work}/sc.bin")
     adirect = grab("{work}/s.bin")
     acequiv = grab("{work}/sc.bin")
@@ -249,28 +148,16 @@ main: i64 = ()
         print("cfloor: FAIL — the two lowerings and the oracle disagree; no speed number is comparable")
         return 1
 
-    # M1. Compile wall time. This row exists because the first version of the
-    # cost facts asserted, as PROVEN, that the direct path compiles faster —
-    # the C path spawns an external compiler and the direct path does not, so
-    # the ordering looked structural. Measured, it was BACKWARDS, and across
-    # runs it goes both ways. The claim was DELETED rather than demoted, and
-    # this row is what would catch it coming back.
     cdirect = timed("{bin} compile {strong} --backend=direct -o {work}/s.bin", 3, 1)
     ccequiv = timed("{bin} compile {strong} -o {work}/sc.bin", 3, 1)
     note("M1 compile", cdirect > 0 and ccequiv > 0,
         "direct={cdirect}ms  c-equivalent={ccequiv}ms  (published, not gated: observed in BOTH orders across runs)")
 
-    # M2. Binary size, both lowerings, published without a verdict: the two
-    # link the same runtime and the difference is not a realization fact.
     zdirect = count("wc -c < {work}/s.bin")
     zcequiv = count("wc -c < {work}/sc.bin")
     note("M2 size", zdirect > 0 and zcequiv > 0,
         "direct={zdirect}B  c-equivalent={zcequiv}B")
 
-    # M3. The §49 `latency` frontier: `latency` (best observed) and
-    # `tail latency` (worst observed), both measured, both candidates. This is
-    # the only objective whose relevance set this gate can fully cover, which
-    # is exactly why the verdict is allowed to be computed at all.
     dmin = timed("{work}/s.bin", runs, 1)
     dmax = timed("{work}/s.bin", runs, runs)
     emin = timed("{work}/sc.bin", runs, 1)
@@ -285,9 +172,6 @@ main: i64 = ()
         "direct={dmin}..{dmax}ms  c-equivalent={emin}..{emax}ms")
     rows = "{rows}       verdict  {label}\n"
 
-    # M4. The resolution rule's own control, both directions. A classifier that
-    # always answers UNRESOLVED would make M3 read as a pass forever, and one
-    # that always resolves would have credited the noise above.
     fires = resolved(100, 110, 500, 520) == 1
     declines = resolved(430, 620, 530, 730) == 0
     note("M4 control", fires and declines,

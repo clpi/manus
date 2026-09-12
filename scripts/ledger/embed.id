@@ -1,4 +1,3 @@
-# Embedded @c audit. Counts are i64 facts from capture, not shell `test` status.
 
 chomp: str = (text: str)
   n = text:len()
@@ -34,9 +33,6 @@ envor: str = (name: str, fallback: str)
   else
     v
 
-# GAP-220 / GAP-201: `not sites` prints this ledger's PASS line, so a tree
-# with no `.git` — where every enumeration is empty — produces its best
-# verdict from nothing.
 subject = cap("sh gate/subject.sh '*.id' >/dev/null 2>&1; echo $?")
 sites = digits(cap("git ls-files '*.id' | grep -v scripts/census/foreign.id | tr '\\n' '\\0' | xargs -0 grep -l -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | wc -l | tr -d ' '"))
 payload = digits(cap("git ls-files '*.id' | grep -v scripts/census/foreign.id | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*#' | wc -l | tr -d ' '"))
