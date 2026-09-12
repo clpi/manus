@@ -119,6 +119,101 @@ ret: str = ()
 syscall: str = ()
     pair(15) .. pair(5)
 
+rexx: str = (w: i64, r: i64, x: i64, b: i64)
+    v = 64 | (w << 3) | (r << 2) | (x << 1) | b
+    if v == 64
+        return ""
+    pair(v)
+
+imul1: str = (s: i64)
+    rex(1, 0, rbit(s)) .. pair(247) .. pair(modrm(3, 5, s))
+
+sarri: str = (d: i64, v: i64)
+    rex(1, 0, rbit(d)) .. pair(193) .. pair(modrm(3, 7, d)) .. pair(v)
+
+shrri: str = (d: i64, v: i64)
+    rex(1, 0, rbit(d)) .. pair(193) .. pair(modrm(3, 5, d)) .. pair(v)
+
+leasib: str = (d: i64, b: i64, x: i64, s: i64)
+    sc = 0
+    if s == 2
+        sc = 1
+    if s == 4
+        sc = 2
+    if s == 8
+        sc = 3
+    m = 0
+    tail = ""
+    if low(b) == 5
+        m = 1
+        tail = pair(0)
+    sb = (sc << 6) | (low(x) << 3) | low(b)
+    rexx(1, rbit(d), rbit(x), rbit(b)) .. pair(141) .. pair(modrm(m, d, 4)) .. pair(sb) .. tail
+
+memop: str = (op: i64, r: i64, b: i64, v: i64)
+    m = 0
+    tail = ""
+    if v != 0 or low(b) == 5
+        m = 1
+        tail = pair(v)
+        if v >= 128 or v < 0 - 128
+            m = 2
+            tail = word(v)
+    sib = ""
+    if low(b) == 4
+        sib = pair(36)
+    rex(1, rbit(r), rbit(b)) .. pair(op) .. pair(modrm(m, r, b)) .. sib .. tail
+
+movrm: str = (d: i64, b: i64, v: i64)
+    memop(139, d, b, v)
+
+movmr: str = (b: i64, v: i64, s: i64)
+    memop(137, s, b, v)
+
+push: str = (r: i64)
+    rex(0, 0, rbit(r)) .. pair(80 + low(r))
+
+pop: str = (r: i64)
+    rex(0, 0, rbit(r)) .. pair(88 + low(r))
+
+vex: str = (m: i64, w: i64, v: i64, l: i64, pp: i64, r: i64, x: i64, b: i64)
+    vf = 15
+    if v >= 0
+        vf = 15 - v
+    if m == 1 and w == 0 and x == 0 and b == 0
+        b2 = ((1 - r) << 7) | (vf << 3) | (l << 2) | pp
+        return pair(197) .. pair(b2)
+    b2 = ((1 - r) << 7) | ((1 - x) << 6) | ((1 - b) << 5) | m
+    b3 = (w << 7) | (vf << 3) | (l << 2) | pp
+    pair(196) .. pair(b2) .. pair(b3)
+
+vpaddq: str = (d: i64, a: i64, b: i64, l: i64)
+    vex(1, 0, a, l, 1, rbit(d), 0, rbit(b)) .. pair(212) .. pair(modrm(3, d, b))
+
+vpxor: str = (d: i64, a: i64, b: i64)
+    vex(1, 0, a, 0, 1, rbit(d), 0, rbit(b)) .. pair(239) .. pair(modrm(3, d, b))
+
+vmovdqa: str = (d: i64, s: i64)
+    vex(1, 0, 0 - 1, 0, 1, rbit(d), 0, rbit(s)) .. pair(111) .. pair(modrm(3, d, s))
+
+shlx: str = (d: i64, a: i64, b: i64)
+    vex(2, 1, a, 0, 1, rbit(d), 0, rbit(b)) .. pair(247) .. pair(modrm(3, d, b))
+
+shrx: str = (d: i64, a: i64, b: i64)
+    vex(2, 1, a, 0, 3, rbit(d), 0, rbit(b)) .. pair(247) .. pair(modrm(3, d, b))
+
+sarx: str = (d: i64, a: i64, b: i64)
+    vex(2, 1, a, 0, 2, rbit(d), 0, rbit(b)) .. pair(247) .. pair(modrm(3, d, b))
+
+mulx: str = (d: i64, h: i64, s: i64)
+    vex(2, 1, h, 0, 3, rbit(d), 0, rbit(s)) .. pair(246) .. pair(modrm(3, d, s))
+
+pext: str = (d: i64, s: i64, m: i64)
+    vex(2, 1, s, 0, 2, rbit(d), 0, rbit(m)) .. pair(245) .. pair(modrm(3, d, m))
+
+pdep: str = (d: i64, s: i64, m: i64)
+    vex(2, 1, s, 0, 3, rbit(d), 0, rbit(m)) .. pair(245) .. pair(modrm(3, d, m))
+
 vec: str = (a: str, h: str)
     a .. " | " .. h .. "\n"
 
@@ -148,5 +243,25 @@ main: i64 = ()
     out = out .. vec("jmp 1f; .rept 300; nop; .endr; 1:", jmp(300))
     out = out .. vec("ret", ret())
     out = out .. vec("syscall", syscall())
+    out = out .. vec("imulq %r11", imul1(11))
+    out = out .. vec("sarq $3, %rdx", sarri(2, 3))
+    out = out .. vec("shrq $63, %r10", shrri(10, 63))
+    out = out .. vec("leaq (%r12,%r12,2), %r13", leasib(13, 12, 12, 2))
+    out = out .. vec("leaq (%rbp,%rbp,8), %rax", leasib(0, 5, 5, 8))
+    out = out .. vec("movq (%rbx), %rax", movrm(0, 3, 0))
+    out = out .. vec("movq %rcx, 8(%rbp)", movmr(5, 8, 1))
+    out = out .. vec("movq -16(%r12), %r8", movrm(8, 12, 0 - 16))
+    out = out .. vec("pushq %r8", push(8))
+    out = out .. vec("popq %r15", pop(15))
+    out = out .. vec("vpaddq %xmm2, %xmm1, %xmm0", vpaddq(0, 1, 2, 0))
+    out = out .. vec("vpaddq %ymm6, %ymm5, %ymm7", vpaddq(7, 5, 6, 1))
+    out = out .. vec("vpxor %xmm9, %xmm8, %xmm10", vpxor(10, 8, 9))
+    out = out .. vec("vmovdqa %xmm3, %xmm4", vmovdqa(4, 3))
+    out = out .. vec("vmovdqa %xmm4, %xmm3", vmovdqa(3, 4))
+    out = out .. vec("shlx %rax, %rcx, %rdx", shlx(2, 0, 1))
+    out = out .. vec("shrx %r9, %r8, %r10", shrx(10, 9, 8))
+    out = out .. vec("sarx %rdi, %rsi, %rax", sarx(0, 7, 6))
+    out = out .. vec("mulx %rax, %rdx, %rcx", mulx(1, 2, 0))
+    out = out .. vec("pdep %r10, %r11, %r12", pdep(12, 11, 10))
     stdout:write(out)
     0
