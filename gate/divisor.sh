@@ -81,12 +81,14 @@ bad()  { printf 'divisor: FAIL — %s\n' "$1" >&2; fail=1; }
 for spec in 'idiv://' 'div:/' 'mod:%'; do
   name=${spec%%:*}
   op=${spec#*:}
+  # "/" is f64-typed by sema (deliberate); "//" and "%" are integer.
+  if [ "$op" = "/" ]; then qt=f64; else qt=i64; fi
   cat > "$work/$name.id" <<ID
 # Opaque runtime divisor: the compiler cannot read an environment value.
 main: i64 = ()
   s: str = os.env["IDOLDIVZERO"]
   d = s:len()
-  q: i64 = 7 $op d
+  q: $qt = 7 $op d
   print(q)
   0
 ID
@@ -109,7 +111,7 @@ done
 
 # ─── §2 opaque runtime NON-ZERO: right answer, and the divisor is opaque ───
 # `IDOLDIVZERO=xx` has length 2. Same binaries as §1.
-for spec in 'idiv:3' 'div:3' 'mod:1'; do
+for spec in 'idiv:3' 'div:3.000000' 'mod:1'; do
   name=${spec%%:*}
   want=${spec#*:}
   got=$(IDOLDIVZERO=xx "$work/$name.bin" 2>/dev/null)
@@ -186,9 +188,10 @@ fi
 for spec in 'litidiv://' 'litdiv:/' 'litmod:%'; do
   name=${spec%%:*}
   op=${spec#*:}
+  if [ "$op" = "/" ]; then qt=f64; else qt=i64; fi
   cat > "$work/$name.id" <<ID
 main: i64 = ()
-  q: i64 = 7 $op 0
+  q: $qt = 7 $op 0
   print(q)
   0
 ID
