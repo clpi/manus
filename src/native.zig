@@ -1076,6 +1076,19 @@ const Arm64Compiler = struct {
     /// Calls this compilation realized as a jump rather than a frame. Census
     /// only — `IDOL_TAILCALL_REPORT` prints it.
     tailcall_admitted: u32 = 0,
+    /// Census for `IDOL_PROBE_CENSUS`: how many functions were compiled,
+    /// how many throwaway probe compilations that took, how many ladder
+    /// descents, and the plan-class breakdown. Purely diagnostic.
+    probe_census_functions: u32 = 0,
+    probe_census_probes: u32 = 0,
+    probe_census_descents: u32 = 0,
+    probe_census_plan_zero: u32 = 0,
+    probe_census_plan_all: u32 = 0,
+    probe_census_plan_partial: u32 = 0,
+    probe_census_call_plan0: u32 = 0,
+    probe_census_call_non0: u32 = 0,
+    probe_census_leaf_plan0: u32 = 0,
+    probe_census_leaf_non0: u32 = 0,
     /// SEVERING CONTROL for §12 `error.depth`. `IDOL_NO_DEPTH=1` restores the
     /// unmetered prologue — and with it the SIGSEGV — for every function.
     /// Read the same way and for the same reason as `tailcall`.
@@ -1855,7 +1868,16 @@ const Arm64Compiler = struct {
             // every function: the probe already answers `callee_save_all` when it
             // cannot compile, and a leaf that touches nothing still plans 0.
             self.next_func_metered = self.depth_metered_names.contains(f.name);
+            self.probe_census_functions += 1;
             const plan = self.probeFunctionPlan(f);
+            if (plan.callee_save == 0) self.probe_census_plan_zero += 1;
+            const pc_has_call = dnirFunctionHasCall(f);
+            if (pc_has_call and plan.callee_save == 0) self.probe_census_call_plan0 += 1;
+            if (pc_has_call and plan.callee_save != 0) self.probe_census_call_non0 += 1;
+            if (!pc_has_call and plan.callee_save == 0) self.probe_census_leaf_plan0 += 1;
+            if (!pc_has_call and plan.callee_save != 0) self.probe_census_leaf_non0 += 1;
+            if (plan.callee_save == callee_save_all) self.probe_census_plan_all += 1;
+            if (plan.callee_save != 0 and plan.callee_save != callee_save_all) self.probe_census_plan_partial += 1;
             self.callee_save_plan = plan.callee_save;
             self.gp_call_home_budget = plan.home_budget;
             try self.compileDnirFunction(f);
@@ -1950,6 +1972,8 @@ const Arm64Compiler = struct {
         const steps: usize = if (dnirFunctionHasCall(f)) ladder.len else 1;
         var i: usize = 0;
         while (i < steps) : (i += 1) {
+            self.probe_census_probes += 1;
+            if (i > 0) self.probe_census_descents += 1;
             if (self.probeCalleeSaveUse(f, ladder[i])) |touched| {
                 return .{ .callee_save = touched, .home_budget = ladder[i] };
             }
@@ -12265,6 +12289,12 @@ fn emitArm64FromDnirLicensed(
         std.debug.print(
             "depth metered={d} of {d}\n",
             .{ compiler.depth_metered_count, m.functions.len },
+        );
+    }
+    if (std.c.getenv("IDOL_PROBE_CENSUS") != null) {
+        std.debug.print(
+            "probe functions={d} probe_compiles={d} descents={d} plan0={d} planAll={d} planPart={d} call0={d} callN0={d} leaf0={d} leafN0={d}\n",
+            .{ compiler.probe_census_functions, compiler.probe_census_probes, compiler.probe_census_descents, compiler.probe_census_plan_zero, compiler.probe_census_plan_all, compiler.probe_census_plan_partial, compiler.probe_census_call_plan0, compiler.probe_census_call_non0, compiler.probe_census_leaf_plan0, compiler.probe_census_leaf_non0 },
         );
     }
     var output = try compiler.finish();
