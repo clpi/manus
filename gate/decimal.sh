@@ -2,9 +2,9 @@
 set -u
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-python3 "$root/gate/outcome.py" "$root/gate/decimal.sh" || exit 1
 idol="${IDOL_BIN:-$root/zig-out/bin/idol}"
 [ -x "$idol" ] || { echo "decimal: compiler unavailable" >&2; exit 2; }
+"$idol" run --backend=direct "$root/gate/outcome.id" -- "$root/gate/decimal.sh" || exit 1
 limit=""
 for candidate in timeout gtimeout; do
   if command -v "$candidate" >/dev/null 2>&1; then limit="$candidate"; break; fi

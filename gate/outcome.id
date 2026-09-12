@@ -1,0 +1,245 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+indexof: i64 = (hay: str, needle: str, from: i64)
+  h = hay:len()
+  n = needle:len()
+  i = from
+  while i + n - 1 <= h
+    if hay:sub(i, i + n - 1) == needle
+      return i
+    i = i + 1
+  0
+
+findline: i64 = (src: str, line: str, from: i64)
+  n = line:len()
+  i = indexof(src, "\n" .. line, from)
+  while i != 0
+    after = i + 1 + n
+    if after > src:len() or src:sub(after, after) == "\n"
+      return i + 1
+    i = indexof(src, "\n" .. line, i + 1)
+  0
+
+readable: bool = (path: str)
+  chomp(gatecap("test -r '{path}' >/dev/null 2>&1; echo $?")) == "0"
+
+digits: i64 = (text: str)
+  if text == nil or text == ""
+    return -1
+  v = 0
+  seen = false
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      seen = true
+      i = i + 1
+    else
+      if c == " " or c == "\n" or c == "\r" or c == "\t"
+        i = i + 1
+      else
+        return -1
+  if !seen
+    return -1
+  v
+
+tf: str = (v: i64)
+  if v == 1
+    return "true"
+  "false"
+
+hexchar: str = (v: i64)
+  hexdigits = "0123456789abcdef"
+  hexdigits:sub(v + 1, v + 1)
+
+jescape: str = (s: str)
+  out = ""
+  i = 1
+  n = s:len()
+  while i <= n
+    b = s:byte(i)
+    if b == 34
+      out = out .. "\\\""
+    elseif b == 92
+      out = out .. "\\\\"
+    elseif b == 10
+      out = out .. "\\n"
+    elseif b == 13
+      out = out .. "\\r"
+    elseif b == 9
+      out = out .. "\\t"
+    elseif b < 32
+      out = out .. "\\u00" .. hexchar(b / 16) .. hexchar(b % 16)
+    else
+      out = out .. s:sub(i, i)
+    i = i + 1
+  out
+
+shaof: str = (path: str)
+  line = chomp(gatecap("if command -v sha256sum >/dev/null 2>&1; then sha256sum '{path}' 2>/dev/null; else shasum -a 256 '{path}' 2>/dev/null; fi"))
+  sp = indexof(line, " ", 1)
+  if sp == 0
+    return ""
+  line:sub(1, sp - 1)
+
+okof: bool = (r: str)
+  r:sub(1, 1) == "1"
+
+rowof: str = (r: str)
+  r:sub(3, r:len())
+runcase: str = (carrier: str, limit: str, tmpbase: str, name: str, cc: i64, rc: i64, output: str, artifact: i64, want: i64)
+  ob = "{"
+  cb = "}"
+  script = "set -u\n"
+    .. "tmp=$(mktemp -d \"{tmpbase}/outcome-control-XXXXXX\") || exit 99\n"
+    .. "trap 'rm -rf \"$tmp\"' EXIT\n"
+    .. "cat >\"$tmp/carrier.sh\" <<'OUTCOME_CARRIER_EOF_7f3a9c'\n"
+    .. carrier .. "\n"
+    .. "OUTCOME_CARRIER_EOF_7f3a9c\n"
+    .. "echo '#!/bin/sh' > \"$tmp/compiler\"\n"
+    .. "if [ \"{artifact}\" = \"1\" ]; then echo 'printf wasm > \"$4\"' >> \"$tmp/compiler\"; fi\n"
+    .. "echo \"exit {cc}\" >> \"$tmp/compiler\"\n"
+    .. "echo '#!/bin/sh' > \"$tmp/runner\"\n"
+    .. "echo \"printf '%s' '{output}'; echo\" >> \"$tmp/runner\"\n"
+    .. "echo \"exit {rc}\" >> \"$tmp/runner\"\n"
+    .. "chmod 700 \"$tmp/compiler\" \"$tmp/runner\"\n"
+    .. "echo 'set -u' > \"$tmp/driver.sh\"\n"
+    .. "echo 'work=\"$1\"' >> \"$tmp/driver.sh\"\n"
+    .. "echo 'limit=\"$2\"' >> \"$tmp/driver.sh\"\n"
+    .. "echo 'idol=\"$work/compiler\"' >> \"$tmp/driver.sh\"\n"
+    .. "echo 'wasmrun=\"$work/runner\"' >> \"$tmp/driver.sh\"\n"
+    .. "echo 'fail=0' >> \"$tmp/driver.sh\"\n"
+    .. "echo 'measured=0' >> \"$tmp/driver.sh\"\n"
+    .. "echo 'note() " .. ob .. " printf \"%s\" \"$1\"; echo; " .. cb .. "' >> \"$tmp/driver.sh\"\n"
+    .. "echo 'bad() " .. ob .. " printf \"%s\" \"$1\" >&2; echo >&2; fail=1; " .. cb .. "' >> \"$tmp/driver.sh\"\n"
+    .. "cat \"$tmp/carrier.sh\" >> \"$tmp/driver.sh\"\n"
+    .. "echo 'carrier probe \"1 0 0\" \"print(1)\"' >> \"$tmp/driver.sh\"\n"
+    .. "echo '[ \"$fail\" -eq 0 ]' >> \"$tmp/driver.sh\"\n"
+    .. "\"{limit}\" 10 sh \"$tmp/driver.sh\" \"$tmp\" \"{limit}\" >\"$tmp/o\" 2>\"$tmp/e\"\n"
+    .. "drc=$?\n"
+    .. "ol=$(wc -c < \"$tmp/o\")\n"
+    .. "el=$(wc -c < \"$tmp/e\")\n"
+    .. "printf 'RC=%s OL=%s EL=%s\\n' \"$drc\" \"$ol\" \"$el\"\n"
+    .. "cat \"$tmp/o\"\n"
+    .. "cat \"$tmp/e\"\n"
+  raw = gatecap(script)
+  nl = indexof(raw, "\n", 1)
+  rcv = -1
+  olv = 0
+  elv = 0
+  rest = ""
+  if nl != 0
+    head = raw:sub(1, nl - 1)
+    rest = raw:sub(nl + 1, raw:len())
+    oi = indexof(head, "OL=", 1)
+    ei = indexof(head, "EL=", 1)
+    if oi != 0 and ei != 0
+      rcv = digits(head:sub(4, oi - 2))
+      olv = digits(head:sub(oi + 3, ei - 2))
+      elv = digits(head:sub(ei + 3, head:len()))
+  out = ""
+  err = ""
+  if olv > 0
+    out = rest:sub(1, olv)
+  if elv > 0
+    err = rest:sub(olv + 1, olv + elv)
+  accepted = 0
+  if rcv == 0
+    accepted = 1
+  pass = 0
+  if accepted == want
+    pass = 1
+  okbit = "0"
+  if pass == 1
+    okbit = "1"
+  row = "    {\n      \"case\": \"" .. jescape(name) .. "\",\n      \"pass\": " .. tf(pass) .. ",\n      \"accepted\": " .. tf(accepted) .. ",\n      \"out\": \"" .. jescape(out) .. "\",\n      \"error\": \"" .. jescape(err) .. "\"\n    }"
+  okbit .. "\n" .. row
+main: i64 = ()
+  gatepath = os.args(1)
+  if gatepath == nil or os.args(2) != nil
+    print("usage: outcome.id <gate>")
+    return 1
+  gp: str = gatepath
+  if !readable(gp)
+    print("outcome: gate source unavailable; no controls executed")
+    return 1
+  src = gatecap("cat '{gp}'")
+  starts = 0
+  cs = 0
+  if src:sub(1, 11) == "carrier() {" and (src:len() == 11 or src:sub(12, 12) == "\n")
+    starts = 1
+    cs = 1
+  nxt = findline(src, "carrier() {", 1)
+  while nxt != 0
+    starts = starts + 1
+    if cs == 0
+      cs = nxt
+    nxt = findline(src, "carrier() {", nxt + 1)
+  if starts != 1
+    print("carrier source was not resolved uniquely")
+    return 1
+  ce = findline(src, "}", cs + 1)
+  if ce == 0
+    print("carrier source was not resolved uniquely")
+    return 1
+  carrier = src:sub(cs, ce)
+  if carrier:has("OUTCOME_CARRIER_EOF_7f3a9c")
+    print("outcome: carrier collided with harness delimiter; no controls executed")
+    return 1
+  slash = 0
+  i = gp:len()
+  while i >= 1
+    if gp:sub(i, i) == "/"
+      slash = i
+      break
+    i = i - 1
+  gendir = "."
+  if slash != 0
+    gendir = gp:sub(1, slash - 1)
+  genpath = gendir .. "/outcome.id"
+  if !readable(genpath)
+    print("outcome: generator source unavailable; no controls executed")
+    return 1
+  limit = chomp(gatecap("command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null"))
+  if limit == ""
+    print("timeout command unavailable; no outcome controls executed")
+    return 1
+  tmpbase = os.env["TMPDIR"]
+  if tmpbase == nil or tmpbase == ""
+    tmpbase = "/tmp"
+  tb: str = tmpbase
+  subjsha = shaof(gp)
+  gensha = shaof(genpath)
+  r1 = runcase(carrier, limit, tb, "success", 0, 0, "1 0 0", 1, 1)
+  r2 = runcase(carrier, limit, tb, "failed guest with matching output", 0, 7, "1 0 0", 1, 0)
+  r3 = runcase(carrier, limit, tb, "compiler failure without diagnostic", 1, 0, "1 0 0", 0, 0)
+  r4 = runcase(carrier, limit, tb, "missing compiler", 127, 0, "1 0 0", 0, 0)
+  r5 = runcase(carrier, limit, tb, "compiler timed out", 124, 0, "1 0 0", 0, 0)
+  r6 = runcase(carrier, limit, tb, "compiler signal", 137, 0, "1 0 0", 0, 0)
+  r7 = runcase(carrier, limit, tb, "guest missing", 0, 127, "1 0 0", 1, 0)
+  r8 = runcase(carrier, limit, tb, "guest timed out", 0, 124, "1 0 0", 1, 0)
+  r9 = runcase(carrier, limit, tb, "guest signal", 0, 139, "1 0 0", 1, 0)
+  r10 = runcase(carrier, limit, tb, "wrong output", 0, 0, "wrong", 1, 0)
+  r11 = runcase(carrier, limit, tb, "missing artifact", 0, 0, "1 0 0", 0, 0)
+  allok = okof(r1) and okof(r2) and okof(r3) and okof(r4) and okof(r5) and okof(r6) and okof(r7) and okof(r8) and okof(r9) and okof(r10) and okof(r11)
+  json = "{\n"
+    .. "  \"subject\": {\n    \"sha256\": \"" .. subjsha .. "\"\n  },\n"
+    .. "  \"generator\": {\n    \"sha256\": \"" .. gensha .. "\"\n  },\n"
+    .. "  \"boundary\": \"the production carrier function; external compiler and runtime explicitly simulated\",\n"
+    .. "  \"cases\": [\n"
+    .. rowof(r1) .. ",\n" .. rowof(r2) .. ",\n" .. rowof(r3) .. ",\n" .. rowof(r4) .. ",\n" .. rowof(r5) .. ",\n" .. rowof(r6) .. ",\n" .. rowof(r7) .. ",\n" .. rowof(r8) .. ",\n" .. rowof(r9) .. ",\n" .. rowof(r10) .. ",\n" .. rowof(r11) .. "\n  ]\n}"
+  print(json)
+  if allok
+    return 0
+  1
