@@ -1162,7 +1162,7 @@ ctacc: str = (env: str, v: str, d: i64, rs: str)
     if at(env, vfield(vi, 1)) != 0
         return ""
     env = eset(env, vfield(vi, 3), at(env, vfield(vi, 3)) + d)
-    return rs .. ";" .. env
+    rs .. ";" .. env
 
 ctcs: str = (env: str, v: str, c: i64, rs: str)
     if hasname(env, v) == 0
@@ -1171,7 +1171,7 @@ ctcs: str = (env: str, v: str, c: i64, rs: str)
     if at(env, vfield(vi, 1)) != 0
         return ""
     env = eset(env, vfield(vi, 4), at(env, vfield(vi, 4)) + c)
-    return rs .. ";" .. env
+    rs .. ";" .. env
 
 ctw: str = (env: str, v: str, w: str, sgn: i64, octr: str, rs: str)
     if hasname(env, v) == 0
@@ -1192,7 +1192,7 @@ ctw: str = (env: str, v: str, w: str, sgn: i64, octr: str, rs: str)
     env = eset(env, vfield(vi, 3), at(env, vfield(vi, 3)) + sgn * at(env, vfield(wi, 2)))
     env = eset(env, vfield(vi, 5), at(env, vfield(vi, 5)) + sgn * at(env, vfield(wi, 3)))
     rs = rs .. w .. "|"
-    return rs .. ";" .. env
+    rs .. ";" .. env
 
 ctrow: str = (env: str, v: str, rhs: str, ctr: str, octr: str, rs: str, uc: str)
     if isname(v) == 0
@@ -1258,7 +1258,7 @@ ctrow: str = (env: str, v: str, rhs: str, ctr: str, octr: str, rs: str, uc: str)
         return ctcs(env, v, 0 - 1, rs)
     if a == v and isname(e) == 1 and e != ctr
         return ctw(env, v, e, 0 - 1, octr, rs)
-    return ""
+    ""
 
 ctapply: str = (env: str, sm: str)
     nf = fldn(sm)
@@ -1285,7 +1285,7 @@ ctapply: str = (env: str, sm: str)
             env = eset(env, vfield(vi, 4), 0)
             env = eset(env, vfield(vi, 5), 0)
         f = f + 7
-    return env
+    env
 
 ctreads: i64 = (rhs: str, ctr: str)
     oppos = 0
@@ -1368,7 +1368,7 @@ ctbody: str = (src: str, b: i64, ej: i64, lc: i64, env: str, ctr: str, octr: str
                     rs = p:sub(1, semi - 1)
                     env = p:sub(semi + 1, p:len())
                 j = j + 1
-    return env
+    env
 
 ctfin: str = (env: str, ctr: str, a: i64, n: i64, s: i64)
     tri = (n * (n - 1)) / 2
@@ -1392,7 +1392,7 @@ ctfin: str = (env: str, ctr: str, a: i64, n: i64, s: i64)
                 if kind == 3 and n == 0
                     env = eset(env, vfield(vi, 2), at(env, vfield(vi, 6)))
         vi = vi + 1
-    return env
+    env
 
 ctsum: str = (env: str, ctr: str, a: i64, n: i64, s: i64)
     out = ""
@@ -1419,7 +1419,7 @@ ctsum: str = (env: str, ctr: str, a: i64, n: i64, s: i64)
             vi = vi + 1
     if out == ""
         return " "
-    return out
+    out
 
 ctnest: str = (src: str, j: i64, ej: i64, lc: i64, env: str, octr: str, top: i64)
     t = trim(row(src, j))
@@ -1458,7 +1458,7 @@ ctnest: str = (src: str, j: i64, ej: i64, lc: i64, env: str, octr: str, top: i64
         n = (b - a + s - 1) / s
     if top == 1
         return ctfin(env2, lhs, a, n, s)
-    return ctsum(env2, lhs, a, n, s)
+    ctsum(env2, lhs, a, n, s)
 
 cttry: str = (src: str, k: i64, lc: i64, ind: i64, lhs: str, rhs: str)
     if isname(lhs) == 0
@@ -1479,7 +1479,7 @@ cttry: str = (src: str, k: i64, lc: i64, ind: i64, lhs: str, rhs: str)
             if fv != ev
                 out = out .. fld(fin, vfield(vi, 0)) .. "|" .. dec(fv) .. "|"
         vi = vi + 1
-    return out
+    out
 
 hasidx: i64 = (src: str)
     i = 1
