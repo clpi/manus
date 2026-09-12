@@ -1,0 +1,9 @@
+t = 0
+a = 0
+while a < 2000
+  b = 0
+  while b < 2000
+    t = t + 1
+    b = b + 1
+  a = a + 1
+t
