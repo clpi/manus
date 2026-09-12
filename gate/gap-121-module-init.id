@@ -1,0 +1,114 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+dumped: i64 = (idol: str, work: str, label: str, src: str)
+  scratch = "{work}/scratch"
+  rc = digits(chomp(gatecap("mkdir -p '{scratch}' && cd '{work}' && TMPDIR='{scratch}' '{idol}' dump-c '{src}.id' >'{work}/{label}.c' 2>'{work}/{label}.dump.log'; echo $?")))
+  if rc != 0
+    0
+  else
+    1
+
+compiled: i64 = (cc: str, work: str, label: str)
+  rc = digits(chomp(gatecap("'{cc}' -o '{work}/{label}' '{work}/{label}.c' 2>'{work}/{label}.cc.log'; echo $?")))
+  if rc != 0
+    0
+  else
+    1
+
+runrc: i64 = (work: str, label: str)
+  digits(chomp(gatecap("'{work}/{label}' >/dev/null 2>&1; echo $?")))
+
+check: i64 = (idol: str, cc: str, work: str, label: str, src: str, what: str)
+  if dumped(idol, work, label, src) != 1
+    print("gap-121 module init gate: FAIL {what} refused")
+    return 1
+  if compiled(cc, work, label) != 1
+    print("gap-121 module init gate: FAIL {what} uncompilable")
+    return 1
+  rc = runrc(work, label)
+  if rc != 42
+    print("gap-121 module init gate: FAIL {what} answered {rc}, not 42")
+    return 1
+  0
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  else
+    if idol:sub(1, 1) != "/"
+      idol = "{root}/{idol}"
+  cc = os.env["CC"]
+  if cc == nil or cc == ""
+    cc = "cc"
+  work = chomp(gatecap("mktemp -d \"$\{TMPDIR:-/tmp\}/idol-gap121.XXXXXX\""))
+  fail = 0
+  if gatecap("test -x '{idol}'; echo $?") == "0\n"
+    if gatecap("command -v '{cc}' >/dev/null 2>&1; echo $?") == "0\n"
+      gatecap("cat >'{work}/declared.id' <<'PROBE'\nglobal base = 40\n\npick: i64 = (n: i64)\n  base + n\nPROBE\n")
+      gatecap("cat >'{work}/scoped.id' <<'PROBE'\nlocal base = 40\n\npick: i64 = (n: i64)\n  base + n\nPROBE\n")
+      gatecap("cat >'{work}/assigned.id' <<'PROBE'\nbase = 40\n\npick: i64 = (n: i64)\n  base + n\nPROBE\n")
+      gatecap("cat >'{work}/computed.id' <<'PROBE'\nseed: i64 = ()\n  40\n\nglobal base: i64 = seed()\n\npick: i64 = (n: i64)\n  base + n\nPROBE\n")
+      gatecap("cat >'{work}/same.id' <<'PROBE'\nglobal base = 40\n\npick: i64 = (n: i64)\n  base + n\n\nmain: i64 = ()\n  pick(2)\nPROBE\n")
+      gatecap("cat >'{work}/use_declared.id' <<'PROBE'\nmain: i64 = ()\n  declared.pick(2)\nPROBE\n")
+      gatecap("cat >'{work}/use_scoped.id' <<'PROBE'\nmain: i64 = ()\n  scoped.pick(2)\nPROBE\n")
+      gatecap("cat >'{work}/use_assigned.id' <<'PROBE'\nmain: i64 = ()\n  assigned.pick(2)\nPROBE\n")
+      gatecap("cat >'{work}/use_computed.id' <<'PROBE'\nmain: i64 = ()\n  computed.pick(2)\nPROBE\n")
+      if check(idol, cc, work, "same", "same", "positive control same-file module global") != 0
+        fail = 1
+      else
+        if check(idol, cc, work, "declared", "use_declared", "canonical global base form") != 0
+          fail = 1
+        else
+          if check(idol, cc, work, "scoped", "use_scoped", "file-scope local base form") != 0
+            fail = 1
+          else
+            if check(idol, cc, work, "assigned", "use_assigned", "compatibility assign face") != 0
+              fail = 1
+            else
+              if dumped(idol, work, "computed", "use_computed") != 1
+                print("gap-121 module init gate: PASS same=42 declared=42 scoped=42 assigned=42 computed=refused")
+              else
+                if compiled(cc, work, "computed") != 1
+                  print("gap-121 module init gate: FAIL computed uncompilable")
+                  fail = 1
+                else
+                  crc = runrc(work, "computed")
+                  if crc != 42
+                    print("gap-121 module init gate: FAIL computed module initializer answered {crc}")
+                    fail = 1
+                  else
+                    print("gap-121 module init gate: PASS same=42 declared=42 scoped=42 assigned=42 computed={crc}")
+    else
+      print("gap-121 module init gate: FAIL C compiler is unavailable: {cc}")
+      fail = 1
+  else
+    print("gap-121 module init gate: FAIL compiler is not executable: {idol}")
+    fail = 1
+  gatecap("rm -rf '{work}'")
+  fail
