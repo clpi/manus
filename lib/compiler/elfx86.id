@@ -21,6 +21,28 @@ rex: str = (w: i64, r: i64, b: i64)
         return ""
     pair(v)
 
+rexx: str = (w: i64, r: i64, x: i64, b: i64)
+    v = 64 | (w << 3) | (r << 2) | (x << 1) | b
+    if v == 64
+        return ""
+    pair(v)
+
+leasib: str = (d: i64, b: i64, x: i64, s: i64)
+    sc = 0
+    if s == 2
+        sc = 1
+    if s == 4
+        sc = 2
+    if s == 8
+        sc = 3
+    m = 0
+    tail = ""
+    if low(b) == 5
+        m = 1
+        tail = pair(0)
+    sb = (sc << 6) | (low(x) << 3) | low(b)
+    rexx(1, rbit(d), rbit(x), rbit(b)) .. pair(141) .. pair(modrm(m, d, 4)) .. pair(sb) .. tail
+
 modrm: i64 = (m: i64, g: i64, o: i64)
     (m << 6) | ((g & 7) << 3) | (o & 7)
 
@@ -325,22 +347,14 @@ mulred: str = (c: str, rd: i64, n: str, v: i64, names: str)
         t = c .. movrr(rd, rn)
         return t .. shlri(rd, sh)
     if v == 3
-        t = c .. movrr(rd, rn)
-        t = t .. shlri(rd, 1)
-        return t .. addrr(rd, rn)
+        return c .. leasib(rd, rn, rn, 2)
     if v == 5
-        t = c .. movrr(rd, rn)
-        t = t .. shlri(rd, 2)
-        return t .. addrr(rd, rn)
+        return c .. leasib(rd, rn, rn, 4)
     if v == 7
-        t = c .. movrr(10, rn)
-        t = t .. shlri(10, 3)
-        t = t .. movrr(rd, 10)
-        return t .. subrr(rd, rn)
+        t = c .. leasib(10, rn, rn, 2)
+        return t .. leasib(rd, 10, rn, 4)
     if v == 9
-        t = c .. movrr(rd, rn)
-        t = t .. shlri(rd, 3)
-        return t .. addrr(rd, rn)
+        return c .. leasib(rd, rn, rn, 8)
     ""
 
 add3: str = (c: str, rd: i64, rn: i64, v: i64)

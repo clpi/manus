@@ -6,7 +6,7 @@
 # Part 2: differential test of the 44 encoder vectors in x86.id's main
 # against the system assembler (clang -arch x86_64 -mavx2 -mbmi2); every vector must
 # match byte-for-byte (same oracle strategy as lib/compiler/arm64check.id).
-# Part 3: build the elfx86 emitter (--backend native) and compile seven
+# Part 3: build the elfx86 emitter (--backend native) and compile eight
 # demo programs to ELF64; python3 validates ELF structure (magic, class,
 # type, machine, entry, PT_LOAD, 5 section headers, .text vaddr == entry,
 # _start symbol) and checks .text bytes against clang-assembled
@@ -78,10 +78,11 @@ printf 'i = 0\nwhile i < 3\n    i = i + 1\nx = 9\nx\n' | "$WORK/elfx86bin" | xxd
 printf 'a = 0 - 20\nb = a / 3\nc = a / 7\nd = a / 8\ne = b / 10\ne\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p5.elf" || fail "emit p5"
 printf 't = 0\na = 0\nwhile a < 2\n    a = a + 1\n    t = t + a\n    b = 0\n    while b < 2\n        b = b + 1\n        t = t + b\n        c = 0\n        while c < 2\n            c = c + 1\n            t = t + c\nt\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p6.elf" || fail "emit p6"
 printf 't = 0\na = 0\nwhile a < 2\n    a = a + 1\n    t = t + a\n    b = 0\n    while b < 2\n        b = b + 1\n        t = t + b\n        c = 0\n        while c < 2\n            c = c + 1\n            t = t + c\n            d = 0\n            while d < 2\n                d = d + 1\n                t = t + d\nt\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p7.elf" || fail "emit p7"
-pass "emit (7 programs)"
+printf 'a = 6\nb = a * 3\nc = a * 5\nd = a * 7\ne = a * 9\ne\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p8.elf" || fail "emit p8"
+pass "emit (8 programs)"
 
 echo "== structural validation + clang oracle =="
-python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" "$WORK/p5.elf" "$WORK/p6.elf" "$WORK/p7.elf" <<'PYEOF' || fail "structural validation"
+python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" "$WORK/p5.elf" "$WORK/p6.elf" "$WORK/p7.elf" "$WORK/p8.elf" <<'PYEOF' || fail "structural validation"
 import struct, sys, subprocess
 
 def ck(c, m):
@@ -179,6 +180,12 @@ ck('4983ff02' in t7, "p7 c-loop cmpri r15,2")
 ck('4883fb02' in t7, "p7 d-loop cmpri rbx,2")
 ck('b902000000' not in t7, "p7 no rcx bound-register init (4-deep)")
 ck(t7.endswith('4889c7b83c0000000f05'), "p7 exit epilogue")
+t8 = parse_elf(sys.argv[8]).hex()
+ck('4f8d2c64' in t8, "p8 *3 single lea")
+ck('4f8d34a4' in t8, "p8 *5 single lea")
+ck('4f8d1464' in t8 and '4f8d3ca2' in t8, "p8 *7 two leas")
+ck('4b8d1ce4' in t8, "p8 *9 single lea")
+ck(t8.endswith('4889c7b83c0000000f05'), "p8 exit epilogue")
 print("structural + oracle checks passed")
 PYEOF
 pass "structural validation + clang oracle"
