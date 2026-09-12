@@ -1,0 +1,1 @@
+int main(void){unsigned long long t=0,i=1;while(i<10000000ULL){t=t+(i*3ULL+5ULL)*(i+7ULL)/2ULL-(i&15ULL);i+=1;}return (int)(t&255);}

@@ -1,0 +1,18 @@
+t = 0
+o = 0
+x = 12345
+while o < 3000000
+  x = x * 1103515245
+  x = x + 12345
+  j = 0
+  while x < 0
+    t = t + 1000
+    j = j + 1
+    x = 0
+  k = 0
+  m = 1 - j
+  while k < m
+    t = t + 1
+    k = m
+  o = o + 1
+t

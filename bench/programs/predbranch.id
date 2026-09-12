@@ -1,0 +1,12 @@
+t = 0
+o = 0
+while o < 3000000
+  h = o / 2
+  d = h * 2
+  x = o - d
+  j = 0
+  while j < x
+    t = t + 1
+    j = x
+  o = o + 1
+t
