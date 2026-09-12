@@ -6725,7 +6725,7 @@ const Arm64Compiler = struct {
                     // Proofs: research/wsuperopt/proofs/div_pow2_*.
                     const sh = powerOfTwoShift(k).?;
                     try self.emitAsrImm(dst, lhs, 63);
-                    try self.emitLsrImm(dst, dst, 64 - sh);
+                    try self.emitLsrImm(dst, dst, @intCast(64 - @as(u7, sh)));
                     try self.emitAddReg(dst, lhs, dst);
                     try self.emitAsrImm(dst, dst, sh);
                 }
