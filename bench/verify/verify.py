@@ -160,38 +160,101 @@ def main():
     if mismatches:
         print("\nMismatches are compiler bugs. Reproducibles saved under "
               f"{faildir}/<opt>/<case>/ (case.id, oracle.c, result.json).")
-        # write a committed-facing summary (no tool output paths)
-        summ = os.path.join(common.THIS, "RESULTS.md")
-        with open(summ, "w") as f:
-            f.write("# Optimization verification results\n\n")
-            f.write(f"Generated {time.strftime('%Y-%m-%dT%H:%M:%S')} by "
-                    f"`bench/verify/verify.py` (platform "
-                    f"{common.host_triple()}, seeds={seeds}, "
-                    f"full={args.full}).\n\n")
-            f.write("Policy: every mismatch is a compiler bug report. "
-                    "Cases tagged EXPECTED-ADVERSARIAL were designed to "
-                    "defeat a specific optimization; their mismatch "
-                    "confirms the suspected unsoundness.\n\n")
-            f.write("| opt | cases | pass | mismatch | build_fail | hang |\n"
-                    "|---|---|---|---|---|---|\n")
-            for oname in want:
-                oc = per_opt[oname]
-                nc = sum(oc.values())
-                f.write(f"| {oname} | {nc} | {oc['pass']} | "
-                        f"{oc['mismatch']} | {oc['build_fail']} | "
-                        f"{oc['hang']} |\n")
-            f.write("\n## Mismatches\n\n")
-            for oname, case, verdict, detail, expected in mismatches:
-                f.write(f"- [{verdict}] {case['id']}: {detail}")
-                if expected != "pass":
-                    f.write(" (expected adversarial)")
-                if case.get("note"):
-                    f.write(f" — {case['note']}")
-                f.write("\n")
-        print(f"wrote {summ}")
+    write_results_md(want, per_opt, mismatches, seeds, args)
+    if mismatches:
         return 1
     print("verify: all cases pass.")
     return 0
+
+
+def write_results_md(want, per_opt, mismatches, seeds, args):
+    """Write bench/verify/RESULTS.md in structural format (tables only).
+
+    The performance-history section is re-rendered from
+    bench/results/history.jsonl on every write, so regenerating this
+    file never erases it. Called on every run, mismatches or not.
+    """
+    summ = os.path.join(common.THIS, "RESULTS.md")
+    with open(summ, "w") as f:
+        f.write("| field | value |\n|---|---|\n"
+                "| title | Optimization verification results |\n\n")
+        f.write("| # | directive |\n|---|---|\n"
+                f"| 1 | Generated {time.strftime('%Y-%m-%dT%H:%M:%S')} by "
+                f"`bench/verify/verify.py` (platform {common.host_triple()}, "
+                f"seeds={seeds}, full={args.full}). |\n\n")
+        f.write("| # | directive |\n|---|---|\n"
+                "| 1 | Policy: every mismatch is a compiler bug report. |\n"
+                "| 2 | Cases tagged EXPECTED-ADVERSARIAL were designed to defeat "
+                "a specific optimization; their mismatch confirms the suspected "
+                "unsoundness. |\n\n")
+        f.write("| opt | cases | pass | mismatch | build_fail | hang |\n"
+                "|---|---|---|---|---|---|\n")
+        for oname in want:
+            oc = per_opt[oname]
+            nc = sum(oc.values())
+            f.write(f"| {oname} | {nc} | {oc['pass']} | "
+                    f"{oc['mismatch']} | {oc['build_fail']} | "
+                    f"{oc['hang']} |\n")
+        f.write("\n| section |\n|---|---|\n| Mismatches |\n\n")
+        if mismatches:
+            for oname, case, verdict, detail, expected in mismatches:
+                text = f"[{verdict}] {case['id']}: {detail}"
+                if expected != "pass":
+                    text += " (expected adversarial)"
+                if case.get("note"):
+                    text += f" — {case['note']}"
+                f.write("| # | directive |\n|---|---|\n"
+                        f"| 1 | {text} |\n\n")
+        else:
+            f.write("| # | directive |\n|---|---|\n"
+                    "| 1 | No mismatches: all cases pass. |\n\n")
+        f.write("| section |\n|---|---|\n| performance history |\n\n")
+        f.write("| # | directive |\n|---|---|\n"
+                "| 1 | Per-case benchmark verdict history across runs. Any commit "
+                "that regresses a case is visible here. |\n"
+                "| 2 | margin% = (rival_median - idol_median) / rival_median; "
+                "negative = idol slower. |\n"
+                "| 3 | Source: bench/results/history.jsonl, one entry appended "
+                "per bench/run.sh run. |\n\n")
+        render_history_table(f)
+    print(f"wrote {summ}")
+
+
+def render_history_table(f):
+    """Append the per-case verdict-history table from history.jsonl."""
+    hist_path = os.path.join(common.THIS, "..", "results", "history.jsonl")
+    agg = {}
+    try:
+        with open(hist_path) as hf:
+            for line in hf:
+                line = line.strip()
+                if not line:
+                    continue
+                e = json.loads(line)
+                # schema: {"ts", "commit", "rounds",
+                #          "verdicts": {case: {"verdict", "margin_pct", ...}}}
+                for case, r in e["verdicts"].items():
+                    m = r["margin_pct"]
+                    a = agg.setdefault(case, {"runs": 0, "first": None,
+                                              "last_verdict": None,
+                                              "last_margin": None,
+                                              "worst": None, "best": None})
+                    a["runs"] += 1
+                    if a["first"] is None:
+                        a["first"] = e["ts"]
+                    a["last_verdict"] = r["verdict"]
+                    a["last_margin"] = m
+                    a["worst"] = m if a["worst"] is None else min(a["worst"], m)
+                    a["best"] = m if a["best"] is None else max(a["best"], m)
+    except FileNotFoundError:
+        pass
+    f.write("| case | runs | first seen | last verdict | last margin% | worst margin% | best margin% |\n"
+            "|---|---|---|---|---|---|---|\n")
+    for case in sorted(agg):
+        a = agg[case]
+        f.write(f"| {case} | {a['runs']} | {a['first']} | {a['last_verdict']} | "
+                f"{a['last_margin']:+.2f}% | {a['worst']:+.2f}% | "
+                f"{a['best']:+.2f}% |\n")
 
 
 if __name__ == "__main__":
