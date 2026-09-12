@@ -825,9 +825,24 @@ fn collectModuleTableFieldGlobals(
 /// The correct approach: resolve the exact binding the current body sees for
 /// `base`, then check if that binding is at module scope. Only when the binding
 /// identity is the module-level binding does module storage apply.
-fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?struct { RT, []const u8 } {
+
+/// The binding `name` denotes from the body being lowered, or null when no
+/// binding is visible. Relation bodies resolve through their callable; the
+/// module body IS module scope, and the module entity is not a callable, so
+/// `bindingNamedIn` (which requires one) answers null for every name there.
+/// Without this arm the module body's own field writes never reached the
+/// `__DATA` word the relation bodies read (GAP-221).
+fn baseBindingInBody(ctx: *const LowerCtx, name: []const u8) ?semantic_graph.id {
+    if (ctx.module_root) {
+        const mod_root = ctx.graph.module_root orelse return null;
+        return ctx.graph.resolveBindingInScope(mod_root, name);
+    }
     const relation = ctx.function orelse return null;
-    const base_binding = ctx.graph.bindingNamedIn(relation, base) orelse return null;
+    return ctx.graph.bindingNamedIn(relation, name);
+}
+
+fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?struct { RT, []const u8 } {
+    const base_binding = baseBindingInBody(ctx, base) orelse return null;
     const base_node = ctx.graph.get(base_binding) orelse return null;
 
     // Only use module storage when the binding is at module scope
@@ -845,8 +860,7 @@ fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?str
 /// DELETION WITNESS FOR GAP-221: uses binding identity from the semantic graph,
 /// not spelling-based lookups with a shadow guard.
 fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
-    const relation = ctx.function orelse return false;
-    const binding = ctx.graph.bindingNamedIn(relation, name) orelse return false;
+    const binding = baseBindingInBody(ctx, name) orelse return false;
     const node = ctx.graph.get(binding) orelse return false;
 
     // Only use module storage when the binding is at module scope
