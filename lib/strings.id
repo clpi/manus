@@ -33,7 +33,7 @@ builder_reset = (b: any)
     b.parts = {}
     b.count = 0
 
-builder_to_string: str = (b: any)
+tostring: str = (b: any)
     b.parts:concat()
 
 
@@ -243,11 +243,13 @@ split_trimmed: any = (s: str, sep: str)
     parts = s:split(sep)
     out = {}
     i = 1
+    n = 0
     while i <= parts:len()
         trimmed = parts[i]:gsub("^%s+", "")
         trimmed = trimmed:gsub("%s+$", "")
         if trimmed:len() > 0
-            out[out:len() + 1] = trimmed
+            n = n + 1
+            out[n] = trimmed
         i += 1
     out
 

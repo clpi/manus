@@ -162,8 +162,10 @@ reader_field_bytes: any = (r: any, wire_type: i64)
   len = reader_varint(r)
   out = {}
   i = 0
+  n = 0
   while i < len
-    out(out:len() + 1) = r.data(r.pos)
+    n = n + 1
+    out(n) = r.data(r.pos)
     r.pos = r.pos + 1
     i = i + 1
   out
@@ -172,7 +174,7 @@ reader_field_string: str = (r: any, wire_type: i64)
   bytes = reader_field_bytes(r, wire_type)
   if bytes == nil
     return ""
-  bytes_to_string(bytes)
+  tostring(bytes)
 
 reader_field_fixed32: any = (r: any, wire_type: i64)
   if wire_type != WIRE_32BIT
@@ -199,16 +201,20 @@ reader_field_fixed64: any = (r: any, wire_type: i64)
 string_to_bytes: any = (s: str)
   out = {}
   i = 1
+  n = 0
   while i <= s:len()
-    out(out:len() + 1) = s:byte(i)
+    n = n + 1
+    out(n) = s:byte(i)
     i = i + 1
   out
 
-bytes_to_string: str = (bytes: any)
+tostring: str = (bytes: any)
   parts = {}
   i = 1
+  n = 0
   while i <= bytes:len()
-    parts(parts:len() + 1) = bytes(i):char()
+    n = n + 1
+    parts(n) = bytes(i):char()
     i = i + 1
   parts:concat()
 

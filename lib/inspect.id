@@ -18,19 +18,23 @@ std_inspect_hash: str = (value: any)
     if t != "table" return t .. ":" .. value:to(str) 
     parts = {}
     ks = {}
+    kn = 0
     for k, v in value
-        ks[ks:len() + 1] = k:to(str)
+        kn = kn + 1
+        ks[kn] = k:to(str)
     std_inspect_sort_strings(ks)
     i = 1
-    while i <= ks:len()
+    pn = 0
+    while i <= kn
         key = ks[i]
         val = value[key:to(i64)]
         if val == nil val = value[key] 
-        parts[parts:len() + 1] = key .. "=" .. std_inspect_hash(val)
+        pn = pn + 1
+        parts[pn] = key .. "=" .. std_inspect_hash(val)
         i += 1
     "\{" .. parts:concat(",") .. "\}"
 
-std_inspect_to_str: str = (value: any, indent: any, seen: any)
+tostring: str = (value: any, indent: any, seen: any)
     if indent == nil indent = 0 
     if seen == nil seen = {} 
     if value == nil return "nil" 
@@ -52,34 +56,40 @@ std_inspect_to_str: str = (value: any, indent: any, seen: any)
     n = value:len()
     if n > 0
         parts = {}
+        pn = 0
         i = 1
         while i <= n
-            parts[parts:len() + 1] = std_inspect_to_str(value[i], indent + 1, seen)
+            pn = pn + 1
+            parts[pn] = tostring(value[i], indent + 1, seen)
             i += 1
         prefix = "  ":rep(indent)
         inner_prefix = "  ":rep(indent + 1)
-        if parts:len() <= 4 and indent < 2
+        if pn <= 4 and indent < 2
             return "[" .. parts:concat(", ") .. "]"
         return "[\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "]"
     pairs_list = {}
+    qn = 0
     for k, v in value
-        pairs_list[pairs_list:len() + 1] = {k = k, v = v}
-    if pairs_list:len() == 0 return "\{\}" 
+        qn = qn + 1
+        pairs_list[qn] = {k = k, v = v}
+    if qn == 0 return "\{\}" 
     parts = {}
+    pn = 0
     i = 1
-    while i <= pairs_list:len()
+    while i <= qn
         pair = pairs_list[i]
         key_str = pair.k:to(str)
         if type(pair.k) == "string"
             key_str = pair.k
-        val_str = std_inspect_to_str(pair.v, indent + 1, seen)
-        parts[parts:len() + 1] = key_str .. " = " .. val_str
+        val_str = tostring(pair.v, indent + 1, seen)
+        pn = pn + 1
+        parts[pn] = key_str .. " = " .. val_str
         i += 1
     prefix = "  ":rep(indent)
     inner_prefix = "  ":rep(indent + 1)
-    if parts:len() <= 3 and indent < 2
+    if pn <= 3 and indent < 2
         return "\{" .. parts:concat(", ") .. "\}"
-    return "{\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "\}"
+    return "\{\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "\}"
 
 std_inspect_diff = (a: any, b: any, prefix: any, diffs: any)
     if a == nil and b == nil return 
@@ -147,6 +157,7 @@ diff_summary: str = (a: any, b: any)
     diffs = diff(a, b)
     if diffs:len() == 0 return "no differences" 
     parts = {}
+    pn = 0
     i = 1
     while i <= diffs:len()
         d = diffs[i]
@@ -157,7 +168,8 @@ diff_summary: str = (a: any, b: any)
             line = line .. ": " .. d.new:to(str)
         else(d.kind == "removed")
             line = line .. ": " .. d.old:to(str)
-        parts[parts:len() + 1] = line
+        pn = pn + 1
+        parts[pn] = line
         i += 1
     to(str)(diffs:len()) .. " difference(s):\n" .. parts:concat("\n")
 
@@ -189,9 +201,11 @@ size: i64 = (value: any)
 
 keys_of: any = (t: any)
     out = {}
+    kn = 0
     if t == nil or type(t) != "table" return out 
     for kk, _kv in t
-        out[out:len() + 1] = kk:to(str)
+        kn = kn + 1
+        out[kn] = kk:to(str)
     std_inspect_sort_strings(out)
     out
 
@@ -243,6 +257,7 @@ stack_trace: str = (level: any, max_depth: any, pretty: any)
         C_MAGENTA= "\x1b[35m"
         C_YELLOW = "\x1b[33m"
     lines = {}
+    ln = 0
     i = level
     while i < level + max_depth
         info = debug.getinfo(i, "Snl")
@@ -266,7 +281,8 @@ stack_trace: str = (level: any, max_depth: any, pretty: any)
                 frame = frame .. " [" .. src .. ":" .. info.currentline:to(str) .. "]"
             else
                 frame = frame .. " [" .. src .. "]"
-        lines[lines:len() + 1] = frame
+        ln = ln + 1
+        lines[ln] = frame
         i += 1
     lines:concat("\n")
 

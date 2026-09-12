@@ -141,9 +141,11 @@ to_table: any = (cfg: any)
 require_keys: any = (cfg: any, keys: any)
   missing = {}
   i = 1
+  n = 0
   while i <= keys:len()
     if !has(cfg, keys(i))
-      missing(missing:len() + 1) = keys(i)
+      n = n + 1
+      missing(n) = keys(i)
     i = i + 1
   missing
 
@@ -153,13 +155,15 @@ validate_not_nil: any = (cfg: any, key: any)
   "missing required config key: " .. key
 
 
-to_string: str = (cfg: any)
+tostring: str = (cfg: any)
   parts = {}
   all_keys = keys(cfg)
   i = 1
+  n = 0
   while i <= all_keys:len()
     val = get(cfg, all_keys(i))
-    parts(parts:len() + 1) = all_keys(i) .. " = " .. val:to(str)
+    n = n + 1
+    parts(n) = all_keys(i) .. " = " .. val:to(str)
     i = i + 1
   parts:sort()
   parts:concat("\n")

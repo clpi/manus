@@ -91,7 +91,7 @@ parse_elem: any = (data: str, start: i64)
     tag = tag
     attrs = attrs
     children = {}
-  if not self_closing
+  if !self_closing
     while true
       sp = ""
       while i <= len and data:byte(i) != 60

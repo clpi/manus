@@ -64,15 +64,19 @@ or_else: any = (r: any, fn: any)
     return fn(r.err)
   r
 
-result_to_str: str = (r: any)
-  if r == nil
-    return "Result(nil)"
-  if r.kind == "ok"
-    return "Ok(" .. r.value:to(str) .. ")"
-  msg = ""
-  if has(.err)(r) and r.err.message != nil
-    msg = r.err.message
-  return "Err(" .. msg .. ")"
+tostring: str = (v: any)
+  if v == nil
+    return "None"
+  if v.kind == "ok"
+    return "Ok(" .. v.value:to(str) .. ")"
+  if v.kind == "err"
+    msg = ""
+    if has(.err)(v) and v.err.message != nil
+      msg = v.err.message
+    return "Err(" .. msg .. ")"
+  if v.kind == "some"
+    return "Some(" .. v.value:to(str) .. ")"
+  return "None"
 
 
 some: any = (value: any)
@@ -121,27 +125,27 @@ option_filter: any = (o: any, fn: any)
     return o
   none()
 
-option_to_str: str = (o: any)
-  if o == nil or o.kind != "some"
-    return "None"
-  return "Some(" .. o.value:to(str) .. ")"
 
 
 collect: any = (results: any)
   vals = {}
   errs = {}
+  vn = 0
+  en = 0
   if results == nil
     return { ok = vals, err = nil }
   i = 1
   while i <= results:len()
     r = results[i]
     if r != nil and r.kind == "ok"
-      vals[vals:len() + 1] = r.value
+      vn = vn + 1
+      vals[vn] = r.value
     else
-      errs[errs:len() + 1] = std_result_error(r)
+      en = en + 1
+      errs[en] = std_result_error(r)
     i = i + 1
   first_err = nil
-  if errs:len() > 0
+  if en > 0
     first_err = errs[1]
   { ok = vals, err = first_err, errors = errs }
 
@@ -157,25 +161,29 @@ all_ok: bool = (results: any)
 
 values: any = (results: any)
   out = {}
+  n = 0
   if results == nil
     return out
   i = 1
   while i <= results:len()
     r = results[i]
     if r != nil and r.kind == "ok"
-      out[out:len() + 1] = r.value
+      n = n + 1
+      out[n] = r.value
     i = i + 1
   out
 
 std_result_errors: any = (results: any)
   out = {}
+  n = 0
   if results == nil
     return out
   i = 1
   while i <= results:len()
     r = results[i]
     if r != nil and r.kind == "err"
-      out[out:len() + 1] = r.err
+      n = n + 1
+      out[n] = r.err
     i = i + 1
   out
 
@@ -203,7 +211,7 @@ M.option_unwrap_or_else = option_unwrap_or_else
 M.option_map = option_map
 M.option_flat_map = option_flat_map
 M.option_filter = option_filter
-M.option_to_str = option_to_str
+M.tostring = tostring
 M.collect = collect
 M.all_ok = all_ok
 M.values = values

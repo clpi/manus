@@ -18,25 +18,34 @@ escape: str = (s: any)
     while i <= n
         b = s:byte(i)
         if b == 34
-            out[out:len() + 1] = "\\\""
+            on = on + 1
+            out[on] = "\\\""
         else(b == 92)
-            out[out:len() + 1] = "\\\\"
+            on = on + 1
+            out[on] = "\\\\"
         else(b == 10)
-            out[out:len() + 1] = "\\n"
+            on = on + 1
+            out[on] = "\\n"
         else(b == 13)
-            out[out:len() + 1] = "\\r"
+            on = on + 1
+            out[on] = "\\r"
         else(b == 9)
-            out[out:len() + 1] = "\\t"
+            on = on + 1
+            out[on] = "\\t"
         else(b == 8)
-            out[out:len() + 1] = "\\b"
+            on = on + 1
+            out[on] = "\\b"
         else(b == 12)
-            out[out:len() + 1] = "\\f"
+            on = on + 1
+            out[on] = "\\f"
         else(b < 32)
             hi = b / 16:floor() + 1
             lo = (b % 16) + 1
-            out[out:len() + 1] = "\\u00" .. hex:sub(hi, hi) .. hex:sub(lo, lo)
+            on = on + 1
+            out[on] = "\\u00" .. hex:sub(hi, hi) .. hex:sub(lo, lo)
         else
-            out[out:len() + 1] = s:sub(i, i)
+            on = on + 1
+            out[on] = s:sub(i, i)
         i += 1
     out:concat()
 
@@ -52,19 +61,23 @@ encode: str = (val: any)
     if type(val) == "string"
         return "\"" .. escape(val) .. "\""
     if type(val) == "table"
-        if val == empty_object return "{}"
+        if val == empty_object return "\{\}"
         if is_array(val)
             parts = {}
+            pn = 0
             i = 1
             while val[i] != nil
-                parts[parts:len() + 1] = encode(val[i])
+                pn = pn + 1
+                parts[pn] = encode(val[i])
                 i += 1
             return "[" .. parts:concat(",") .. "]"
         parts = {}
+        pn = 0
         for k, v in val
             if type(k) == "string"
-                parts[parts:len() + 1] = encode(k) .. ":" .. encode(v)
-        return "{" .. parts:concat(",") .. "}"
+                pn = pn + 1
+                parts[pn] = encode(k) .. ":" .. encode(v)
+        return "\{" .. parts:concat(",") .. "\}"
     "null"
 
 
@@ -113,6 +126,7 @@ json_string: any = (cur)
     s = cur.s
     n = s:len()
     out = {}
+    on = 0
     while cur.i <= n
         b = s:byte(cur.i)
         if b == 34
@@ -122,28 +136,38 @@ json_string: any = (cur)
             cur.i = cur.i + 1
             e = s:byte(cur.i)
             if e == 110
-                out[out:len() + 1] = "\n"
+                on = on + 1
+                out[on] = "\n"
             else(e == 116)
-                out[out:len() + 1] = "\t"
+                on = on + 1
+                out[on] = "\t"
             else(e == 114)
-                out[out:len() + 1] = "\r"
+                on = on + 1
+                out[on] = "\r"
             else(e == 34)
-                out[out:len() + 1] = "\""
+                on = on + 1
+                out[on] = "\""
             else(e == 92)
-                out[out:len() + 1] = "\\"
+                on = on + 1
+                out[on] = "\\"
             else(e == 47)
-                out[out:len() + 1] = "/"
+                on = on + 1
+                out[on] = "/"
             else(e == 98)
-                out[out:len() + 1] = 8:char()
+                on = on + 1
+                out[on] = 8:char()
             else(e == 102)
-                out[out:len() + 1] = 12:char()
+                on = on + 1
+                out[on] = 12:char()
             else(e == 117)
                 hex = s:sub(cur.i + 1, cur.i + 4)
                 cp = json_hex4(hex)
-                out[out:len() + 1] = json_utf8_char(cp)
+                on = on + 1
+                out[on] = json_utf8_char(cp)
                 cur.i = cur.i + 4
             else
-                out[out:len() + 1] = e:char()
+                on = on + 1
+                out[on] = e:char()
             cur.i = cur.i + 1
         else
             start = cur.i
@@ -152,7 +176,8 @@ json_string: any = (cur)
                 b2 = s:byte(cur.i)
                 if b2 == 34 or b2 == 92 break
                 cur.i = cur.i + 1
-            out[out:len() + 1] = s:sub(start, cur.i - 1)
+            on = on + 1
+            out[on] = s:sub(start, cur.i - 1)
     out:concat()
 
 json_number: any = (cur)

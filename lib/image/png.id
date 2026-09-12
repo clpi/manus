@@ -24,16 +24,20 @@ read_u16: i64 = (s: str, off: i64)
 str_to_bytes: any = (s: str)
   bytes = {}
   i = 1
+  n = 0
   while i <= s:len()
-    bytes[bytes:len() + 1] = s:byte(i)
+    n = n + 1
+    bytes[n] = s:byte(i)
     i = i + 1
   bytes
 
-bytes_to_str: str = (b: any)
+tostring: str = (b: any)
   parts = {}
   i = 1
+  n = 0
   while i <= b:len()
-    parts[parts:len() + 1] = b[i]:char()
+    n = n + 1
+    parts[n] = b[i]:char()
     i = i + 1
   parts:concat()
 

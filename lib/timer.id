@@ -17,7 +17,7 @@ new: any = ()
 elapsed: any = (t: any)
   if t == nil
     return 0
-  if not t.running
+  if !t.running
     return t.stopped_at - t.start
   os.clock() - t.start
 
@@ -117,18 +117,20 @@ time_it: any = (n: i64, fn_ref: any)
   if n == nil or n < 1
     n = 1
   times = {}
+  tn = 0
   i = 0
   while i < n
     t = new()
     fn_ref()
     stop(t)
-    times[times:len() + 1] = elapsed(t)
+    tn = tn + 1
+    times[tn] = elapsed(t)
     i = i + 1
   total = 0
   min_val = times[1]
   max_val = times[1]
   j = 1
-  while j <= times:len()
+  while j <= tn
     if times[j] < min_val
       min_val = times[j]
     if times[j] > max_val
@@ -148,6 +150,7 @@ bench: any = (fn_ref: any, min_seconds: float)
   if min_seconds == nil
     min_seconds = 0.1
   times = {}
+  tn = 0
   total = 0
   count = 0
   while total < min_seconds
@@ -155,13 +158,14 @@ bench: any = (fn_ref: any, min_seconds: float)
     fn_ref()
     stop(t)
     lap_time = elapsed(t)
-    times[times:len() + 1] = lap_time
+    tn = tn + 1
+    times[tn] = lap_time
     total = total + lap_time
     count = count + 1
   min_val = times[1]
   max_val = times[1]
   i = 1
-  while i <= times:len()
+  while i <= tn
     if times[i] < min_val
       min_val = times[i]
     if times[i] > max_val

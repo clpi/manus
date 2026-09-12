@@ -16,7 +16,7 @@ run = ()
   while pending:len() > 0
     task = pending:remove(1)
     ok, err = coroutine.resume(task.co)
-    if not ok
+    if !ok
       stdout:write("sync: task error: " .. err:to(str) .. "\n")
     else(coroutine.status(task.co) == "suspended")
       pending[pending:len() + 1] = task
@@ -25,7 +25,7 @@ step: bool = ()
     return false
   task = pending:remove(1)
   ok, err = coroutine.resume(task.co)
-  if not ok
+  if !ok
     stdout:write("sync: task error: " .. err:to(str) .. "\n")
   else(coroutine.status(task.co) == "suspended")
     pending[pending:len() + 1] = task
@@ -95,8 +95,10 @@ close = (ch: any)
   ch.recvwait = {}
 drain: any = (ch: any)
   out = {}
+  on = 0
   while ch.queue:len() > 0
-    out[out:len() + 1] = ch.queue:remove(1)
+    on = on + 1
+    out[on] = ch.queue:remove(1)
   return out
 waitgroup: any = ()
   {
