@@ -1,6 +1,3 @@
-# Agent hooks showcase: agent coordination hooks.
-# Run: duo run examples/agent_hooks_showcase.id
-# Gate: scripts/duo_lock.sh # ./zig-out/bin/duo run scripts/agent_smoke.id
 
 HOOKS: str = agent.hook_index()
 DISCOVER: str = agent.discover()

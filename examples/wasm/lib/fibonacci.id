@@ -1,4 +1,3 @@
-# Typed fibonacci exports for WAST testing.
 
 @export
 fib: int = (n: int)

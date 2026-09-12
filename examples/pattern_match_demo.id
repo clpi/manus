@@ -1,4 +1,3 @@
-# Pattern matching demo: enum payloads, array/table destructuring, guards
 
 enum Shape
     Circle(radius: f64)

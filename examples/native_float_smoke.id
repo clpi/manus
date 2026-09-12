@@ -1,8 +1,3 @@
-# examples/native_float_smoke.id
-# Native arm64 f64 lowering (scalar double): params arrive in d0-d7, result
-# returns in d0. No C, no LLVM — direct machine code.
-# Verified via native-dylib + C harness (float literals come from C, which
-# dodges the f64-literal-pool follow-up). See examples/native_float_harness.c.
 
 @export
 duo_fadd: f64 = (a: f64, b: f64)

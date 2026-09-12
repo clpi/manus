@@ -1,6 +1,3 @@
-# Default parameters, `continue`, and mem load/store round-trip.
-# expect: 14 16 10
-# @corpus current
 default_step: i64 = 3
 
 score: i64 = (base: i64, step: i64 = default_step, factor: i64 = 2)

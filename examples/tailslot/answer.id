@@ -1,21 +1,3 @@
-# gap[104] NEGATIVE CONTROLS — the three shapes a repair must NOT disturb.
-#
-# 1. gap[033]: `if c print(" ") end` where the `if` IS the function's tail.
-#    That block is lowered with `allow_return = true`, so the tail expression
-#    goes through `tryEmitTailDemandReturn`, which lowers a void tail call as
-#    an effect and reports "no return". Emitting `ret` there returned whatever
-#    register the void call left — exit 59, and 224 with an `else`, where the C
-#    backend exits 0. The exit code below is the whole point of the row.
-#
-# 2. A branch that really does answer: `return 7` inside the taken arm.
-#    Withdrawn diagnoses claimed the branch was being dropped; it never was,
-#    and this row keeps that honest.
-#
-# 3. A tail ASSIGNMENT, which was ALWAYS correct because an assignment is a
-#    `stmt` and rides the statement loop. If a repair aimed at the tail slot
-#    quietly changes it, this catches that.
-#
-# Prints ` ` (one space), then `30`, then exits 7.
 
 quiet = (m: i64)
   if m == 2

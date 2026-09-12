@@ -1,4 +1,3 @@
-# Boolean predicate exports for WAST testing.
 
 @export
 even: int = (n: int)

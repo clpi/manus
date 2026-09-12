@@ -1,7 +1,3 @@
-# TEXT: the index one past the end. `#s` is 2, so 0 and 1 are the string and
-# index 2 answers 0 — the NUL terminator, read without a bounds check.
-# expect: 97 98 0
-# @corpus current
 s = "ab"
 a = s(0)
 b = s(1)

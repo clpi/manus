@@ -1,38 +1,6 @@
-# trace — beautiful, semantically-formatted trace & debug output
-#
-# Design:
-#   * Every event is signed with a beautiful Unicode glyph and colored
-#     by severity. Bold/italic/dim/underline carry semantic meaning
-#     (see LEGEND below).
-#   * Spans can be opened/closed and timed.
-#   * Field values are colored by Lua TYPE so a glance reveals shape:
-#       string  => green       ("…")
-#       number  => yellow      (123 / 1.5)
-#       boolean => magenta     (true / false)
-#       nil     => dim italic  (nil)
-#       table   => cyan        ({…})
-#       function=> italic cyan(⟪fn⟫)
-#   * Source locations are underline; function names are magenta-italic;
-#     timestamps are dim; slow durations are bold-yellow.
-#   * Honors NO_COLOR / DUO_COLOR env vars.
-#
-# LEGEND of formatting semantics:
-#   bold      = essential payload (msg, error text, slow span durs)
-#   italic   = identity (function names, type names, nil)
-#   dim      = ancillary (timestamps, caller meta, trace level)
-#   underline= location references (file:line, field keys)
-#   color    = severity / type class
-#
-# NOTE: this module is intentionally self-contained — it does not
-# `req` other stdlib modules at top level. The current codegen drops
-# top-level `local x = stdlib` bindings when a stdlib module is
-# inlined under `duo run`; inlining ANSI codes + tty detection here
-# keeps trace compilable today. When that codegen gap is fixed,
-# trace.id can switch back to `local color = color` etc.
 
 global M = {}
 
-# ─── ANSI codes (inline copy of color) ─────────────────────────
 M.RESET     = "\x1b[0m"
 M.BOLD      = "\x1b[1m"
 M.DIM       = "\x1b[2m"
@@ -47,7 +15,6 @@ M.MAGENTA   = "\x1b[35m"
 M.CYAN      = "\x1b[36m"
 M.WHITE     = "\x1b[37m"
 
-# ─── Glyphs ────────────────────────────────────────────────────────
 M.G_TRACE      = "∘"
 M.G_DEBUG      = "⊙"
 M.G_INFO       = "✦"
@@ -62,7 +29,6 @@ M.G_KV_SEP     = "="
 M.G_PIPE       = "│"
 M.G_BULLET     = "•"
 
-# ─── Levels ────────────────────────────────────────────────────────
 M.LV_TRACE = 0
 M.LV_DEBUG = 1
 M.LV_INFO  = 2
@@ -84,7 +50,6 @@ global trace_show_caller = true
 global trace_show_ts = true
 global trace_spans = {}
 
-# ─── tty detection ────────────────────────────────────────────────
 tty: bool = ()
     ok, val = pcall(os.getenv, "DUO_COLOR")
     if ok and val != nil and val != "" and val != "0"
@@ -94,7 +59,6 @@ tty: bool = ()
         return false
     return true
 
-# ─── Style wrappers ───────────────────────────────────────────────
 s: str = (prefix: str, text: str, suffix: str)
     if prefix == nil prefix = "" 
     if suffix == nil suffix = M.RESET 
@@ -132,7 +96,6 @@ magenta: str = (text: str)
 cyan: str = (text: str)
     return M.CYAN .. to(str)(text) .. M.RESET
 
-# ─── Value formatting ─────────────────────────────────────────────
 tbl_summary: str = (t: any)
     if t == nil return "nil" 
     n = t:len()
@@ -170,7 +133,6 @@ pretty_val: str = (value: any)
 pretty_kv: str = (k: str, v: any)
     return underline(to(str)(k)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
 
-# ─── Caller info ───────────────────────────────────────────────────
 caller: str = (level: int)
     info = debug.getinfo(level, "Snl")
     if info == nil return "" 
@@ -185,7 +147,6 @@ caller: str = (level: int)
         loc = src .. dim(":") .. yellow(to(str)(info.currentline))
     return magenta(italic(name_part)) .. dim(" " .. M.G_ARROW .. " ") .. underline(loc)
 
-# ─── Timestamp ─────────────────────────────────────────────────────
 ts: str = ()
     secs = os.time()
     ms = (os.clock() * 1000) % 1000:floor()
@@ -194,7 +155,6 @@ ts: str = ()
     else(ms < 100) frac = ".0" .. to(str)(ms)
     return dim(os.date("%H:%M:%S", secs) .. frac)
 
-# ─── Level tag ─────────────────────────────────────────────────────
 level_tag: str = (level: int)
     glyph = M.G_TRACE
     tag = "trace"
@@ -222,7 +182,6 @@ level_tag: str = (level: int)
     if level == M.LV_FATAL return red(bold(underline(body))) 
     return body
 
-# ─── Span indent ───────────────────────────────────────────────────
 span_indent: str = ()
     n = trace_spans:len()
     if n <= 0 return "" 
@@ -230,7 +189,6 @@ span_indent: str = ()
     if rep == nil or rep == "" return "" 
     return dim(rep)
 
-# ─── Emit ──────────────────────────────────────────────────────────
 emit = (level: int, msg: str, fields: any, skip: int)
     if level < trace_level return 
     parts = {}
@@ -249,7 +207,6 @@ emit = (level: int, msg: str, fields: any, skip: int)
             parts[parts:len() + 1] = pretty_kv(k, v)
     print(parts:concat(" "))
 
-# ─── Public API ─────────────────────────────────────────────────
 set_level = (level: any)
     if type(level) == "string"
         v = M.level_value[level:lower()]
@@ -287,9 +244,6 @@ error = (msg: str, fields: any)
 fatal = (msg: str, fields: any)
     emit(M.LV_FATAL, msg, fields, 2)
 
-# ─── Spans ────────────────────────────────────────────────────────
-# Format a millisecond duration as a string like "12.34ms" without
-# relying on string.format (the codegen currently mishandles %f).
 _fmt_ms: str = (ms: float)
     whole = ms:floor()
     frac = (ms - whole) * 100:floor()
@@ -349,7 +303,6 @@ span_end = (h: any, fields: any)
             parts[parts:len() + 1] = pretty_kv(k, v)
     print(parts:concat(" "))
 
-# ─── Banner / divider / legend ────────────────────────────────────
 banner = (title: str, subtitle: str)
     if title == nil title = "trace" 
     if tty()
@@ -381,7 +334,6 @@ legend = ()
     print("  " .. magenta(M.G_SPAN_BEGIN) .. "/" .. magenta(M.G_SPAN_END) ..
           " = span begin/end    " .. dim(M.G_DUR) .. " = measured duration")
 
-# ─── Recursive pretty printer for dump() ───────────────────────────
 _seen: bool = (seen: any, value: any)
     if seen == nil return false 
     i = 1
@@ -409,9 +361,6 @@ pretty_repr: str = (value: any, depth: int, seen: any)
         return "<function>"
     else(t:find("table") != 1)
         return to(str)(value)
-    # table branch — use table identity (== by reference) stored in a
-    # flat array, because the codegen's to(str)(table) always returns
-    # the bare type name "table" regardless of which table.
     if _seen(seen, value) return "<circular>" 
     _seen_add(seen, value)
     n = value:len()
@@ -441,7 +390,6 @@ dump = (label: str, value: any)
     print(header)
     if value != nil and type(value) == "table"
         rendered = pretty_repr(value, 1, nil)
-        # split on newlines manually; the codegen mishandles gmatch
         i = 1
         n = rendered:len()
         line_start = 1
@@ -456,7 +404,6 @@ dump = (label: str, value: any)
         if line_start <= n
             print(dim(M.G_PIPE .. " ") .. cyan(rendered:sub(line_start)))
 
-# ─── Exports ──────────────────────────────────────────────────────
 M.set_level = set_level
 M.get_level = get_level
 M.show_caller = show_caller
@@ -481,10 +428,6 @@ M.LV_ERROR = M.LV_ERROR
 M.LV_FATAL = M.LV_FATAL
 
 M
-# ─── DEMO ─────────────────────────────────────────────────────────────
-# Beautiful, semantically-formatted trace & debug.
-# Run with:  DUO_COLOR=1 ./zig-out/bin/duo run examples/pretty_trace.id
-# Set NO_COLOR=1 to disable ANSI.
 
 T = M
 

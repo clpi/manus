@@ -1,5 +1,3 @@
-# @corpus current
-# Document read — subject-first; relation lives at lib/compiler/reader.id.
 document: { value: i64 }
 
 read: i64 = (subject: document)

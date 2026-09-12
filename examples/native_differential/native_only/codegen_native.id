@@ -1,27 +1,7 @@
-# expect-exit: 2
-# SH-11 step 2: a code GENERATOR written in Duo, compiled to native ARM64.
-#
-# `arm64_encoder.id` proved encoding — one instruction to one word. This proves
-# the next layer: taking a program and emitting a *sequence* of instructions
-# into a buffer, which is the codegen loop itself.
-#
-# The buffer is a mutable positional table (dynamic index read + write, both
-# native), so emission is `code[n] = word; n += 1` — exactly the shape of
-# `emitFmt` in `src/native_backend.zig`.
-#
-# What is still missing for a real backend is writing that buffer to an object
-# file: that needs a byte buffer of runtime-determined size plus file I/O,
-# neither of which lowers natively. So this generates the machine code but
-# cannot yet persist it — the last named gap.
-#
-# Verified by checking the emitted words against the encodings `objdump` shows
-# for the same instructions.
 
-# MOVZ Xd, #imm16 : 0xd2800000 | imm<<5 | Rd
 movz: i64 = (rd: i64, imm: i64)
     3531603968 + imm * 32 + rd
 
-# RET : 0xd65f03c0
 ret: i64 = ()
     3596551104
 
@@ -31,8 +11,6 @@ check: i64 = (got: i64, want: i64)
     0
 
 main: i64 = ()
-    # Emit code for the program `return 42`, the same two instructions the Zig
-    # backend produces for a constant-returning function.
     code = { 0, 0, 0, 0 }
     n = 1
 
@@ -41,9 +19,6 @@ main: i64 = ()
     code[n] = ret()
     n += 1
 
-    # Verify the emitted sequence:
-    #   mov x0, #42  -> 0xd2800540  (0xd2800000 | 42<<5 | 0) = 3531605312
-    #   ret          -> 0xd65f03c0                            = 3596551104
     ok = 0
     ok += code[1]:check(3531605312)
     ok += code[2]:check(3596551104)

@@ -1,5 +1,3 @@
-# Meta concept descriptor demo
-# Shows runtime concept creation via meta.make_concept
 
 Drawable = meta.make_concept("Drawable", {
   fields = { "id" },
@@ -13,11 +11,9 @@ shape =
   to_string = (self) -> str
     "drawable"
 
-# Runtime concept checking
 print("Drawable name: " .. Drawable.name)
 print("satisfies Drawable: " .. to(str)(meta.satisfies_concept(shape, Drawable)))
 print("satisfies Display: " .. to(str)(meta.satisfies_concept(shape, derive.Display)))
 
-# Use : method syntax
 print("draw: " .. shape:draw())
 print("to_string: " .. shape:to_string())

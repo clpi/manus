@@ -1,15 +1,8 @@
-# Deep nested combinator algebra (G-059): arbitrary depth inside callbacks.
-# Run: duo run examples/meta_nested_algebra_showcase.id
-#
-# Proves match→interpolate, match→zip(folded concat), and power→each→template
-# all fold to native C with no lua_Value and no dead closure thunks.
 
-# Level A: match callback calls interpolate (original G-059 repro)
 TYPEDEFS = @comp.match("i32|i64|f64", fun(m)
   @comp.interpolate("typedef {name} duo_t_{idx};\n", { name = m.pattern, idx = to(str)(m.index) })
 )
 
-# Level B: match callback calls zip with folded-concat specs
 OPS = "add|" .. "mul"
 PAIRS = @comp.match("i32|i64", fun(m)
   @comp.zip(m.pattern .. "|f64", OPS, fun(p)
@@ -17,7 +10,6 @@ PAIRS = @comp.match("i32|i64", fun(m)
   )
 )
 
-# Level C: power → each → template (full exponential cascade)
 concept HasXY
   x: f64
   y: f64

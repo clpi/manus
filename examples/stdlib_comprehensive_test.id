@@ -1,4 +1,3 @@
-# Comprehensive stdlib test — tests all new and existing functions
 
 str_mod = string
 num = math
@@ -15,7 +14,6 @@ check = (desc, cond)
         fail += 1
         stdout:write("  FAIL: " .. desc .. "\n")
 
-# ── string ──────────────────────────────────────────────────────────
 
 stdout:write("\n--- std.string ---\n")
 
@@ -37,7 +35,6 @@ check("repeat", str_mod.repeat("ab", 3) == "ababab")
 check("replace first", str_mod.replace("a-b-c", "-", ":", 1) == "a:b-c")
 check("replace all via replace_all", str_mod.replace_all("a-b-c", "-", ":") == "a:b:c")
 
-# ── table ───────────────────────────────────────────────────────────
 
 stdout:write("\n--- std.table ---\n")
 
@@ -59,7 +56,6 @@ check("every false", not tbl.every({2, 3, 6}, (v) v % 2 == 0))
 check("some true", tbl.some({1, 3, 4}, (v) v % 2 == 0))
 check("some false", not tbl.some({1, 3, 5}, (v) v % 2 == 0))
 
-# ── math ────────────────────────────────────────────────────────────
 
 stdout:write("\n--- std.math ---\n")
 
@@ -75,7 +71,6 @@ check("approx_eq diff", not num.approx_eq(1.0, 2.0))
 check("min_of", num.min_of({5, 3, 8, 1, 9}) == 1)
 check("max_of", num.max_of({5, 3, 8, 1, 9}) == 9)
 
-# ── crypto ──────────────────────────────────────────────────────────
 
 stdout:write("\n--- std.crypto ---\n")
 
@@ -91,7 +86,6 @@ check("compare_digest length", not crypto.compare_digest("abc", "abcd"))
 check("hmac_sha256", crypto.hmac_sha256("key", "message"):len() == 64)
 check("secure_random_hex", crypto.secure_random_hex(16):len() == 32)
 
-# ── fmt ─────────────────────────────────────────────────────────────
 
 stdout:write("\n--- std.fmt ---\n")
 
@@ -106,7 +100,6 @@ check("repr number", fmt.repr(42) == "42")
 check("repr nil", fmt.repr(nil) == "nil")
 check("repr bool", fmt.repr(true) == "true")
 
-# ── log ─────────────────────────────────────────────────────────────
 
 stdout:write("\n--- std.log ---\n")
 
@@ -117,7 +110,6 @@ check("log reset", log.get_level() == "DEBUG")
 log.with_fields("INFO", {user = "test", id = 42}, "action performed")
 check("log with_fields", true)
 
-# ── zip ─────────────────────────────────────────────────────────────
 
 stdout:write("\n--- std.zip ---\n")
 
@@ -127,7 +119,6 @@ check("zip.list exists", type(zip.list) == "function")
 check("zip.info exists", type(zip.info) == "function")
 check("zip.info nil", zip.info("/nonexistent.zip") == nil)
 
-# ── iter ────────────────────────────────────────────────────────────
 
 stdout:write("\n--- std.iter ---\n")
 
@@ -145,7 +136,6 @@ check("iter sliding_window values", iter.sliding_window({1, 2, 3, 4}, 2)[1][2] =
 check("iter unique", iter.unique({1, 2, 2, 3}):len() == 3)
 check("iter flat_map", iter.flat_map({1, 2, 3}, (x) {x, x * 10}):len() == 6)
 
-# ── Summary ─────────────────────────────────────────────────────────────
 
 stdout:write("\n=== Results: %d passed, %d failed ===\n":format(pass, fail))
 test.assert_eq(fail, 0, "no failures expected")

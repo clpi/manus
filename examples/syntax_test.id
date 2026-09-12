@@ -1,10 +1,3 @@
-# Syntax highlighting test for Duo
-#
-# Note: Duo has no `struct` or `class` keyword. Typed records are declared
-# via inline type-literal annotations on bindings:
-#   p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
-# OO-style objects are just table literals with method fields. Concept
-# satisfaction is declared via `@implements(...)` on the binding.
 
 greet: str = (name: str)
     "Hello, " .. name
@@ -12,7 +5,7 @@ greet: str = (name: str)
 fun add<T>(a: T, b: T): T
     a + b
 
-result: i64 = ##1 + 2
+result: i64 =
 global counter: i64 = 0
 
 calculate = ()

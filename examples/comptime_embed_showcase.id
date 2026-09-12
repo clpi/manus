@@ -1,5 +1,3 @@
-# Comptime @embed in @(expr) — file contents baked into the binary at compile time
-# Run: duo run examples/comptime_embed_showcase.id
 
 GREETING = @embed("examples/data/greeting.txt")
 TAG = @("[" .. GREETING .. "]")
@@ -9,6 +7,5 @@ print("GREETING = " .. GREETING)
 print("TAG = " .. TAG)
 print("len = " .. to(str)(@(GREETING:len())))
 
-# Combine with @run for hybrid codegen
 BUILDER = @run("whoami")
 print("built by " .. BUILDER)

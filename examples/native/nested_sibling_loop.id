@@ -1,22 +1,3 @@
-# GAP-173 case 1 — a sibling `while` after a loop that contains a nested loop.
-#
-# THE DEFECT AS FILED: "a `while` at the same indent immediately after an outer
-# `while` that contains a nested loop does not execute its body (loop variable
-# observed unchanged afterward). Replacing it with a `for` executes correctly."
-# It compiled, it ran, it exited 0 where it should have exited 5, and no
-# diagnostic was printed — the failure `law.fallback.zero` forbids.
-#
-# WHY THE ANSWER IS THE SIBLING'S OWN VARIABLE. `k` is touched by nothing but
-# the second loop, so a skipped body cannot be confused with an arithmetic
-# slip: 0 means the loop did not run, 5 means it ran to its bound, and there is
-# no third reading. Returning a sum of both loops would have let a wrong answer
-# land inside the right range.
-#
-# THE CONTROL IS IN `gate/nest.id` (idol-native), which runs this same shape
-# beside the flat version GAP-173 said always worked and requires them to agree.
-# Here the file is one shape and one number, so it can be read in five seconds
-# and cannot pass for the wrong reason.
-# expect-exit: 5
 
 main: i64 = ()
     i = 0

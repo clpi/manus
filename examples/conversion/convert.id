@@ -1,16 +1,3 @@
-# @corpus current
-# Explicit conversion when target is NOT fixed by surrounding demand.
-#
-# INFER-ONE (law.infer.one): when binding/parameter/field/result already demands
-# the target descriptor, omit redundant :to(T) from source — graph retains inferred
-# application. This file keeps explicit :to(T) because each conversion direction
-# is exercised without a unique surrounding demand fixing the target.
-#
-# Canonical invocation face: n:to(str), never to(str)(n). Full ladder:
-#   to(str)(n) → n:to(str) → n   (stop at uniquely proved step)
-# Target-omitted spelling is not a canonical rung — omit to only when demand fixes it.
-#
-# expect: 17 -17 9007199254740993 42 2.5 true
 
 s: str = "17"
 neg: str = "-17"

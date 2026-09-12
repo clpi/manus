@@ -1,10 +1,7 @@
-# Test: @derive trait system on alias types
-# Tests auto-generated metamethods from @derive attributes
 
 @derive(Display, Eq, Add, Sub, Neg, Len, Default)
 pair: { x: f64, y: f64 }
 
-# Construct instances
 a =
   x = 3.0
   y = 4.0
@@ -12,7 +9,6 @@ b =
   x = 1.0
   y = 2.0
 
-# Test basic field access
 print("a.x = " .. to(str)(a.x))
 print("a.y = " .. to(str)(a.y))
 print("b.x = " .. to(str)(b.x))

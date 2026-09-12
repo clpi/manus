@@ -1,7 +1,5 @@
-# Test minimal bash-style fun call
 
 greet: str = (name: str)
   "Hello, " .. name
 
-# Bash-style call
 print(greet("World"))

@@ -1,20 +1,3 @@
-# `explain-gate` fixture: two module-scope callables (`mix`, `main`), both fully
-# typed, so `duo explain` has entities to name and the gate can assert its
-# knowledge snapshot BY VALUE (`"name":"mix"`) rather than by key presence.
-#
-# WHAT THIS FILE USED TO BE, and why the header changed. It was the STRONG half
-# of a `law.c.floor` / `law.perf.dominance` pair: `weak.id` was byte-for-byte
-# this file with `any` where the descriptors are, and `scripts/cfloor.id`
-# compared the two realization plans. That law made the C-equivalent lowering a
-# retained baseline candidate on every callable — and `--backend=c` is RETIRED,
-# refusing at exit 1, so the plan selected a lowering the compiler cannot
-# perform. `src/realization.zig`, `scripts/cfloor.id`, the `c-floor` build step
-# and `weak.id` were deleted together on 2026-08-15. Do not reintroduce a
-# `lower.cequiv` candidate here; `explain-gate` row R1 fails if one appears.
-#
-# The loop bound is 100000000 because the file was once TIMED. Nothing in the
-# compiler keys on this bound and nothing may — §3's first rule — so it is now
-# only a number this fixture happens to carry.
 
 mix: i64 = (a: i64, b: i64)
   ((a * 31) + b) % 1000003

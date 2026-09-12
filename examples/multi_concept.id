@@ -1,4 +1,3 @@
-# Multi-concept constraints: fun f<T: A + B>(x: T)
 
 concept Hashable
     hash(self) -> i64

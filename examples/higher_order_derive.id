@@ -1,7 +1,4 @@
-# Higher-order derive macros: introspect the derive registry at compile time.
-# Demonstrates @comp.derive.list, @comp.derive.lookup, and @comp.derive.eval.
 
-# Compose all other user-defined derives via @comp.derive.list / @comp.derive.eval.
 
 @comp.define.derive("TraceFields", generate: str = (meta)
   acc = "/* TraceFields for " .. meta.name .. " */\n"

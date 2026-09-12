@@ -1,17 +1,3 @@
-# Self-application: the tokenizer scans its OWN source text.
-#
-# This is the honest, bounded form of a bootstrap step. It is NOT self-hosting —
-# Duo's compiler is still Zig-hosted at stage S0. What it does establish is that
-# a compiler front-end component, written in canonical Duo and compiled to
-# native ARM64 by `--backend=direct`, correctly processes Duo compiler source.
-#
-# The scanned text is a verbatim copy of `digit`'s definition from
-# `tokenizer.id` — real Duo syntax with identifiers, digits, operators and
-# punctuation, including the `i64` case where a digit run terminates an
-# identifier run.
-#
-# Source reading is embedded rather than read from disk because `os.read_file`
-# does not lower on either backend today; the scanner logic is identical either way.
 
 Kind: { eof, ident, number, punct }
 
@@ -60,8 +46,6 @@ scan: tok = (src: str, pos: i64)
         return { kind = Kind.number, start = i, len = j - i }
     { kind = Kind.punct, start = i, len = 1 }
 
-# Count the tokens in `src`, so the result is a structural fact about the
-# scanned Duo source rather than an arbitrary fold.
 count: i64 = (src: str)
     total = 0
     pos = 1
@@ -75,6 +59,4 @@ count: i64 = (src: str)
     total
 
 main: i64 = ()
-    # Verbatim source of this file's own `digit`, scanned by this file's own
-    # scanner, in a binary this file was compiled into.
     "digit = (c: i64): i64 if c >= 48 and c <= 57 return 1 end 0 end":count()

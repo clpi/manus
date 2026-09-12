@@ -1,7 +1,4 @@
-# WASI type system demo: WebAssembly System Interface types
-# Demonstrates WASI type constants and bindings
 
-# WASI errno constants
 errno_success: u16 = ()
   0
 errno_badf: u16 = ()
@@ -19,7 +16,6 @@ errno_notdir: u16 = ()
 errno_overflow: u16 = ()
   61
 
-# WASI file descriptor types
 fd_stdin: i32 = ()
   0
 fd_stdout: i32 = ()
@@ -27,7 +23,6 @@ fd_stdout: i32 = ()
 fd_stderr: i32 = ()
   2
 
-# WASI rights
 right_fd_read: u64 = ()
   1
 right_fd_write: u64 = ()
@@ -41,7 +36,6 @@ right_poll_oneoff: u64 = ()
 right_sock_accept: u64 = ()
   65536
 
-# WASI open flags
 oflags_creat: u16 = ()
   1
 oflags_directory: u16 = ()
@@ -51,7 +45,6 @@ oflags_excl: u16 = ()
 oflags_trunc: u16 = ()
   8
 
-# WASI file types
 filetype_unknown: u8 = ()
   0
 filetype_block_device: u8 = ()
@@ -69,7 +62,6 @@ filetype_socket_stream: u8 = ()
 filetype_symlink: u8 = ()
   7
 
-# WASI clock IDs
 clockid_realtime: u32 = ()
   0
 clockid_monotonic: u32 = ()
@@ -79,7 +71,6 @@ clockid_process_cputime_id: u32 = ()
 clockid_thread_cputime_id: u32 = ()
   3
 
-# WASI event types
 eventtype_clock: u8 = ()
   0
 eventtype_fd_read: u8 = ()
@@ -87,7 +78,6 @@ eventtype_fd_read: u8 = ()
 eventtype_fd_write: u8 = ()
   2
 
-# WASI whence (seek origin)
 whence_set: u8 = ()
   0
 whence_cur: u8 = ()
@@ -95,7 +85,6 @@ whence_cur: u8 = ()
 whence_end: u8 = ()
   2
 
-# WASI signal constants
 signal_hup: u8 = ()
   1
 signal_int: u8 = ()
@@ -107,13 +96,11 @@ signal_kill: u8 = ()
 signal_term: u8 = ()
   15
 
-# WASI exit codes
 exit_success: u32 = ()
   0
 exit_failure: u32 = ()
   1
 
-# WASI timestamp helpers
 timestamp_second: u64 = ()
   1000000000
 timestamp_millisecond: u64 = ()

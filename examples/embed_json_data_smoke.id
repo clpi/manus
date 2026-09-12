@@ -1,5 +1,3 @@
-# @comp.embed.json data → native C struct literal (no lua boxing)
-# Run: duo run examples/embed_json_data_smoke.id
 
 @comp.embed.json("examples/schemas/point_data.json")
 

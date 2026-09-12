@@ -1,5 +1,3 @@
-# Exponential pipeline: @comp.pipeline + @comp.map + @comp.derive stacked
-# Run: duo run examples/exponential_pipeline_showcase.id
 
 concept HasN
     n: i64

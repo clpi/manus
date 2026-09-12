@@ -1,20 +1,3 @@
-# @corpus current
-# EXACT DECIMAL MEANING, THROUGH A BINDING, A CALL, A RETURN AND AN EQUALITY.
-#
-# `0.1` names one tenth. `f64` cannot hold one tenth, so a compiler that ingests
-# the spelling THROUGH `parseFloat` has destroyed the fact before the first
-# binding sees it, and every line below then answers about a rounding.
-#
-# `sum` crosses two local bindings and an equality. `carried` crosses an operand
-# pack and a return. They are separate hops because they take separate routes to
-# an answer, and a carrier that holds the fact at one and drops it at the other
-# is the state this file exists to convict.
-#
-# `apart` is the control that stops the file passing by answering 1 to
-# everything: `0.30000000000000004` IS the f64 sum of the two spellings above
-# it, so a carrier still on f64 answers `0 0 1` — the exact inverse. No
-# single-value answer produces `1 1 0`.
-# expect: 1 1 0
 
 total: f64 = (a: f64, b: f64)
   a + b

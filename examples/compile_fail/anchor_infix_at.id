@@ -1,33 +1,3 @@
-# @corpus current
-# THE ANCHOR — the half of the `@` token that adjacency did NOT
-# reconcile, and that still has no meaning.
-#
-# GAP-059 row 2 was closed by giving the GLUED spelling to the anchor:
-# `p@x` is a suffix now, it retrieves, and `examples/anchor/move.id`
-# pins it by value at 353. `infix_prec` still maps the `@` token to `.matmul`,
-# so the SPACED spelling kept everything the glued one shed:
-#
-#     print(p @ x)   ->   warning: infix '@' matmul is non-canonical
-#                    ->   ✓ checked — no errors        exit 0
-#                    ->   error: use of undeclared identifier 'x'
-#
-# A green `duo check` on a construct the compiler has no meaning for is the
-# defect, and adjacency narrowed it rather than removing it: `x` here is the
-# right OPERAND of a tensor product over a record and an undeclared name.
-# Nothing downstream has a meaning for that, and saying so at check time is
-# the whole of what §2 licenses — the anchor already has its spelling one
-# space to the left.
-#
-# This is a REJECTION fixture, not a value fixture, and that is not a
-# placeholder. `anchormove.id` is the value fixture for what `@` DOES mean;
-# there is no second meaning left for this file to assert. Its subject is a
-# refusal, so the pin has to be the diagnostic.
-#
-# The tensor product stays legal and is why the verdict lives in sema rather
-# than the parser: `Tensor[M,K] @ Tensor[K,N]` is shape-checked, has three
-# fixtures beside this one (tensor_matmul_k_mismatch.id and friends), and is
-# the only spelling that operation has. The parser sees one token and no
-# types; sema sees the operands.
 
 point: { x: i64, y: i64 }
 

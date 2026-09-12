@@ -1,18 +1,12 @@
-# Test bash-style fun calls with literals
 
-# Define a simple fun
 greet: str = (name: str)
   "Hello, " .. name
 
-# Traditional Lua-style call
 print(greet("World"))
 
-# Bash-style call with literal string
 print(greet("Duo"))
 
-# Multiple arguments with literals
 add: i64 = (a: i64, b: i64)
   a + b
 
-# Bash-style call with literal numbers
 print(add, 5, 3)

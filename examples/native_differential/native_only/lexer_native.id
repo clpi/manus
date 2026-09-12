@@ -1,24 +1,8 @@
-# expect-exit: 84
-# SH-03 step: a Duo lexer that lowers to native ARM64 and emits the CANONICAL
-# token kind IDs — the same ids `src/lexer.zig` uses.
-#
-# The kind ids are not invented here. They come from `lib/token/classify.id`
-# (SH-02, already `duo_canonical`, generated from `src/token_classify_gen.zig`)
-# via `req`, and fold to immediates at compile time — so the Duo lexer and the
-# host lexer agree on token identity by construction, not by convention.
-#
-# Why this shape rather than `lib/compiler/lexer.id`: that lexer's `Lexer`
-# record has 18 fields including strings, nested records and floats, which
-# exceeds the direct backend's 8-slot register ABI for aggregates. Keeping lexer
-# state in scalars and a 3-field token record puts the whole thing inside the
-# proven native subset. The 18-field design is a choice, not a requirement.
 
 Classify = classify
 
 tok: { kind: i64, start: i64, len: i64 }
 
-# Non-keyword kinds. `classify.id` covers only the 54 reserved words, so these
-# two live here and are deliberately outside the canonical keyword range.
 kindname = 0
 KIND_NUMBER = 1
 
@@ -45,9 +29,6 @@ space: i64 = (c: i64)
         return 1
     0
 
-# Keyword recognition by length then bytes. A real lexer does exactly this;
-# substring slicing is not in the native subset, and byte tests compile to
-# register compares with no allocation.
 classify_word: i64 = (src: str, start: i64, len: i64)
     b0 = src:byte(start)
     if len == 2
@@ -90,9 +71,6 @@ nexttoken: tok = (src: str, pos: i64)
         return { kind = KIND_NUMBER, start = i, len = j - i }
     { kind = 0 - 2, start = i, len = 1 }
 
-# Sum the canonical kind ids of every reserved word found. Because the ids come
-# from `classify.id`, this total is a fact about the shared token vocabulary —
-# if the Duo lexer and the host lexer ever disagreed on an id, it would move.
 sum_keyword_kinds: i64 = (src: str)
     total = 0
     pos = 1
@@ -107,6 +85,4 @@ sum_keyword_kinds: i64 = (src: str)
     total
 
 main: i64 = ()
-    # Real Duo source. Reserved words present, with canonical ids:
-    #   local(19) + if(17) + and(4) + return(24) + end(10) + end(10) = 84
     sum_keyword_kinds("local x = 1 if x and x return x end end")

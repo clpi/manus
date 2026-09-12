@@ -1,7 +1,3 @@
-# NUMERICS: negative zero. IEEE-correct on comparison; renders as `-0`, so
-# the sign survives the value face but the float-ness does not.
-# expect: -0 1
-# @corpus current
 a = -0.0
 b = 0.0
 e = 0

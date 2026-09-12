@@ -1,29 +1,3 @@
-# A LITERAL BRACE, IN THE FACE THAT ALREADY HAS ONE.
-#
-# `law.literal.bytes` binds "single quotes are the one canonical byte sequence
-# literal face". That face does not interpolate, so a `{` inside it is a byte
-# and not a hole opener. This file is the oracle for that fact.
-#
-# THE CONTROL IS `hole`. `j` is live and holds 7, so a byte face that ever
-# learned to interpolate would measure 1 here instead of 3 and this file would
-# go red. Without it, "does not interpolate" is asserted and not measured.
-#
-# THE FACE'S MEASURED LIMITS, as running numbers rather than claims:
-#
-#   * it does not decode escapes — `esc` is FOUR bytes, not three, so no
-#     literal needing both `\n` and `{` can move here;
-#   * it cannot spell its own delimiter — `q` is a BACKSLASH and a quote, 2;
-#   * it does not satisfy a `str` demand. `json: str = '...'` is refused at the
-#     front end, "declared as 'str', but initializer has type '[]u8'", which is
-#     `law.literal.bytes` holding text and byte apart as distinct descriptors.
-#     A migration onto this face therefore moves the descriptor too; it is not
-#     a spelling change. `gaps/GAP-216.md` records the day that stopped
-#     coercing.
-#
-# `print` over a byte value has no realization, so every fact here is read
-# through `:len()`, which does.
-# expect: 23 4 2 3 12 14
-# @corpus current
 
 json = '{"k": 1, "n": {"d": 2}}'
 esc = 'a\nb'

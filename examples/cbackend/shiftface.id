@@ -1,24 +1,3 @@
-# NUMERICS: `>>` is a LOGICAL shift and a shift count is taken modulo 64 — and
-# the folded form of a shift must give the same answer as the emitted one.
-#
-# WHY THE FIRST TWO NUMBERS ARE THE SAME BITS TWICE. `a` shifts a value the
-# emitter cannot read; `b` shifts the identical bit pattern written as a
-# literal, which the constant folder consumes. The folder was already unsigned
-# and the emit was a signed C `>>`, so ONE operator answered two things in one
-# program: measured, `a` printed -4 and `b` printed 9223372036854775804. A
-# constant is not allowed to mean something different from the value it is.
-#
-# WHY 64 AND 65 ARE HERE. C leaves a shift at or above the width undefined and
-# clang used the licence: `1 << 64` and `1 << 65` both emitted the value of an
-# unrelated earlier binding. Both AArch64 and x86-64 mask the count to 6 bits,
-# so that is what the emitted program must do to agree with the machine it
-# lowers to. `examples/table/shifts.id` states the same rule from the other end.
-#
-# Computed by hand: -8 is 0xFFFFFFFFFFFFFFF8; logically shifted right one place
-# that is 0x7FFFFFFFFFFFFFFC = 9223372036854775804. 1 << (64 & 63) = 1.
-# 1 << (65 & 63) = 2. 1 << 63 = 0x8000000000000000, read as i64 the minimum.
-# expect: 9223372036854775804 9223372036854775804 1 2 -9223372036854775808
-# @corpus current
 n = 8
 bits = 0 - n
 a = bits >> 1

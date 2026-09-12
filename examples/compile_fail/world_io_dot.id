@@ -1,20 +1,3 @@
-# @corpus current
-# compile_fail: the SUBJECT of `read` is the stream, never the world.
-#
-# THE CLAIM ON THIS FILE CHANGED, and the shape under test did not. It used to
-# read "io.read is namespace-method syntax — use io:read", which named the
-# PUNCTUATION as the objection and `io:read` as the repair. Both halves are now
-# wrong: `io:read("*a")` is refused by exactly the same diagnostic as the dotted
-# spelling, because the objection is the SUBJECT. `io` supplies streams; it is
-# not one. c0 `law.world.grant` — "io:open(path) cannot become canonical merely
-# because io is reachable" — and `law.subject.resolve`'s deny row `file:read(stream)`
-# are the two rules, and neither mentions a delimiter.
-#
-# So a fixture pinned on the old sentence would have gone green while naming a
-# repair the compiler refuses, which is the failure this directory exists to
-# prevent, one level up. The repair is `stdin:read(…)`, and the diagnostic says
-# so — direction picks the stream. `gate/refuse.sh` holds the `write` half of
-# the same boundary, including the `admits` probes that keep `lib/io.id` legal.
 
 main: i64 = ()
     text = io.read("*a")

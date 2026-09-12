@@ -1,5 +1,3 @@
-# Exponential product: cartesian codegen + @comp.derive.all + module introspection
-# Run: duo run examples/exponential_product_showcase.id
 
 concept HasXY
   x: f64

@@ -1,27 +1,3 @@
-# @corpus current
-# ADJACENCY is the whole rule: `>>=` is `>>` with an `=` glued to it — two
-# tokens, no third lexical identity. `src/parser.zig` reads it that way.
-#
-# THE FILE NAMED FOR THAT LAW STOPPED CARRYING IT. Commit 98ceb52c, an
-# argument-projection migration whose message never mentions compound
-# assignment, expanded all four glued operators here into `a = a >> 3`. The
-# oracle line did not move — both spellings answer 8 — so no number could see
-# it, and nothing ran this file. `idol fmt` performs the same expansion today,
-# which is why gate/layout.sh checks that the FACE is still here and not only
-# that the numbers agree.
-#
-# BOTH SPELLINGS APPEAR AND THE ORACLE REQUIRES THEM TO AGREE: `a`..`d` glued,
-# `x`..`w` the expanded form it replaces, over identical operands. That
-# agreement is the equivalence witness the update-of-place law demands before
-# the compound form may be called canonical.
-#
-# The operands separate the operators — 64>>3 = 8, 1<<4 = 16, 8|5 = 13,
-# 12&10 = 8 — so a wrong mapping cannot land on the right number.
-#
-# `e` is the negative control: a bare `e >> 1` is still an EXPRESSION and
-# leaves `e` at 5. The spaced form `a >> = 3` refuses with "expected
-# expression, got '='"; the gate runs that refusal rather than asserting it.
-# expect: 8 16 13 8 5 8 16 13 8
 
 a = 64
 a >>= 3

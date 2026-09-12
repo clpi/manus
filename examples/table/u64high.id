@@ -1,7 +1,3 @@
-# NUMERICS: a u64 literal above i64 max. The bit pattern is kept, but the
-# RENDERING is signed, so the largest u64 prints as -1. Contradicts the u64
-# descriptor having its own value face.
-# expect: -1 -1
 main: i64 = ()
   a: u64 = -1
   b: u64 = -1

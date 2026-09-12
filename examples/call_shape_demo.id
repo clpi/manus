@@ -1,31 +1,16 @@
-# Call-shape specialization demonstration.
-# Compile with DUO_GRAPH=1 to see call-shape analysis in the semantic graph.
-#
-# This file shows how the same function called with different shapes
-# can be specialized independently:
-#   - typed args → native lowering (no boxing)
-#   - different arg counts → separate specializations
-#   - return consumed vs discarded → elision opportunity
 
-# Direct calls with typed arguments (specializable: typed_args_mask != 0)
 add: i64 = (a: i64, b: i64)
     return a + b
 
 mul: i64 = (a: i64, b: i64)
     return a * b
 
-# Same function, different call shapes at each site. The module root is the
-# process observation; no source `main` relation is manufactured for the ABI.
-# Shape 1: add(i64, i64) → i64, single return consumed
 _x: i64 = add(10, 20)
 
-# Shape 2: add(i64, i64), result discarded (could elide entire call if pure)
 add(1, 2)
 
-# Shape 3: mul with same shape as add — same arg_count, same typed mask
 _y: i64 = mul(_x, 3)
 
-# Shape 4: different arg count calls
 print(_x)
 print(_y)
 

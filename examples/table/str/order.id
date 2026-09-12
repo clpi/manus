@@ -1,27 +1,3 @@
-# TEXT: string ordering. Byte-lexicographic over the UNSIGNED byte domain,
-# in the process's initial C locale.
-#
-# Three rows: "Z" against "a" (uppercase below lowercase), a prefix against
-# its extension, and the discriminating non-ASCII row. "é" is 0xC3 0xA9 and
-# "z" is 0x7A, so the leading byte decides: 195 sorts ABOVE 122 and `t < u`
-# is false. Read as SIGNED char, 0xC3 is -61 and the comparison inverts — the
-# third row is the only one that tells the two readings apart.
-#
-# THE UNSIGNED DOMAIN IS NOT INFERRED FROM THE COMPILER. `str/bytes.id`, an
-# oracle in this same corpus that AGREES on both realizations, records the
-# bytes of "é" as 195 and 169. An ordering over that same byte domain cannot
-# place 195 below 122. `law.md` §0 and §8 make ordinary Lua meaning the entry
-# of the specialization chain, and Lua 5.4 §3.4.4 orders strings by locale
-# collation; under the initial C locale that is unsigned-char order, which is
-# what the generated `strcmp` performs. Codepoint order agrees (U+00E9 >
-# U+007A).
-#
-# SCOPE: this fixture pins the C-locale answer only. Lua ordering follows the
-# CURRENT locale and this tree exposes `os.setlocale`, while generated
-# comparisons call `strcmp` unconditionally — so a non-C locale is a real
-# divergence this oracle does not cover and does not license.
-# expect: 1 1 0
-# @corpus current
 p = "Z"
 q = "a"
 a = 0

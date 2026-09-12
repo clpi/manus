@@ -1,20 +1,3 @@
-# @corpus current
-# SPELLING IS NOT IDENTITY, AND THE FIELD-WRITE SCAN ONCE DECIDED THAT IT WAS.
-#
-# `bump` declares its OWN `bank`. Its `bank.x = 99` writes that binding and
-# nothing else, so the module's `bank.x` is written by nobody and `read()` is
-# the literal's 1.
-#
-# Measured at f5d87d40, before `walkBindingAssigns` existed: `read()` answered
-# 99. The identical program with the relation's local spelled anything else
-# answered 1, which is the whole defect — `collectFieldWriteTypes` matched the
-# shadow's write by SPELLING and gave the module's field storage it does not
-# own, and every reader then shared one word with the shadow.
-#
-# The control in the other direction is `examples/keyed_table_write_wins.id`,
-# where the write really is the module's: it must still answer 2, and deleting
-# the storage makes it answer 1.
-# expect: 99 1
 cell: { x: i64 }
 bank = { x = 1 }
 

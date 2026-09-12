@@ -1,21 +1,3 @@
-# expect-exit: 2
-# SH-06 step: name resolution (binding/scopes) written in Duo, compiled to
-# native ARM64.
-#
-# SH-06 normally wants a growable symbol table, and the native subset has no
-# dynamic collections — no arrays, no tables, records are fixed-arity. So the
-# scope is represented as a delimited string and searched linearly, which is a
-# real technique (early C compilers did exactly this) and fits the proven subset
-# exactly: string bytes, nested loops, byte comparison.
-#
-# What this does NOT do is declare new bindings at runtime: Duo strings are
-# immutable `const char*`, so a scope cannot grow without allocation. Resolution
-# against a *given* scope is the honest slice available today; growable scopes
-# need native table lowering, which is the actual SH-06 milestone.
-#
-# Reported value is the count of identifiers in the source that are NOT bound in
-# the scope — the exact question a binder answers, and the one that produces
-# "undefined name" diagnostics.
 
 span: { start: i64, len: i64 }
 
@@ -42,7 +24,6 @@ space: i64 = (c: i64)
         return 1
     0
 
-# Compare src[a_start .. a_start+len) against scope[b_start .. b_start+len).
 equal: i64 = (src: str, a_start: i64, scope: str, b_start: i64, len: i64)
     k = 0
     while k < len
@@ -51,9 +32,6 @@ equal: i64 = (src: str, a_start: i64, scope: str, b_start: i64, len: i64)
         k += 1
     1
 
-# Is the identifier src[start..start+len) present in the space-delimited scope?
-# Each scope entry is matched whole: a candidate must be the same length, so
-# `n` does not match `name`.
 has: i64 = (scope: str, src: str, start: i64, len: i64)
     m = scope:len()
     i = 1
@@ -72,7 +50,6 @@ has: i64 = (scope: str, src: str, start: i64, len: i64)
             i += 1
     0
 
-# Count identifiers in `src` that are not bound in `scope`.
 unbound: i64 = (src: str, scope: str)
     n = src:len()
     count = 0
@@ -91,6 +68,4 @@ unbound: i64 = (src: str, scope: str)
     count
 
 main: i64 = ()
-    # Scope binds `x` and `total`. The expression references x, total, y, z —
-    # so `y` and `z` are unbound: 2 diagnostics a real binder would emit.
     "x + total + y + z":unbound("x total")

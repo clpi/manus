@@ -1,26 +1,18 @@
-# Generative combinator algebra: template / generate / scheme → @comp.each
-# Run: duo run examples/meta_generative_stack_showcase.id
-#
-# One author pattern per stage; @comp.each closes the algebra by re-expanding
-# every comptime fragment. Fragment counts use @comp.str.countlines (native i64).
 
 stamp: str = frag
 "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 
-# Stage A: O(n) template axis
 TMPL_VARIANTS = "i64:int64_t|f64:double"
 TMPL = @comp.template(TMPL_VARIANTS, "/* tmpl[$0:$1] */\n")
 TMPL_EACH = @comp.each(TMPL, stamp)
 TMPL_N = @comp.str.countlines(TMPL_EACH)
 TMPL_SPEC_N = @comp.str.splitcount(TMPL_VARIANTS, "|")
 
-# Stage B: O(ops×types) constraint cartesian
 GEN_SPEC = "ops: add|sub\ntypes: i64:int64_t|f64:double\ntemplate: /* gen[$0:$1] */\n"
 GEN = @comp.generate(GEN_SPEC, "")
 GEN_EACH = @comp.each(GEN, stamp)
 GEN_N = @comp.str.countlines(GEN_EACH)
 
-# Stage C: O(units) declarative scheme
 DECLS = "type Point { x: double, y: double } | fn add(a: Point, b: Point) -> Point"
 SCHEME = @comp.scheme(DECLS, "/* scheme[$kind $name] */\n")
 SCHEME_EACH = @comp.each(SCHEME, stamp)

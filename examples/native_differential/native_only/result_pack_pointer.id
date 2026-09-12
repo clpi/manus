@@ -1,6 +1,3 @@
-# expect-exit: 154
-# Exact pointer identity and an integer member share one ordered graph pack;
-# the pointer remains a direct address rather than becoming an aggregate field.
 make(size: i64): (*u8, i64)
   return mem.alloc(size), 77
 

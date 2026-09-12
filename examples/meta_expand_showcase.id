@@ -1,5 +1,3 @@
-# @comp.expand: one call → O(types × fields) derive C (+ optional sweep comment)
-# Run: duo run examples/meta_expand_showcase.id
 
 concept HasXY
   x: f64
@@ -21,10 +19,8 @@ pair: { x: f64, y: f64 }
 registry_line: str = meta
 meta.name .. ";"
 
-# Derive sweep only (2-arg form)
 __emit(@comp.expand("HasXY", TouchApi))
 
-# Registry sweep separately (comptime string, not C)
 SWEEP = @comp.map("HasXY", registry_line)
 
 print("=== meta.expand showcase ===")

@@ -1,7 +1,4 @@
-# Memory allocator demo: arena, pool, and stack allocators
-# Demonstrates memory primitives and allocators (mem)
 
-# Define a simple arena allocator
 arena_new = (size: i64)
   {
     _bufs = {},
@@ -28,7 +25,6 @@ self._bufs = {}
 self._offset = 0
 self._total = 0
 
-# Test arena
 arena = arena_new(4096)
 ptr1 = arena_alloc(arena, 256)
 ptr2 = arena_alloc(arena, 512)
@@ -36,7 +32,6 @@ print("Arena used: " .. to(str)(arena_used(arena)))
 arena_free_all(arena)
 print("Arena after free: " .. to(str)(arena_used(arena)))
 
-# Alignment utilities
 align_up: i64 = (n: i64, alignment: i64)
   if n % alignment == 0
     return n

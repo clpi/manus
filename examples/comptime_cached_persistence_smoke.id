@@ -1,4 +1,3 @@
-# @comp.compile.cached persists cacheable comptime results across compiler runs.
 
 @comp.compile.cached
 cached_fib: i64 = (n: i64)

@@ -1,4 +1,3 @@
-# @comp.fixpoint — iteration field + RESULT gate
 result = @comp.fixpoint("start", fun(state)
   i = state.iteration
   "iter" .. to(str)(i) .. "\n"

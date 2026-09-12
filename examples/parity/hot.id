@@ -1,5 +1,3 @@
-# Call-algebra fixture: a `@hot` callee, bound the same way as
-# call.id so the only difference between the two is the attribute.
 
 @hot
 scale: i64 = (x: i64)

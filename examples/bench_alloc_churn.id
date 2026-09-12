@@ -1,22 +1,3 @@
-# bench_alloc_churn.id
-# Tests table churn and dynamic array growth overhead compared to native C
-# arrays. Paired with examples/bench_alloc_churn_c.c, which is the baseline.
-#
-# This did not parse. Three Lua vestiges, each of which the compiler rejects
-# or silently misreads today:
-#
-#   bench_alloc_churn(n)      a bare declaration with NO type annotation parses
-#                             as a CALL, not a declaration (GR-001). Value form
-#                             with annotations is the canonical fix.
-#   for i = 1, n do           Lua numeric-for. `range` owns counting now, and
-#                             it is HALF-OPEN — so `1, n` inclusive becomes
-#                             range(1, n + 1). Getting that wrong silently
-#                             drops the last iteration.
-#   run_bench()               a bare trailing call with no entry point.
-#
-# `collectgarbage` is kept deliberately: stopping the collector around the
-# churn loop is what the benchmark measures. Removing it would change the
-# number, not just the spelling.
 
 _bench_alloc_churn: i64 = (n: i64)
   collectgarbage("stop")
@@ -35,7 +16,6 @@ _bench_alloc_churn: i64 = (n: i64)
 main: i64 = ()
   n = 10000000
 
-  # Warm up, so the measured run is not paying first-touch page faults.
   _bench_alloc_churn(1000)
 
   start = os.clock()

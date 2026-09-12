@@ -1,5 +1,3 @@
-# A module table that OWNS field storage (poke writes it) AND is shadowed.
-# expect: 7 99 7
 cell: { x: i64 }
 bank = { x = 1 }
 

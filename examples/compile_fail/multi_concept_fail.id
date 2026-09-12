@@ -1,5 +1,3 @@
-# @corpus current
-# compile_fail: multi-concept constraint violation
 concept Hashable
     hash(self) -> i64
 end

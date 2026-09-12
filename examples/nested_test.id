@@ -1,4 +1,3 @@
-# Test nested call
 greet: str = (name: str)
   "Hello, " .. name
 

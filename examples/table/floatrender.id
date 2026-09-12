@@ -1,8 +1,3 @@
-# NUMERICS: float rendering. Pass 107 rules `to(str)` is shortest
-# round-trip (Ryu-class). Measured: 17 significant digits, so 0.1 renders as
-# 0.10000000000000001, and a WHOLE float renders with no fractional part at
-# all, making 1.0 indistinguishable from the integer 1.
-# expect: 0.10000000000000001 0.33333333333333331 1 1000
 main: i64 = ()
   a = 0.1
   b = 1.0 / 3.0

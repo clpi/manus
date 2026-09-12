@@ -1,19 +1,3 @@
-# @corpus current
-# compile_fail: `env(k) = nil` is not removal — removal is `env:remove(k)`.
-#
-# `setenv(k, "", 1)` leaves the variable PRESENT and empty; `unsetenv(k)` makes
-# it ABSENT. The write face is the only place on this surface where the two are
-# distinguishable at all — the read face collapses them (the §17 fake-nil
-# identity, idol-native/docs/env-identity.md) — so admitting the assignment
-# spelling for removal would make the distinction unrecoverable rather than
-# merely unobservable.
-#
-# BEFORE THE REFUSAL, measured: `idol check` reported NO ERRORS for this file,
-# the direct backend answered the generic `assign-value:nil` and named nothing,
-# and `--backend=c` BUILT it — emitting
-# `lua_table_set(lua_table_get_str_lit(os, "env", ...), ..., lua_val_nil())`,
-# a store into a Lua table with no connection to the process environment. A
-# silent no-op on one backend and an unhelpful refusal on the other.
 
 main: i64 = ()
     env("IDOLNILPLACE") = nil

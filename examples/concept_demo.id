@@ -1,5 +1,3 @@
-# Concept demo: define and use concepts with @implements
-# Demonstrates Duo's structural typing via concepts
 
 concept Greeter
     greet(self, name: str): str
@@ -10,18 +8,15 @@ concept Counter
     increment(self): void
     decrement(self): void
 
-# Simple function that matches Greeter behavior
 english_greet: str = (name: str)
     "Hello, " .. name .. "!"
 
-# Module that satisfies Greeter via table (using : method syntax)
 english_greeter = {}
 english_greeter.greet = (self, name: str): str
     "Hello, " .. name .. "!"
 english_greeter.lang = (self): str
     "en"
 
-# Module that satisfies Counter
 tally = { _count = 0 }
 tally.value = (self): i64
     self._count
@@ -30,7 +25,6 @@ tally.increment = (self): void
 tally.decrement = (self): void
     self._count = self._count - 1
 
-# Use the concept implementations with : method syntax
 print(english_greeter:greet("Duo"))
 print("Lang: " .. english_greeter:lang())
 

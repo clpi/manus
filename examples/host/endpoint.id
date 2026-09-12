@@ -1,7 +1,3 @@
-# Teaching: io world subject-first I/O (GAP-155).
-#
-# Never io:read() / io:write(). Use io:read / io:write under io world.
-# Physical realization may be pipe, terminal, socket, or memory.
 
 main: i64 = ()
   line = stdin:read()

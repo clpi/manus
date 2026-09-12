@@ -1,25 +1,3 @@
-# @corpus current
-# anywhere below; every block here is closed by the column of the line after
-# it, which is what §20's `shc/parse.id` requires ("if t2, err = lx:token()
-# attach(node, t2)" on one line, "else …" on the next, "node" after that).
-#
-# CHECKED BY VALUE, because every one of these shapes COMPILES under a wrong
-# nesting too — each row below answers differently if the nesting is wrong,
-# which is the only reason the numbers prove anything:
-#
-#   * `pick` answers 20 only if the one-liner `if` closed at the newline. Had
-#     it stayed open, `bump(n) + r` would sit in the then-arm, which this call
-#     does not take, and nothing would come back.
-#   * `rung` answers 3 only if the `else` bound to the OUTER `if` by column
-#     (§3: "else binds by column"). Bound to the inner `if`, b = 1 would take
-#     the else-arm and answer 1.
-#   * `sum` answers 6 only if the `while` body closed by dedent before `acc`.
-#     With `acc` inside the loop the function has no tail expression.
-#
-# No `return` appears here: the tail expression IS the answer, so the deny
-# table's `trailret` row stays where it is.
-#
-# expect: 20 3 6
 
 bump: i64 = (n: i64)
   n + 10

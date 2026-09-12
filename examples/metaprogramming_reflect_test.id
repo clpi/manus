@@ -1,37 +1,23 @@
-# Metaprogramming test: type reflection on records and enums
 
-# ═══════════════════════════════════════════════════════════════
-# @comp.fields on typed records
-# ═══════════════════════════════════════════════════════════════
 
 point: { x: f64, y: f64, z: f64 } =
   x = 1.0
   y = 2.0
   z = 3.0
 
-# @comp.fields returns a table of field descriptors
 fields = @comp.fields(point)
 print("field count = " .. to(str)(fields:len()))
 for i = 1, fields:len()
   print("  field " .. to(str)(i) .. ": name=" .. fields(i).name .. " type=" .. fields(i).type)
 
-# ═══════════════════════════════════════════════════════════════
-# @comp.has.field on typed records
-# ═══════════════════════════════════════════════════════════════
 
 print("has x = " .. to(str)(@comp.has.field(point, "x")))
 print("has w = " .. to(str)(@comp.has.field(point, "w")))
 
-# ═══════════════════════════════════════════════════════════════
-# @comp.field.type on typed records
-# ═══════════════════════════════════════════════════════════════
 
 print("field_type(x) = " .. @comp.field.type(point, "x"))
 print("field_type(y) = " .. @comp.field.type(point, "y"))
 
-# ═══════════════════════════════════════════════════════════════
-# @comp.field.offset and @comp.field.size
-# ═══════════════════════════════════════════════════════════════
 
 off_x = @comp.field.offset(point, "x")
 off_y = @comp.field.offset(point, "y")
@@ -43,9 +29,6 @@ print("offset(y) = " .. to(str)(off_y))
 print("offset(z) = " .. to(str)(off_z))
 print("size(x) = " .. to(str)(sz_x))
 
-# ═══════════════════════════════════════════════════════════════
-# Enum reflection with @comp.fields (returns variant info)
-# ═══════════════════════════════════════════════════════════════
 
 enum Color
   Red
@@ -58,25 +41,16 @@ print("enum variant count = " .. to(str)(color_fields:len()))
 for i = 1, color_fields:len()
   print("  variant " .. to(str)(i) .. ": name=" .. color_fields(i).name)
 
-# ═══════════════════════════════════════════════════════════════
-# @comp.variants on enums (more detailed)
-# ═══════════════════════════════════════════════════════════════
 
 variants = @comp.variants(c)
 print("variants count = " .. to(str)(variants:len()))
 for i = 1, variants:len()
   print("  " .. variants(i).name .. " tag=" .. to(str)(variants(i).tag) .. " arity=" .. to(str)(variants(i).arity))
 
-# ═══════════════════════════════════════════════════════════════
-# @comp.bit.field — packed bitfield definition
-# ═══════════════════════════════════════════════════════════════
 
 bf_size = @comp.bit.field("Flags", "active", 1, "priority", 3, "mode", 4)
 print("bitfield size = " .. to(str)(bf_size))
 
-# ═══════════════════════════════════════════════════════════════
-# @comp.union — union type definition
-# ═══════════════════════════════════════════════════════════════
 
 union_size = @comp.union("NumericValue", "i", "int64_t", "f", "double", "p", "void*")
 print("union size = " .. to(str)(union_size))

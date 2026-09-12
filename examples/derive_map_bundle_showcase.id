@@ -1,5 +1,3 @@
-# @comp.derive + @comp.define.bundle: one concept + bundle → O(types × derives × fields) C
-# Run: duo run examples/derive_map_bundle_showcase.id
 
 concept HasXY
   x: f64

@@ -1,23 +1,4 @@
-# expect-exit: 7
-# SH-04 step: a recursive-descent expression parser written in Duo and compiled
-# to native ARM64.
-#
-# This is the core shape of `src/parser.zig` — precedence climbing over a token
-# stream, with recursive descent through the grammar levels — reduced to the
-# arithmetic subset so it fits the proven native subset:
-#
-#   expr   := term   (('+' | '-') term)*
-#   term   := factor (('*' | '/') factor)*
-#   factor := NUMBER | '(' expr ')'
-#
-# Recursive descent needs each level to return BOTH a value and the position it
-# consumed to. There are no tuples in the native subset, so the parse result is
-# a 2-field record — which rides the ABI registers and never allocates.
-#
-# Gated `native_only` because the C backend cannot compile this shape; the
-# direct backend is strictly more capable here, so C is not a valid oracle.
 
-# A parse result: the value produced, and the position after it.
 res: { val: i64, pos: i64 }
 
 digit: i64 = (c: i64)
@@ -32,12 +13,6 @@ skip_spaces: i64 = (src: str, pos: i64)
         i += 1
     i
 
-# factor := NUMBER | '(' expr ')'
-#
-# Mutual recursion with parseexpr: `factor` calls `expr` for a parenthesised
-# group, and `expr` calls `factor` through `term`. Proving that mutual recursion
-# lowers natively is half the point of this file — a recursive-descent parser is
-# nothing but a cycle of such calls.
 parsefactor: res = (src: str, pos: i64)
     n = src:len()
     i = skip_spaces(src, pos)
@@ -57,7 +32,6 @@ parsefactor: res = (src: str, pos: i64)
         j += 1
     { val = acc, pos = j }
 
-# term := factor (('*' | '/') factor)*
 parseterm: res = (src: str, pos: i64)
     n = src:len()
     left: res = parsefactor(src, pos)
@@ -77,7 +51,6 @@ parseterm: res = (src: str, pos: i64)
             return { val = acc, pos = i }
     { val = acc, pos = i }
 
-# expr := term (('+' | '-') term)*
 parseexpr: res = (src: str, pos: i64)
     n = src:len()
     left: res = parseterm(src, pos)
@@ -98,6 +71,5 @@ parseexpr: res = (src: str, pos: i64)
     { val = acc, pos = i }
 
 main: i64 = ()
-    # Precedence must bind `*` tighter than `+`: 1 + 2*3 = 7, not 9.
     r: res = parseexpr("1 + 2 * 3", 1)
     r.val

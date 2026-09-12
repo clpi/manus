@@ -1,5 +1,3 @@
-# The native pipeline `|>` must lower to a direct C call,
-# not to a boxed invoke. The C must hold `double(21)` at the call site.
 
 double: i64 = (x: i64)
   x * 2

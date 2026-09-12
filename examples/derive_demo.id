@@ -1,10 +1,7 @@
-# Derive demo: demonstrates concepts from meta.derive and reflection
 
-# Define a concept for equality
 concept Equatable
     eq(self, other): bool
 
-# Create a point that satisfies Equatable
 point = {}
 point.x = 10.0
 point.y = 20.0
@@ -19,13 +16,11 @@ point.eq = (self, other): bool
 point.to_string = (self): str
     "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 
-# Use derive patterns with : method syntax
 cloned = point:clone()
 print("Original: " .. point:to_string())
 print("Cloned:   " .. cloned:to_string())
 print("Eq:       " .. to(str)(point:eq(cloned)))
 
-# Reflection: inspect what methods a type has
 print("\nPoint fields:")
 fields = {}
 for k, _ in point
@@ -33,7 +28,6 @@ for k, _ in point
 for _, name in fields
     print("  " .. name .. ": " .. type(point[name]))
 
-# Type sizes (conceptual from meta.macros)
 print("\nType sizes (bytes):")
 print("  i64: 8")
 print("  f64: 8")

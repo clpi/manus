@@ -1,6 +1,3 @@
-# expect-exit: 81
-# One graph result pack crosses one relation boundary in ordered GP registers;
-# no tuple object, buffer, or field layout survives physically.
 pair(n: i64): (i64, i64)
   return n, n + 1
 

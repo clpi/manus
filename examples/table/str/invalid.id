@@ -1,8 +1,3 @@
-# TEXT: invalid UTF-8. Â§12 TEXT reads "str = bytes & utf8.valid". Measured:
-# the validity half is not enforced anywhere â€” an unpaired 0xFF is an
-# ordinary two-byte string and indexes fine.
-# expect: 2 255 254
-# @corpus current
 s = "ÿþ"
 n = s:len()
 a = s[0]

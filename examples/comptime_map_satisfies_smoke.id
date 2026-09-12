@@ -1,5 +1,3 @@
-# @comp.satisfies + @comp.map on typed records (type X = { ... })
-# Run: duo run examples/comptime_map_satisfies_smoke.id
 
 concept HasXY
   x: f64

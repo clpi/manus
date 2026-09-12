@@ -1,12 +1,3 @@
-# gap[104] — the TAIL SLOT of a branch body is a statement, and it must run.
-#
-# `print("last")` is the if-body's TAIL EXPRESSION, not one of its statements:
-# the parser puts a block's final expression in `blk.tail_expr`. On the direct
-# backend nothing lowered it, because the only reader of `tail_expr` was the
-# return path and a branch body is lowered with `allow_return = false`. It
-# printed `first` and stopped. The C backend printed both.
-#
-# Both lines, in order, or this fixture is doing its job.
 
 main: i64 = ()
   if 42 > 10

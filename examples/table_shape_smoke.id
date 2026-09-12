@@ -1,14 +1,3 @@
-# Table shape foundation smoke (2026-08-04)
-# Typed records infer storage class; @comp.type.shape exposes it at compile time.
-# The `@comp.shape` alias this file used to exercise beside it is retired: it
-# resolved to the same internal hook (`__type_shape`), so `alias_shape` measured
-# a NAME, not a shape. `gate/dialect.sh` refuses the spelling now.
-# Run: duo check examples/table_shape_smoke.id
-#      DUO_GRAPH=1 duo check examples/table_shape_smoke.id
-#      DUO_PROVENANCE=1 duo compile examples/table_shape_smoke.id -o /tmp/table_shape_smoke
-# Unit tests: zig test src/types.zig #test-filter inferStorageClass
-#              zig test src/semantic_graph.zig #test-filter liftAliasShapes
-#              zig test src/codegen.zig #test-filter type_shape
 
 point: { x: f64, y: f64 }
 
@@ -47,7 +36,6 @@ main = ()
   red = Color.Red
   print("color=", red, "\n")
 
-  # Graph export (duo graph examples/table_shape_smoke.id) lists table_shapes + enum_shapes.
   ok = point_shape == "native" and inline_shape == "native" and box_shape == "sealed" and p.x == 3.0
   ok = ok and point_why:find("native C scalars") != nil and box_why:find("@sealed") != nil
   ok = ok and point_origin:find("shape_id=") != nil and red == 0

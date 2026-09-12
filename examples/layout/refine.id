@@ -1,25 +1,3 @@
-# @corpus current
-# The refinement spelling of examples/layout/attr.id.
-#
-# Packed/aligned/endian/at-address are "layout FACTS", and LAW-STRATA makes `&`
-# the refinement edge that carries them. The `@packed` / `@align(n)` attributes
-# in the sibling file store exactly the same fact through `ast.Attribute`; this
-# file stores it on the descriptor. The attribute was never a second mechanism,
-# only a second spelling, and the two files answering the same number is what
-# says so.
-#
-# THIS FILE HELD NO ORACLE LINE UNTIL NOW. Its answer lived in prose and in
-# `scripts/run_compile_fail_tests.id`, which is `#!/usr/bin/env duo` — a tool
-# with no binary in this tree — so nothing could read it. The header also said
-# both files "emit byte-identical C"; measured, NEITHER emits C, both refusing
-# at `operation-not-in-c99-slice`. The equality that can be run today is the
-# one gate/layout.sh compares: both answer 6 under wasm. The C half is owed and
-# the gate says so rather than asserting it.
-#
-# The indented block below is the face this file exists to carry. `idol fmt`
-# rewrites it into a braced pack, so this file is deliberately not a fmt
-# fixpoint; the gate pins that.
-# expect: 6
 global gp: { x: i8, y: i64 } = { x = 1, y = 2 }
 
 p: { x: i8, y: i64 } =

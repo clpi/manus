@@ -1,8 +1,3 @@
-# print of a BOOL-answering subject-first relation. exprIsStr(s:has(n))
-# used to answer "subject is text" — copied from sub — so the boolean reached
-# puts as a FORMAT POINTER and the program died before any output (exit 139,
-# ok compile, empty stdout; fixed in dnir_lower 2026-08-18). The C column
-# prints 1.
 main: i64 = ()
   s = "hello world"
   print(s:has("world"))

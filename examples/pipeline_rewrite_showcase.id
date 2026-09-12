@@ -1,5 +1,3 @@
-# @comp.pipeline fusion + @rewrite strength reduction
-# Run: duo run examples/pipeline_rewrite_showcase.id
 
 @comp.pipeline([[
 static inline int64_t pipeline_fused_sum(int64_t a, int64_t b, int64_t c) {

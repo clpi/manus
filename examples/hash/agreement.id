@@ -1,17 +1,3 @@
-# @corpus current
-# The compile-time string hash and the runtime string hash must agree bit for
-# bit, or interning silently splits.
-#
-# A string LITERAL is interned at the bucket named by the hash the COMPILER
-# computed. A string the program BUILDS is interned at the bucket named by the
-# hash the RUNTIME computed. If those two disagree, the built copy misses the
-# literal, becomes a second object holding the same bytes, and every consumer
-# that treats string identity as pointer identity says they are different strings.
-#
-# Long strings hash a SAMPLE rather than every byte, so both halves of the rule
-# are written twice and kept in step. Both sides of the 32-byte boundary are
-# exercised here. Passing a value through an `any` parameter forces the literal
-# down the compile-time hash path where the control can fire.
 
 box: any = (x: any)
     x

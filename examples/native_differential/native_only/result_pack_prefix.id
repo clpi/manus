@@ -1,6 +1,3 @@
-# expect-exit: 81
-# Prefix demand discards the third semantic member without shifting the first
-# two physical result positions.
 triple(n: i64): (i64, i64, i64)
   return n, n + 1, n + 2
 

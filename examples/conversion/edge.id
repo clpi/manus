@@ -1,37 +1,3 @@
-# @corpus current
-#
-#     decode(u64) = (cursor): u64 | error
-#
-# The first group is descriptor space (LAW-STRATA): `u64` is the key that says
-# WHICH edge of `decode` this is, never a runtime parameter. §20's leb128 block
-# opens with exactly this line and used to stop the parser dead at
-# "expected 'name', got 'u64'" — the level group was read as a parameter list
-# and `u64` is not a parameter name.
-#
-# THE FILE NAMED FOR THAT KEY STOPPED CARRYING IT. Commit 98ceb52c — an
-# argument-projection migration whose message never mentions levels — rewrote
-# `step(u64) = (c: i64): i64` into `step__u64: i64 = (c: i64)` and every call
-# with it. The oracle line did not move, because three separately named
-# functions answer the same three numbers, and nothing ran this file. What the
-# mangling cost is the CONTROL: with no level left to erase, 42/141/1041 stops
-# telling keying apart from three ordinary names.
-#
-# BOTH SPELLINGS ARE HERE AND THE ORACLE REQUIRES THEM TO AGREE over identical
-# operands: `step` levelled, `pace` in the mangled spelling 98ceb52c rewrote it
-# into. They are ONE identity, not two — declared at the same key they collide
-# as `step__u64`, which gate/conversion.sh runs rather than asserts. `pace` is
-# the retired form kept as a witness; it is not a second face to migrate onto.
-#
-# TWO EDGES MUST DISAGREE, so a single-edge implementation that kept the last
-# declaration prints one number three times. `wide` also shows the key is an
-# ORDINARY NAME, not only a primitive.
-#
-# THE RESULT DESCRIPTOR IS TRAILING HERE AND NOT ON THE BINDING because the
-# binding face does not parse: `step(u64): i64 = (c: i64)` answers "write
-# `name` at this token". The canonical subject-first call `n:step(u64)` refuses
-# at `missing-application-id`. The gate pins both; they are the choice 98ceb52c
-# faced and they are owed, not worked around here.
-# expect: 42 141 1041 42 141 1041
 
 step(u64) = (c: i64): i64
   c + 1

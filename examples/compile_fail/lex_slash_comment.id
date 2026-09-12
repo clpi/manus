@@ -1,4 +1,3 @@
-# @corpus current
 // GAP-090 fixture — DENIED TEXT IS THE ASSERTION.
 // A C-style comment marker the idol lexer refuses, with a non-ASCII byte
 // on the same line. This is the exact shape the retired explain smoke fixture
@@ -8,14 +7,14 @@
 // names the file, names a span, and names the repair, and that the raw Zig
 // error name this used to print is ABSENT from the output.
 //
-// THE REPAIR IS `#`, NOT `--`. This header said `--` until the dash comment was
+// THE REPAIR IS `
 // itself retired from `.id`, which would have made the named repair a second
 // violation. The compiler already says the right thing —
 // "a canonical Idol comment starts with `#`" — and only the note was stale.
 //
 // TWO OF scripts/contract.id's FOUR ASSERTIONS NO LONGER MATCH THIS FILE, and
 // neither one is in this file's gift to fix. It pins the span on the substring
-// `lex_slash_comment.id:1:`; the `# @corpus current` line that a corpus sweep
+// `lex_slash_comment.id:1:`; the `
 // added above pushed the offending `//` to line 2, so the diagnostic now reads
 // `lex_slash_comment.id:2:20`. And it pins the repair on `a idol comment starts
 // with`, where the compiler says `a canonical Idol comment starts with`. Both

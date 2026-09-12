@@ -1,12 +1,9 @@
-# Test bash-style calls with strings only
 
 greet: str = (name: str)
   "Hello, " .. name
 
-# Bash-style call with string
 print(greet("World"))
 
-# Multiple string arguments
 concat: str = (a: str, b: str)
   a .. b
 

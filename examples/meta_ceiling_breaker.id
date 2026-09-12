@@ -1,5 +1,3 @@
-# Break the linear codegen ceiling: one @comp.* line → O(types² × fields) output
-# Run: duo run examples/meta_ceiling_breaker.id
 
 concept HasXY
   x: f64
@@ -12,7 +10,6 @@ point: { x: f64, y: f64, tag: str }
 pair: { x: f64, y: f64, tag: str }
 label: { tag: str }
 
-# One @comp.ceiling line → O(types × fields) + O(types² × fields) C
 
 @comp.define.derive("PairApi", generate: str = (meta)
     acc = "/* pair " .. meta.name .. " */\n"

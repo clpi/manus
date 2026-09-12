@@ -1,6 +1,3 @@
-# Ultra-deep combinator cascade: 4-level nesting inside callbacks.
-# match → power → each → template (O(2^n) × fragments × stubs) — all comptime, no lua_Value.
-# Run: duo run examples/meta_ultra_cascade.id
 
 concept HasXY
   x: f64
@@ -12,7 +9,6 @@ point: { x: f64, y: f64 }
 
 OPS = "add|" .. "mul"
 
-# Level X: match callback calls power → each → template (deepest practical stack)
 ULTRA = @comp.match("i32|i64", fun(m)
   @comp.each(@comp.power("HasXY", fun(s)
     s.name .. ";"
@@ -21,7 +17,6 @@ ULTRA = @comp.match("i32|i64", fun(m)
   )
 )
 
-# Level Y: match → zip with folded concat inside callback
 ZIP_DEEP = @comp.match("i32|f64", fun(m)
   @comp.zip(m.pattern .. "|i64", OPS, fun(p)
     p.a .. "_" .. p.b .. " "

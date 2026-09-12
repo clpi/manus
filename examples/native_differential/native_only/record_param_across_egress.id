@@ -1,36 +1,3 @@
-# expect-exit: 97
-#
-# A RECORD PARAMETER'S FIELDS MUST SURVIVE A HOST-EGRESS CALL.
-#
-# `print`/`stdout:write` is a CALL — it emits `bl _printf`, `bl _puts`,
-# `bl _fflush` — and for a long time nothing in the backend said so. Two
-# separate mechanisms broke on that silence, and both answered WRONG rather
-# than refusing:
-#
-#   1. `print_value` staged printf's own arguments into x0 and x2 BEFORE
-#      `emitSaveCallerRegs` ran, so the save preserved THE ARGUMENTS and the
-#      restore wrote them back over whatever the caller had live there.
-#      Measured on `_quad` with `print(99)` before the read: `a` came back as
-#      208 (the low byte of the format string's address), `c` came back as 99
-#      (print's own argument), while `b` and `d` were untouched — alternating
-#      fields destroyed, because x0 and x2 are the two registers printf's shape
-#      writes and they are the FIRST and THIRD argument slots.
-#
-#   2. `dnirFunctionHasCall` counted only `call_direct`/`call_extern`, so a
-#      body whose only call was a print was planned as a LEAF — and a leaf is
-#      allowed to keep its parameters in the incoming ABI registers. On the
-#      integer side that at least reached the caller-save block; on the FLOAT
-#      side it is beyond rescue there, because that save covers d16..d30 only
-#      while an f64 parameter sits in d0..d7. `_fpair` below is that half.
-#
-# EXIT STATUS IS THE ASSERTION, and stdout stays EMPTY so this can live in
-# `native_only/` where the C backend is not an available oracle. The egress
-# used is `stdout:write("")` — a real `printf("%s", "")` followed by a real
-# `fflush`, staging x0 and x2 exactly as `print(n)` does, and printing nothing.
-# The register discipline is the same one `print` travels; what changes is only
-# that this file can assert it inside an empty-stdout gate.
-#
-# 97, not 0: zero is also what a harness that never ran the binary observes.
 
 _trio: { a: i64, b: i64, c: i64 }
 
@@ -45,11 +12,6 @@ _dozen: {
     g: i64, h: i64, i: i64, j: i64, k: i64, l: i64
 }
 
-# SIXTEEN — eight argument registers plus the eight stacked words, the widest
-# record the convention carries. The stacked half must survive the egress too:
-# `emitPushVarargs` moves `sp` inside the call window, and a field read from a
-# frame offset that shifted underneath it is the same wrong answer wearing a
-# different mechanism.
 _wide: {
     a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64,
     i: i64, j: i64, k: i64, l: i64, m: i64, n: i64, o: i64, p: i64
@@ -75,9 +37,6 @@ _t4: i64 = (v: _quad)
   if v.d != 104 return 14
   return 0
 
-# EVERY READ SEPARATED BY ITS OWN EGRESS. One call before all four reads is the
-# weaker shape: it cannot tell a field destroyed by the FIRST call from one
-# destroyed by the fourth.
 _t4_interleaved: i64 = (v: _quad)
   stdout:write("")
   if v.a != 101 return 21
@@ -149,9 +108,6 @@ _t16: i64 = (v: _wide)
   if v.p != 116 return 86
   return 0
 
-# A RECORD BETWEEN SCALARS. The scalars share the record's slot cursor, so a
-# save/restore that is off by one destroys `x` or `y` instead of a field and
-# the record alone would not show it.
 _mixed: i64 = (x: i64, v: _quad, y: i64)
   stdout:write("")
   if x != 7 return 91
@@ -162,9 +118,6 @@ _mixed: i64 = (x: i64, v: _quad, y: i64)
   if y != 8 return 96
   return 0
 
-# READ, THEN MUTATE LOCALLY, THEN READ AGAIN — with an egress in the middle of
-# each phase. A local derived from a field must not alias the field's home, and
-# the field must still answer after the local has been written over.
 _mutate: i64 = (v: _quad)
   stdout:write("")
   q: i64 = v.a
@@ -183,8 +136,6 @@ _mutate: i64 = (v: _quad)
   if v.a != 101 return 109
   return 0
 
-# TWO RECORDS ACROSS AN EGRESS AND AN ORDINARY CALL IN THE SAME BODY, so the
-# egress path and the `call_direct` path have to agree about one register file.
 _two: i64 = (u: _quad, w: _quad)
   stdout:write("")
   n: i64 = _silent(0)
@@ -195,10 +146,6 @@ _two: i64 = (u: _quad, w: _quad)
   if w.d != 204 return 125
   return 0
 
-# THE FLOAT HALF. f64 parameters arrive in d0..d7, which the caller-save block
-# does NOT cover, so their survival depends entirely on the body being planned
-# as a caller. `_fquad` adds a second call after the egress: the relocation has
-# to be a HOME, not a one-shot reload.
 _fpair: f64 = (x: f64, y: f64)
   stdout:write("")
   return x + y

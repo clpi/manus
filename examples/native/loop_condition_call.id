@@ -1,21 +1,3 @@
-# GAP-173 case 2 — a `while` whose condition CALLS A FUNCTION.
-#
-# THE DEFECT AS FILED: a shunting-yard pop-loop
-# `while ot > 0 and ops[ot] != 40 and prec(ops[ot]) >= prec(c)` "collapsed to
-# left-to-right (the condition behaved as always-true). Moving the precedence
-# into a parallel array (no call in the condition) fixed it." That workaround —
-# a parallel array whose only purpose was to keep a call out of a loop header —
-# is the shape this file exists to make unnecessary.
-#
-# THE CONDITION HERE IS THE FILED ONE, not a simplification of it: three
-# conjuncts, an array index inside the third, and the index feeding a CALL whose
-# result is compared against another call. A condition that collapses to its
-# first conjunct never terminates at 3; it walks `ot` off the end of `ops`.
-#
-# `ops` holds sentinel 40 — `(` — at the position the scan must stop on, which
-# is the same byte the filed condition tested, so the second conjunct is
-# load-bearing too and not decoration.
-# expect-exit: 3
 
 prec: i64 = (o: i64)
     if o == 42

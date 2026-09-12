@@ -1,24 +1,3 @@
-# @corpus current
-# gap[082] — the composition law must REFUSE a silently-lossy derivation.
-#
-# The same four edges as `examples/conversion/relation.id`, over i64 instead of
-# f64. That one change makes each division NARROWING — 25401 micron is not a
-# whole inch — and the class lattice must therefore refuse `inch -> milli`,
-# which is a route it can plainly see.
-#
-# WHY THIS FIXTURE IS THE IMPORTANT HALF. An algebra that composes ANYTHING is
-# not safer than no algebra; it is more dangerous, because adding one
-# descriptor could quietly change an existing program's answer. The refusal is
-# what makes the mechanism safe to scale, and it costs real derivations: the
-# f64 fixture derives 6 edges from 6 authored, this one derives 0 from 4 and
-# reports 2 refused. Both numbers are the same law.
-#
-# The diagnostic names the WEAK HOP, not just the pair, because "no conversion"
-# would send the reader looking for a missing edge when the edge is present and
-# the CLASS is the objection.
-#
-# The filename keeps a `_` because every fixture in this directory does; the
-# harness matches on the path.
 
 stretch = (v: i64): i64
     v * 25400
@@ -38,24 +17,6 @@ to(micron)(milli) = swell@exact
 to(milli)(micron) = shrivel@narrowing
 
 main = (): i64
-    # THE CALL SITE MUST NAME THE SOURCE, or there is no `inch -> milli` to
-    # refuse. `5:to(milli)` was substituted here in the FROM-ZERO sweep with a
-    # note that the `inch` source would arrive "from binding context when
-    # nominal descriptor lands (GAP-097)". GAP-097 has not landed, so `5` is a
-    # bare i64 and the lossy route is never requested: the file stopped
-    # expressing its own subject and went green. Measured on the repaired
-    # spelling:
-    #
-    #     milli.from(inch)(5)  -> no silent conversion inch -> milli:
-    #                             derived inch -> milli via micron
-    #     5:to(milli)(inch)    -> emits C calling an undeclared lua_to_num
-    #     5:to(milli)          -> same, and names no source at all
-    #     milli:from(inch)(5)  -> 'from' is neither a descriptor nor a callable
-    #
-    # `dest.from(src)(v)` is the spelling `emit_relation_convert` documents as
-    # naming the source (spec 2.6 gate 6), and it is the only one of the four
-    # that reaches the class lattice. The colon face of the same edge is a
-    # separate front-end defect and is not this fixture's subject.
     bore: i64 = milli.from(inch)(5)
     print("{bore}")
     0

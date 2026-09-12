@@ -1,5 +1,3 @@
-# world/run — documents the process home positive control.
-# Executable proof: idol run --backend=c on the process home (entry resolves to main).
 
 main: i64 = ()
   0

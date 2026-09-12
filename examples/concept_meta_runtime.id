@@ -1,5 +1,3 @@
-# Concept + runtime meta demo
-# Shows how parser-level concepts and runtime meta.satisfies_concept interact
 
 concept Drawable
   draw(self) -> str
@@ -10,10 +8,8 @@ shape =
   draw = (self) -> str
     "shape-" .. to(str)(self.id)
 
-# Use : method syntax for calling
 print(shape:draw())
 
-# Runtime concept checking works with meta.make_concept descriptors
 DrawableConcept = meta.make_concept("Drawable", {
   fields = { "id" },
   methods = { "draw" }

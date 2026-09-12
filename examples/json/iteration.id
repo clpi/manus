@@ -1,5 +1,3 @@
-# @corpus current
-# expect: 1
 encoded_obj = { id = 7, name = "idol" }:to(json)
 decoded_obj = encoded_obj:parse(json)
 

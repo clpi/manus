@@ -1,28 +1,3 @@
-# @corpus current
-# THE EXTERNAL REFERENCE for u32 wrapping: the FNV step, run N times.
-#
-# `tools/wasm/bench/hash.id` runs exactly this step 200 million times and its
-# own header records "Verified against it: both produce 1899277430 under
-# wasmtime." Recomputed independently in Python, the true value IS 1899277430,
-# low byte 118. `--backend=direct` — the DEFAULT — exited 79, because it
-# performed no `u32` truncation at all and the hash ran at 64 bits. Neither
-# `idol check` nor any gate said anything.
-#
-# THIS FIXTURE IS THE SAME ARITHMETIC AT TEN LENGTHS, short enough to run in a
-# corpus sweep, and every value below was computed in PYTHON from the u32
-# definition — not read back from a backend. A backend differential cannot
-# convict two backends that are wrong together; a recorded external answer can.
-# `gate/width.sh` compares it to a run and names the realization it measured;
-# `--backend=c` refuses this file at `binop-not-in-c99-slice`.
-#
-#   h = 2166136261
-#   repeat n times:  h ^= i ;  h = (h * 16777619) mod 2^32
-#                    h = ((h << 13) | (h >> 19)) mod 2^32
-#
-# The lengths are 0 (the seed itself, which catches a truncation applied to the
-# INITIALIZER as well as to the updates), 1, 2, 3 — where the first multiply
-# first carries out of bit 31 — then 10, 100, 1e3, 1e4, 1e5 and 1e6.
-# expect: 2166136261 2342772897 1400639071 1401747753 780042505 1610915941 827720373 807996211 3926094656 2075909781
 
 churn: i64 = (n: i64)
   h: u32 = 2166136261

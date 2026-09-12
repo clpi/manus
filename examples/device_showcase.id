@@ -1,10 +1,3 @@
-# device_showcase.id — Demonstrates @device multi-target code generation
-#
-# Shows how @device generates backend-specific code:
-#   @device(.cuda)  → __global__ kernel + launch wrapper
-#   @device(.metal) → kernel + dispatch wrapper
-#   @device(.cpu)   → regular C function
-#   @device(.auto)  → auto-detected device
 
 @cinclude("stdio.h")
 
@@ -12,7 +5,6 @@
 @cinclude("stdlib.h")
 
 
-# CUDA kernel: matrix multiplication
 @device(.cuda)
 cuda_matmul = (a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32)
   @comp.c.emit([[
@@ -27,7 +19,6 @@ cuda_matmul = (a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32)
   ]])
   
 
-# Metal kernel: vector addition
 @device(.metal)
 metal_vecadd = (a: ptr, b: ptr, c: ptr, n: i32)
   @comp.c.emit([[
@@ -38,7 +29,6 @@ metal_vecadd = (a: ptr, b: ptr, c: ptr, n: i32)
   ]])
   
 
-# Regular CPU function
 @device(.cpu)
 cpu_dot: float = (a: ptr, b: ptr, n: i32)
   @comp.c.emit([[
@@ -49,7 +39,6 @@ cpu_dot: float = (a: ptr, b: ptr, n: i32)
   ]])
   
 
-# Auto-detected device (runtime selection)
 @device(.auto)
 auto_relu = (x: ptr, n: i32)
   @comp.c.emit([[

@@ -1,6 +1,4 @@
-# Example: Neural Network in Duo (self-contained)
 
-# Tensor helpers
 zeros = (rows, cols)
     t = { rows = rows, cols = cols, size = rows * cols, data = {} }
     for i = 1, rows * cols t.data[i] = 0.0 
@@ -48,12 +46,10 @@ softmax = (t)
             r.data[(row-1)*t.cols+i] = r.data[(row-1)*t.cols+i] / sm
     return r
 
-# Network forward pass (defined as local function, captures nothing)
 nn_forward = (x, w1, b1, w2, b2)
     h = relu(add_bias(matmul(x, w1), b1))
     return softmax(add_bias(matmul(h, w2), b2))
 
-# Initialize and run
 math.randomseed(42)
 w1 = rand_tensor(4, 8)
 b1 = zeros(1, 8)

@@ -1,19 +1,14 @@
-# Method reference syntax: :method desugars to (__proj_v) __proj_v:method()
-# Enables concise pipeline-style method calls: items:each(:close)
 
-# Helper: apply a function to each element
 each = (t, f)
     for i = 1, t:len()
         f(t[i])
 
-# Helper: map applying a method to each element
 map_method = (t, f)
     result = {}
     for i = 1, t:len()
         result[i] = f(t[i])
     return result
 
-# Test objects with methods (via metatables)
 Greeter = {}
 Greeter.__index = Greeter
 Greeter:greet()
@@ -21,13 +16,11 @@ Greeter:greet()
 Greeter.new(name)
     return setmetatable({ name = name }, Greeter)
 
-# Create instances
 greeters = {
     Greeter.new("Alice"),
     Greeter.new("Bob"),
     Greeter.new("Charlie")
 }
 
-# Method reference: :greet extracts the method call
 greetings = map_method(greeters, :greet)
 print("RESULT method_ref " .. greetings[1] .. " | " .. greetings[2] .. " | " .. greetings[3])

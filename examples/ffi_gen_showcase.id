@@ -1,5 +1,3 @@
-# Auto-generate extern declarations from a C header at compile time
-# Run: duo run examples/ffi_gen_showcase.id
 
 @comp.c.include("string.h")
 @comp.ffi("string.h")

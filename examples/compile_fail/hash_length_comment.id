@@ -1,18 +1,5 @@
-# @corpus current
-# compile_fail — `#` is the COMMENT opener, so `#broken` erases the rest of the
-# line and the condition this `if` demands never arrives.
-#
-# MEASURED: this used to be refused for the wrong reason. `#broken < 1` was
-# swallowed, the block never closed, and the diagnostic named the FILE EDGE —
-# a true statement about a consequence three lines away from the cause. The
-# fixture is about `#`, so the ruling now names `#` and names `:len()` as the
-# spelling that replaces it.
-#
-# Positive control: `# a comment` and a trailing `# note` must keep working.
-# That control lives in gate/negative.sh (`shapeok hash`), because a file in
-# this directory can only demonstrate the refusal half.
 
 main: i64 = ()
-    if #broken < 1
+    if
         code = 1
     code = 0

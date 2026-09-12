@@ -1,4 +1,3 @@
-# Bare function syntax + if-expressions (GR-001, GR-002). Gate: agent-smoke.
 
 add: i64 = (x: i64, y: i64)
   x + y

@@ -1,26 +1,16 @@
-# @comp.interpolate — compile-time string interpolation (code template injection)
-# Takes a template string with {name} placeholders and a table of
-# {name: value} mappings. Substitutes all placeholders at compile time.
-# Only valid identifiers (alphanumeric + _) are treated as placeholders —
-# C code braces like { return x; } are preserved.
-# Comptime-only — folds to native C string, never lua_Value.
 
-# Basic: single variable substitution
 S = @comp.interpolate("int64_t {name}() { return 0; }", { name = "noop" })
 print("=== @comp.interpolate: function signature ===")
 print(S)
 
-# Multi-variable C code template (the real power — code templating)
 G = @comp.interpolate("int64_t {fname}(int64_t a) { return a + {delta}; }", { fname = "add_one", delta = 1 })
 print("=== @comp.interpolate: C function template ===")
 print(G)
 
-# String value substitution
 M = @comp.interpolate("return \"{msg}\";", { msg = "hello from comptime" })
 print("=== @comp.interpolate: string value ===")
 print(M)
 
-# Unknown placeholders are preserved
 U = @comp.interpolate("int64_t {known} + {unknown};", { known = "x" })
 print("=== @comp.interpolate: unknown preservation ===")
 print(U)

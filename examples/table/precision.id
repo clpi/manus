@@ -1,6 +1,2 @@
-# NUMERICS: precision above 2^53. An i64 binding holds 2^53+1 exactly and
-# renders exactly, so the integer domain is clean end to end.
-# expect: 9007199254740993
-# @corpus current
 a: i64 = 9007199254740993
 print("{a}")

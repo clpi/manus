@@ -1,4 +1,3 @@
-# F-13813-4: branch-assigned implicit locals must be visible after if/else
 
 branch_sum: i64 = (cond: bool)
   if cond

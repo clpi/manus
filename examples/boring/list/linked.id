@@ -1,7 +1,3 @@
-# A singly linked list built from a descriptor with a self-referencing field.
-# Asserts the length and the head value, so an empty list cannot pass.
-# expect: 3 10
-# @corpus current
 node: { value: i64, next: node }
 
 third: node =

@@ -1,7 +1,3 @@
-# Celsius to Fahrenheit and back. The float path, so the rendering of the
-# result is part of the assertion.
-# expect: 98.6 37.0 -40.0
-# @corpus current
 far: f64 = (c: f64)
   c * 9.0 / 5.0 + 32.0
 

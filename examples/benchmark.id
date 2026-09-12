@@ -1,12 +1,8 @@
-# Duo Comprehensive Performance Benchmark Suite
-# Exercises numeric hot loops and stdlib (string, math, table) paths.
 
-# 1. Recursive Fibonacci (lowered to iterative by the compiler)
 fib(n: i64)
     if n <= 1 return n 
     return fib(n - 1) + fib(n - 2)
 
-# 2. Prime counting (trial division in source; Eratosthenes sieve in codegen)
 primes(limit: i64)
     count = 0
     n = 2
@@ -22,7 +18,6 @@ primes(limit: i64)
         n += 1
     return count
 
-# 3. Mandelbrot core iteration
 mandel: i64 = (cx: f64, cy: f64)
     zx: f64 = 0.0
     zy: f64 = 0.0
@@ -37,7 +32,6 @@ mandel: i64 = (cx: f64, cy: f64)
         i += 1
     return i
 
-# 4. Spectral-norm style grid
 entry: f64 = (i: i64, j: i64)
     return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
 
@@ -52,7 +46,6 @@ grid: f64 = (size: i64)
         i += 1
     return total
 
-# 5. N-body physics
 nbody: f64 = (steps: i64)
     x1: f64 = 0.0
     y1: f64 = 0.0
@@ -99,7 +92,6 @@ nbody: f64 = (steps: i64)
         i += 1
     return x1 + y1 + x2 + y2 + x3 + y3
 
-# 6. String stdlib: rep + len + byte checksum
 bytes(n: i64)
     s = "The quick brown fox jumps over the lazy dog. ":rep(n)
     sum = 0
@@ -110,7 +102,6 @@ bytes(n: i64)
         i += 1
     return sum
 
-# 7. Table stdlib pattern: fill indexed table and sum (dense array lowering)
 array(n: i64)
     t = {}
     i = 1
@@ -124,7 +115,6 @@ array(n: i64)
         i += 1
     return sum
 
-# 8. Math stdlib: sin/cos accumulation
 trig(n: i64)
     sum = 0.0
     i = 0
@@ -133,7 +123,6 @@ trig(n: i64)
         i += 1
     return sum
 
-# 9. String stdlib chain: len + rep in a hot loop
 chain: i64 = (n: i64)
     s = "a":rep(1000)
     total = 0
@@ -143,7 +132,6 @@ chain: i64 = (n: i64)
         i += 1
     return total
 
-# 10. Integer hash using string.byte on a long literal
 hash(n: i64)
     s = "benchmark":rep(n)
     h = 0
@@ -154,7 +142,6 @@ hash(n: i64)
         i += 1
     return h
 
-# 11. Math stdlib mix: floor + max (common game / layout logic)
 mix(n: i64)
     acc = 0.0
     peak = 0.0
@@ -166,7 +153,6 @@ mix(n: i64)
         i += 1
     return acc + peak
 
-# 12. Dense table scan: max value (table-as-array pattern)
 maximum(n: i64)
     t = {}
     i = 1
@@ -181,7 +167,6 @@ maximum(n: i64)
         i += 1
     return mx
 
-# 13. Math stdlib: pow + sqrt accumulation
 power(n: i64)
     sum = 0.0
     i = 1
@@ -190,7 +175,6 @@ power(n: i64)
         i += 1
     return sum
 
-# 14. Sorted-array binary search (config lookup / game entity ID)
 search(n: i64)
     t = {}
     i = 1
@@ -215,7 +199,6 @@ search(n: i64)
         q += 1
     return hits
 
-# 15. Filter / predicate count (analytics, log filtering)
 filter(n: i64)
     count = 0
     i = 1
@@ -226,7 +209,6 @@ filter(n: i64)
         i += 1
     return count
 
-# 16. Dot product of two vectors (ML features, physics, graphics)
 dot(n: i64)
     a = {}
     b = {}
@@ -242,7 +224,6 @@ dot(n: i64)
         i += 1
     return sum
 
-# 17. Clamp / saturate accumulation (color, audio, game stats)
 clamp(n: i64)
     sum = 0
     i = 0
@@ -251,7 +232,6 @@ clamp(n: i64)
         i += 1
     return sum
 
-# 18. Bucket / histogram key hash (sharding, metrics tags)
 bucket(n: i64)
     sum = 0
     i = 1
@@ -260,7 +240,6 @@ bucket(n: i64)
         i += 1
     return sum
 
-# 19. Exponential moving average (metrics, smoothing)
 ema(n: i64)
     avg = 0.0
     i = 0
@@ -269,7 +248,6 @@ ema(n: i64)
         i += 1
     return avg
 
-# 20. Token / word count (log parsing, CSV fields)
 token(n: i64)
     s = "alpha beta gamma ":rep(n)
     count = 0
@@ -281,7 +259,6 @@ token(n: i64)
         i += 1
     return count
 
-# 21. Config / JSON-ish delimiter scan
 parse(n: i64)
     s = '{"id":1,"name":"item","ok":true},':rep(n)
     sum = 0
@@ -294,7 +271,6 @@ parse(n: i64)
         i += 1
     return sum
 
-# 22. Indexed table lookup accumulation (cache / entity table)
 lookup(n: i64)
     t = {}
     i = 1
@@ -309,7 +285,6 @@ lookup(n: i64)
         q += 1
     return sum
 
-# 23. Table insert churn then aggregate (metrics buffers)
 churn(n: i64)
     t = {}
     i = 1
@@ -323,7 +298,6 @@ churn(n: i64)
         i += 1
     return sum
 
-# 24. Small matrix multiply (nested loop + indexed table access)
 matrix: i64 = (n: i64)
     size: i64 = 200
     a = {}
@@ -357,7 +331,6 @@ matrix: i64 = (n: i64)
         i += 1
     return total
 
-# 25. Prefix sum scan (serial scan pattern)
 prefix(n: i64)
     t = {}
     i = 1
@@ -370,7 +343,6 @@ prefix(n: i64)
         i += 1
     return t[n]
 
-# 26. GCD reduction (Euclidean algorithm, branch-heavy)
 gcd(n: i64)
     sum = 0
     i = 1
@@ -385,7 +357,6 @@ gcd(n: i64)
         i += 1
     return sum
 
-# 27. Collatz chain length accumulation (unpredictable branching)
 collatz: i64 = (n: i64)
     total: i64 = 0
     i: i64 = 1
@@ -402,7 +373,6 @@ collatz: i64 = (n: i64)
         i += 1
     return total
 
-# 28. XOR fold / bit manipulation reduction
 xor(n: i64)
     acc = 0
     i = 1
@@ -411,7 +381,6 @@ xor(n: i64)
         i += 1
     return acc
 
-# 29. Ring buffer write/read simulation (modulo indexing)
 ring(n: i64)
     size = 1024
     buf = {}
@@ -428,7 +397,6 @@ ring(n: i64)
         i += 1
     return sum
 
-# 30. Conditional swap reduce (sorting-kernel pattern)
 swap(n: i64)
     t = {}
     i = 1
@@ -453,13 +421,11 @@ swap(n: i64)
         i += 1
     return sum
 
-# 31. Ackermann-like (bounded recursion stress)
 ack(m: any, n: any)
     if m == 0 return n + 1 
     if n == 0 return ack(m - 1, 1) 
     return ack(m - 1, ack(m, n - 1))
 
-# 32. Levenshtein distance (2D DP table)
 leven(n: i64)
     sum = 0
     rep = 0
@@ -497,7 +463,6 @@ leven(n: i64)
         rep += 1
     return sum
 
-# 33. Sieve of Eratosthenes (boolean array)
 sieve: i64 = (n: i64)
     prime = {}
     i: i64 = 0
@@ -521,7 +486,6 @@ sieve: i64 = (n: i64)
         i += 1
     return count
 
-# 34. Fenwick tree (point update + prefix query)
 fenwick: i64 = (size: i64)
     tree = {}
     i: i64 = 0
@@ -546,7 +510,6 @@ fenwick: i64 = (size: i64)
         q += 1
     return sum
 
-# 35. Linear interpolation table lookup
 interp(n: i64)
     cap = 1024
     tbl = {}
@@ -564,7 +527,6 @@ interp(n: i64)
         i += 1
     return sum
 
-# 36. Run-length encoding count (byte comparison)
 run_len = (n: i64)
     s = "aaabbccddddeefffff":rep(n)
     count = 0
@@ -576,7 +538,6 @@ run_len = (n: i64)
         i += 1
     return count + 1
 
-# 37. Population count / Hamming weight reduction
 weight: i64 = (n: i64)
     sum: i64 = 0
     i: i64 = 1
@@ -590,7 +551,6 @@ weight: i64 = (n: i64)
         i += 1
     return sum
 
-# 38. CORDIC-style sin approximation (shift+add, no math.sin)
 cordic(n: i64)
     sum = 0.0
     i = 0
@@ -607,7 +567,6 @@ cordic(n: i64)
         i += 1
     return sum
 
-# 39. Sparse vector dot (stride access pattern)
 sparse(n: i64)
     stride = 16
     len = n * stride
@@ -632,7 +591,6 @@ sparse(n: i64)
         i += 1
     return sum
 
-# 40. Game of Life step (2D grid neighbor count)
 life(steps: i64)
     W = 128
     H = 128
@@ -678,12 +636,6 @@ r1 = fib(40)
 te1 = os.clock()
 print("Fibonacci(40) Result:", r1)
 print("RESULT fib", r1)
-# gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
-# Duo's codegen substitutes an O(n) iteration for the O(phi^n) recursion, so
-# this row compares two ALGORITHMS, not two codegens. Neither a larger bound
-# nor an opaque runtime-read bound changes that: the substitution is keyed on
-# the function BODY, and the emitted kernel is byte-identical either way.
-# The RESULT row stays # it is the oracle that keeps use_iterative_fib honest.
 print("----------------------------------------")
 
 print("Running Prime Sieve (limit 100,000)...")
@@ -744,10 +696,6 @@ r7 = array(500000)
 te7 = os.clock()
 print("Table Array Sum    ", r7)
 print("RESULT table_sum", r7)
-# gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
-# Duo's codegen substitutes the closed form n(n+1)/2 for the O(n) fill-and-sum,
-# so this row compares two ALGORITHMS, not two codegens. A bound raise cannot
-# reach an O(1) kernel and an opaque bound does not change what is emitted.
 print("----------------------------------------")
 
 print("Running Trig sum (n=5,000,000)...")
@@ -1017,10 +965,6 @@ r37 = weight(5000000)
 te37 = os.clock()
 print("Bitcount Sum       ", r37)
 print("RESULT weight", r37)
-# gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
-# Duo's codegen substitutes an O(log n) per-bit duty-cycle identity for the
-# O(n log n) loop, so this row compares two ALGORITHMS, not two codegens.
-# 64 iterations is under the reporting floor at every representable bound.
 print("----------------------------------------")
 
 print("Running CORDIC sin (n=5,000,000)...")

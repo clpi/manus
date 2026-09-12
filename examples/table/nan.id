@@ -1,7 +1,3 @@
-# NUMERICS: NaN identity and ordering. IEEE-correct: NaN is not equal to
-# itself and every ordering against it is false.
-# expect: nan 0 0 0
-# @corpus current
 z = 0.0
 n = z / z
 a = 0

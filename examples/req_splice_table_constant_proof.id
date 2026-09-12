@@ -1,18 +1,3 @@
-# Regression proof: a module-scope TABLE constant read by a module function
-# must not be dropped while that function is spliced into this program.
-#
-# `spliceReqModules` absorbs a plain-Duo `req` module into the direct
-# backend's own object, and it splices the functions the program calls. It
-# carried only LITERAL-valued bindings across, and a table literal is not one,
-# so `pick()` arrived and `slots` did not. The splice rewrites the AST the C
-# emitter walks too, so the C backend inherited the same half: twenty
-# `error: use of undeclared identifier` on `std.wasm.opcodes`, which is this
-# program's shape at full size.
-#
-# Verified BY VALUE. `slots[3]` is 42 and nothing else; a build that merely
-# compiles proves nothing here, because the failure this guards against IS a
-# compile error and would flip back to green the moment the splice silently
-# stopped happening for an unrelated reason.
 p = splicetableprobe
 
 main: i64 = ()

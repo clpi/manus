@@ -1,38 +1,3 @@
-# `{{` IS ALREADY SPOKEN FOR, AND THIS FILE MEASURES ITS OWN LIMITS.
-#
-# `law.brace` binds braces to structured packs, descriptor homes and descriptor
-# application; `law.literal.text` binds interpolation to literal AND EXPRESSION
-# segments. An expression may begin with `{`, so `{{` already spells "a hole
-# whose expression begins with a pack". Python, C#, Rust, Zig and C++
-# `std::format` spend `{{` on a literal brace; the ruled spelling here is `\{`,
-# which `c` and `d` measure live.
-#
-# THE `{{` ROW IS A RECORDED LIMIT, NOT A CLAIM. This file used to declare
-# `n=3 spaced=3` and produced neither: `print("n={{10, 20, 30}:len()}")` is
-# refused whole, on `--backend=c` and `--backend=wasm` alike, at
-#
-#   concatOperand other: kind=method_call
-#   lowerBinop refuse op=concat lhs_kind=quoted rhs_kind=method_call
-#   hint: refused at: binop-not-lowered:concat
-#
-# The `method_call` operand is the measurement. Under a `{{`-as-escape reading
-# that literal holds no application and there is nothing to refuse — it would
-# answer the 21 bytes `c` answers. So the obligation is both halves: `c` stays
-# 21 AND that spelling stays refused. The day one answer serves both, `{{` has
-# been taken.
-#
-# IT ALSO DECLARED `pack=3` FOR `{1, 2, 3}:len()`. The two pack faces disagree:
-# `p.len` is 3 and `p:len()` is 0, both at exit 0, on both realizations. `e` is
-# the face that answers and `f` is the control that the pack is not empty;
-# `gaps/GAP-241.md` owns the face that does not. This file does not pin the 0.
-#
-# `a` is the premise the ruling rests on — a hole carries an APPLICATION and
-# not just a name: 2, the length of `bc`, where its own source is 13 bytes.
-# `g` is the same expression spaced away from the delimiters: if `a` and `g`
-# ever part, whitespace has become semantic inside a hole. `b` is the control
-# that ruling on `\{` did not disable ordinary holes.
-# expect: 2 2 3 21 1 3 20
-# @corpus current
 
 s = "abcdef"
 x = 7

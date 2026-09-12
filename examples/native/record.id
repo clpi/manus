@@ -1,4 +1,3 @@
-# @corpus current
 point: { x: i64, y: i64 }
 
 inline_y: i64 = (p: { x: i64, y: i64 })

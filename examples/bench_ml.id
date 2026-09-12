@@ -1,5 +1,3 @@
-# ML Benchmark Suite for Duo
-# Native kernels via ml.* — one call per workload, zero @c.emit boilerplate.
 
 @hot
 matmul_256: f64 = ()
@@ -21,20 +19,6 @@ attention: f64 = ()
 mlp_forward: f64 = ()
   return ml.mlp_forward()
 
-# Six decimals, assembled from integer millionths.
-#
-# This replaces ten `@c.emit("printf(...%.6f...)")` calls, which existed only
-# because `to(str)` on an f64 does not compile and printing a float raw gives
-# full binary precision. They were also BROKEN: a file-scope `@c.emit` is
-# emitted at C *file* scope rather than inside `main`, so the generated C
-# carried bare `printf(...)` statements at top level and clang rejected the
-# whole program ("expected parameter declarator", "conflicting types for
-# printf"). This benchmark had not compiled for some time, which in turn made
-# scripts/run_compile_size_benchmark.sh crash and left it unportable.
-#
-# Doing it in Duo fixes the bug and removes foreign code from a .id file at
-# the same time. The output format is unchanged, so the harnesses that scrape
-# "Time: <n> seconds" and "RESULT <name> <n>" still read it.
 _f6: str = (x: f64)
   neg = false
   v = x

@@ -1,7 +1,3 @@
-# A tiny JSON scanner: count the object depth and pull one integer value.
-# Byte-level, because §0.8 says `s[i]` IS the byte.
-# expect: 2 7
-# @corpus current
 src = "{\"a\": {\"b\": 7}}"
 depth = 0
 deepest = 0

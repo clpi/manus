@@ -1,4 +1,3 @@
-# G-054 regression: empty {} must stay heterogeneous when storing field-sourced strings.
 
 g: str = (f)
   types = {}

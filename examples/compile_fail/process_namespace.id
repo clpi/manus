@@ -1,5 +1,3 @@
-# @corpus current
-# compile_fail: process.run namespace — run is a global relation, not process home dispatch.
 
 main: i64 = ()
     process.run("echo no")

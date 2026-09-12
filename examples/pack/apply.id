@@ -1,35 +1,6 @@
-# @corpus current
-# APPLY-ONE — c0 §43 `law.brace`, §44 `law.apply.one` / `law.construct.zero` /
-# `law.pack.shape`. gap[088] is the defect; gap[092] carries what is still owed.
-#
-# THE LAW. `name{ … }` is ONE form and it is APPLICATION; the SUBJECT decides
-# what applying means. A descriptor subject constructs, a callable subject
-# applies, and neither is a diagnostic. The parser resolves NOTHING — it emits
-# one structural application node for every face.
-#
-# WHAT THIS FIXTURE PINS. This paragraph used to say the descriptor rows were
-# "deliberately not here" because `point{ x = 3.0, y = 4.0 }` still emitted a
-# call to an undeclared `point`. THAT IS STALE: gap[092] closed the resolving
-# half, and a fixture that goes on recording the old state teaches the next
-# reader that the gap is still open. Rows 6-7 below are the descriptor subject,
-# by value; the rows needing a descriptor-TYPED callee are in
-# `examples/projection/descriptor.id` and ROW 8 says why.
-#
-# Every row asserts a VALUE. `tostring(d)` once reported `d=table` for a
-# decoder returning an EMPTY table and a bisect built on that was wrong, so
-# "it compiled" and "it built something" are not evidence here.
-#
-# SEPARATE DEFECT, measured while writing this and NOT caused by APPLY-ONE: a
-# module-scope typed record binding beside a `main()` emits `duo_g__p` against
-# a `duo_g_p` declaration and the C compiler refuses it. Reproduces with no
-# brace face anywhere in the file. That is why `p` lives inside `main` here.
 
 point: { x: f64, y: f64 }
 
-# The CALLABLE subjects. `apply(callable)(argpack)` is one of the four edges
-# §44 `apply.edge` enumerates, and these rows prove the brace face reaches its
-# subject and answers. Read against rows 6-7: the SAME face, a different
-# subject, and the subject is what decides which edge is taken.
 first: any = (t: any)
     t.x
 
@@ -38,7 +9,6 @@ second: any = (t: any)
 
 kind: { eof, ident }
 
-# ROW 1 — anonymous pack, no subject.
 p: point = { x = 3.0, y = 4.0 }
 print(p.x)
 print(p.y)

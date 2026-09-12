@@ -1,6 +1,4 @@
-# Reflection demo: runtime type introspection using Duo's type system
 
-# Test basic type introspection
 typeof_str: str = (x)
     if x == nil return "nil" 
     if type(x) != "table" return type(x) 
@@ -17,7 +15,6 @@ is_integer: bool = (x)
     if type(x) != "number" return false 
     x == x:floor()
 
-# Test values
 print("typeof(nil): " .. typeof_str(nil))
 print("typeof(true): " .. typeof_str(true))
 print("typeof(42): " .. typeof_str(42))
@@ -25,7 +22,6 @@ print("typeof(3.14): " .. typeof_str(3.14))
 print("typeof('hello'): " .. typeof_str("hello"))
 print("typeof({}): " .. typeof_str({}))
 
-# Detailed checks
 print("\nDetailed checks:")
 print("is_nil(nil):        " .. to(str)(is_nil(nil)))
 print("is_bool(true):      " .. to(str)(is_bool(true)))
@@ -35,7 +31,6 @@ print("is_float(3.14):     " .. to(str)(not is_integer(3.14)))
 print("is_str('hi'):       " .. to(str)(is_str("hi")))
 print("is_table({}):       " .. to(str)(is_table({})))
 
-# Field introspection on a table
 person = {
     name = "Alice",
     age = 30,
@@ -45,7 +40,6 @@ print("\nPerson introspection:")
 print("has field 'name': " .. to(str)(person.name != nil))
 print("has field 'email': " .. to(str)(person.email != nil))
 
-# Table utilities
 clone(t)
     if type(t) != "table" return t 
     c = {}

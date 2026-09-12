@@ -1,5 +1,3 @@
-# @comp.generate → @comp.each — O(ops×types) cartesian then per-fragment re-expansion
-# Run: duo run examples/meta_generate_each_showcase.id
 
 CONSTRAINTS = "ops: add|sub\ntypes: i64:int64_t|f64:double\ntemplate: /* gen[$0:$1] */\n"
 
@@ -10,10 +8,6 @@ stamp: str = (frag: str)
 
 expanded = @comp.each(GEN, stamp)
 
-# The parameter carried NO annotation, so codegen inferred `int64_t` for it
-# while the body used it as a string: `strs:len()` and `duo_str_sub_cstr(s, ...)`
-# on an int64_t, three -Wint-conversion errors, and the whole translation unit
-# was rejected. A bare parameter is not "untyped" here, it is typed WRONG.
 count_lines: i64 = (s: str)
   n = 0
   for i = 1, s:len()

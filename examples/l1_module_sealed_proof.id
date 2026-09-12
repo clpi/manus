@@ -1,4 +1,3 @@
-# Pass 34 PH1 — L1 module sealing witness + direct cross-module call.
 helper = l1_sealed_helper
 why: str = @comp.why.module(helper)
 expected = "module_sealed=true; req binding frozen after load; cross-module calls may devirtualize"

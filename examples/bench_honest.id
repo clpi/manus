@@ -1,11 +1,4 @@
-# bench_honest.id — Runtime-seeded benchmarks vs optimized C reference.
-# Hot paths use @comp.c.emit (canonical @c.* metaprogramming) for explicit native C.
-# C reference (bench_honest_c.c) keeps straightforward native baselines under
-# the same Clang -O3 -flto toolchain.
 
-# ═══════════════════════════════════════════════════════════════
-# 1. Matrix checksum 128x128 — COLUMN/ROW SUM CONTRACTION
-# ═══════════════════════════════════════════════════════════════
 @hot
 bench_matmul: f64 = (n: i64, s: i64)
   @comp.c.emit([[
@@ -37,9 +30,6 @@ bench_matmul: f64 = (n: i64, s: i64)
 
   return result
 
-# ═══════════════════════════════════════════════════════════════
-# 2. Int64 radix sort
-# ═══════════════════════════════════════════════════════════════
 @hot
 bench_qsort: i64 = (n: i64, s: i64)
   @comp.c.emit([[
@@ -85,16 +75,9 @@ bench_qsort: i64 = (n: i64, s: i64)
 
   return result
 
-# ═══════════════════════════════════════════════════════════════
-# ═══════════════════════════════════════════════════════════════
-# 3. Hash table probe — 4-way ILP with 8-way iteration unrolling
-#    Same chains as C. Duo adds 8-way unrolling + branchless hits.
-# ═══════════════════════════════════════════════════════════════
 @hot
 bench_hashtable: i64 = (n: i64, s: i64)
   @comp.c.emit([[
-        #define HT_SIZE 65536
-        #define HT_MASK (HT_SIZE-1)
         // Bitset occupancy: 8KB (65536/8 bytes) fits in L1 with room to spare.
         // Each slot is 1 bit. Hit count is identical to byte version.
         uint64_t* ht = (uint64_t*)calloc(HT_SIZE / 64, sizeof(uint64_t));
@@ -135,8 +118,6 @@ bench_hashtable: i64 = (n: i64, s: i64)
             hits += ((ht[(s0&HT_MASK)>>6]>>(s0&63))&1);
         }
         free(ht);
-        #undef HT_SIZE
-        #undef HT_MASK
     ]])
   
 
@@ -146,15 +127,9 @@ bench_hashtable: i64 = (n: i64, s: i64)
 
   return result
 
-# ═══════════════════════════════════════════════════════════════
-# 4. Binary search — branchless comparison
-# ═══════════════════════════════════════════════════════════════
 @hot
 bench_bsearch: i64 = (n: i64, s: i64)
   @comp.c.emit([[
-        #define BS_SIZE 100000
-        #define BS_HT_SIZE 262144
-        #define BS_HT_MASK (BS_HT_SIZE-1)
         int64_t* keys = (int64_t*)calloc(BS_HT_SIZE, sizeof(int64_t));
         uint64_t* occ = (uint64_t*)calloc(BS_HT_SIZE / 64, sizeof(uint64_t));
         if(!keys || !occ){free(keys); free(occ); return 0;}
@@ -166,7 +141,6 @@ bench_bsearch: i64 = (n: i64, s: i64)
             keys[slot]=s; occ[slot >> 6] |= (1ULL << (slot & 63));
         }
         int64_t found=0;
-        #define BS_PROBE(sv) do { \
             uint64_t __slot=((uint64_t)(sv))&BS_HT_MASK; \
             if(occ[__slot>>6] & (1ULL<<(__slot&63))){ \
                 while((occ[__slot>>6] & (1ULL<<(__slot&63))) && keys[__slot]!=(sv)) __slot=(__slot+1)&BS_HT_MASK; \
@@ -197,10 +171,6 @@ bench_bsearch: i64 = (n: i64, s: i64)
             BS_PROBE(s0);
         }
         free(keys); free(occ);
-        #undef BS_PROBE
-        #undef BS_HT_SIZE
-        #undef BS_HT_MASK
-        #undef BS_SIZE
     ]])
   
 
@@ -210,14 +180,10 @@ bench_bsearch: i64 = (n: i64, s: i64)
 
   return result
 
-# ═══════════════════════════════════════════════════════════════
-# 5. N-body — direct force summation
-# ═══════════════════════════════════════════════════════════════
 @hot
 @noinline
 bench_nbody_real: f64 = (steps: i64, s: i64)
   @comp.c.emit([[
-        #define NB 16
         double px[NB],py[NB],vx[NB],vy[NB],mass[NB];
         for(int i=0;i<NB;i++){
             s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);px[i]=(double)(s%1000)*0.1;
@@ -229,10 +195,8 @@ bench_nbody_real: f64 = (steps: i64, s: i64)
             // Fully unroll both i and j loops (NB=16 is compile-time constant).
             // This gives the compiler full visibility of all 16x15=240 force
             // computations per step for cross-iteration scheduling.
-            #pragma clang loop unroll(full)
             for(int i=0;i<NB;i++){
                 double fx=0,fy=0;
-                #pragma clang loop unroll(full)
                 for(int j=0;j<NB;j++){
                     if(__builtin_expect(i==j, 0)) continue;
                     double dx=px[j]-px[i], dy=py[j]-py[i];
@@ -243,13 +207,10 @@ bench_nbody_real: f64 = (steps: i64, s: i64)
                 }
                 vx[i]+=fx*dt; vy[i]+=fy*dt;
             }
-            #pragma clang loop unroll(full)
             for(int i=0;i<NB;i++){px[i]+=vx[i]*dt; py[i]+=vy[i]*dt;}
         }
         double energy=0;
-        #pragma clang loop unroll(full)
         for(int i=0;i<NB;i++) energy+=0.5*mass[i]*(vx[i]*vx[i]+vy[i]*vy[i]);
-        #undef NB
     ]])
   
 
@@ -259,14 +220,10 @@ bench_nbody_real: f64 = (steps: i64, s: i64)
 
   return result
 
-# ═══════════════════════════════════════════════════════════════
-# 6. FNV hash — interleaved for ILP
-# ═══════════════════════════════════════════════════════════════
 @hot
 @noinline
 bench_fnv_hash: i64 = (n: i64, s: i64)
   @comp.c.emit([[
-        #define BUF_SZ (1024*1024)
         uint8_t* buf = (uint8_t*)malloc(BUF_SZ);
         if(__builtin_expect(!buf, 0)) return 0;
         // Align the buffer pointer for better load throughput.
@@ -382,7 +339,6 @@ bench_fnv_hash: i64 = (n: i64, s: i64)
             hash_sum += (int64_t)(h0^h1^h2^h3);
         }
         free(buf);
-        #undef BUF_SZ
     ]])
   
 
@@ -396,9 +352,6 @@ print_fnv_result = (v: i64)
   @comp.c.emit([[printf("RESULT fnv %lld\n", (long long)v);]])
   
 
-# ═══════════════════════════════════════════════════════════════
-# Driver
-# ═══════════════════════════════════════════════════════════════
 seed: i64 = @comp.c.emit("getenv(\"HONEST_SEED\") ? (int64_t)atoll(getenv(\"HONEST_SEED\")) : (int64_t)(((double)clock()/(double)CLOCKS_PER_SEC) * 1000000) + 12345")
 print("=== Honest Benchmarks (runtime-seeded, no precomputation) ===")
 print("Seed: " .. to(str)(seed))

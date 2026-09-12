@@ -1,5 +1,3 @@
-# @corpus current
-# compile-fail: @comp.assert(@satisfies(...)) must error when concept not satisfied
 
 concept HasHash
     hash(self): i64

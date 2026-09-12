@@ -1,20 +1,10 @@
-# =============================================================================
-# Duo OOP + Inheritance Demo
-# Tables ARE classes in Duo (like Lua). Fields are implicitly public.
-# `alias` provides type aliases. `extends` works via metatable chaining.
-# `private` fields are compile-time enforced (sema checks access).
-# =============================================================================
 
-# ── Type aliases (alias) ────────────────────────────────────────────────────
 
 Point2D: { x: f64, y: f64 }
 
 Float: f64
 
-# ── Basic class pattern (Lua-style table as class) ──────────────────────────
 
-# All fields are implicitly public, just like Lua tables.
-# Methods are just function-valued fields.
 
 point = {
     x = 3.0,
@@ -35,9 +25,7 @@ point.move(point, 1.0, 2.0)
 print("After move: (" .. to(str)(point.x) .. ", " .. to(str)(point.y) .. ")")
 print("New distance: " .. to(str)(point.distance(point)))
 
-# ── Inheritance via metatables (extends pattern) ────────────────────────────
 
-# Base "class" - a factory function returning instances
 Point_base = (x: f64, y: f64)
     {
         x = x,
@@ -47,7 +35,6 @@ Point_base = (x: f64, y: f64)
         ,
     }
 
-# Derived "class" via metatable delegation
 Point3D_base = (x: f64, y: f64, z: f64)
     base = Point_base(x, y)
     setmetatable(
@@ -66,9 +53,7 @@ print(p1.describe(p1))
 p2 = Point3D_base(3.0, 4.0, 5.0)
 print(p2.describe(p2))
 
-# ── Factory function pattern (constructor + methods) ────────────────────────
 
-# A counter "class" using constructor functions
 Counter_new = ()
     {
         _value = 0,
@@ -86,7 +71,6 @@ print("Counter: " .. to(str)(counter.value(counter)))
 counter.decrement(counter)
 print("After decrement: " .. to(str)(counter.value(counter)))
 
-# ── Concepts with table types ──────────────────────────────────────────────
 
 concept Describable
     describe(self): str
@@ -94,7 +78,6 @@ concept Describable
 concept Measurable
     measure(self, unit: str): f64
 
-# A shape that implements both concepts
 shape = {}
 shape.describe = (self): str
     "Circle(radius=" .. to(str)(self.radius) .. ")"
@@ -109,7 +92,6 @@ shape.radius = 5.0
 print(shape.describe(shape))
 print("Area (mm): " .. to(str)(shape.measure(shape, "mm")))
 
-# ── Default function parameter values ───────────────────────────────────────
 
 greet: str = (name: str = "World", greeting: str = "Hello")
     greeting .. ", " .. name .. "!"

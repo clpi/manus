@@ -1,13 +1,3 @@
-# A DECLARED RECORD HAS A CLOSED FIELD SET.
-#
-# `cell` has no `y`, so `c.y` names nothing the subject carries and must be
-# refused by `idol check`. Before this fixture existed the checker returned
-# "checked — no errors" and the read was caught only by the BACKEND, and only
-# by accident: `fp stack slot 'c.y' has no register` — a missing slot rather
-# than a type law. Construction already refused the mirror-image case
-# ("descriptor 'cell' has no field 'y'"); this is the read face of it.
-#
-# This program must REFUSE at check. It has no expected output.
 cell: { x: i64 }
 main: i64 = ()
   c: cell = { x = 5 }

@@ -1,4 +1,3 @@
-# Test stdlib modules using builtin req (lua_require)
 
 total_passes = 0
 total_fails = 0

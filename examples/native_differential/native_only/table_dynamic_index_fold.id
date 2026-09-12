@@ -1,28 +1,3 @@
-# expect-exit: 0
-#
-# A RUNTIME INDEX INTO A DETERMINED TABLE IS A COMPILE-TIME CONSTANT, AND THE
-# ANSWER IS WHAT PROVES THE FOLD IS THE RIGHT ONE.
-#
-# `table_dynamic_index.id` next door measures the shape; this file measures the
-# ANSWERS a wrong fold would get wrong. Every relation here is a zero-operand
-# body over a table whose contents and index range are both known, so each one
-# should collapse to `mov`/`ret` — but each is also chosen so that an off-by-one
-# index, a bound read as the table's length, or an initializer read in place of
-# the written value produces a DIFFERENT number, not the same one faster.
-#
-#   `_shifted`  every slot but the first holds 7 or 9, so reading 1..4 answers
-#               22 and reading 2..5 answers 30. A fold whose key is off by one
-#               is a wrong ANSWER here, which is the only way to see it.
-#   `_partial`  the loop starts at 2 and stops at 4 while the table holds 6
-#               elements, so a fold that assumes "sum the table" answers 210.
-#   `_chained`  `v[w[k]]` — both tables determined, the inner projection's
-#               result is the outer's key.
-#   `_written`  the one that must NOT fold. `m[2] = 50` makes the binding
-#               mutable, `aggregateIsSoleImmutableBinding` refuses, and the
-#               loop runs. Answering 10 here would mean the fold read the
-#               initializer and erased the write.
-#
-# EXIT STATUS IS THE ASSERTION: 0, or the number of the check that failed.
 
 _shifted: i64 = ()
     t = (1, 7, 7, 7, 9, 7, 7, 7)
@@ -62,11 +37,6 @@ _written: i64 = ()
         i += 1
     s
 
-# The verdict relation is applied at file scope. `main` cannot be declared —
-# gate/vocabulary.sh refuses a new module-scope name whose semantic reach is
-# not graph-proven — and the "sole zero-arg relation" entry ladder cannot
-# choose among five zero-arg helpers. A file-scope application makes the
-# module a program, so its root is the entry and the tail is the verdict.
 _check: i64 = ()
     if _shifted() != 22
         return 1

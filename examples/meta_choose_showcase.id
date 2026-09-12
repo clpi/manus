@@ -1,5 +1,3 @@
-# @comp.choose — fixed-size combination generation.
-# O(1) source input produces O(n choose k) fragments without runtime lua_Value output.
 
 concept HasXY
   x: i64

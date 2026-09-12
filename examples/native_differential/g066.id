@@ -1,43 +1,4 @@
-# gap[066]. A file-scope global that a FUNCTION WRITES.
-#
-# Two defects met here, one per backend, and fixing the loud one exposed the
-# quiet one.
-#
-# `--backend=c` could not build this program at all: the DECLARATION emitter
-# spelled the storage `duo_g_g` (it guarded on an empty module prefix) and the
-# initializer-ASSIGNMENT emitter spelled it `duo_g__g` (it did not), so clang
-# reported "use of undeclared identifier 'duo_g__g'". Two mangling rules for
-# one symbol. There is now ONE mangler, `global_c_symbol` in `src/codegen.zig`,
-# and every emitter routes through it.
-#
-# `--backend=direct` compiled it and answered WRONG. The native-scalar profile
-# gives a file-scope binding no storage — each function body treats the name as
-# its own register-resident local — so the write landed nowhere the next read
-# could see, and the read folded to the initializer:
-#
-#     for i = 1, 3 / g = g + i    c printed 6    direct printed 3
-#     for i = 1, 3 / g = g + 1    c printed 3    direct printed 0
-#
-# Exit 0 both times, `ok compile` both times, no diagnostic. The gap file
-# recorded `direct 3` as "runs correctly", which it is not — 1+2+3 is 6. That
-# misreading survived because nothing compared the VALUE against the oracle.
-# A `while` loop with the identical body did it too, so it was never a `for`
-# lowering defect.
-#
-# The direct backend now refuses with DNB001 (`mod-global-written:total`),
-# which is why this program lives in `unsupported/`: an honest capability gap,
-# not a miscompilation. A READ-ONLY file-scope binding still lowers natively —
-# folding its initializer is correct when nothing can change it — so only the
-# written case is refused, and the native census is unchanged.
-#
-# Promote this file into the corpus proper the day the native profile gives a
-# written file-scope binding real storage. The C column is already correct and
-# prints `6 5`.
 
-# PROMOTED 2026-08-18: the direct backend now gives a written file-scope
-# binding one `__DATA,__bss` word (`ModuleGlobals` -> `internGlobal`), the
-# `mod-global-written:` guard is deleted, and this program prints 6 5 with
-# exit 6 on direct — agreeing with the C column. It is now a must-agree row.
 
 total: i64 = 0
 count: i64 = 5

@@ -1,5 +1,3 @@
-# @comp.burst: one module directive → derive.all + emit.omni (exponential ceiling breaker)
-# Run: duo run examples/meta_burst_showcase.id
 
 concept HasXY
   x: f64
@@ -11,7 +9,6 @@ concept HasTag
 point: { x: f64, y: f64, tag: str }
 pair: { x: f64, y: f64, tag: str }
 
-# One line: apply TouchApi to all HasXY types AND emit omni C (ceiling + sweep comment).
 
 @comp.define.derive("TouchApi", generate: str = (meta)
     acc = ""

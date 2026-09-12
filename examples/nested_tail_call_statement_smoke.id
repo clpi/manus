@@ -1,5 +1,3 @@
-# Smoke: call expressions at the end of nested blocks must not return from the
-# enclosing function.
 
 append_count: i64 = ()
   t = {}

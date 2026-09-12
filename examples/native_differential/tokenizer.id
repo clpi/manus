@@ -1,42 +1,7 @@
-# A real compiler subsystem in canonical, idiomatic Duo: a tokenizer that scans
-# a source string byte by byte and classifies identifiers, numbers and
-# punctuation.
-#
-# Canonical form per GRAMMAR_SPEC GR-001 and the idiom rules:
-#   * functions are value bindings — `name = (params): ret ... end`
-#   * no `fun`, no `then`, no `do` (deprecated; `duo fmt #canonical` strips them)
-#   * enums are copula descriptors — `kind: { eof, ident }` — not keywords and
-#     not module-level constants. (They were written `@{}` until
-#     `law.injection.only` retired that face; the sigil is world-deriving.)
-#   * `if`/`elseif` rather than `match`/`case` (also the faster lowering)
-#   * named field projection (`t.kind`), never `t[1]`
-#   * `@comp.assert` carries constraints; `@comp.why` carries optimization intent
-#
-# Uses only constructs the direct ARM64 backend proves natively — `str`
-# parameters, `#s`, `string.byte`, while loops, `and`, records passed and
-# returned by value — so it lowers with zero `lua_*` symbols.
 
-# Token kind enum as a descriptor: retires the `enum` keyword, stays an
-# ordinary value, and folds to immediates at every use site.
 Kind: { eof, ident, number, punct }
 
-# Constraint coverage, and its current limit — both measured, not assumed:
-#
-#   * `@comp.assert` is a *compile-time* assertion. Applying it to a runtime
-#     value (`@comp.assert(t.len >= 1)`) is a misuse and is rejected.
-#   * It also cannot yet fold a descriptor field projection:
-#     `@comp.assert(Kind.eof == 0)` fails to compile even though `Kind` is a
-#     descriptor with literal fields. Only literal expressions fold.
-#
-# So the kind-encoding constraints below are stated as invariants rather than
-# assertions. Making them machine-checked needs descriptor constant folding in
-# `@comp.assert` — a compiler gap, not a property of this code.
-#
-#   Kind.eof == 0, and eof < ident < number < punct
-#   a non-EOF token always has len >= 1, so `pos` strictly increases
 
-# The token shape. Three scalar fields ride the ABI registers, so a tok is
-# passed and returned without ever being materialised on the heap.
 tok: { kind: i64, start: i64, len: i64 }
 
 digit: i64 = (c: i64)
@@ -62,8 +27,6 @@ space: i64 = (c: i64)
         return 1
     0
 
-# Scan one token starting at `pos`. Every branch returns a fully-populated tok,
-# so a partial record never escapes. `Kind.eof` marks end of input.
 scan: tok = (src: str, pos: i64)
     n = src:len()
     i = pos
@@ -84,9 +47,6 @@ scan: tok = (src: str, pos: i64)
         return { kind = Kind.number, start = i, len = j - i }
     { kind = Kind.punct, start = i, len = 1 }
 
-# Fold the token stream into one checksum so the result is observable as a
-# process exit status. A non-EOF token always has len >= 1, which is the
-# constraint that guarantees the loop advances and terminates.
 checksum: i64 = (src: str)
     total = 0
     pos = 1
@@ -95,30 +55,9 @@ checksum: i64 = (src: str)
         t: tok = scan(src, pos)
         if t.kind == Kind.eof
             return total
-        # Invariant: a non-EOF token always has len >= 1, so `pos` strictly
-        # increases and the loop terminates. Established by scan's branches,
-        # each of which returns at least one consumed byte.
         total += t.kind * 10 + t.len
         pos = t.start + t.len
     total
 
-# Optimization coverage note (not `@comp.why`): the inner loop is a byte compare
-# plus a tok in ABI registers, with no allocation and no runtime helper. The
-# emitted binary contains only _scan, _checksum, _space,
-# _alpha, _digit and _main — zero `lua_*` symbols.
-#
-# `@comp.why(...)` is deliberately NOT used here: placing it in a function body
-# makes the direct backend fail that function's ARM64 emission
-# (`UnsupportedProgram`). It is a compile-time annotation and should lower to
-# nothing; that it does not is an open defect, tracked in the README.
 main: i64 = ()
-    # "fun add2 = x9 + 1"
-    #   fun  ident  len 3 -> 13
-    #   add  ident  len 3 -> 13   (the digit terminates the identifier run)
-    #   2    number len 1 -> 21
-    #   =    punct  len 1 -> 31
-    #   x    ident  len 1 -> 11
-    #   9    number len 1 -> 21
-    #   +    punct  len 1 -> 31
-    #   1    number len 1 -> 21
     checksum("fun add2 = x9 + 1")

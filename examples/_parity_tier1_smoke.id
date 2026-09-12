@@ -1,19 +1,12 @@
-# Pass 2.3: G-061 tier-1 parity smoke (manual / CI provenance check)
-# Verify: DUO_PROVENANCE=1 duo compile examples/_parity_tier1_smoke.id
-# Expect comp.match/map/each/tabulate/interpolate/power/derive.power/fixpoint
-# at top_level_assign, nested_callback, and block_body sites.
 
-# top_level_assign site (const fold path)
 const rows = @comp.match("a|b", (m) if m == "a" "alpha" else "beta")
 
-# block_body site (inside function)
 pick: str = (n: i64)
   if n > 0
     @comp.tabulate(2, (i) "x")
   else
     @comp.map("p q", (t) t)
 
-# nested_callback site (match inside tabulate callback chain)
 const grid = @comp.tabulate(2, fun(i)
   @comp.match("even|odd", fun(m)
     if m == "even" "E" else "O"

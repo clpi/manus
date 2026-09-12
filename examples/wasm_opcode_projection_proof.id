@@ -1,14 +1,3 @@
-# Proof that wasm.opcodes projects real Wasm opcodes.
-#
-# Every expected value below was extracted from wasm-tools by assembling a
-# minimal module per instruction and reading the opcode byte — NOT copied from
-# the old flat tables, which stub whole families and were themselves never
-# checked against an assembler. Deriving a number is not the same as it being
-# right: `i64x2.add` was guessed at +16 off `i32x4.add` when the real SIMD
-# stride is +32, and only an oracle caught it.
-#
-# The endpoints of every family are asserted, because a wrong base or a wrong
-# family size shows up exactly there.
 
 W = opcodes
 
@@ -23,19 +12,16 @@ chk: i64 = (label: str, got: i64, want: i64)
 main: i64 = ()
   n: i64 = 0
 
-  # integer comparison families: base and last member
   n = n + chk("i32.eqz", W.op("i32", "eqz"), 69)
   n = n + chk("i32.ge_u", W.op("i32", "ge_u"), 79)
   n = n + chk("i64.eqz", W.op("i64", "eqz"), 80)
   n = n + chk("i64.ge_u", W.op("i64", "ge_u"), 90)
 
-  # float comparison families
   n = n + chk("f32.eq", W.op("f32", "eq"), 91)
   n = n + chk("f32.ge", W.op("f32", "ge"), 96)
   n = n + chk("f64.eq", W.op("f64", "eq"), 97)
   n = n + chk("f64.ge", W.op("f64", "ge"), 102)
 
-  # integer arithmetic families
   n = n + chk("i32.clz", W.op("i32", "clz"), 103)
   n = n + chk("i32.add", W.op("i32", "add"), 106)
   n = n + chk("i32.rotr", W.op("i32", "rotr"), 120)
@@ -43,7 +29,6 @@ main: i64 = ()
   n = n + chk("i64.add", W.op("i64", "add"), 124)
   n = n + chk("i64.rotr", W.op("i64", "rotr"), 138)
 
-  # float arithmetic families
   n = n + chk("f32.abs", W.op("f32", "abs"), 139)
   n = n + chk("f32.add", W.op("f32", "add"), 146)
   n = n + chk("f32.copysign", W.op("f32", "copysign"), 152)
@@ -51,7 +36,6 @@ main: i64 = ()
   n = n + chk("f64.add", W.op("f64", "add"), 160)
   n = n + chk("f64.copysign", W.op("f64", "copysign"), 166)
 
-  # conversions: the `to(target)` blocks, 167-187
   n = n + chk("i32.wrap_i64", W.convert_op("i32", "wrap_i64"), 167)
   n = n + chk("i64.extend_i32_s", W.convert_op("i64", "extend_i32_s"), 172)
   n = n + chk("i64.trunc_f64_u", W.convert_op("i64", "trunc_f64_u"), 177)
@@ -60,19 +44,16 @@ main: i64 = ()
   n = n + chk("f64.convert_i32_s", W.convert_op("f64", "convert_i32_s"), 183)
   n = n + chk("f64.promote_f32", W.convert_op("f64", "promote_f32"), 187)
 
-  # reinterpret: identity on bits, one per type
   n = n + chk("i32.reinterpret_f32", W.reinterpret_op("i32"), 188)
   n = n + chk("i64.reinterpret_f64", W.reinterpret_op("i64"), 189)
   n = n + chk("f32.reinterpret_i32", W.reinterpret_op("f32"), 190)
   n = n + chk("f64.reinterpret_i64", W.reinterpret_op("f64"), 191)
 
-  # family bounds, which consumers use to write ONE range arm per family
   n = n + chk("cmp_lo i64", W.cmp_lo("i64"), 80)
   n = n + chk("cmp_hi i64", W.cmp_hi("i64"), 90)
   n = n + chk("alu_lo f64", W.alu_lo("f64"), 153)
   n = n + chk("alu_hi f64", W.alu_hi("f64"), 166)
 
-  # unknown names and types must report -1, never a plausible number
   n = n + chk("unknown op", W.op("i32", "nope"), -1)
   n = n + chk("unknown type", W.op("i128", "add"), -1)
   n = n + chk("unknown conv", W.convert_op("i32", "nope"), -1)

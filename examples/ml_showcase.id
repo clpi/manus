@@ -1,6 +1,3 @@
-# ml_showcase.id — Mojo-class ML workflow in Duo (minimal syntax)
-#
-# Demonstrates: @device, @autodiff, @profile, nn.build, ml.* intrinsics, ml.*
 
 NN = nn
 Ops = ops
@@ -32,19 +29,15 @@ main = ()
   print("=== Duo ML Showcase (Mojo-class path) ===")
   print("")
 
-  # Shape templates (compile-time dims as const + runtime assert)
   spec = Shape.mnist_mlp()
   print(string.format("MNIST MLP: in=%d h1=%d h2=%d out=%d", spec.input.rows, spec.hidden1.rows, spec.hidden2.rows, spec.output.rows))
 
-  # Device placement metadata
   dev = Device.best()
   print("Device: auto (compiler selects CPU/Metal/CUDA)")
 
-  # Model = nn { linear; relu; … } (desugars to ml.nn.build)
   model = req("std.ml.nn").build(req("std.ml.nn"):linear(784, 256), req("std.ml.nn"):relu(), req("std.ml.nn"):linear(256, 10), req("std.ml.nn"):softmax())
   print("Model layers: %d":format(model.n_layers))
 
-  # `@grad` desugars to ml.autodiff:grad (pairs with @autodiff on loss)
   grad_hook = @grad(loss_mnist, model)
 
   fused = Fusion.fuse_sequential(model)
@@ -56,11 +49,9 @@ main = ()
   pipe = Deploy.edge_pipeline(model)
   print(string.format("Edge deploy: target=%s simd=%s", Deploy.wasm_opts().target, to(str)(Deploy.wasm_opts().simd)))
 
-  # Native kernel checksum (validates ml.* path)
   checksum = bench_all()
   print("Kernel checksum: %.6f":format(checksum))
 
-  # Stdlib tensor path
   x = Ops.matmul({ rows = 4, cols = 4, size = 16, data = { [1] = 1, [2] = 0, [3] = 0, [4] = 0, [5] = 0, [6] = 1, [7] = 0, [8] = 0, [9] = 0, [10] = 0, [11] = 1, [12] = 0, [13] = 0, [14] = 0, [15] = 1, [16] = 0 } }, { rows = 4, cols = 4, size = 16, data = { [1] = 2, [2] = 0, [3] = 0, [4] = 0, [5] = 0, [6] = 2, [7] = 0, [8] = 0, [9] = 0, [10] = 0, [11] = 2, [12] = 0, [13] = 0, [14] = 0, [15] = 2, [16] = 0 } })
   print("4x4 matmul corner: %.1f":format(x.data(1)))
 

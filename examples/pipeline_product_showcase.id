@@ -1,5 +1,3 @@
-# @pipeline product: one descriptor emits types x take policies
-# Run: duo run examples/pipeline_product_showcase.id
 
 @comp.pipeline({
     name = "sum",

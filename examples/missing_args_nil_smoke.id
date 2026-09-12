@@ -1,4 +1,3 @@
-# Smoke: missing trailing call args are deterministic nil/default values.
 
 missing_any: bool = (a, b, c, d)
   d == nil

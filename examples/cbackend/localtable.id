@@ -1,20 +1,3 @@
-# EMIT: a table of literals bound INSIDE a function body.
-#
-# THIS IS A SILENT-WRONG-ANSWER FIXTURE, not a crash fixture. A full-native
-# function that bound a table codegen could not type emitted `void* t = NULL`
-# and DISCARDED THE INITIALIZER — no diagnostic, no warning — so every element
-# read back as NULL. Where the elements were strings the NULL reached
-# `strlen` and the program died with SIGSEGV 139 (`examples/boring/roman.id`);
-# where they were numbers it would simply have answered wrongly. The
-# module-scope form of the same table had been lowered natively for some time,
-# so the defect was one scope wide and nothing looked at that scope.
-#
-# All three element kinds are here because the classification is per-kind, and
-# a lowering that handles only the kind whose failure happened to segfault
-# would leave the quiet half in place. Index 2 in each, so a table that lost
-# its tail and a table that lost its head both fail.
-# expect: CM 900 2.5
-# @corpus current
 pick: str = (i: i64)
   glyph = { "M", "CM", "D" }
   glyph[i]

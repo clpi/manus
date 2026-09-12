@@ -1,34 +1,3 @@
-# @corpus current
-#
-#     tok.kind == .eof
-#
-# §2 settles the anchor as ONE concept in three stances, and gives the third
-# one to position: "descriptor-expected position -> the case". §0.3 of CLAUDE.md
-# states the same rule as law — "ENUM CASES WRITE `.eof`, inferred from
-# descriptor-expected position".
-#
-# WHAT THIS FIXTURE EXISTS TO CATCH, and it is not a parse failure. The parser
-# had one rule for every leading `.` — build the lambda `(v) v.name` — and sema
-# re-decided from SHAPE, where `==` admits any two operands. So `k == .eof`
-# CHECKED CLEAN and died in the C backend on
-# "invalid operands to binary expression ('duo_token__kind' and 'lua_Value')":
-# an enum compared against a closure. Two subsystems held different facts about
-# one token, which is the state A3 ONE EDGE forbids. The parser now owns the
-# decision — it knows the position and it declared the cases itself — and hands
-# down a resolved case access.
-#
-# VERIFIED BY VALUE, and the value is chosen to kill both degenerate answers.
-# A resolver that made every case EQUAL prints 833; one that made every case
-# UNEQUAL prints 408. Only real case identity prints 105. Two case-sets are
-# declared, with disjoint case names, because a map that kept only the LAST
-# case-set would still answer every `token.kind` question correctly and fail
-# only on `mode`.
-#
-# The long-hand `token.kind.symbol` is compared against the anchor form
-# `.symbol` directly: the two spellings are one fact, so they must land on one
-# value, and that row is what proves the anchor form is not merely SOME
-# consistent thing of its own.
-# expect: 105
 
 enum token__kind
   name

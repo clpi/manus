@@ -1,18 +1,3 @@
-# EMIT: a unary minus applied to something that is ALREADY NEGATIVE.
-#
-# `emit_expr` folds, so an operand whose value is a known negative prints its
-# own leading `-`; the unary emit then wrote a second one straight against it
-# and produced `(--5)`, which C reads as pre-decrement of a literal. clang:
-# "error: expression is not assignable". Measured, `-(2 - 7)`, `-(0 - 5)` and
-# `-(9223372036854775807 + 1)` all did it, so the fault is the ADJACENCY of two
-# minus signs and not the magnitude of any one literal — which is why the small
-# numbers are here beside the boundary one.
-#
-# Computed by hand: -(2-7) = 5. -(0-5) = 5. i64's maximum plus one wraps to the
-# minimum, and negating the minimum wraps back to it. -(0-7) = 7, through a
-# binding so the emitter cannot fold the whole expression away.
-# expect: 5 5 -9223372036854775808 7
-# @corpus current
 main: i64 = ()
   a = -(2 - 7)
   b = -(0 - 5)

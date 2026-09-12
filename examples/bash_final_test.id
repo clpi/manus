@@ -1,12 +1,9 @@
-# Test bash-style fun calls
 
 greet: str = (name: str)
   "Hello, " .. name
 
-# Bash-style call with string
 print(greet("World"))
 
-# Bash-style call with numbers
 add: i64 = (a: i64, b: i64)
   a + b
 

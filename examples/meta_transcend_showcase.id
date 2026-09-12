@@ -1,5 +1,3 @@
-# @comp.transcend: cubic ceiling breaker — one module directive → O(n²×f) + O(n³×f)
-# Run: duo run examples/meta_transcend_showcase.id
 
 concept HasXY
   x: f64
@@ -15,7 +13,6 @@ point: { x: f64, y: f64, tag: str, id: i64 }
 pair: { x: f64, y: f64, tag: str, id: i64 }
 label: { tag: str, id: i64 }
 
-# One line: derive.all + quadratic product emit + cubic derive tensor emit
 
 @comp.define.derive("TripleApi", generate: str = (meta)
     if meta.right != nil

@@ -1,6 +1,3 @@
-# G-061 tier-1 three-site parity fixture for `comp.power`.
-# top = top_level_assign · nested = nested_callback · block = block_body.
-# All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
 concept Has1
   x: i64

@@ -1,21 +1,11 @@
-# Duo Architectural Proof — Demonstrates Passes 1-5 in one file
-# Run: duo run examples/architecture_proof.id
 
-# ═══ Pass 1: Lua semantics, progressively specialized ═══
-# Ordinary Lua-shaped table construction and field access
 config = {
   name = "duo",
   version = "0.5.0",
   workers = 8
 }
 
-# ═══ Pass 2: Knowledge Lattice ═══
-# The compiler tracks knowledge about every value.
-# Typed params enable native lowering; untyped remains dynamic.
-# Both coexist in the same language — progressive specialization.
 
-# ═══ Pass 3: Compact grammar without keywords ═══
-# Descriptors replace enum/struct keywords (GP-009/010)
 enum Direction
   North
   South
@@ -24,16 +14,13 @@ enum Direction
 end
 Point: { x: f64, y: f64 }
 
-# Multi-parent descriptor composition (GP-012)
 name: { name: str }
 color: { color: str }
 Sprite: { ..name, ..color, x: f64 }
 
-# Table spread (GP-004)
 defaults = { color = "blue", size = 10 }
 custom = { ..defaults, color = "red" }
 
-# Field projections (GP-001)
 fun map(t, f)
   result = {}
   for i = 1, t:len()
@@ -50,32 +37,20 @@ items = {
 names = map(items, .name)
 scores = map(items, .score)
 
-# Direct iteration (GP-008)
 total = 0
 for s in scores
   total = total + s
 end
 
-# If-expression (GS-003)
 grade = (if total > 250 "excellent" else "good" end)
 
-# Newline-separated fields (GP-013) — no commas needed
 point = {
   x = 3.0,
   y = 4.0
 }
 
-# ═══ Pass 4: Native compilation ═══
-# The native backend compiles typed sealed records to pure arm64:
-#   duo compile file.id #target native-asm
-# Produces: fmul d2,d0,d0; fmul d3,d1,d1; fadd d4,d2,d3; ret
-# Zero boxing, zero C intermediate, zero runtime.
 
-# ═══ Pass 5: Foreign interface ═══
-# @ffi declares external C functions for direct native calls.
-# Future: @c.import("header.h") will parse and import automatically.
 
-# ═══ Results ═══
 sprite: Sprite = { name = "hero", color = "blue", x = 5.0 }
 print("RESULT config " .. (config.name .. (" v" .. config.version)))
 print("RESULT composition " .. (sprite.name .. (" " .. (sprite.color .. (" " .. to(str)(sprite.x))))))

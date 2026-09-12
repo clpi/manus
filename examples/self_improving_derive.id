@@ -1,7 +1,3 @@
-# A self-improving derive macro that reads its own source, registers a follow-up
-# version of itself, and evaluates that version recursively at compile time.
-# Each generation emits a C function with a unique name and return value.
-# The recursion terminates once three generations have been generated.
 
 @comp.define.derive("Evolving", generate: str = (meta)
     derives = @comp.derive.list()

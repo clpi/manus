@@ -1,8 +1,3 @@
-# gui.id — terminal GUI application in Idol
-# Demonstrates canonical Idol: subject-first invocation, "{}" interpolation,
-# compound update, gatecap, stdin:line, stdout:write, os.env.
-# No .. concatenation. Helpers without while; while only in main.
-# Shell-heavy work delegated to gatecap; Idol handles dispatch and flow.
 
 menu: str = (key: str, label: str)
     "  [{key}] {label}\n"

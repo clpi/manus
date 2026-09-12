@@ -1,17 +1,3 @@
-# @corpus current
-# CALLABLE-DEMAND, the NEGATIVE twin at the RESULT rung — gap[110], c0 §43
-# `law.brace`, §44 `apply.edge`. The third face of the label law whose other
-# twins are `examples/compile_fail/apply_one_label.id` (applied) and
-# `examples/compile_fail/expect_apply_label.id` (demanded binding).
-#
-# The gap's order is explicit that this rung is a CONTEXTUAL PROJECTION —
-# annotation + callable RHS -> result descriptor — resolution, not a
-# function-return-type grammar. So the demand the tail pack meets is the
-# binding's result descriptor, and a label that descriptor has no field for
-# refuses with the same sentence the other two rungs use: one label law, one
-# producer.
-#
-# Pinned on the shared substring `has no field` plus the label `z`.
 
 point: { x: f64, y: f64 }
 
