@@ -63,3 +63,58 @@ def gen(rng, n):
                            rng.randrange(0, 2**64)])
         cases.append(_mk(f"r{i:04d}", tmpl, cval))
     return cases
+# Round-2 expansion (2026-09-11): chained algebraic identities --
+# identities applied in sequence, and through reassociation shapes, so a
+# simplifier that fires once but not twice (or that misfires inside a
+# chain) is caught. Appended additively; the original directed() is
+# preserved as _base_directed.
+
+_base_directed = directed
+
+
+def _schain(cid, x0, idol_body, cbody, note=""):
+    idol = f"x = {x0}\n" + idol_body + "r\n"
+    return {"id": f"simp/{cid}", "idol": idol, "ret": "r",
+            "cbody": cbody, "cret": "r", "signed": False,
+            "full": True, "note": note}
+
+
+def directed():
+    cases = _base_directed()
+    chains = [
+        ("add0_mul1", "a = x + 0\nr = a * 1\n",
+         "unsigned long long x=123456789ULL,a=x+0ULL,r=a*1ULL;",
+         "(x+0)*1"),
+        ("subself_add0", "a = x - x\nr = a + 0\n",
+         "unsigned long long x=123456789ULL,a=x-x,r=a+0ULL;",
+         "(x-x)+0"),
+        ("mul1_sub0", "a = x * 1\nr = a - 0\n",
+         "unsigned long long x=123456789ULL,a=x*1ULL,r=a-0ULL;",
+         "(x*1)-0"),
+        ("add0_add0", "a = x + 0\nr = a + 0\n",
+         "unsigned long long x=123456789ULL,a=x+0ULL,r=a+0ULL;",
+         "(x+0)+0"),
+        ("mul0_add", "a = x * 0\nr = a + 5\n",
+         "unsigned long long x=123456789ULL,a=x*0ULL,r=a+5ULL;",
+         "(x*0)+5"),
+        ("zeroadd_mul1", "a = 0 + x\nr = a * 1\n",
+         "unsigned long long x=123456789ULL,a=0ULL+x,r=a*1ULL;",
+         "(0+x)*1"),
+        ("nested3", "a = x + 0\nb = a * 1\nr = b - 0\n",
+         "unsigned long long x=123456789ULL,a=x+0ULL,b=a*1ULL,r=b-0ULL;",
+         "((x+0)*1)-0"),
+        ("max_subself", "r = x - x\n",
+         "unsigned long long x=4294967295ULL,r=x-x;",
+         "max 32-bit literal minus itself"),
+        ("max_mul0", "r = x * 0\n",
+         "unsigned long long x=4294967295ULL,r=x*0ULL;",
+         "max 32-bit literal times zero"),
+        ("subself_addx", "a = x - x\nr = a + x\n",
+         "unsigned long long x=42ULL,a=x-x,r=a+x;",
+         "(x-x)+x recovers x"),
+    ]
+    for cid, body, cb, note in chains:
+        x0 = 4294967295 if cid.startswith("max") else \
+            (42 if cid == "subself_addx" else 123456789)
+        cases.append(_schain(cid, x0, body, cb, note=note))
+    return cases

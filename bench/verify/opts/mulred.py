@@ -55,3 +55,79 @@ def gen(rng, n):
         swap = rng.random() < 0.5
         cases.append(_mk(f"r{i:04d}", c2, c1, swap))
     return cases
+# Round-2 expansion (2026-09-11): multiply chains -- reassociation
+# through strength-reduced multiplies. (x*a)*b must equal x*(a*b) over
+# 64-bit wrapping arithmetic regardless of which multiplies the compiler
+# reduces to shifts/shift-adds. Appended additively; the original
+# directed() is preserved as _base_directed.
+
+_base_directed = directed
+
+_KNOWN32 = ("known-32bit-limitation: integer literals above 4294967295 "
+            "are truncated at compile time (bench/README.md); this 64-bit "
+            "wrap probe mismatches until literals go 64-bit")
+
+
+def _mchain(cid, x0, ops, note=""):
+    # ops: list of (op, const) applied left to right starting from x.
+    lines = [f"x = {x0}"]
+    assigns = []
+    var = "x"
+    decls = ["x"]
+    for i, (op, c) in enumerate(ops):
+        nv = "r" if i == len(ops) - 1 else f"v{i}"
+        lines.append(f"{nv} = {var} {op} {c}")
+        assigns.append(f"{nv}={var}{op}{c}ULL")
+        decls.append(nv)
+        var = nv
+    idol = "\n".join(lines) + "\nr\n"
+    cbody = (f"unsigned long long {','.join(decls)};x={x0}ULL;"
+             + ";".join(assigns) + ";")
+    return {"id": f"mulred/{cid}", "idol": idol, "ret": "r",
+            "cbody": cbody, "cret": "r", "signed": False,
+            "full": True, "note": note}
+
+
+def directed():
+    cases = _base_directed()
+    pairs = [
+        ("p35", 1234567890, [("*", 3), ("*", 5)]),
+        ("p53", 1234567890, [("*", 5), ("*", 3)]),
+        ("p27", 1234567890, [("*", 2), ("*", 7)]),
+        ("p72", 1234567890, [("*", 7), ("*", 2)]),
+        ("p99", 1234567890, [("*", 9), ("*", 9)]),
+        ("p33", 1234567890, [("*", 3), ("*", 3)]),
+        ("p45", 1234567890, [("*", 4), ("*", 5)]),
+        ("p1113", 777, [("*", 11), ("*", 13)]),
+        ("p66", 1234567890, [("*", 6), ("*", 6)]),
+        ("p163", 1234567890, [("*", 16), ("*", 3)]),
+        ("p88", 1234567890, [("*", 8), ("*", 8)]),
+        ("p911", 1234567890, [("*", 9), ("*", 11)]),
+    ]
+    for cid, x0, ops in pairs:
+        cases.append(_mchain(cid, x0, ops,
+                             note="mul chain: reassociation through "
+                                  "strength-reduced multiplies"))
+    # wrap-around chains near 2^64.
+    for cid, x0, ops in [
+            ("w35", 18446744073709551615, [("*", 3), ("*", 5)]),
+            ("w22", 18446744073709551615, [("*", 2), ("*", 2)]),
+            ("w79", 18446744073709551615, [("*", 7), ("*", 9)]),
+    ]:
+        cases.append(_mchain(cid, x0, ops,
+                             note="mul chain wrapping 2^64. " + _KNOWN32))
+    # mul chains with a carried add (the arith shape).
+    cases.append(_mchain("a0", 1000, [("*", 3), ("+", 7), ("*", 5)],
+                         note="(x*3+7)*5: add through the chain"))
+    cases.append(_mchain("a1", 4294967295, [("*", 3), ("+", 7), ("*", 5)],
+                         note="(x*3+7)*5 near 2^32"))
+    # three-deep chain.
+    cases.append(_mchain("deep0", 100, [("*", 3), ("*", 5), ("*", 7)],
+                         note="three-deep mul chain"))
+    # swapped first multiply (C*x form in the chain).
+    cases.append({"id": "mulred/swapchain", "idol": "x = 5000\nt = 3 * x\nr = t * 5\nr\n",
+                  "ret": "r",
+                  "cbody": "unsigned long long x=5000ULL,t=3ULL*x,r=t*5ULL;",
+                  "cret": "r", "signed": False, "full": True,
+                  "note": "chain starting from swapped multiply"})
+    return cases

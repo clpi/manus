@@ -106,3 +106,51 @@ def gen(rng, n):
             f"{{{cbody}}}",
             note="random pure counter"))
     return cases
+
+# Round-2 expansion (2026-09-11): countdown-adjacent shapes -- zero-trip
+# pure loops, multiple counters, nested pure loops, variable bounds, and
+# counter reads at small bounds. Appended additively; the original
+# directed() is preserved as _base_directed.
+
+_base_directed = directed
+
+
+def directed():
+    cases = _base_directed()
+    cases.extend([
+        _case("two_counters",
+              "t = 0\ni = 0\nj = 0\nwhile i < 100\n  t = t + 1\n"
+              "  i = i + 1\n  j = j + 1\nt\n",
+              "unsigned long long t=0;for(unsigned long long i=0,j=0;"
+              "i<100;i++,j++){t++;}",
+              note="second counter alongside the canonical one"),
+        _case("nested_pure",
+              "t = 0\ni = 0\nwhile i < 50\n  j = 0\n  while j < 20\n"
+              "    t = t + 1\n    j = j + 1\n  i = i + 1\nt\n",
+              "unsigned long long t=0;for(unsigned long long i=0;i<50;i++)"
+              "for(unsigned long long j=0;j<20;j++){t++;}",
+              note="pure loop nested in pure loop"),
+        _case("zero_trip_pure",
+              "t = 0\ni = 0\nwhile i < 0\n  t = t + 1\n  i = i + 1\nt\n",
+              "unsigned long long t=0;for(unsigned long long i=0;i<0;i++)"
+              "{t++;}",
+              note="zero-trip pure countdown loop"),
+        _case("var_bound_pure",
+              "t = 0\nn = 50\ni = 0\nwhile i < n\n  t = t + 1\n  i = i + 1\nt\n",
+              "unsigned long long t=0,n=50;for(unsigned long long i=0;"
+              "i<n;i++){t++;}",
+              note="pure countdown against a variable bound"),
+        _case("mentions_i_bound1",
+              "t = 0\ni = 0\nwhile i < 1\n  t = t + i\n  i = i + 1\nt\n",
+              "unsigned long long t=0;for(unsigned long long i=0;i<1;i++)"
+              "{t=t+i;}",
+              note="counter-reading body at bound 1"),
+        _case("read_after_small",
+              "i = 0\nwhile i < 3\n  i = i + 1\nt = i\nt\n",
+              "unsigned long long i=0;for(;i<3;i++){}"
+              "unsigned long long t=i;",
+              expect="mismatch",
+              note="ADVERSARIAL: counter read after loop (small bound) -- "
+                   "same unsoundness family as read_after"),
+    ])
+    return cases

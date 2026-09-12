@@ -46,3 +46,37 @@ def gen(rng, n):
         cbody = (f"unsigned long long {a}={v}ULL,{b}={a},r={b};")
         cases.append(_mk(f"r{i:04d}", idol, cbody))
     return cases
+
+# Round-2 expansion (2026-09-11): copy-propagation chains -- longer
+# chains, copies of big constants, and copies feeding arithmetic, so a
+# propagator that stops after one hop is caught. Appended additively;
+# the original directed() is preserved as _base_directed.
+
+_base_directed = directed
+
+
+def directed():
+    cases = _base_directed()
+    cases.extend([
+        _mk("longchain", "a = 7\nb = a\nc = b\nd = c\nr = d\nr\n",
+            "unsigned long long a=7ULL,b=a,c=b,d=c,r=d;",
+            note="four-hop copy chain"),
+        _mk("bigconst_copy", "r = 70000\ns = r\nr = s\nr\n",
+            "unsigned long long r=70000ULL,s=r;r=s;", full=True,
+            note="copy of a movz+movk constant"),
+        _mk("prefix3", "xa = 1\nxab = 2\nxabc = 3\nr = xa\nr = r + xab\n"
+            "r = r + xabc\nr\n",
+            "unsigned long long xa=1ULL,xab=2ULL,xabc=3ULL,r=xa;"
+            "r=r+xab;r=r+xabc;",
+            note="three shared name prefixes"),
+        _mk("selfcopy2", "x = 41\nx = x\nx = x\nr = x\nr\n",
+            "unsigned long long x=41ULL;x=x;x=x;unsigned long long r=x;",
+            note="repeated self copy"),
+        _mk("copyop", "a = 100\nb = a\nr = b + 1\nr\n",
+            "unsigned long long a=100ULL,b=a,r=b+1ULL;",
+            note="copy feeding arithmetic"),
+        _mk("indep", "p = 3\ns = p\nr = s + 10\nr\n",
+            "unsigned long long p=3ULL,s=p,r=s+10ULL;",
+            note="short chain with constant add"),
+    ])
+    return cases
