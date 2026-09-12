@@ -1983,8 +1983,10 @@ const Arm64Compiler = struct {
     /// The predicted shape comes from `dnirFunctionHasCall`: leaves almost
     /// always plan 0, calls almost always need the save area. A mispredict
     /// rewinds the attempt's bytes and retries with the other shape; a failed
-    /// first rung rewinds and falls back to the two-pass ladder. The worst
-    /// case is today's cost, never worse.
+    /// first rung rewinds and falls back to the two-pass ladder: the failed
+    /// attempt plus the ladder's probe and real passes, three compilations.
+    /// Worse than today's two only when the prediction is wrong; the
+    /// common path costs one.
     const CalleeSaveSite = struct { offset: u32, reg: u5 };
     fn compileDnirFunctionSinglePass(self: *Arm64Compiler, f: dnir.Function) Error!void {
         var want_save_area = dnirFunctionHasCall(f);
@@ -1999,6 +2001,7 @@ const Arm64Compiler = struct {
             const mark_asm = self.asm_text.items.len;
             const mark_patches = self.call_patches.items.len;
             const mark_relocs = self.relocations.items.len;
+            const mark_lineage = self.lineage.items.len;
             self.callee_save_sites.clearRetainingCapacity();
             self.defer_func_symbol = true;
             var attempt_diag: Diagnostic = .{};
@@ -2015,7 +2018,7 @@ const Arm64Compiler = struct {
 
             if (!ok) {
                 // First rung failed: rewind, fall back to the two-pass ladder.
-                self.rewindFunctionAttempt(mark_code, mark_asm, mark_patches, mark_relocs);
+                self.rewindFunctionAttempt(mark_code, mark_asm, mark_patches, mark_relocs, mark_lineage);
                 self.probe_census_fallback += 1;
                 return self.compileDnirFunctionTwoPass(f);
             }
@@ -2023,7 +2026,7 @@ const Arm64Compiler = struct {
             const touched = self.callee_touched;
             if (!want_save_area and touched != 0) {
                 // Mispredicted leaf: rewind and retry with the save area.
-                self.rewindFunctionAttempt(mark_code, mark_asm, mark_patches, mark_relocs);
+                self.rewindFunctionAttempt(mark_code, mark_asm, mark_patches, mark_relocs, mark_lineage);
                 want_save_area = true;
                 continue;
             }
@@ -2068,12 +2071,16 @@ const Arm64Compiler = struct {
 
     /// Truncate the attempt's bytes, leaving interned strings/constants (and
     /// their dedup maps) valid. The function symbol was deferred, so nothing
-    /// defined is left behind.
-    fn rewindFunctionAttempt(self: *Arm64Compiler, mark_code: usize, mark_asm: usize, mark_patches: usize, mark_relocs: usize) void {
+    /// defined is left behind. Lineage rows are truncated too: the attempt
+    /// published one row per graph application it emitted, and the retry
+    /// re-emits the same rows, which must not appear twice
+    /// (`validateMachineLineage` requires exactly one row per application).
+    fn rewindFunctionAttempt(self: *Arm64Compiler, mark_code: usize, mark_asm: usize, mark_patches: usize, mark_relocs: usize, mark_lineage: usize) void {
         self.code.items.len = mark_code;
         self.asm_text.items.len = mark_asm;
         self.call_patches.items.len = mark_patches;
         self.relocations.items.len = mark_relocs;
+        self.lineage.items.len = mark_lineage;
         self.callee_save_sites.clearRetainingCapacity();
     }
 
