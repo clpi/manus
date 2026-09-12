@@ -6,15 +6,12 @@ license: MIT
 
 # Idol language authority projection
 
-| # | directive |
-|---|---|
-| 1 | **Idol** (`idol`, `.id`) is the language identity. |
-| 2 | The active development repository is reported by `tools/node/dev/repository`; the release repository remains untouched until release-readiness authorization. |
+**Idol** (`idol`, `.id`) is the language identity. The active development
+repository is reported by `tools/node/dev/repository`; the release repository
+remains untouched until release-readiness authorization.
 
-| # | directive |
-|---|---|
-| 1 | This skill does not add law. |
-| 2 | It routes to the sole semantic law and its operative projections. |
+This skill does not add law. It routes to the sole semantic law and its
+operative projections.
 
 ## Authority order
 

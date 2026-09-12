@@ -2,10 +2,9 @@
 
 ## What it is
 
-| # | directive |
-|---|---|
-| 1 | The hex-transport shim: decode the n-th module byte from a hex-pair string. |
-| 2 | Exists ONLY because H9 (binary ingress) is blocked — the declared deletion condition. |
+The hex-transport shim: decode the n-th module byte from a hex-pair
+string. Exists ONLY because H9 (binary ingress) is blocked — the
+declared deletion condition.
 
 ## Skeptical findings
 
@@ -31,9 +30,8 @@
 
 ## Verdict
 
-| # | directive |
-|---|---|
-| 1 | Keep as the single transport seam (50 call sites vs one body), with the mash debt RECORDED as the price of the H9 blocker. |
-| 2 | Rename options blocked by the byte collision. |
-| 3 | The honest name for the seam under LAW-ONE would be a world edge (hex:byte) — blocked by module-scope relations. |
-| 4 | Deletion on H9 is the correct fix, not a rename. |
+Keep as the single transport seam (50 call sites vs one body), with
+the mash debt RECORDED as the price of the H9 blocker. Rename options
+blocked by the byte collision. The honest name for the seam under
+LAW-ONE would be a world edge (hex:byte) — blocked by module-scope
+relations. Deletion on H9 is the correct fix, not a rename.

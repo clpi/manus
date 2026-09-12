@@ -1,48 +1,41 @@
 # Optimization frontier census
 
-| # | directive |
-|---|---|
-| 1 | **Status:** research projection and capability map. **Not language law.** Use this so major compiler/research families stay **visible** and can be expressed in the one semantic graph when admissible. |
+**Status:** research projection and capability map. **Not language law.** Use this
+so major compiler/research families stay **visible** and can be expressed in the
+one semantic graph when admissible.
 
-| # | directive |
-|---|---|
-| 1 | Sections **I–XXXVIII** below use **thematic grouping** for navigation. |
-| 2 | Sections **XXXIX–XLVII**, the **FTCFTW-ranked priorities**, and **universal optimization architecture** align with the master **763-item frontier census** (687 first-pass + 76 third-pass "strangeness" items — nothing important may remain invisible). |
-| 3 | When adding a family, assign it a stable item number in that master sequence and record it here. |
+Sections **I–XXXVIII** below use **thematic grouping** for navigation. Sections
+**XXXIX–XLVII**, the **FTCFTW-ranked priorities**, and **universal optimization
+architecture** align with the master **763-item frontier census** (687 first-pass
++ 76 third-pass "strangeness" items — nothing important may remain invisible).
+When adding a family, assign it a stable item number in that master sequence and
+record it here.
 
 ## Unifying criterion
 
-| # | directive |
-|---|---|
-| 1 | Any optimization or capability belongs in the one semantic graph when it can be expressed as **relations, facts, observations, demands, laws, witnesses, transformations, worlds, or realizations**. |
+Any optimization or capability belongs in the one semantic graph when it can be
+expressed as **relations, facts, observations, demands, laws, witnesses,
+transformations, worlds, or realizations**.
 
-| # | directive |
-|---|---|
-| 1 | Create a separate IR or subsystem only when **irreducibility is proved**. |
+Create a separate IR or subsystem only when **irreducibility is proved**.
 
-| # | directive |
-|---|---|
-| 1 | Current Idol already partial-fits: one graph, one identity, sparse consequence closure, demand, witnessed transformations, candidate realization economics. |
-| 2 | The remaining work is expanding the fact/law/candidate universe until the optimization surface is **open-ended** rather than manually enumerated. |
+Current Idol already partial-fits: one graph, one identity, sparse consequence
+closure, demand, witnessed transformations, candidate realization economics.
+The remaining work is expanding the fact/law/candidate universe until the
+optimization surface is **open-ended** rather than manually enumerated.
 
-| # | directive |
-|---|---|
-| 1 | Guiding question for each family: |
+Guiding question for each family:
 
-| # | directive |
-|---|---|
-| 1 | **what information about a computation does Idol still not model, and what physical work becomes removable once that information is available?** |
+**what information about a computation does Idol still not model, and what
+physical work becomes removable once that information is available?**
 
 ## Universal optimization state
 
-| # | directive |
-|---|---|
-| 1 | See `.agents/ARCHITECTURE_INJECTION.md` for agent orientation. |
-| 2 | Census entries below attach to one or more of: |
+See `.agents/ARCHITECTURE_INJECTION.md` for agent orientation. Census entries
+below attach to one or more of:
 
-| # | directive |
-|---|---|
-| 1 | `identity · facts · observations · demand · laws · change · correspondence · search · proof · cost · world · realization` |
+`identity · facts · observations · demand · laws · change · correspondence ·
+search · proof · cost · world · realization`
 
 ---
 
@@ -75,9 +68,8 @@
 
 ## II. Supercompilation / fold–unfold / generalized partial computation
 
-| # | directive |
-|---|---|
-| 1 | Emphasize beyond ordinary partial evaluation: unfold, specialize, fold, generalize, residualize under demand. |
+Emphasize beyond ordinary partial evaluation: unfold, specialize, fold,
+generalize, residualize under demand.
 
 | Capability | Graph expression |
 |---|---|
@@ -89,35 +81,27 @@
 | KMP-like matchers | supercompilation from generic search relations |
 | Demand-aware equivalence | `x ≡_demand y` — equivalence under observer, not full value |
 
-| # | directive |
-|---|---|
-| 1 | Engine shape: observe → unfold → propagate → recognize recurrence → generalize → fold → residualize demanded semantics only. |
+Engine shape: observe → unfold → propagate → recognize recurrence → generalize →
+fold → residualize demanded semantics only.
 
 ---
 
 ## III. Optimal graph reduction / interaction nets (selective import)
 
-| # | directive |
-|---|---|
-| 1 | Do not become an interaction-net language. |
-| 2 | Import **sharing of semantic work**: |
+Do not become an interaction-net language. Import **sharing of semantic work**:
 
 - shared redex / specialization / proof / compile-time evaluation identity
 - duplication tracking; fan-in/fan-out where duplication is observable or costly
 - higher-order closure reduction without rebuilding equivalent environments
 - reduction-order selection for demanded normal form
 
-| # | directive |
-|---|---|
-| 1 | Relevant to compile-time FTCFTW, not runtime only. |
+Relevant to compile-time FTCFTW, not runtime only.
 
 ---
 
 ## IV. Relational execution / backward semantics
 
-| # | directive |
-|---|---|
-| 1 | miniKanren-style **modes over one relation** (not separate APIs): |
+miniKanren-style **modes over one relation** (not separate APIs):
 
 - forward, inverse, partial, synthesis, legality queries
 - parser ↔ printer, serializer ↔ deserializer, ABI adapter synthesis
@@ -128,13 +112,11 @@
 
 ## V. Search completeness & strategy as realization
 
-| # | directive |
-|---|---|
-| 1 | Classify relations: deterministic · finite ND · infinite enumerable · constraint · probabilistic · optimization — without new surface syntax. |
+Classify relations: deterministic · finite ND · infinite enumerable · constraint ·
+probabilistic · optimization — without new surface syntax.
 
-| # | directive |
-|---|---|
-| 1 | Search strategies are **realizations**: DFS, BFS, best-first, A*, branch-and-bound, SAT, SMT, ILP, constraint propagation, sampling, beam search, learned search. |
+Search strategies are **realizations**: DFS, BFS, best-first, A*, branch-and-bound,
+SAT, SMT, ILP, constraint propagation, sampling, beam search, learned search.
 
 ---
 
@@ -144,226 +126,204 @@
 desired relation + laws + target world + cost → synthesize realization
 ```
 
-| # | directive |
-|---|---|
-| 1 | Examples: FSM parser from grammar, perfect hash, comparator network, SIMD shuffle, protocol decoder, bitpack layout, lock-free transition, dispatch automaton, foreign adapter, incremental updater from relation semantics. |
-| 2 | Stronger than picking among existing expressions (superoptimization). |
+Examples: FSM parser from grammar, perfect hash, comparator network, SIMD shuffle,
+protocol decoder, bitpack layout, lock-free transition, dispatch automaton, foreign
+adapter, incremental updater from relation semantics. Stronger than picking among
+existing expressions (superoptimization).
 
 ---
 
 ## VII. Proof-producing optimization & trusted core
 
-| # | directive |
-|---|---|
-| 1 | Pattern: untrusted candidate → semantic reference → optimized candidate → certificate → small trusted checker (eBPF Kops, Jitterbug). |
+Pattern: untrusted candidate → semantic reference → optimized candidate →
+certificate → small trusted checker (eBPF Kops, Jitterbug).
 
-| # | directive |
-|---|---|
-| 1 | Enables agents, autotuners, plugins without joining trusted core. |
+Enables agents, autotuners, plugins without joining trusted core.
 
 ---
 
 ## VIII. Compiler extension without enlarging semantic authority
 
-| # | directive |
-|---|---|
-| 1 | Plugins may propose: candidate, law, witness, cost, applicability. |
+Plugins may propose: candidate, law, witness, cost, applicability.
 
-| # | directive |
-|---|---|
-| 1 | Plugins may **not**: define relation meaning, create identity, bypass proof. |
+Plugins may **not**: define relation meaning, create identity, bypass proof.
 
 ---
 
 ## IX. Kernel / OS / unikernel specialization
 
-| # | directive |
-|---|---|
-| 1 | World facts drive stack elimination (filesystem, threads, loader, locale, signals, DNS, TLS subset). |
-| 2 | Realization extends to process, unikernel, WASI, eBPF, firmware, bare-metal, kernel module, GPU, FPGA. |
+World facts drive stack elimination (filesystem, threads, loader, locale, signals,
+DNS, TLS subset). Realization extends to process, unikernel, WASI, eBPF,
+firmware, bare-metal, kernel module, GPU, FPGA.
 
 ---
 
 ## X. Compiler ↔ kernel cooperation
 
-| # | directive |
-|---|---|
-| 1 | Lifetime hints, huge pages, access patterns, NUMA, deadlines, batching, io_uring fusion, prefault, DVFS, affinity, QoS — as inferable realization facts. |
+Lifetime hints, huge pages, access patterns, NUMA, deadlines, batching, io_uring
+fusion, prefault, DVFS, affinity, QoS — as inferable realization facts.
 
 ---
 
 ## XI. Syscall elimination & fusion
 
-| # | directive |
-|---|---|
-| 1 | Recognize open/read/close, stat/open/read, write sequences → fewer syscalls, vectored I/O, mmap, io_uring batch, static embedded resources, zero runtime when input is compile-time known. |
+Recognize open/read/close, stat/open/read, write sequences → fewer syscalls,
+vectored I/O, mmap, io_uring batch, static embedded resources, zero runtime when
+input is compile-time known.
 
 ---
 
 ## XII. Storage-aware compilation
 
-| # | directive |
-|---|---|
-| 1 | SSD/HDD, local/remote object store, NVRAM, append-only logs, mmap DBs, format selection, block sizes, read/write amplification, durability, fsync batching, WAL vs COW, replication — realization under durability law X. |
+SSD/HDD, local/remote object store, NVRAM, append-only logs, mmap DBs, format
+selection, block sizes, read/write amplification, durability, fsync batching,
+WAL vs COW, replication — realization under durability law X.
 
 ---
 
 ## XIII. Network protocol & topology realization
 
-| # | directive |
-|---|---|
-| 1 | RPC vs direct call, serialization vs shared memory, HTTP/2 vs HTTP/3, batching, compression, pooling, zero-copy, kernel bypass, RDMA; fleet-scale placement as graph mapping minimizing cut + latency + storage movement. |
+RPC vs direct call, serialization vs shared memory, HTTP/2 vs HTTP/3, batching,
+compression, pooling, zero-copy, kernel bypass, RDMA; fleet-scale placement as
+graph mapping minimizing cut + latency + storage movement.
 
 ---
 
 ## XIV. Communication & data-movement complexity
 
-| # | directive |
-|---|---|
-| 1 | Optimize toward lower bounds on bits across boundaries, memory words moved, synchronization messages, device transfers — often dominates arithmetic. |
+Optimize toward lower bounds on bits across boundaries, memory words moved,
+synchronization messages, device transfers — often dominates arithmetic.
 
 ---
 
 ## XV. Red/blue pebble / recomputation–storage duality
 
-| # | directive |
-|---|---|
-| 1 | I/O-complexity pebble games: residency vs recompute vs migration. |
-| 2 | Universal graph law: store · recompute · invert · checkpoint · compress · materialize lazily — cost from demand, lifetime, dependencies. |
-| 3 | Unifies AD checkpointing, memoization, cache policy, coroutine state, distributed caching. |
+I/O-complexity pebble games: residency vs recompute vs migration. Universal graph
+law: store · recompute · invert · checkpoint · compress · materialize lazily —
+cost from demand, lifetime, dependencies. Unifies AD checkpointing, memoization,
+cache policy, coroutine state, distributed caching.
 
 ---
 
 ## XVI. Semantic memoization & observation-relative reuse
 
-| # | directive |
-|---|---|
-| 1 | Memo keys: relation id + demanded input facts + world dependencies. |
+Memo keys: relation id + demanded input facts + world dependencies.
 
-| # | directive |
-|---|---|
-| 1 | **Observation-relative memo:** reuse when equivalent for current demand (`x ≡_demand y`). |
-| 2 | Cross-program reuse by **proven semantic correspondence**, not source hash — incremental compilation as semantic caching. |
+**Observation-relative memo:** reuse when equivalent for current demand
+(`x ≡_demand y`). Cross-program reuse by **proven semantic correspondence**, not
+source hash — incremental compilation as semantic caching.
 
 ---
 
 ## XVII. Stateful / reactive equivalence
 
-| # | directive |
-|---|---|
-| 1 | Bisimulation/simulation for coroutines, actors, services, state machines. **Trace quotienting:** erase internal scheduling, transient writes, hidden retries when trace projection does not observe them. |
+Bisimulation/simulation for coroutines, actors, services, state machines.
+**Trace quotienting:** erase internal scheduling, transient writes, hidden retries
+when trace projection does not observe them.
 
 ---
 
 ## XVIII. Temporal logic as demand/law
 
-| # | directive |
-|---|---|
-| 1 | Eventually, never, before, at-most-once, always — as graph laws optimizing state machines and concurrency while preserving required traces. |
-| 2 | Automata minimization for parsers, protocols, coroutines, UI, transactions. |
-| 3 | Symbolic automata for large alphabets. |
+Eventually, never, before, at-most-once, always — as graph laws optimizing state
+machines and concurrency while preserving required traces. Automata minimization
+for parsers, protocols, coroutines, UI, transactions. Symbolic automata for
+large alphabets.
 
 ---
 
 ## XIX. Parsing realization space
 
-| # | directive |
-|---|---|
-| 1 | Grammar stays one; **parser algorithm is realization**: Pratt, RD, DFA, LR, packrat, specialized recognizer, decision tree, derivative-based, PEG/automata hybrid per region. |
-| 2 | Entropy-optimal dispatch when alternative probabilities known. |
+Grammar stays one; **parser algorithm is realization**: Pratt, RD, DFA, LR,
+packrat, specialized recognizer, decision tree, derivative-based, PEG/automata
+hybrid per region. Entropy-optimal dispatch when alternative probabilities known.
 
 ---
 
 ## XX. Succinct & learned structures
 
-| # | directive |
-|---|---|
-| 1 | Rank/select, succinct trees, Elias–Fano, wavelets, MPH, compressed tries for compiler-owned graphs. |
-| 2 | Learned indexes/hashes/cost models as **candidates** with bounded error and fallback — never semantic authority. |
+Rank/select, succinct trees, Elias–Fano, wavelets, MPH, compressed tries for
+compiler-owned graphs. Learned indexes/hashes/cost models as **candidates** with
+bounded error and fallback — never semantic authority.
 
 ---
 
 ## XXI. Learned compilation without learned correctness
 
-| # | directive |
-|---|---|
-| 1 | Models predict profitability, inlining, layout, reg hints, schedule, algorithm candidates; correctness from semantic validation. |
-| 2 | Meta-learning across project history; multi-objective Bayesian Pareto fronts; regret-minimizing and robust choices under uncertain profiles; online algorithms with competitive-ratio facts; amortized laws with potential functions. |
+Models predict profitability, inlining, layout, reg hints, schedule, algorithm
+candidates; correctness from semantic validation. Meta-learning across project
+history; multi-objective Bayesian Pareto fronts; regret-minimizing and robust
+choices under uncertain profiles; online algorithms with competitive-ratio facts;
+amortized laws with potential functions.
 
 ---
 
 ## XXII. Adaptive representations
 
-| # | directive |
-|---|---|
-| 1 | Cache-adaptive structures; self-tuning linear→sorted→hash→tree with **hysteresis**; persistent vs destructive update from linear/uniqueness facts; region polymorphism; ownership-transfer eliminating copies across threads/processes/foreign/GPU. |
+Cache-adaptive structures; self-tuning linear→sorted→hash→tree with **hysteresis**;
+persistent vs destructive update from linear/uniqueness facts; region polymorphism;
+ownership-transfer eliminating copies across threads/processes/foreign/GPU.
 
 ---
 
 ## XXIII. Device memory & heterogeneous placement
 
-| # | directive |
-|---|---|
-| 1 | Places: CPU reg/mem, GPU global/shared, NPU, FPGA BRAM, remote memory. |
-| 2 | Migration is realization transition. |
-| 3 | Communication-avoiding transforms; replicate vs recompute vs transfer; specialize for data location; energy/thermal/wear/reliability as explicit cost dimensions; approximate hardware when error demand permits. |
+Places: CPU reg/mem, GPU global/shared, NPU, FPGA BRAM, remote memory. Migration
+is realization transition. Communication-avoiding transforms; replicate vs
+recompute vs transfer; specialize for data location; energy/thermal/wear/reliability
+as explicit cost dimensions; approximate hardware when error demand permits.
 
 ---
 
 ## XXIV. Observer virtualization & semantic tooling
 
-| # | directive |
-|---|---|
-| 1 | Debuggers, profilers, LSP, MCP, tracing express **exact observation demand** — need not disable optimization. |
-| 2 | Semantic breakpoints, semantic profiling surviving layout, cross-version profile correspondence, static hotness, semantic diff-driven compile priority, deadline-aware and any-time compilation, proof-budgeted validation. |
+Debuggers, profilers, LSP, MCP, tracing express **exact observation demand** — need
+not disable optimization. Semantic breakpoints, semantic profiling surviving layout,
+cross-version profile correspondence, static hotness, semantic diff-driven compile
+priority, deadline-aware and any-time compilation, proof-budgeted validation.
 
-| # | directive |
-|---|---|
-| 1 | Reversible debugging via checkpoint + provenance + recomputation + invertible relations. |
+Reversible debugging via checkpoint + provenance + recomputation + invertible
+relations.
 
 ---
 
 ## XXV. Trusted-core minimization & semantic linking
 
-| # | directive |
-|---|---|
-| 1 | Small checker verifies graph facts, transform witnesses, machine refinement, evidence integrity. |
-| 2 | Proof-carrying foreign libraries; packages export graph-level semantics |
-| 3 | ABI-less whole-program composition where identity shared; semantic linking/dynamic linking; hot replacement by refinement; state migration synthesis; schema evolution as relations. |
+Small checker verifies graph facts, transform witnesses, machine refinement,
+evidence integrity. Proof-carrying foreign libraries; packages export graph-level
+semantics; ABI-less whole-program composition where identity shared; semantic
+linking/dynamic linking; hot replacement by refinement; state migration synthesis;
+schema evolution as relations.
 
 ---
 
 ## XXVI. Boundary contraction & composition-driven optimization
 
-| # | directive |
-|---|---|
-| 1 | Explicit **no-op boundary** when module/foreign/descriptor/closure/world boundary has zero physical realization. |
-| 2 | Generic pattern: `A → X → B` becomes `A → B` when X unobserved. |
-| 3 | Cancellation laws: encode∘decode, box∘unbox, compress∘decompress. |
-| 4 | Adjoint/inverse-pair exploitation in relation algebra. |
+Explicit **no-op boundary** when module/foreign/descriptor/closure/world boundary
+has zero physical realization. Generic pattern: `A → X → B` becomes `A → B` when
+X unobserved. Cancellation laws: encode∘decode, box∘unbox, compress∘decompress.
+Adjoint/inverse-pair exploitation in relation algebra.
 
 ---
 
 ## XXVII. Error, nondeterminism, reproducibility
 
-| # | directive |
-|---|---|
-| 1 | Rich failure algebra: may/must fail, retryable, idempotent, recoverable, error identity demanded or not. |
-| 2 | Nondeterminism: choose any refinement when observation permits. |
-| 3 | Fairness and determinism as explicit observations. |
-| 4 | Reproducibility (build, numeric, distributed) as world demand. |
+Rich failure algebra: may/must fail, retryable, idempotent, recoverable, error
+identity demanded or not. Nondeterminism: choose any refinement when observation
+permits. Fairness and determinism as explicit observations. Reproducibility
+(build, numeric, distributed) as world demand.
 
 ---
 
 ## XXVIII. Resources, topology, privacy, security
 
-| # | directive |
-|---|---|
-| 1 | Semantic resource types (file, socket, GPU, token, transaction) with lifecycle laws — not a separate linear type language. |
-| 2 | Temporal lifetime and spatial (co-located, NUMA, device) facts. |
-| 3 | Topology-aware world algebra; automatic distributed partitioning; distributed fusion; compute-vs-data migration; edge/server split. |
-| 4 | Privacy, differential privacy, crypto/MPC/homomorphic/enclave realization when world requires. |
-| 5 | Verified secure compilation extends refinement to noninterference/capability laws. |
+Semantic resource types (file, socket, GPU, token, transaction) with lifecycle
+laws — not a separate linear type language. Temporal lifetime and spatial
+(co-located, NUMA, device) facts. Topology-aware world algebra; automatic
+distributed partitioning; distributed fusion; compute-vs-data migration; edge/server
+split. Privacy, differential privacy, crypto/MPC/homomorphic/enclave realization
+when world requires. Verified secure compilation extends refinement to
+noninterference/capability laws.
 
 ---
 
@@ -371,9 +331,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ## XXIX. Generalize ↔ specialize (anti-unification axis)
 
-| # | directive |
-|---|---|
-| 1 | The complement of specialization is not merely “don’t specialize.” Given several relations sharing structure, discover the **least general generalization**: common semantic skeleton plus varying facts. |
+The complement of specialization is not merely “don’t specialize.” Given several
+relations sharing structure, discover the **least general generalization**: common
+semantic skeleton plus varying facts.
 
 | Capability | Graph expression |
 |---|---|
@@ -386,9 +346,7 @@ desired relation + laws + target world + cost → synthesize realization
 | Cross-package semantic deduplication | correspondence across compilation units |
 | Re-generalization for code size | undo specialization explosion when economics flip |
 
-| # | directive |
-|---|---|
-| 1 | Engine axis: |
+Engine axis:
 
 ```text
 generalize ↑
@@ -396,51 +354,40 @@ generalize ↑
 specialize ↓
 ```
 
-| # | directive |
-|---|---|
-| 1 | Pairs with supercompilation (§ II) and semantic factoring (§ XXX). |
+Pairs with supercompilation (§ II) and semantic factoring (§ XXX).
 
 ---
 
 ## XXX. Semantic factoring & minimum-description state
 
-| # | directive |
-|---|---|
-| 1 | Search for smallest factorization of repeated semantic structure: |
+Search for smallest factorization of repeated semantic structure:
 
 ```text
 common meaning + small varying facts
 ```
 
-| # | directive |
-|---|---|
-| 1 | instead of storing N independently expanded copies. |
-| 2 | Optimization objective: |
+instead of storing N independently expanded copies. Optimization objective:
 
-| # | directive |
-|---|---|
-| 1 | **minimize description length of retained semantic state while preserving every useful distinction.** |
+**minimize description length of retained semantic state while preserving every
+useful distinction.**
 
-| # | directive |
-|---|---|
-| 1 | Applies to: instantiated generics, specialized relations, target/world variants, parser states, descriptor families, machine variants, proof objects, compiler analysis states. |
-| 2 | Material compile-time memory win when paired with fact liveness (§ XXXVII). |
+Applies to: instantiated generics, specialized relations, target/world variants,
+parser states, descriptor families, machine variants, proof objects, compiler
+analysis states. Material compile-time memory win when paired with fact liveness
+(§ XXXVII).
 
 ---
 
 ## XXXI. Specialization economics & semantic clone control
 
-| # | directive |
-|---|---|
-| 1 | Specialization itself obeys realization economics — not an inlining threshold: |
+Specialization itself obeys realization economics — not an inlining threshold:
 
 ```text
 specialize · share · outline · generalize · merge · discard
 ```
 
-| # | directive |
-|---|---|
-| 1 | Trade runtime gain, code size, I-cache, compile work, profile frequency, future reuse. |
+Trade runtime gain, code size, I-cache, compile work, profile frequency, future
+reuse.
 
 | Capability | Graph expression |
 |---|---|
@@ -457,10 +404,9 @@ specialize · share · outline · generalize · merge · discard
 
 ## XXXII. Granularity as a physical degree of freedom
 
-| # | directive |
-|---|---|
-| 1 | Granularity is not only SIMD width. |
-| 2 | A computation may realize per element, vector, cache line, page, batch, task, process, or machine — jointly optimized with representation and placement. |
+Granularity is not only SIMD width. A computation may realize per element, vector,
+cache line, page, batch, task, process, or machine — jointly optimized with
+representation and placement.
 
 | Pattern | Graph expression |
 |---|---|
@@ -468,17 +414,13 @@ specialize · share · outline · generalize · merge · discard
 | Conversion elimination | contract `granularity A → convert → B` across boundaries |
 | Database morsels / network packets / GPU blocks | same abstraction, different domains |
 
-| # | directive |
-|---|---|
-| 1 | Generalizes fusion/fission (§ XXVI) with an explicit grain axis. |
+Generalizes fusion/fission (§ XXVI) with an explicit grain axis.
 
 ---
 
 ## XXXIII. Dimensional, shape, tensor, and sparse facts (without tensor kingdom)
 
-| # | directive |
-|---|---|
-| 1 | Dimensions and shape are **facts**, not a permanent Tensor semantic identity. |
+Dimensions and shape are **facts**, not a permanent Tensor semantic identity.
 
 | Capability | Graph expression |
 |---|---|
@@ -498,9 +440,7 @@ specialize · share · outline · generalize · merge · discard
 
 ## XXXIV. Abstraction, precision, and compiler self-query
 
-| # | directive |
-|---|---|
-| 1 | Analysis precision becomes a **resource** chosen by expected optimization gain. |
+Analysis precision becomes a **resource** chosen by expected optimization gain.
 
 | Capability | Graph expression |
 |---|---|
@@ -515,17 +455,14 @@ specialize · share · outline · generalize · merge · discard
 | Analysis fusion | fuse traversals when cheaper than independent scans |
 | Analysis sharing | one range producer for all consumers |
 
-| # | directive |
-|---|---|
-| 1 | Compiler analysis explosion is itself optimizable graph state (pairs with § XXX). |
+Compiler analysis explosion is itself optimizable graph state (pairs with § XXX).
 
 ---
 
 ## XXXV. Negative knowledge, contradiction, and minimal explanations
 
-| # | directive |
-|---|---|
-| 1 | Positive facts dominate today; **negative and contradictory facts** are equally first-class. |
+Positive facts dominate today; **negative and contradictory facts** are equally
+first-class.
 
 | Fact class | Graph expression |
 |---|---|
@@ -536,9 +473,7 @@ specialize · share · outline · generalize · merge · discard
 | Explanation-minimal diagnostics | smallest missing/conflicting fact set explaining failure |
 | Optimization refusal minimization | minimal fact blocking realization R (`idol why-not` built-in) |
 
-| # | directive |
-|---|---|
-| 1 | Truth lattice extends beyond unknown/absent/exact: |
+Truth lattice extends beyond unknown/absent/exact:
 
 ```text
 unknown · absent · possible · exact · contradictory
@@ -548,9 +483,7 @@ unknown · absent · possible · exact · contradictory
 
 ## XXXVI. Guards, profiles, and dynamic patching
 
-| # | directive |
-|---|---|
-| 1 | Runtime guards are synthesized artifacts subject to the same economics as code. |
+Runtime guards are synthesized artifacts subject to the same economics as code.
 
 | Capability | Graph expression |
 |---|---|
@@ -572,9 +505,7 @@ unknown · absent · possible · exact · contradictory
 
 ## XXXVII. Compiler-graph lifetimes & physical realization of Compiler B
 
-| # | directive |
-|---|---|
-| 1 | The compiler graph itself needs lifetime and placement optimization. |
+The compiler graph itself needs lifetime and placement optimization.
 
 | Capability | Graph expression |
 |---|---|
@@ -599,9 +530,7 @@ unknown · absent · possible · exact · contradictory
 
 ## XXXVIII. Determinism, distribution, and untrusted optimization
 
-| # | directive |
-|---|---|
-| 1 | Separate **semantic correspondence** from **physical coordinate**. |
+Separate **semantic correspondence** from **physical coordinate**.
 
 | Capability | Graph expression |
 |---|---|
@@ -614,17 +543,14 @@ unknown · absent · possible · exact · contradictory
 | Optimization marketplace | external provider proposes candidate + proof + cost; core validates |
 | Hardware vendor semantic providers | vendor supplies lawful realization candidates without source intrinsics |
 
-| # | directive |
-|---|---|
-| 1 | ONE-ID law preserved: hashes accelerate search; they do not become semantic identity. |
+ONE-ID law preserved: hashes accelerate search; they do not become semantic identity.
 
 ---
 
 ## XXXIX. Compiler compile-time architecture itself
 
-| # | directive |
-|---|---|
-| 1 | Umbra-style insight: representation and backend can be designed for **both** minimal compile latency and strong runtime results — applied to Compiler B itself. |
+Umbra-style insight: representation and backend can be designed for **both**
+minimal compile latency and strong runtime results — applied to Compiler B itself.
 
 | # | Capability | Graph expression |
 |---|---|---|
@@ -646,9 +572,7 @@ unknown · absent · possible · exact · contradictory
 
 ## XL. Agent-native compiler capabilities
 
-| # | directive |
-|---|---|
-| 1 | Mostly novel; fits Idol better than conventional compilers. |
+Mostly novel; fits Idol better than conventional compilers.
 
 | # | Capability | Graph expression |
 |---|---|---|
@@ -696,9 +620,7 @@ unknown · absent · possible · exact · contradictory
 
 ## XLII. Relation algebra specifically
 
-| # | directive |
-|---|---|
-| 1 | Formalize composition facts without importing category-theory syntax. |
+Formalize composition facts without importing category-theory syntax.
 
 | # | Law / construct | Graph expression |
 |---|---|---|
@@ -725,9 +647,7 @@ unknown · absent · possible · exact · contradictory
 
 ## XLIII. Injection / projection / interjection algebra specifically
 
-| # | directive |
-|---|---|
-| 1 | Underdeveloped relative to potential — could replace DI/module/target machinery. |
+Underdeveloped relative to potential — could replace DI/module/target machinery.
 
 | # | Capability | Graph expression |
 |---|---|---|
@@ -746,9 +666,7 @@ unknown · absent · possible · exact · contradictory
 
 ## XLIV. Lower-bound / theoretical-computing frontier
 
-| # | directive |
-|---|---|
-| 1 | FTCFTW wants **OPTIMAL** where physical lower bound is reached, not endless WIN chasing. |
+FTCFTW wants **OPTIMAL** where physical lower bound is reached, not endless WIN chasing.
 
 | # | Bound family | Graph expression |
 |---|---|---|
@@ -763,9 +681,7 @@ unknown · absent · possible · exact · contradictory
 
 ## XLV. Things Idol should explicitly not copy
 
-| # | directive |
-|---|---|
-| 1 | Take **ideas**, not **architectures**: |
+Take **ideas**, not **architectures**:
 
 | System | Take | Do not copy |
 |---|---|---|
@@ -782,9 +698,7 @@ unknown · absent · possible · exact · contradictory
 
 ## Highest-value still-missed ideas (FTCFTW-ranked)
 
-| # | directive |
-|---|---|
-| 1 | Compressed priority for ultimate capability, not breadth alone: |
+Compressed priority for ultimate capability, not breadth alone:
 
 1. Full **observation + demand** algebra.
 2. General **relation-law** algebra.
@@ -811,11 +725,8 @@ unknown · absent · possible · exact · contradictory
 
 ## Universal optimization architecture (target end state)
 
-| # | directive |
-|---|---|
-| 1 | Optimization itself becomes an ordinary semantic relation over graph facts. |
-| 2 | A candidate optimizer is **not** a privileged pass. |
-| 3 | A relation/law/provider says: |
+Optimization itself becomes an ordinary semantic relation over graph facts.
+A candidate optimizer is **not** a privileged pass. A relation/law/provider says:
 
 ```text
 given
@@ -830,25 +741,22 @@ produce
     cost estimate
 ```
 
-| # | directive |
-|---|---|
-| 1 | Then the universal compiler architecture is: |
+Then the universal compiler architecture is:
 
 ```text
 meaning → facts → observation → demand → laws → candidates → proofs → costs → selection
 ```
 
-| # | directive |
-|---|---|
-| 1 | That subsumes partial evaluation, rewriting, polyhedral optimization, superoptimization, autotuning, schedule search, hardware synthesis, database planning, layout selection, ABI synthesis, incremental compilation, and agent-generated optimizations — without granting any of them a separate semantic kingdom. |
+That subsumes partial evaluation, rewriting, polyhedral optimization, superoptimization,
+autotuning, schedule search, hardware synthesis, database planning, layout selection,
+ABI synthesis, incremental compilation, and agent-generated optimizations — without granting
+any of them a separate semantic kingdom.
 
 ---
 
 ## Architectural moat (summary)
 
-| # | directive |
-|---|---|
-| 1 | Push hardest on **interoperable algebras** over one identity set so that: |
+Push hardest on **interoperable algebras** over one identity set so that:
 
 ```text
 compiler optimization
@@ -862,18 +770,16 @@ distributed placement
 foreign adaptation
 ```
 
-| # | directive |
-|---|---|
-| 1 | are one family of graph queries — the largest unexplored moat still available to Idol. |
+are one family of graph queries — the largest unexplored moat still available to Idol.
 
 ---
 
 ## XLVI. Second-pass emphasis (112-item research injection)
 
-| # | directive |
-|---|---|
-| 1 | The numbered research injection (supercompilation through verified secure compilation) is **anchored here**, not in a parallel document. |
-| 2 | Use this table when auditing coverage — every item must map to an existing section or gain a new numbered entry in the master 687-item sequence. |
+The numbered research injection (supercompilation through verified secure
+compilation) is **anchored here**, not in a parallel document. Use this table
+when auditing coverage — every item must map to an existing section or gain a
+new numbered entry in the master 687-item sequence.
 
 | Items | Theme | Primary sections |
 |---|---|---|
@@ -896,23 +802,28 @@ foreign adaptation
 | 93–97 | Error/nondeterminism/fairness/determinism/reproducibility algebra | § XXVII |
 | 98–112 | Resource types, topology, privacy, crypto/MPC/enclave, verified secure compilation | § XXVIII |
 
-| # | directive |
-|---|---|
-| 1 | **Underweighted families now explicit:** supercompilation as the generic information-propagation engine (not a named pass); relational **solving modes** over one relation identity; observation-relative equivalence (`≡_demand`); trusted-core certificates for untrusted optimizers; boundary contraction as the generic pattern behind parser+consumer and encode∘decode elimination; minimal sufficient semantics as a universal FTCFTW principle (§ I items 5–6). |
+**Underweighted families now explicit:** supercompilation as the generic
+information-propagation engine (not a named pass); relational **solving modes**
+over one relation identity; observation-relative equivalence (`≡_demand`);
+trusted-core certificates for untrusted optimizers; boundary contraction as the
+generic pattern behind parser+consumer and encode∘decode elimination; minimal
+sufficient semantics as a universal FTCFTW principle (§ I items 5–6).
 
-| # | directive |
-|---|---|
-| 1 | **Master architecture (12 dimensions):** identity · facts · observations · demand · laws · change · correspondence · search · proof · cost · world · realization — with **directionality as solving mode**, not second relation identity. |
-| 2 | The moat is making composition, projection, injection, demand, change, equivalence, and realization selection **interoperable algebras** over the same identities (see § Architectural moat). |
+**Master architecture (12 dimensions):** identity · facts · observations ·
+demand · laws · change · correspondence · search · proof · cost · world ·
+realization — with **directionality as solving mode**, not second relation
+identity. The moat is making composition, projection, injection, demand,
+change, equivalence, and realization selection **interoperable algebras** over
+the same identities (see § Architectural moat).
 
 ---
 
 ## XLVII. Third-pass emphasis (76-item "strangeness" frontier)
 
-| # | directive |
-|---|---|
-| 1 | After recognizable compiler categories are mapped, the remaining frontier is **information Idol still does not model** and **physical work that becomes removable once it is**. |
-| 2 | Items **688–763** in the master sequence anchor here; thematic bodies live in **§ XXIX–XXXVIII** (not a parallel ontology). |
+After recognizable compiler categories are mapped, the remaining frontier is
+**information Idol still does not model** and **physical work that becomes
+removable once it is**. Items **688–763** in the master sequence anchor here;
+thematic bodies live in **§ XXIX–XXXVIII** (not a parallel ontology).
 
 | Items | Theme | Primary sections |
 |---|---|---|
@@ -928,18 +839,17 @@ foreign adaptation
 | 746–755 | Layout autotuning, target-specific Compiler B, self-specialization, feature DCE, staging, snapshots, shared pages | § XXXVII |
 | 756–763 | Deterministic parallel eval, correspondence/id split, canonical serialization, Merkle acceleration, proof-carrying distribution, untrusted farms, optimization marketplace, vendor providers | § XXXVIII |
 
-| # | directive |
-|---|---|
-| 1 | **Guiding axis (repeat until irreducible):** |
+**Guiding axis (repeat until irreducible):**
 
 ```text
 generalize ↑   — anti-unification, factoring, outlining, re-generalization
 specialize ↓   — demand, profile, world seal, guarded multiversion
 ```
 
-| # | directive |
-|---|---|
-| 1 | **FTCFTW hooks:** code-size dominance needs **re-generalization** (688–690), not only specialization; compile-time memory needs **factoring + liveness** (689, 738–745); agent repair needs **minimal explanations/refusals** (717–718); untrusted scale needs **proof-carrying workers** (761–762) without Merkle identity (759). |
+**FTCFTW hooks:** code-size dominance needs **re-generalization** (688–690), not
+only specialization; compile-time memory needs **factoring + liveness** (689,
+738–745); agent repair needs **minimal explanations/refusals** (717–718); untrusted
+scale needs **proof-carrying workers** (761–762) without Merkle identity (759).
 
 ---
 

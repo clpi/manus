@@ -1,36 +1,34 @@
 # PERF-MONOTONE program
 
-| # | directive |
-|---|---|
-| 1 | Durable program for historical compiler exploitation and monotone performance admission in Idol. |
-| 2 | Main never loses an already-known lawful realization or an already-measured performance point merely because a new experiment lands. |
+Durable program for historical compiler exploitation and monotone performance
+admission in Idol. Main never loses an already-known lawful realization or an
+already-measured performance point merely because a new experiment lands.
 
 ## Principle
 
-| # | directive |
-|---|---|
-| 1 | A known compiler technique is not adopted by slowly rediscovering it under a new name. |
-| 2 | The route is: |
+A known compiler technique is not adopted by slowly rediscovering it under a new
+name. The route is:
 
-| # | directive |
-|---|---|
-| 1 | known technique → recover its semantic precondition → express that precondition in Idol facts → reuse/adapt the mature algorithm as a realization producer → prove its output equivalent → retain it alongside other candidates |
+    known technique
+        → recover its semantic precondition
+        → express that precondition in Idol facts
+        → reuse/adapt the mature algorithm as a realization producer
+        → prove its output equivalent
+        → retain it alongside other candidates
 
-| # | directive |
-|---|---|
-| 1 | The opposite — rejecting a technique because it is "LLVM-like" and then rebuilding it under a new Idol name — is forbidden. |
+The opposite — rejecting a technique because it is "LLVM-like" and then
+rebuilding it under a new Idol name — is forbidden.
 
-| # | directive |
-|---|---|
-| 1 | Competitors are oracles, never floors. |
-| 2 | C, clang, GCC, Rust, Zig, Cranelift, Wasmtime, hand assembly, tuned libraries, GPUs and existing algorithms are things to beat, not limits to reach. |
-| 3 | The floor is physics, information, and required observation. |
+Competitors are oracles, never floors. C, clang, GCC, Rust, Zig, Cranelift,
+Wasmtime, hand assembly, tuned libraries, GPUs and existing algorithms are
+things to beat, not limits to reach. The floor is physics, information, and
+required observation.
 
 ## Compiler Prior Art Matrix
 
-| # | directive |
-|---|---|
-| 1 | No agent may implement a known optimization family until this row identifies the best existing implementation or reference and explicitly states what Idol adds beyond it. |
+No agent may implement a known optimization family until this row identifies the
+best existing implementation or reference and explicitly states what Idol adds
+beyond it.
 
 | technique | precedent | reference | idol prerequisite | idol implementation | status | benchmark |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -244,9 +242,9 @@
 
 ## Mandatory Performance Monotonicity Contract
 
-| # | directive |
-|---|---|
-| 1 | Every merge touching parser, semantic analysis, graph, demand, realization, codegen, runtime, foreign bridge, optimizer, proof engine, layout, or ABI must satisfy: |
+Every merge touching parser, semantic analysis, graph, demand, realization,
+codegen, runtime, foreign bridge, optimizer, proof engine, layout, or ABI must
+satisfy:
 
 | invariant | required condition |
 | --- | --- |
@@ -267,15 +265,11 @@
 | lower-bound status | known floor reported separately from merely "fast" |
 | loss visibility | no aggregate score may conceal a regression |
 
-| # | directive |
-|---|---|
-| 1 | Main goes green only if every row above passes. |
+Main goes green only if every row above passes.
 
 ## What remains genuinely Idol-specific
 
-| # | directive |
-|---|---|
-| 1 | The novelty budget is concentrated here: |
+The novelty budget is concentrated here:
 
 - one semantic id
 - exact lawset-preserving foreign ingestion
@@ -292,9 +286,7 @@
 - cross-law fusion
 - semantic frontier exposed to agents
 
-| # | directive |
-|---|---|
-| 1 | Everything below that should be aggressively informed by prior art. |
+Everything below that should be aggressively informed by prior art.
 
 ## Three hard monotonicity laws
 
@@ -313,23 +305,21 @@
 
 ## Historical champion realization
 
-| # | directive |
-|---|---|
-| 1 | For every semantic benchmark region: |
+For every semantic benchmark region:
 
-| # | directive |
-|---|---|
-| 1 | champion: revision realization target objective cost vector |
+    champion:
+        revision
+        realization
+        target
+        objective
+        cost vector
 
-| # | directive |
-|---|---|
-| 1 | The champion remains a conceptual competitor until either a new candidate dominates it or a semantic-law change invalidates its equivalence. |
+The champion remains a conceptual competitor until either a new candidate
+dominates it or a semantic-law change invalidates its equivalence.
 
 ## Permanent PERF-MONOTONE gate
 
-| # | directive |
-|---|---|
-| 1 | For every merge touching compiler stages, the gate must answer: |
+For every merge touching compiler stages, the gate must answer:
 
 - baseline revision
 - dirty: false

@@ -1,12 +1,9 @@
 # Compiler source debt projection (`lib/compiler/**`)
 
-| # | directive |
-|---|---|
-| 1 | **Disposition:** research / audit projection — not semantic law. |
+**Disposition:** research / audit projection — not semantic law.
 
-| # | directive |
-|---|---|
-| 1 | Every construct in self-host compiler source must be classified before agents treat a green module as architectural progress. |
+Every construct in self-host compiler source must be classified before agents
+treat a green module as architectural progress.
 
 ## Classification legend
 
@@ -18,9 +15,7 @@
 | **probe** | Diagnostic slice; never compiler-B architecture |
 | **historical** | Superseded or wrong-but-green; do not copy patterns |
 
-| # | directive |
-|---|---|
-| 1 | **Rule:** direct self-host green proves **physical reach**, not **authority quality**. |
+**Rule:** direct self-host green proves **physical reach**, not **authority quality**.
 
 ## Seed compiler modules (initial projection)
 

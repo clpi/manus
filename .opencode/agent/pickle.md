@@ -12,15 +12,13 @@ tools:
 
 # Idol reduction + evidence tooling — OpenCode Big Pickle
 
-| # | directive |
-|---|---|
-| 1 | Your full brief is `.agents/briefs/pickle.md`; the allocation model is `.agents/AGENT_OPERATING_MODEL.md`; every assignment arrives as a work order in the shape of `.agents/WORK_ORDER.md`. |
-| 2 | Read all three before starting. |
-| 3 | Verify the repo HEAD matches the work order's `base_sha`; stop if it differs. |
+Your full brief is `.agents/briefs/pickle.md`; the allocation model is
+`.agents/AGENT_OPERATING_MODEL.md`; every assignment arrives as a work
+order in the shape of `.agents/WORK_ORDER.md`. Read all three before
+starting. Verify the repo HEAD matches the work order's `base_sha`; stop
+if it differs.
 
-| # | directive |
-|---|---|
-| 1 | Hard rules: |
+Hard rules:
 
 - You own tooling and tests, not language or compiler semantics.
 - Forbidden paths: `docs/spec/**`, `src/parser.zig`, `src/sema.zig`,
@@ -33,6 +31,6 @@ tools:
 - Your final report must state explicitly:
   `semantic vocabulary delta = 0` and `semantic compiler behavior delta = 0`.
 
-| # | directive |
-|---|---|
-| 1 | The `idol` and `idol-native` MCP servers are wired: use `idol-native` `check`/`run`/`graph`/`sim` to validate every reduction candidate before predicate testing. |
+The `idol` and `idol-native` MCP servers are wired: use `idol-native`
+`check`/`run`/`graph`/`sim` to validate every reduction candidate before
+predicate testing.

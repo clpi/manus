@@ -1,8 +1,8 @@
 # Graph-shape audit — wasm ingest evidence vs compiler sim-v0 (measured)
 
-| # | directive |
-|---|---|
-| 1 | Compiler graph of ingest.id itself: 741 nodes, 1,105 edges, 95 published applications (of 113 candidates, 17 bootstrap, 1 blocking), 15 bodies with recurrence regions, 2 worlds. |
+Compiler graph of ingest.id itself: 741 nodes, 1,105 edges, 95 published
+applications (of 113 candidates, 17 bootstrap, 1 blocking), 15 bodies with
+recurrence regions, 2 worlds.
 
 ## Field-level delta (my records vs the compiler's applications[])
 
@@ -20,12 +20,13 @@
 
 ## Conformance verdict
 
-| # | directive |
-|---|---|
-| 1 | Records are shape-adjacent evidence, not semantic graph applications. |
-| 2 | The sequential application counter, Wasm function index, operand counter, and local relation label are provenance/classification data; they are not substitutes for exact graph identities. |
-| 3 | The wasm-native fields (width/overflow/origin/determinacy) are foreign-law inputs and must not be flattened away. |
-| 4 | Closure requires the Wasm-law producer to publish exact shared graph ids and facts, not a consumer-side renumbering. |
+Records are shape-adjacent evidence, not semantic graph applications.
+The sequential application counter, Wasm function index, operand
+counter, and local relation label are provenance/classification data;
+they are not substitutes for exact graph identities. The wasm-native
+fields (width/overflow/origin/determinacy) are foreign-law inputs and
+must not be flattened away. Closure requires the Wasm-law producer to
+publish exact shared graph ids and facts, not a consumer-side renumbering.
 
 ## Performance opportunities identified this audit
 

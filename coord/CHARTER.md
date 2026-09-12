@@ -1,19 +1,14 @@
 # Live worker charter — Idol self-host campaign
 
-| # | directive |
-|---|---|
-| 1 | Read this before touching the tree. |
-| 2 | It is the contract every Kanban worker, subagent, cron tick, and human lane on any device operates under. |
+Read this before touching the tree. It is the contract every Kanban worker,
+subagent, cron tick, and human lane on any device operates under.
 
 ## The one truth
 
-| # | directive |
-|---|---|
-| 1 | `clpi/idol` `main` on GitHub is the only integration surface. |
-| 2 | Every device holds a worktree that `scripts/live/reconcile.sh` keeps within one tick of `origin/main`. |
-| 3 | There is no second integration branch. |
-| 4 | There is no long-lived lane. |
-| 5 | Work you do not land is work that did not happen. |
+`clpi/idol` `main` on GitHub is the only integration surface. Every device
+holds a worktree that `scripts/live/reconcile.sh` keeps within one tick of
+`origin/main`. There is no second integration branch. There is no long-lived
+lane. Work you do not land is work that did not happen.
 
 ## Before you write a byte
 
@@ -49,27 +44,22 @@
 
 ## If you are blocked
 
-| # | directive |
-|---|---|
-| 1 | A missing fact, a broken tool, an unreachable host — these are work, not status. |
-| 2 | Fix in place, or create the exact repair card as this card's parent, comment why, and complete or block this one. |
-| 3 | Never end with a paragraph that begins "The next step would be". |
+A missing fact, a broken tool, an unreachable host — these are work, not
+status. Fix in place, or create the exact repair card as this card's parent,
+comment why, and complete or block this one. Never end with a paragraph that
+begins "The next step would be".
 
-| # | directive |
-|---|---|
-| 1 | Fail closed only on: a spec decision the human owns (`coord/decisions.md`), credentials, or destructive external action. |
+Fail closed only on: a spec decision the human owns (`coord/decisions.md`),
+credentials, or destructive external action.
 
 ## Providers
 
-| # | directive |
-|---|---|
-| 1 | No PAYG. |
-| 2 | Use the profile/provider pinned on the card. |
-| 3 | If it is exhausted (402/429 quota), `hermes kanban --board idol-selfhost reassign <id>` to the next approved profile and comment the failure; do not switch to a metered key. |
+No PAYG. Use the profile/provider pinned on the card. If it is exhausted
+(402/429 quota), `hermes kanban --board idol-selfhost reassign <id>` to the
+next approved profile and comment the failure; do not switch to a metered key.
 
 ## Evidence
 
-| # | directive |
-|---|---|
-| 1 | Every performance or cross-platform claim binds to a revision and a host: `evidence/` entries carry `sha`, `host`, `toolchain`, and the raw command output. |
-| 2 | Unbound numbers are deleted on sight. |
+Every performance or cross-platform claim binds to a revision and a host:
+`evidence/` entries carry `sha`, `host`, `toolchain`, and the raw command
+output. Unbound numbers are deleted on sight.

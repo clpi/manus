@@ -1,9 +1,8 @@
 # wart emitter mining — the minimum physical emitter basis
 
-| # | directive |
-|---|---|
-| 1 | Lane 6 per the FTCFTW directive (runtime lane: mine wart's proven emitters; do NOT inherit its architecture). |
-| 2 | Source: clpi/wart @ ca2b0b9c (frozen oracle), read-only. |
+Lane 6 per the FTCFTW directive (runtime lane: mine wart's proven
+emitters; do NOT inherit its architecture). Source: clpi/wart @
+ca2b0b9c (frozen oracle), read-only.
 
 ## Measured emitter surface
 
@@ -15,10 +14,12 @@
 | src/wasm/jit_x64_engine.zig | 965 | x64 execution engine |
 | **total** | **40,986** | the whole baseline-JIT subsystem |
 
-| # | directive |
-|---|---|
-| 1 | Emitter API shape (arm64, 17 emit/enc functions, ~1,394 raw hex encodings): instruction helpers named for the MACHINE operation — `add/adds/cmp/cmn/csel/cbz/cbnz/b/bcond/blr/binop/cmpop/copysign/ accum/...` — each emitting fixed encodings with register operands, plus `__clear_cache` for icache coherence. |
-| 2 | That is the whole trick: a thin mnemonic → bytes table plus operand slots. |
+Emitter API shape (arm64, 17 emit/enc functions, ~1,394 raw hex
+encodings): instruction helpers named for the MACHINE operation —
+`add/adds/cmp/cmn/csel/cbz/cbnz/b/bcond/blr/binop/cmpop/copysign/
+accum/...` — each emitting fixed encodings with register operands, plus
+`__clear_cache` for icache coherence. That is the whole trick: a thin
+mnemonic → bytes table plus operand slots.
 
 ## The minimum physical emitter basis (the extraction target)
 
@@ -45,15 +46,17 @@
 
 ## What NOT to inherit (per the directive)
 
-| # | directive |
-|---|---|
-| 1 | The 23k-LOC shared compile driver (Wasm-IR-shaped), the separate interpreter/JIT semantic models, opcode-by-opcode architecture, the Wasm-specific register allocator assumptions, and the POSIX-shaped WASI subsystems. |
-| 2 | The 512,986-assertion corpus, WASI/WASIX/component oracles, and both ISA encoding tables ARE the assets. |
+The 23k-LOC shared compile driver (Wasm-IR-shaped), the separate
+interpreter/JIT semantic models, opcode-by-opcode architecture, the
+Wasm-specific register allocator assumptions, and the POSIX-shaped WASI
+subsystems. The 512,986-assertion corpus, WASI/WASIX/component oracles,
+and both ISA encoding tables ARE the assets.
 
 ## Min-LOC thesis check
 
-| # | directive |
-|---|---|
-| 1 | The full wart JIT is ~41k LOC because encoding, selection, and Wasm semantics are fused. |
-| 2 | Split by the basis above: encoders (small tables), selection (fact-driven, shared with Idol), semantics (graph facts — already the compiler's). |
-| 3 | The emitter basis target is a LOW single-digit thousand LOC for both ISAs, with selection authored once against graph facts — that is the convergence-from-both-sides the directive specifies. |
+The full wart JIT is ~41k LOC because encoding, selection, and Wasm
+semantics are fused. Split by the basis above: encoders (small tables),
+selection (fact-driven, shared with Idol), semantics (graph facts —
+already the compiler's). The emitter basis target is a LOW single-digit
+thousand LOC for both ISAs, with selection authored once against graph
+facts — that is the convergence-from-both-sides the directive specifies.

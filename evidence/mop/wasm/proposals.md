@@ -1,17 +1,18 @@
 # Wasm proposal space — opcode-level gap map and perf lanes
 
-| # | directive |
-|---|---|
-| 1 | Measured at 6dce585a. |
-| 2 | Opcode table: tools/wasm/src/wasm/op.id (151 entries; saturated with the ruled antipatterns — `M = {`, snake_case `OP_*` — its documented SOURCE-ZERO debt). |
-| 3 | Spec totals are public proposal constants; oracle = wasmtime on this machine. |
+Measured at 6dce585a. Opcode table: tools/wasm/src/wasm/op.id (151
+entries; saturated with the ruled antipatterns — `M = {`, snake_case
+`OP_*` — its documented SOURCE-ZERO debt). Spec totals are public
+proposal constants; oracle = wasmtime on this machine.
 
 ## Convergence doctrine (user ruling, 2026-08-17)
 
-| # | directive |
-|---|---|
-| 1 | The runtime leverages ALL language features in service of highest performance at lowest syntax: opcode tables via comptime tabulation, dispatch via call specialization, memory via place/region facts, SIMD via simd_lower, the lawset imported through the one graph. |
-| 2 | The private standalone engine with hand-rolled tables IS the antipattern; candidate realizations are selected by the transform registry. |
+The runtime leverages ALL language features in service of highest
+performance at lowest syntax: opcode tables via comptime tabulation,
+dispatch via call specialization, memory via place/region facts, SIMD
+via simd_lower, the lawset imported through the one graph. The private
+standalone engine with hand-rolled tables IS the antipattern; candidate
+realizations are selected by the transform registry.
 
 ## Proposal ledger (to completion)
 
@@ -34,15 +35,14 @@
 | placeholder
 | WASIX | ~70 syscalls | 0 | NO local oracle (wart calibration first) | largest surface |
 
-| # | directive |
-|---|---|
-| 1 | Completion order by leverage: bulk-memory -> reference-types -> tail-call -> multi-value/multi-memory verification -> SIMD -> threads -> WASI p1 closure -> relaxed-simd -> GC -> exceptions -> WASI p2 -> WASIX. |
+Completion order by leverage: bulk-memory -> reference-types ->
+tail-call -> multi-value/multi-memory verification -> SIMD -> threads ->
+WASI p1 closure -> relaxed-simd -> GC -> exceptions -> WASI p2 -> WASIX.
 
 ## Perf lanes (measured)
 
-| # | directive |
-|---|---|
-| 1 | Full-corpus wasmtime baseline: bench.oracle.tsv (66 fixtures, 0 timeouts, 12.33 s total). |
+Full-corpus wasmtime baseline: bench.oracle.tsv (66 fixtures, 0
+timeouts, 12.33 s total).
 
 1. **STARTUP LANE — winnable now.** Every fixture pays wasmtime's
    ~130 ms floor; only hash (583 ms) and hash2b (4405 ms) exceed it.
@@ -74,7 +74,6 @@
 
 ## Standing blockers
 
-| # | directive |
-|---|---|
-| 1 | Admission blocked at module-table representation (corrected H8) plus req's unresolved applications. |
-| 2 | Oracles pinned: wasmtime + wart (ca2b0b9c ReleaseFast). |
+Admission blocked at module-table representation (corrected H8) plus
+req's unresolved applications. Oracles pinned: wasmtime + wart
+(ca2b0b9c ReleaseFast).

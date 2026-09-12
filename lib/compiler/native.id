@@ -341,79 +341,6 @@ mulred: str = (c: str, rd: i64, n: str, v: i64, names: str)
         return c .. word(addsh(rd, reg(names, n), reg(names, n), 3))
     ""
 
-divmagic: str = (dd: i64)
-    ad = dd
-    if ad < 0
-        ad = 0 - ad
-    tw = 0 - 9223372036854775807 - 1
-    tm = tw - 1
-    qd = tm / ad
-    pr = qd * ad
-    rm = tm - pr
-    an = tm - rm
-    p = 63
-    t1 = tw / an
-    q1 = 0 - t1
-    pr = q1 * an
-    r1 = tw - pr
-    t2 = tw / ad
-    q2 = 0 - t2
-    pr = q2 * ad
-    r2 = tw - pr
-    fin = 0
-    while fin == 0
-        p = p + 1
-        q1 = q1 * 2
-        r1d = an - r1
-        if r1 >= r1d
-            q1 = q1 + 1
-            r1 = r1 - r1d
-        else
-            r1 = r1 * 2
-        q2 = q2 * 2
-        r2 = r2 * 2
-        if r2 >= ad
-            q2 = q2 + 1
-            r2 = r2 - ad
-        dl = ad - r2
-        if q1 < dl
-            fin = 0
-        else
-            if q1 == dl and r1 == 0
-                fin = 0
-            else
-                fin = 1
-    mg = q2 + 1
-    sh = p - 64
-    dec(mg) .. "|" .. dec(sh)
-
-divscan: str = (src: str)
-    out = ""
-    lc = rows(src)
-    k = 0
-    while k < lc
-        t = row(src, k)
-        q = 1
-        while q <= t:len()
-            if t:byte(q) == 47
-                r = q + 1
-                while r <= t:len() and t:byte(r) == 32
-                    r = r + 1
-                d0 = r
-                while r <= t:len() and digit(t:byte(r)) == 1
-                    r = r + 1
-                if r > d0
-                    v = num(t:sub(d0, r - 1))
-                    if v > 1 and v < 4294967296 and powtwo(v) == 0 - 1
-                        ds = dec(v)
-                        if hassub("|" .. out, "|" .. ds .. "|") == 0
-                            out = out .. ds .. "|"
-                q = r
-            else
-                q = q + 1
-        k = k + 1
-    out
-
 purecount: i64 = (src: str, k: i64, lc: i64, ind: i64, lhs: str)
     bind = 0
     k2 = k + 1
@@ -540,28 +467,54 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
                 if dd < 0
                     return c .. word(minus(rd, 31, 9))
                 return c .. word(mov(rd, 9))
-            ms = divmagic(dd)
-            mg = at(ms, 0)
-            sh = at(ms, 1)
-            mgnm = "divmg:" .. dec(dd)
-            if hasname(names, mgnm) == 1
-                mr = reg(names, mgnm)
-                c = c .. word(2604662784 | (ra << 16) | (mr << 5) | rd)
-                if mg < 0
-                    c = c .. word(add(rd, rd, ra))
-                if sh > 0
-                    c = c .. word(2470445056 | (sh << 16) | (63 << 10) | (rd << 5) | rd)
-                c = c .. word((2332033024 | (1 << 22) | (63 << 10) | (rd << 16) | (rd << 5) | rd))
-                if dd < 0
-                    return c .. word(minus(rd, 31, rd))
-                return c
+            tw = 0 - 9223372036854775807 - 1
+            tm = tw - 1
+            qd = tm / ad
+            pr = qd * ad
+            rm = tm - pr
+            an = tm - rm
+            p = 63
+            t1 = tw / an
+            q1 = 0 - t1
+            pr = q1 * an
+            r1 = tw - pr
+            t2 = tw / ad
+            q2 = 0 - t2
+            pr = q2 * ad
+            r2 = tw - pr
+            fin = 0
+            while fin == 0
+                p = p + 1
+                q1 = q1 * 2
+                r1d = an - r1
+                if r1 >= r1d
+                    q1 = q1 + 1
+                    r1 = r1 - r1d
+                else
+                    r1 = r1 * 2
+                q2 = q2 * 2
+                r2 = r2 * 2
+                if r2 >= ad
+                    q2 = q2 + 1
+                    r2 = r2 - ad
+                dl = ad - r2
+                if q1 < dl
+                    fin = 0
+                else
+                    if q1 == dl and r1 == 0
+                        fin = 0
+                    else
+                        fin = 1
+            mg = q2 + 1
+            sh = p - 64
             c = imm(c, 9, mg)
             c = c .. word(2604662784 | (9 << 16) | (ra << 5) | 10)
             if mg < 0
                 c = c .. word(add(10, 10, ra))
             if sh > 0
                 c = c .. word(2470445056 | (sh << 16) | (63 << 10) | (10 << 5) | 10)
-            c = c .. word((2332033024 | (1 << 22) | (63 << 10) | (10 << 16) | (10 << 5) | 10))
+            c = c .. word(3544186880 | (63 << 16) | (63 << 10) | (10 << 5) | 9)
+            c = c .. word(add(10, 10, 9))
             if dd < 0
                 return c .. word(minus(rd, 31, 10))
             return c .. word(mov(rd, 10))
@@ -1155,18 +1108,6 @@ main: i64 = ()
     src = compiler.opt.licm.licm(src)
     names = ""
     code = ""
-    mgs = divscan(src)
-    mp = 1
-    while mp <= mgs:len()
-        mq = mp
-        while mq <= mgs:len() and mgs:byte(mq) != 124
-            mq = mq + 1
-        if mq > mp
-            ds = mgs:sub(mp, mq - 1)
-            nm = "divmg:" .. ds
-            names = names .. nm .. "|"
-            code = imm(code, reg(names, nm), at(divmagic(num(ds)), 0))
-        mp = mq + 1
     wjmp = ""
     wrl = ""
     wrr = ""
@@ -1177,7 +1118,7 @@ main: i64 = ()
     pendkind = 0
     pendval = 0
     fix2 = "target=reassoc layer=emit merge=add,subneg,mul flush=read,write,loop,final arith=mod2p64 exclude=div,subreassoc,crossvar canon=egraph-distinct"
-    fix3 = "target=div layer=calc algo=hd10-signed-division domain=absdivisor-lt-2p32 emit=smulh,addsub,asr,lsrcorr special=d1-mov,dneg1-neg,pow2-biasshift negdiv=posmagic-negate fallback=sdiv verify=exhaustive32-sampled64 magichoist=prologue-hiddenvar-divmg-colon-unforgeable accum=rd fusecorr=add-rd-rd-rd-lsr63"
+    fix3 = "target=div layer=calc algo=hd10-signed-division domain=absdivisor-lt-2p32 emit=smulh,addsub,asr,lsrcorr special=d1-mov,dneg1-neg,pow2-biasshift negdiv=posmagic-negate fallback=sdiv verify=exhaustive32-sampled64"
     lc = rows(src)
     k = 0
     while k < lc

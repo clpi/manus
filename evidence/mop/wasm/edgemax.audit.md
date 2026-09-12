@@ -1,9 +1,8 @@
 # EDGE-MAX audit — ingest relations vs existing edges (measured)
 
-| # | directive |
-|---|---|
-| 1 | Existing str edges in the canonical corpus (native.id, comptime.id): `len`, `sub`, `byte`, `find`, `has`, `to`. |
-| 2 | Plus `stdin:line`, `stdout:write`, `path:read`, `os.args`, `os.env`, `mem.*`. |
+Existing str edges in the canonical corpus (native.id, comptime.id):
+`len`, `sub`, `byte`, `find`, `has`, `to`. Plus `stdin:line`,
+`stdout:write`, `path:read`, `os.args`, `os.env`, `mem.*`.
 
 ## Violations found (mashed compounds, not law-known, not edges)
 
@@ -21,12 +20,13 @@
 
 ## Verdict
 
-| # | directive |
-|---|---|
-| 1 | 14 relations |
-| 2 | NONE are law-known; the majority are foreign-term+noun mashes following the `ulebval` pattern I introduced. |
-| 3 | The correct fixes: (1) inline the single-expression relations (bytecount, pow2) — zero new edges |
-| 4 | (2) rename subject-first edge faces for the rest (op:name, c:hex) |
-| 5 | (3) the LEB pair folds into ONE walk when packs land |
-| 6 | (4) ingestmain folds back into main or becomes the module's declared entry under a single word. |
-| 7 | The census/compound gate does NOT catch these (they're function names, not paths) — the gate needs a source-identifier pass (gate/idiom.id's compound() already exists for this; it just cannot execute yet). |
+14 relations; NONE are law-known; the majority are foreign-term+noun
+mashes following the `ulebval` pattern I introduced. The correct fixes:
+(1) inline the single-expression relations (bytecount, pow2) — zero
+new edges; (2) rename subject-first edge faces for the rest (op:name,
+c:hex); (3) the LEB pair folds into ONE walk when packs land; (4)
+ingestmain folds back into main or becomes the module's declared entry
+under a single word. The census/compound gate does NOT catch these
+(they're function names, not paths) — the gate needs a source-identifier
+pass (gate/idiom.id's compound() already exists for this; it just
+cannot execute yet).

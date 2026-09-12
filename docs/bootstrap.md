@@ -1,84 +1,95 @@
 # Idol bootstrap contract
 
-| # | directive |
-|---|---|
-| 1 | No executable compiler-B/C evidence producer exists yet. |
-| 2 | The seed remains the host compiler; it does not obtain bootstrap authority from a project-owned source model. |
-| 3 | This document is a human projection of the executed authority frontier, not bootstrap evidence or production authority. |
-| 4 | The immediate target is compiler B, not a sovereign backend. |
-| 5 | No compiler B exists. |
+No executable compiler-B/C evidence producer exists yet. The seed remains the
+host compiler; it does not obtain bootstrap authority from a project-owned
+source model. This document is a human projection of the executed authority
+frontier, not bootstrap evidence or production authority. The immediate target
+is compiler B, not a sovereign backend. No compiler B exists.
 
-| # | directive |
-|---|---|
-| 1 | **Progress dashboard:** three dominant metrics and normalized audit scores live in [`docs/METRICS.md`](METRICS.md). |
-| 2 | Subordinate diagnostics (file counts, Zig counts, keyword counts) must not headline status reports. |
+**Progress dashboard:** three dominant metrics and normalized audit scores live
+in [`docs/METRICS.md`](METRICS.md). Subordinate diagnostics (file counts, Zig
+counts, keyword counts) must not headline status reports.
 
-| # | directive |
-|---|---|
-| 1 | **Evidence-subject (`law.evidence.subject`):** live tree is not automatically the measured program. `59093d7b` is an evidence revision whose subject is `29f62035`. |
-| 2 | Do not report FTCFTW or unit aggregates “at HEAD” unless the measured subject equals the live tree. |
-| 3 | FTCFTW is **invalid** as a performance claim. |
-| 4 | No compiler B exists. |
+**Evidence-subject (`law.evidence.subject`):** live tree is not automatically
+the measured program. `59093d7b` is an evidence revision whose subject is
+`29f62035`. Do not report FTCFTW or unit aggregates “at HEAD” unless the
+measured subject equals the live tree. FTCFTW is **invalid** as a performance
+claim. No compiler B exists.
 
-| # | directive |
-|---|---|
-| 1 | **Critical path to B:** source-family → lexical identity (GAP-145) → grammar role (GAP-134) → parser → exact graph → demand → **one representation decision** → specialization (budgeted) → direct realization → object → evidence → B → C. |
-| 2 | Eight production lanes live in `.agents/AGENT_COORDINATION.md`. |
-| 3 | Do not start a parser slice that reconstructs or outruns GAP-145; a bounded joint transfer must consume producer facts and delete the replaced host decision in the same diff. |
-| 4 | Do not let later passes re-decide boxing/stack/register/heap. |
+**Critical path to B:** source-family → lexical identity (GAP-145) → grammar
+role (GAP-134) → parser → exact graph → demand → **one representation
+decision** → specialization (budgeted) → direct realization → object →
+evidence → B → C. Eight production lanes live in
+`.agents/AGENT_COORDINATION.md`. Do not start a parser slice that reconstructs
+or outruns GAP-145; a bounded joint transfer must consume producer facts and
+delete the replaced host decision in the same diff.
+Do not let later passes re-decide boxing/stack/register/heap.
 
 ## Current stage: S0
 
-| # | directive |
-|---|---|
-| 1 | **S0 (active):** the pinned Zig seed produces the host compiler. |
+**S0 (active):** the pinned Zig seed produces the host compiler.
 
-| # | directive |
-|---|---|
-| 1 | A production host-built `idol` executable exists. |
-| 2 | No compiler B built from canonical Idol compiler source exists. |
-| 3 | Host `idol check` / `idol run` are not self-host proof. |
+A production host-built `idol` executable exists. No compiler B built from
+canonical Idol compiler source exists. Host `idol check` / `idol run` are
+not self-host proof.
 
-| # | directive |
-|---|---|
-| 1 | The production front end nevertheless has twenty-six bounded executed Idol-owned boundaries: the lexer producer and twenty-five parser decisions. |
-| 2 | The executed production file `lib/compiler/lexer.id` owns token-kind production, token content, and exact source spans. |
-| 3 | Its `.id` suffix is not evidence of canonical source or compiler B. |
-| 4 | The host bounds-checks those spans and projects them into its temporary parser representation. |
-| 5 | It does not reconstruct token text or source locations. |
-| 6 | Canonical lexical identity is not closed (`GAP-145` OPEN): producer identities for text/bytes/compat/long, `#` comment, shebang, dash comments, and reserved backtick now cross `tokenize()`. |
-| 7 | Producer `KIND_STRING_LIT` and host `TokenKind.string_lit` and AST `.string_lit` are deleted without renumbering live producer slots |
-| 8 | Tree-sitter and quote/source-law consumers remain. |
-| 9 | The historical `lib/` distribution path is retired filesystem provenance (GAP-157), not semantic ownership. |
+The production front end nevertheless has twenty-six bounded executed Idol-owned
+boundaries: the lexer producer and twenty-five parser decisions. The executed
+production file `lib/compiler/lexer.id` owns token-kind production, token content,
+and exact source spans. Its `.id` suffix is not evidence of canonical source or
+compiler B. The host bounds-checks those spans and projects them into its
+temporary parser representation. It does not reconstruct token text or source
+locations.
+Canonical lexical identity is not closed (`GAP-145` OPEN): producer identities
+for text/bytes/compat/long, `#` comment, shebang, dash comments, and reserved
+backtick now cross `tokenize()`. Producer `KIND_STRING_LIT` and host
+`TokenKind.string_lit` and AST `.string_lit` are deleted without renumbering
+live producer slots; Tree-sitter and quote/source-law consumers remain. The historical
+`lib/` distribution path is retired filesystem
+provenance (GAP-157), not semantic ownership.
 
-| # | directive |
-|---|---|
-| 1 | The production route is now fail-closed. |
-| 2 | Allocation, record-buffer, and token projection failures leave no accepted token stream and return an error to the caller; they no longer return success and resume the host scanner. |
-| 3 | The host scanner remains a differential oracle. |
-| 4 | This removes one automatic host semantic fallback, but it does not close the missing canonical lexical identities in `GAP-145`, the generated grammar roles in `GAP-134`, or later code-generation fallbacks. |
-| 5 | Module-embed callers still convert a route error into a declined embed or optimization path; deleting those higher-level fallbacks requires the corresponding realization owner to distinguish physical refusal from semantic failure. |
+The production route is now fail-closed. Allocation, record-buffer, and token
+projection failures leave no accepted token stream and return an error to the
+caller; they no longer return success and resume the host scanner. The host
+scanner remains a differential oracle. This removes one automatic host semantic
+fallback, but it does not close the missing canonical lexical identities in
+`GAP-145`, the generated grammar roles in `GAP-134`, or later code-generation
+fallbacks. Module-embed callers still convert a route error into a declined
+embed or optimization path; deleting those higher-level fallbacks requires the
+corresponding realization owner to distinguish physical refusal from semantic
+failure.
 
-| # | directive |
-|---|---|
-| 1 | Source ingress classification is now executed Idol authority. |
-| 2 | The producer owns physical forms, corpus roles, longest-match admission, unlisted fallback, law, and provenance through `sourceform*`, `sourceentry*`, and `sourcefact*`. |
-| 3 | Zig normalizes a physical file to one repo-relative provenance spelling, calls the producer once, and binds returned names to the temporary host ABI; it owns no role roster or role→law mapping. |
-| 4 | Production lexing now goes through the Idol lexer (`tokenize()`); host `tokenizeHost()` is differential-only. |
-| 5 | The identity blocker is `GAP-145` remaining consumers (Tree-sitter and source-law collapse) before a complete parser stage. |
-| 6 | Physical producer slot 3 remains unpublished and fails closed; it is not a token identity. |
-| 7 | Parser long-bracket reconstruction is deleted (level in `int_val`). `GAP-134` now has generated roles (separate semantic identity count and physical slot span, `body_start`, infix). |
-| 8 | The same owner now also generates the relation and prefix identities plus the infix, update, and glued source-face facts. `src/ast.zig` aliases that generated ontology; parser recognition and the pretty-printer consume it rather than maintaining token-to-operation and operation-to-token maps. |
-| 9 | Canonical `return` is the first live `begin_expr` consumer; match-arm discovery now consumes `pattern` through the same immutable view without save/scan/restore; body-start and header-infix are also role-owned. |
-| 10 | Callable-header, return-value-start, and match-arm-clause classification now execute from `lib/compiler/parser.id` over a compact projection of that producer pack; their replaced Zig decisions are deleted. |
-| 11 | The gap is not closed. |
-| 12 | Porting the rest of the host recognizer would duplicate grammar authority through token-text lists and mutable lookahead, so S0 remains the honest stage while each bounded decision crosses with its host body deleted. |
+Source ingress classification is now executed Idol authority. The producer owns
+physical forms, corpus roles, longest-match admission, unlisted fallback, law,
+and provenance through `sourceform*`, `sourceentry*`, and `sourcefact*`. Zig
+normalizes a physical file to one repo-relative provenance spelling, calls the
+producer once, and binds returned names to the temporary host ABI; it owns no
+role roster or role→law mapping.
+Production lexing now goes through the Idol lexer
+(`tokenize()`); host `tokenizeHost()` is differential-only. The identity
+blocker is `GAP-145` remaining consumers (Tree-sitter and source-law collapse)
+before a complete parser stage. Physical producer slot 3 remains
+unpublished and fails closed; it is not a token identity.
+Parser long-bracket reconstruction is deleted (level in `int_val`).
+`GAP-134` now has generated roles (separate semantic identity count and physical
+slot span, `body_start`, infix). The same owner now also generates the relation
+and prefix identities plus the infix, update, and glued source-face facts.
+`src/ast.zig` aliases that generated ontology; parser recognition and the
+pretty-printer consume it rather than maintaining token-to-operation and
+operation-to-token maps. Canonical `return` is the first live
+`begin_expr` consumer; match-arm discovery now consumes `pattern` through the
+same immutable view without save/scan/restore; body-start and header-infix are
+also role-owned. Callable-header, return-value-start, and match-arm-clause
+classification now execute from `lib/compiler/parser.id` over a compact
+projection of that producer pack; their replaced Zig decisions are deleted. The gap is not closed. Porting the
+rest of the host recognizer would duplicate grammar authority through token-text
+lists and mutable lookahead, so S0 remains the honest stage while each bounded
+decision crosses with its host body deleted.
 
-| # | directive |
-|---|---|
-| 1 | The transfer must also preserve PREDICATE-ZERO. |
-| 2 | Parser and resolver output retain cases, refinements, descriptor and world facts, unknowns, demands, and transitions directly. |
-| 3 | It must not reproduce host `has`, `is`, `can`, `exists`, sentinel, or query-then-mutate helpers as Idol semantic architecture. |
+The transfer must also preserve PREDICATE-ZERO. Parser and resolver output
+retain cases, refinements, descriptor and world facts, unknowns, demands, and
+transitions directly. It must not reproduce host `has`, `is`, `can`, `exists`,
+sentinel, or query-then-mutate helpers as Idol semantic architecture.
 
 ## Production authority ledger
 
@@ -102,9 +113,7 @@
 | Runtime/link selection | HOST OWNED | Host code still selects runtime support and link behavior. |
 | Assembler/linker execution | FOREIGN REALIZATION ONLY | Foreign tools perform physical realization after the host selection. |
 
-| # | directive |
-|---|---|
-| 1 | For the fail-closed lexer transfer: |
+For the fail-closed lexer transfer:
 
 - **BEFORE:** a storage failure returned success without installing the Idol
   token pack, so the next parser read silently resumed the host scanner.
@@ -135,65 +144,73 @@
   expression structure, and AST construction remain host-executed; this is not
   complete Parser SHC or Compiler B.
 
-| # | directive |
-|---|---|
-| 1 | Canonical source ingress recognizes `.id` as Idol. |
-| 2 | New canonical `.id` is admitted. |
-| 3 | Retired `.duo` / `.duon` / `.idsem` are not source suffixes. `.lua` remains foreign compatibility input. |
-| 4 | Tracked noncanonical `.id` content remains SOURCE-ZERO debt and must reach zero; the `.id` extension itself is not debt. |
-| 5 | Compatibility testing must move to generated, structured, or external material rather than an in-tree stale source library. `src/lexer_bridge.zig` is one bootstrap helper, not source-family authority. |
-| 6 | It normalizes filesystem provenance and consumes the executed producer's exact law/provenance answer. |
-| 7 | Build entry, embedded module discovery, and direct-native module metadata discovery consume that fact. |
-| 8 | Tooling and corpus gates that still enumerate `.id` independently remain migration bridges, not bootstrap evidence. |
+Canonical source ingress recognizes `.id` as Idol. New canonical `.id` is
+admitted. Retired `.duo` / `.duon` / `.idsem` are not source suffixes.
+`.lua` remains foreign compatibility input. Tracked noncanonical `.id`
+content remains SOURCE-ZERO debt and must reach zero; the `.id` extension
+itself is not debt. Compatibility testing must move to generated, structured,
+or external material rather than an in-tree stale source library.
+`src/lexer_bridge.zig` is one bootstrap helper, not source-family authority. It
+normalizes filesystem provenance and consumes the executed producer's exact
+law/provenance answer. Build entry, embedded module discovery, and direct-native
+module metadata discovery consume that fact. Tooling and corpus gates that
+still enumerate `.id` independently remain migration bridges, not bootstrap
+evidence.
 
-| # | directive |
-|---|---|
-| 1 | Suffix-independent semantic identity is not closed by the existing differential. |
-| 2 | Byte-identical object output demonstrates only one realization result; it does not prove equality of every normalized graph fact. `GAP-142` owns the exact identity and continuity boundary. |
-| 3 | Until the complete checked-fact comparison passes, suffix and path influence remain unclosed rather than being inferred from machine equality. |
+Suffix-independent semantic identity is not closed by the existing differential.
+Byte-identical object output demonstrates only one realization result; it does
+not prove equality of every normalized graph fact. `GAP-142` owns the exact
+identity and continuity boundary. Until the complete checked-fact comparison
+passes, suffix and path influence remain unclosed rather than being inferred
+from machine equality.
 
-| # | directive |
-|---|---|
-| 1 | Active bootstrap bridges (lock scripts, generated C lexer tables, physical tool aliases) remain only while `law.bridge.death` records owner, replacement, and deletion condition in `docs/bootstrap.md` or an open gap. |
-| 2 | Delete each bridge when its condition is met — do not relocate to legacy paths. |
+Active bootstrap bridges (lock scripts, generated C lexer tables, physical tool
+aliases) remain only while `law.bridge.death` records owner, replacement, and
+deletion condition in `docs/bootstrap.md` or an open gap. Delete each bridge
+when its condition is met — do not relocate to legacy paths.
 
-| # | directive |
-|---|---|
-| 1 | The former synthetic bootstrap verifier was deleted. |
-| 2 | It had no production consumer, observed no compiler run, and modeled identity through three invented numeric coordinates. |
-| 3 | A real bootstrap projection must consume exact graph ids, facts, witnesses, provenance, and observations from an execution world before the contract can accept B or C. |
+The former synthetic bootstrap verifier was deleted. It had no production
+consumer, observed no compiler run, and modeled identity through three invented
+numeric coordinates. A real bootstrap projection must consume exact graph ids,
+facts, witnesses, provenance, and observations from an execution world before
+the contract can accept B or C.
 
-| # | directive |
-|---|---|
-| 1 | `lib/compiler/application.id` is **role documentation only** (decomposed |
-| 2 | APPLICATION-CONSUMER-ZERO). |
-| 3 | The graph entity is identity. |
-| 4 | A coordinate `identity` record or parallel application schema is forbidden. |
-| 5 | Agents must not treat that file as canonical application schema or extend it with tables. |
-| 6 | Production authority is graph accessors (`applicationRelation`, …). |
-| 7 | Production authority begins when exact graph entities and explicit fact cardinality survive graph, demand, realization, and machine lineage without source-name reconstruction. |
-| 8 | Audit: `scripts/ledger/application.id`. |
-| 9 | Lowering that reads `ApplicationFact.relation` from the graph must not reconstruct subject, operand, result, descriptor, effect, world, witness, demand, or target downstream (`law.application.consumer`). |
+`lib/compiler/application.id` is **role documentation only** (decomposed;
+APPLICATION-CONSUMER-ZERO). The graph entity is identity. A coordinate
+`identity` record or parallel application schema is forbidden. Agents must
+not treat that file as canonical application schema or extend it with tables.
+Production authority is graph accessors (`applicationRelation`, …).
+Production authority begins when exact graph entities and explicit fact
+cardinality survive graph, demand, realization, and machine lineage without
+source-name reconstruction. Audit: `scripts/ledger/application.id`.
+Lowering that reads `ApplicationFact.relation` from the graph must not
+reconstruct subject, operand, result, descriptor, effect, world, witness,
+demand, or target downstream (`law.application.consumer`).
 
-| # | directive |
-|---|---|
-| 1 | **Graph sovereignty (P0, not closed):** `NodeKind` tags are physical indexes only (`law.tag.authority`). |
-| 2 | Production query/validity must use published facts (`callable`, `hasDescriptorFacts`, graph accessors) — never `kind == .func` / `.table_shape` / `.module` for meaning. |
-| 3 | Audits: `scripts/ledger/graph.id`, `scripts/ledger/application.id`, `gate/graph.id`. |
-| 4 | Open: `Card` cardinality on application facts; `ast_ref` semantic reads → 0; columnar fact storage; graph core imports AST/sema/transform — endpoint is GRAPH-SOVEREIGNTY. |
-| 5 | Partial: caller-indexed `home_apps` adjacency; `applicationsIn` / `relationsReferencedBy` query API; zero-copy operand views; `nested` reverse index for scope/contains; `descriptor_refs` for recursion walks. |
+**Graph sovereignty (P0, not closed):** `NodeKind` tags are physical indexes
+only (`law.tag.authority`). Production query/validity must use published
+facts (`callable`, `hasDescriptorFacts`, graph accessors) — never
+`kind == .func` / `.table_shape` / `.module` for meaning. Audits:
+`scripts/ledger/graph.id`, `scripts/ledger/application.id`, `gate/graph.id`.
+Open: `Card` cardinality on application facts; `ast_ref` semantic reads → 0;
+columnar fact storage; graph core imports AST/sema/transform — endpoint is
+GRAPH-SOVEREIGNTY. Partial: caller-indexed `home_apps` adjacency;
+`applicationsIn` / `relationsReferencedBy` query API; zero-copy operand views;
+`nested` reverse index for scope/contains; `descriptor_refs` for recursion walks.
 
-| # | directive |
-|---|---|
-| 1 | Generated `src/lexer_tokenize.c` plus host `Token` rematerialization is a **physical** bridge. |
-| 2 | Semantic authority is Idol `tokenize()`; the duplicate Lexer pack cursor is gone and Parser owns one immutable view, but compile-time FTCFTW still needs Idol lexer → Idol parser without generated-C call, oversized records, generated enum switching, or host token copies. `lib/` remains retired filesystem provenance (GAP-157), not a semantic namespace. |
+Generated `src/lexer_tokenize.c` plus host `Token` rematerialization is a
+**physical** bridge. Semantic authority is Idol `tokenize()`; the duplicate
+Lexer pack cursor is gone and Parser owns one immutable view, but compile-time
+FTCFTW still needs Idol lexer → Idol parser without generated-C call, oversized
+records, generated enum switching, or host token copies. `lib/` remains
+retired filesystem provenance (GAP-157), not a semantic namespace.
 
-| # | directive |
-|---|---|
-| 1 | Do not claim combined CI green from local ledgers or focused unit runs. |
-| 2 | Remeasure the integrated build at the current revision. |
-| 3 | Crash count is qualitatively above pass-count (`law.crash.first`). |
-| 4 | Every compiler refusal (parser, resolver, world, descriptor, realization, specialization) names application, missing fact, producer, and consumer — not only DNB backend bail. |
+Do not claim combined CI green from local ledgers or focused unit runs.
+Remeasure the integrated build at the current revision. Crash count is
+qualitatively above pass-count (`law.crash.first`). Every compiler refusal
+(parser, resolver, world, descriptor, realization, specialization) names
+application, missing fact, producer, and consumer — not only DNB backend
+bail.
 
 ## Target chain
 
@@ -206,9 +223,7 @@
 
 ## Trusted seed requirements
 
-| # | directive |
-|---|---|
-| 1 | The seed must be: |
+The seed must be:
 
 - Pinned and checksummed
 - Archived and reproducibly obtainable
@@ -225,16 +240,17 @@
 - Binary behavior (test matrix)
 - Diagnostics parity
 
-| # | directive |
-|---|---|
-| 1 | Fingerprints may accelerate candidate comparison or summarize evidence. |
-| 2 | They never establish B/C semantic identity, correspondence, or lineage. |
+Fingerprints may accelerate candidate comparison or summarize evidence. They
+never establish B/C semantic identity, correspondence, or lineage.
 
-| # | directive |
-|---|---|
-| 1 | The executed foundation now qualifies the one resident graph `id` with an owning graph-incarnation coordinate, freezes registered incarnations, and admits explicit witnessed preserved/replaced/split/merge/generated/retired correspondence facts with checked cardinality. |
-| 2 | The public knowledge snapshot projects those exact references and no longer manufactures identity from a kind/name string or fingerprint. |
-| 3 | This is not B/C closure: no bootstrap driver yet persists two incarnations, supplies B and C producer witnesses, or compares their complete graph and diagnostic facts. |
+The executed foundation now qualifies the one resident graph `id` with an
+owning graph-incarnation coordinate, freezes registered incarnations, and
+admits explicit witnessed preserved/replaced/split/merge/generated/retired
+correspondence facts with checked cardinality. The public knowledge snapshot
+projects those exact references and no longer manufactures identity from a
+kind/name string or fingerprint. This is not B/C closure: no bootstrap driver
+yet persists two incarnations, supplies B and C producer witnesses, or compares
+their complete graph and diagnostic facts.
 
 ## Stage comparisons (when declared)
 
@@ -243,27 +259,31 @@
 
 ## Portability and deterministic-evidence admission
 
-| # | directive |
-|---|---|
-| 1 | The portability decision is locked, but its fleet evidence is not present in this tree. `zig build native-call-control` validates the evidence reader and its damage controls. `zig build native-call` refuses until `IDOL_NATIVE_CALL_FLEET` names one manifest showing an equivalent graph-owned application passing through platform calls on Linux, macOS, Windows, and FreeBSD, plus raw-syscall refusal controls on every non-Linux OS. |
-| 2 | This does not mint a `native-call` source kind: callable identity stays fixed and target/ABI/ world facts select a physical call realization. |
+The portability decision is locked, but its fleet evidence is not present in
+this tree. `zig build native-call-control` validates the evidence reader and its
+damage controls. `zig build native-call` refuses until
+`IDOL_NATIVE_CALL_FLEET` names one manifest showing an equivalent graph-owned
+application passing through platform calls on Linux, macOS, Windows, and
+FreeBSD, plus raw-syscall refusal controls on every non-Linux OS. This does not
+mint a `native-call` source kind: callable identity stays fixed and target/ABI/
+world facts select a physical call realization.
 
-| # | directive |
-|---|---|
-| 1 | Likewise, `zig build artifact-equality-control` validates the keyed equality reader. `zig build artifact-equality` refuses until `IDOL_ARTIFACT_FLEET` names real x86-64, Apple M-series, and Raspberry Pi 5 reports for one identical source/target/configuration/compiler/toolchain-revision key. |
-| 2 | Compiler binary hashes are recorded per host and may differ; the produced artifact hash may not. |
-| 3 | No cross-target equality is claimed. |
-| 4 | Until those real reports exist, portable native calls and cross-host deterministic artifacts are **NOT ADMITTED**, and evidence-fleet measurements depending on either remain blocked. |
+Likewise, `zig build artifact-equality-control` validates the keyed equality
+reader. `zig build artifact-equality` refuses until `IDOL_ARTIFACT_FLEET` names
+real x86-64, Apple M-series, and Raspberry Pi 5 reports for one identical
+source/target/configuration/compiler/toolchain-revision key. Compiler binary
+hashes are recorded per host and may differ; the produced artifact hash may
+not. No cross-target equality is claimed. Until those real reports exist,
+portable native calls and cross-host deterministic artifacts are **NOT
+ADMITTED**, and evidence-fleet measurements depending on either remain blocked.
 
 ## Bootstrap subset
 
-| # | directive |
-|---|---|
-| 1 | The minimum Idol subset required to compile the next stage is a staged capability level of canonical Idol, not a permanent second language. |
+The minimum Idol subset required to compile the next stage is a staged
+capability level of canonical Idol, not a permanent second language.
 
-| # | directive |
-|---|---|
-| 1 | The compiler-critical basis is required capabilities and facts, not named container kingdoms: |
+The compiler-critical basis is required capabilities and facts, not named
+container kingdoms:
 
 - element width and sequence shape
 - view lifetime and alias facts
@@ -276,48 +296,55 @@
 - filesystem read as a subject / world / effect application
 - diagnostic output as a subject / world / effect application
 
-| # | directive |
-|---|---|
-| 1 | Do not resurrect bytes, strings, vectors, maps, or bitsets as permanent native ontologies. |
-| 2 | No graph/world-backed projection currently records or observes that basis for B and C. |
-| 3 | Filesystem read and diagnostic output still need their subject, world, and effect facts, and production reachability must be observed rather than asserted. `GAP-139` owns that missing evidence boundary. |
-| 4 | Adding unrelated standard vocabulary does not advance this contract. |
+Do not resurrect bytes, strings, vectors, maps, or bitsets as permanent native
+ontologies. No graph/world-backed projection currently records or observes that
+basis for B and C. Filesystem read and diagnostic output still need their
+subject, world, and effect facts, and production reachability must be observed
+rather than asserted. `GAP-139` owns that missing evidence boundary. Adding
+unrelated standard vocabulary does not advance this contract.
 
 ## FTCFTW constraint
 
-| # | directive |
-|---|---|
-| 1 | Bootstrap work must preserve maximum semantic knowledge with minimum physical compiler state. |
-| 2 | The graph retains meaning; demand deletes work before materialization; realization keeps compact lawful choices until commitment; machine selects the cheapest concrete execution. |
-| 3 | Rich meaning does not justify a large runtime, boxed compiler state, or a fully materialized realization program. |
+Bootstrap work must preserve maximum semantic knowledge with minimum physical
+compiler state. The graph retains meaning; demand deletes work before
+materialization; realization keeps compact lawful choices until commitment;
+machine selects the cheapest concrete execution. Rich meaning does not justify
+a large runtime, boxed compiler state, or a fully materialized realization
+program.
 
-| # | directive |
-|---|---|
-| 1 | The source-family projection in this stage is one bounded ingress query with no allocation. |
-| 2 | It selects one language law and records provenance. |
-| 3 | It does not select machine realization. |
-| 4 | Equivalent canonical `.id` and temporary compatibility input must normalize to identical semantic entities and facts apart from admitted source provenance; focused byte equality alone does not prove that boundary. |
+The source-family projection in this stage is one bounded ingress query with no
+allocation. It selects one language law and records provenance. It does not
+select machine realization. Equivalent canonical `.id` and temporary
+compatibility input must normalize to identical semantic entities and facts
+apart from admitted source provenance; focused byte equality alone does not
+prove that boundary.
 
-| # | directive |
-|---|---|
-| 1 | The direct-native metadata lookup adds two fixed suffix probes per candidate prefix and no allocation beyond the path/source work already required. |
-| 2 | Exact focused and aggregate outcomes are volatile evidence and therefore do not live in this contract. |
-| 3 | Session bootstrap must bind them to the tested revision, dirty state, command, requested-run outcome, and artifact; unavailable evidence fails closed. `GAP-131` remains an onboarding P0 until that projection reads canonical gap files and live claims. |
-| 4 | A focused pass never changes a red aggregate into a pass, and a zero returned by the current broken reader is not evidence of a clean project. |
+The direct-native metadata lookup adds two fixed suffix probes per candidate
+prefix and no allocation beyond the path/source work already required. Exact
+focused and aggregate outcomes are volatile evidence and therefore do not live
+in this contract. Session bootstrap must bind them to the tested revision,
+dirty state, command, requested-run outcome, and artifact; unavailable evidence
+fails closed. `GAP-131` remains an onboarding P0 until that projection reads
+canonical gap files and live claims. A focused pass never changes a red
+aggregate into a pass, and a zero returned by the current broken reader is not
+evidence of a clean project.
 
-| # | directive |
-|---|---|
-| 1 | Future B/C acceptance requires two distinct application and output incarnations, the seed as B's exact producer, B as C's exact producer, identical source content, the same backend and execution-world content, and semantic, behavioral, and diagnostic observations with witness and provenance bound to each application. |
-| 2 | No synthetic structural self-check substitutes for those observations. |
-| 3 | B and C may have different artifact content; binary identity is not required for B-to-C acceptance. |
+Future B/C acceptance requires two distinct application and output
+incarnations, the seed as B's exact producer, B as C's exact producer,
+identical source content, the same backend and execution-world content, and
+semantic, behavioral, and diagnostic observations with witness and provenance
+bound to each application. No synthetic structural self-check substitutes for
+those observations. B and C may have different artifact content; binary
+identity is not required for B-to-C acceptance.
 
 ## Source-zero deletion gate
 
-| # | directive |
-|---|---|
-| 1 | Do not add a bootstrap verifier beside the production graph. |
-| 2 | The remaining tracked application inventory is migration evidence only; its demanded facts must move into executed `.id` with production perturbation and differential proof before that source is deleted. |
-| 3 | A future bootstrap projection derives its evidence from the executed Idol compiler graph rather than making a host build step authoritative. |
+Do not add a bootstrap verifier beside the production graph. The remaining
+tracked application inventory is migration evidence only; its demanded facts
+must move into executed `.id` with production perturbation and differential
+proof before that source is deleted. A future bootstrap projection derives its
+evidence from the executed Idol compiler graph rather than making a host build
+step authoritative.
 
 ## Prohibited claims
 

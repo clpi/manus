@@ -1,10 +1,6 @@
 # WORKSTREAM DEBT REGISTER
 
-| # | directive |
-|---|---|
-| 1 | PROJECTION — not authority. |
-| 2 | Authority chain: |
-
+PROJECTION — not authority. Authority chain:
 - Supreme compact law: `docs/spec/law.md`
 - Structured expansion: `docs/spec/constitution.md`
 - Executed frontier: `docs/bootstrap.md` 
@@ -12,25 +8,21 @@
 - Realization architecture: `docs/spec/realization.md`
 - Measurements: `evidence/EVIDENCE_BUNDLE.md`
 
-| # | directive |
-|---|---|
-| 1 | EVIDENCE-SUBJECT-ONE (`law.control.derived`): this register does **not** record live HEAD, dirty tree, or lane holders. |
-| 2 | Obtain those from `git`, `.agents/session/claims/`, `scripts/ledger/claim.id`, and `tools/node/dev/orient`. |
-| 3 | Bind every evidence claim to the revision that was actually measured. |
+EVIDENCE-SUBJECT-ONE (`law.control.derived`): this register does **not**
+record live HEAD, dirty tree, or lane holders. Obtain those from `git`,
+`.agents/session/claims/`, `scripts/ledger/claim.id`, and
+`tools/node/dev/orient`. Bind every evidence claim to the revision that
+was actually measured.
 
-| # | directive |
-|---|---|
-| 1 | Compass: `.agents/TECH_DEBT_WORKSTREAM.md` 1–35 index: `docs/spec/realization.md` (projection, not C0) |
+Compass: `.agents/TECH_DEBT_WORKSTREAM.md`
+1–35 index: `docs/spec/realization.md` (projection, not C0)
 
-| # | directive |
-|---|---|
-| 1 | **Live HEAD / lane holders / dirty:** `evidence/HEAD.txt` via orient, `scripts/ledger/claim.id` — never hand-pasted here (`law.control.derived`). |
+**Live HEAD / lane holders / dirty:** `evidence/HEAD.txt` via orient,
+`scripts/ledger/claim.id` — never hand-pasted here (`law.control.derived`).
 
 ## Audit verdict (2026-08-13)
 
-| # | directive |
-|---|---|
-| 1 | **Closed / materially improved at live tree** |
+**Closed / materially improved at live tree**
 
 - Production `tokenize()` route; host `tokenizeHost()` differential-only
 - `lib/semantic/*` catalog deleted (CATALOG-ZERO)
@@ -40,9 +32,7 @@
 - `lib/compiler/application.id` decomposed to role docs (APPLICATION-CONSUMER-ZERO)
 - Storage class demoted; causal DNB / backend refusal pattern improved
 
-| # | directive |
-|---|---|
-| 1 | **P0 remaining (authority before FTCFTW performance claims)** |
+**P0 remaining (authority before FTCFTW performance claims)**
 
 1. source-family off host suffix/path (`law.family.one`)
 2. GAP-145 close — literal zero on dead `KIND_STRING_LIT` / `.string_lit`, not merely unused
@@ -58,18 +48,19 @@
 12. integrated build/test remeasure at current revision — not assumed green
 13. compiler B
 
-| # | directive |
-|---|---|
-| 1 | **Phase shift:** from “remove wrong ontology” to “one ontology produces every fact end-to-end.” Next gates measure **application fact provenance completeness** (`scripts/ledger/application.id`) and **graph sovereignty** (`scripts/ledger/graph.id`) — tag authority, fact cardinality, AST backedges, not merely absence of forbidden names. |
+**Phase shift:** from “remove wrong ontology” to “one ontology produces every
+fact end-to-end.” Next gates measure **application fact provenance completeness**
+(`scripts/ledger/application.id`) and **graph sovereignty**
+(`scripts/ledger/graph.id`) — tag authority, fact cardinality, AST backedges,
+not merely absence of forbidden names.
 
-| # | directive |
-|---|---|
-| 1 | **GRAPH-SOVEREIGNTY** is the highest-impact milestone after GAP-145/GAP-134: the graph must become the semantic spine, not a host-shaped god-record with tags that still decide meaning (`law.tag.authority`, `law.graph.sovereignty`). |
+**GRAPH-SOVEREIGNTY** is the highest-impact milestone after GAP-145/GAP-134:
+the graph must become the semantic spine, not a host-shaped god-record with
+tags that still decide meaning (`law.tag.authority`, `law.graph.sovereignty`).
 
-| # | directive |
-|---|---|
-| 1 | Each workstream item maps to measurable criteria. |
-| 2 | No claim is accepted without binding to exact HEAD, dirty state, input, expected/actual result, and environment. |
+Each workstream item maps to measurable criteria. No claim is accepted
+without binding to exact HEAD, dirty state, input, expected/actual result,
+and environment.
 
 ## Scoped envelope A–AZ → eight lanes
 
@@ -84,24 +75,18 @@
 | AJ–AL + P1.26 | 7 Wasm | same graph; import/export specialization; pinned Wasmtime matrix |
 | AP–AZ + P2.33–35 P3 | 8 Evidence + anti-drift | gates, MCP/LSP same-graph, census→query, crashes-as-P0, evidence-subject, B/C |
 
-| # | directive |
-|---|---|
-| 1 | FTCFTW performance claims remain **invalid** until subject-native correctness and revision-bound measurement close. |
-| 2 | No compiler B. |
+FTCFTW performance claims remain **invalid** until subject-native correctness and
+revision-bound measurement close. No compiler B.
 
 ## Live claims
 
-| # | directive |
-|---|---|
-| 1 | Not recorded here (`law.control.derived`). |
-| 2 | Read `.agents/session/claims/` or run `scripts/ledger/claim.id`. |
-| 3 | Acquire via `idol_dev_claim_acquire` before lane-owned edits. |
+Not recorded here (`law.control.derived`). Read `.agents/session/claims/`
+or run `scripts/ledger/claim.id`. Acquire via `idol_dev_claim_acquire`
+before lane-owned edits.
 
 ## A — SOURCE/LEXER SHC
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: |
+Current exact state:
 
 - `src/lexer_dispatch.zig` `route()` calls `tokenize()` for **every** source.
   `tokenizeHost(allocator, src, file)` exists only inside `differential()`.
@@ -123,9 +108,7 @@
 - GAP-145 — `KIND_STRING_LIT=3` remains; identities appended, not closed.
   Do not close with plural `bytes`. Parser long-bracket reconstruction deleted.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [x] `route()` production path is `tokenize()`, not `tokenizeHost`
 - [x] `tokenizeHost` remains only as differential oracle
@@ -141,42 +124,31 @@
 - [ ] Zero host semantic fallback after resolution
 - [ ] `tokenizeHost` oracle scoped to legacy-equivalent subset and deletable
 
-| # | directive |
-|---|---|
-| 1 | Current debt count: 5 exact blockers (generated TokenKind bridge, bridge names, ingress fact, identity close, oracle bound) |
+Current debt count: 5 exact blockers (generated TokenKind bridge, bridge names, ingress fact, identity close, oracle bound)
 
 ## B — GRAMMAR/PARSER SHC
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: |
+Current exact state:
 
 - `src/parser.zig` — host-owned production recognition
 - GAP-134 — grammar-role authority incomplete (blocked on GAP-145)
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] One machine-readable grammar-role authority
 - [ ] Idol parser consumes immutable token/role projection
 - [ ] No duplicated handwritten parser vocabulary
 
-| # | directive |
-|---|---|
-| 1 | Current debt count: 2 exact blockers |
+Current debt count: 2 exact blockers
 
 ## C — RESOLVER/GRAPH
 
-| # | directive |
-|---|---|
-| 1 | **Owner: Codex (designated). |
-| 2 | Status: blocked until acquire.** No other lane mints relation catalogs, boolean-mirror rows, string worlds, or numeric semantic codes as substitutes. |
-| 3 | Devin is A/B SHC transfer, not a second graph ontology. |
+**Owner: Codex (designated). Status: blocked until acquire.** No other lane
+mints relation catalogs, boolean-mirror rows, string worlds, or numeric
+semantic codes as substitutes. Devin is A/B SHC transfer, not a second graph
+ontology.
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: |
+Current exact state:
 
 - Binding/scope, graph construction, query remain host-owned
 - Descriptor recursion walks `.descriptor_ref` exact-id edges (progress)
@@ -191,9 +163,7 @@
 - Origin-audit "19 semantic_graph build errors" is **stale** — do not cite;
   re-measure on this HEAD before using as a blocker count
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Idol produces exact binding/relation/subject/descriptor/capture/world edges
 - [ ] Zero semantic rediscovery after resolution
@@ -201,15 +171,11 @@
 - [ ] Zero parent-scope lookup after resolution
 - [ ] No operational edge kinds; application owns relation id
 
-| # | directive |
-|---|---|
-| 1 | Current debt count: 3 exact blockers + ontology audit (not a rename pass) |
+Current debt count: 3 exact blockers + ontology audit (not a rename pass)
 
 ## D — CANONICAL SOURCE
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: |
+Current exact state:
 
 - `docs/spec/canonical.md` training-surface regressions from the origin audit
   are **closed** at live HEAD (chained `validate():normalize()`, no `value:to()`
@@ -218,9 +184,7 @@
   temporaries, residual `end`, stale conversion comments
 - Added-line gates ≠ whole-corpus closure
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [x] `canonical.md` / `agent.md` / HARNESS match current ruling (keep aligned)
 - [ ] SOURCE-INFER-ONE applied globally in corpus (not just docs)
@@ -228,23 +192,17 @@
 - [ ] Intermediate-zero: no avoidable `tmp`/`result`/`checked`/`current`/`next`
 - [ ] Whole-corpus gate exists and fails closed (reject; do not rewrite as SHC)
 
-| # | directive |
-|---|---|
-| 1 | Current debt count: corpus categories remain open; doc teaching closed |
+Current debt count: corpus categories remain open; doc teaching closed
 
 ## E — WORLD/EFFECT
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: |
+Current exact state:
 
 - Filesystem ingress still conflatable with runtime file authority
 - Runtime world abstraction still present when witness can be known
 - Re-measure `gate/host.id` on this HEAD before citing PASS/FAIL
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] `gate/host.id` passes on current HEAD
 - [ ] Known witness → zero runtime world abstraction
@@ -253,31 +211,21 @@
 
 ## F — DEMAND
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: demand host-owned; no Idol producer. |
+Current exact state: demand host-owned; no Idol producer.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Idol produces exact demand facts
 - [ ] Undemanded work deleted before realization
 
-| # | directive |
-|---|---|
-| 1 | Current debt count: 1 exact blocker |
+Current debt count: 1 exact blocker
 
 ## G — SHAPE/CALL/CLOSURE SPECIALIZATION
 
-| # | directive |
-|---|---|
-| 1 | Re-measure emission counts on this HEAD. |
-| 2 | Origin-audit boxing/indirect/heap closure numbers are directional, not current evidence. |
+Re-measure emission counts on this HEAD. Origin-audit boxing/indirect/heap
+closure numbers are directional, not current evidence.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Known shape → generic hash 0
 - [ ] Exact sealed target → indirect call 0
@@ -286,13 +234,9 @@
 
 ## H — VALUE/PLACE/MEMORY
 
-| # | directive |
-|---|---|
-| 1 | Re-measure allocation/copy emissions on this HEAD. |
+Re-measure allocation/copy emissions on this HEAD.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Stack/heap/static/region chosen from lifetime/escape/alias facts
 - [ ] No GC because "table" exists
@@ -300,13 +244,9 @@
 
 ## I — EFFECT/FUSION/SIMD
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: not implemented as graph-fact-driven optimization. |
+Current exact state: not implemented as graph-fact-driven optimization.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Effects drive CSE/hoisting/fusion/parallelization/SIMD legality
 - [ ] map/filter/reduce fuse to one loop when facts permit
@@ -314,16 +254,14 @@
 
 ## J — NATIVE MACHINE
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: generated C remains bounded bridge; direct native is not yet the production destination for the full corpus. |
-| 2 | Integrated unit/DNB counts are **not** recorded here (`law.control.derived`, `law.evidence.subject`). |
-| 3 | Re-measure at the live revision before citing pass/fail/crash; crash count is P0 above pass-count improvement (`law.crash.first`). |
-| 4 | Last bound subject: `29f62035` / evidence `59093d7b` in `evidence/EVIDENCE_BUNDLE.md`. |
+Current exact state: generated C remains bounded bridge; direct native is not
+yet the production destination for the full corpus. Integrated unit/DNB counts
+are **not** recorded here (`law.control.derived`, `law.evidence.subject`).
+Re-measure at the live revision before citing pass/fail/crash; crash count is
+P0 above pass-count improvement (`law.crash.first`). Last bound subject:
+`29f62035` / evidence `59093d7b` in `evidence/EVIDENCE_BUNDLE.md`.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Direct backend executes all semantically valid programs
 - [ ] Semantic graph → demand → realization → instruction → object bytes
@@ -331,13 +269,9 @@
 
 ## K — WASM
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: no correctness-locked pinned Wasmtime matrix on this HEAD. |
+Current exact state: no correctness-locked pinned Wasmtime matrix on this HEAD.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Pinned Wasmtime comparison with exact revision
 - [ ] Separate measurements: compile/load, instantiate/startup, execution, RSS, bytes
@@ -345,14 +279,11 @@
 
 ## L — COMPILE-TIME
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: dense-id / packed-fact / exact-invalidation / parallel analysis not closed. |
-| 2 | Lexer bridge still copies source + filename + `len × 7 × i64` records + host `Token` array. |
+Current exact state: dense-id / packed-fact / exact-invalidation / parallel
+analysis not closed. Lexer bridge still copies source + filename +
+`len × 7 × i64` records + host `Token` array.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Dense ids with arena allocation
 - [ ] Parallel semantic analysis by exact dependencies
@@ -362,16 +293,13 @@
 
 ## M — EVIDENCE
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: FTCFTW complete proof near zero. `scripts/ledger/ftcftw.id` is a contract-presence index (exit 0 on this tree; pass ≠ proof). |
-| 2 | Parent `scripts/ledger/perf.id` rows `ledger/ftcftw`. |
-| 3 | Curry `audit(path)(pattern)` is IMPLEMENTATION-BLOCKED (direct native SIGSEGV). |
-| 4 | Stale bundles do not certify this HEAD. |
+Current exact state: FTCFTW complete proof near zero. `scripts/ledger/ftcftw.id`
+is a contract-presence index (exit 0 on this tree; pass ≠ proof). Parent
+`scripts/ledger/perf.id` rows `ledger/ftcftw`. Curry `audit(path)(pattern)` is
+IMPLEMENTATION-BLOCKED (direct native SIGSEGV). Stale bundles do not certify
+this HEAD.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Every claim binds subject revision and evidence revision separately
       (`law.evidence.subject`); do not report metrics "at HEAD" unless the
@@ -385,13 +313,9 @@
 
 ## N — COMPILER B/C
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: no compiler B; no compiler C; repository remains S0. |
+Current exact state: no compiler B; no compiler C; repository remains S0.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] Compiler B built from canonical Idol
 - [ ] Compiler B builds C
@@ -428,45 +352,28 @@ unbound performance claims                     0
 
 ## Scoped checklist A–AZ (subject `29f62035`)
 
-| # | directive |
-|---|---|
-| 1 | Authority / SHC: [ ] A source-family fact not suffix [ ] B producer token schema [ ] C magic-code zero [ ] D token-role-id not ordinal [ ] E GAP-134 grammar roles [ ] F parser facts not AST [ ] G exact binding id [ ] H ontology decomposition [ ] I edge minimization [ ] J application fact completion [ ] K world/effect/witness [ ] L protocol satisfaction [ ] M infer composition [ ] N demand stage |
+Authority / SHC: [ ] A source-family fact not suffix [ ] B producer token schema [ ] C magic-code zero [ ] D token-role-id not ordinal [ ] E GAP-134 grammar roles [ ] F parser facts not AST [ ] G exact binding id [ ] H ontology decomposition [ ] I edge minimization [ ] J application fact completion [ ] K world/effect/witness [ ] L protocol satisfaction [ ] M infer composition [ ] N demand stage
 
-| # | directive |
-|---|---|
-| 1 | Physical FTCFTW: [ ] O boxing [ ] P direct calls [ ] Q table hash zero [ ] R closure spec [ ] S alloc [ ] T copy [ ] U tags [ ] V packs [ ] W effects [ ] X fusion [ ] Y SIMD [ ] Z parallel |
+Physical FTCFTW: [ ] O boxing [ ] P direct calls [ ] Q table hash zero [ ] R closure spec [ ] S alloc [ ] T copy [ ] U tags [ ] V packs [ ] W effects [ ] X fusion [ ] Y SIMD [ ] Z parallel
 
-| # | directive |
-|---|---|
-| 1 | Native: [ ] AA direct I/O [ ] AB direct coverage [ ] AC C-bridge death [ ] AD machine lineage |
+Native: [ ] AA direct I/O [ ] AB direct coverage [ ] AC C-bridge death [ ] AD machine lineage
 
-| # | directive |
-|---|---|
-| 1 | Compile-time: [ ] AE lexer bridge copies [ ] AF dense storage [ ] AG exact invalidation [ ] AH parallel analysis [ ] AI string-free hot paths |
+Compile-time: [ ] AE lexer bridge copies [ ] AF dense storage [ ] AG exact invalidation [ ] AH parallel analysis [ ] AI string-free hot paths
 
-| # | directive |
-|---|---|
-| 1 | Wasm: [ ] AJ same graph [ ] AK runtime arch [ ] AL Wasmtime matrix |
+Wasm: [ ] AJ same graph [ ] AK runtime arch [ ] AL Wasmtime matrix
 
-| # | directive |
-|---|---|
-| 1 | Runtime/size: [ ] AM feature elimination [ ] AN startup [ ] AO binary size |
+Runtime/size: [ ] AM feature elimination [ ] AN startup [ ] AO binary size
 
-| # | directive |
-|---|---|
-| 1 | Corpus/enforcement: [ ] AP no cls:has identity [ ] AQ shell bridge bounded [ ] AR no generic main in tooling [ ] AS generic-action zero [ ] AT foundation-word zero |
+Corpus/enforcement: [ ] AP no cls:has identity [ ] AQ shell bridge bounded [ ] AR no generic main in tooling [ ] AS generic-action zero [ ] AT foundation-word zero
 
-| # | directive |
-|---|---|
-| 1 | Evidence: [ ] AU evidence-subject machine-readable [ ] AV status-doc discipline [ ] AW oracle bounded [ ] AX gate adversaries [ ] AY compiler B [ ] AZ compiler C |
+Evidence: [ ] AU evidence-subject machine-readable [ ] AV status-doc discipline [ ] AW oracle bounded [ ] AX gate adversaries [ ] AY compiler B [ ] AZ compiler C
 
 ## Optimization architecture 1–35 → workstreams
 
-| # | directive |
-|---|---|
-| 1 | Explicit FTCFTW closure items (post catalog-deletion phase). |
-| 2 | Full item text and acceptance: `docs/spec/realization.md`. |
-| 3 | C0: `law.representation.one`, `law.guard.one`, `law.specialize.budget`, `law.abi.internal`, `law.crash.first`, `law.cost.explain`, `law.representation.demand`. |
+Explicit FTCFTW closure items (post catalog-deletion phase). Full item text and
+acceptance: `docs/spec/realization.md`. C0:
+`law.representation.one`, `law.guard.one`, `law.specialize.budget`, `law.abi.internal`,
+`law.crash.first`, `law.cost.explain`, `law.representation.demand`.
 
 | # | Workstream | Law / register | Lane |
 |---|---|---|---|
@@ -508,9 +415,7 @@ unbound performance claims                     0
 
 ## Updated critical path (P0–P3)
 
-| # | directive |
-|---|---|
-| 1 | **P0 — correctness / authority** |
+**P0 — correctness / authority**
 
 1. source-family authority off path/suffix (`law.family.one`)
 2. finish GAP-145 lexical identities
@@ -522,9 +427,7 @@ unbound performance claims                     0
 8. demand
 9. direct backend crashes/failures to zero (`law.crash.first`)
 
-| # | directive |
-|---|---|
-| 1 | **P1 — FTCFTW cost collapse** |
+**P1 — FTCFTW cost collapse**
 
 10. representation-one · 11. boxing elimination · 12. call specialization ·
 13. shape specialization · 14. closure escape specialization ·
@@ -535,39 +438,34 @@ unbound performance claims                     0
 23. effect/fusion/SIMD · 24. concurrency realization ·
 25. runtime feature DCE · 26. link-time reachability
 
-| # | directive |
-|---|---|
-| 1 | **P2 — compile/startup/tooling superiority** |
+**P2 — compile/startup/tooling superiority**
 
 27. lexer/token bridge zero-copy · 28. dense graph storage ·
 29. exact incremental invalidation · 30. parallel compiler ·
 31. stage-result caching · 32. direct object writer optimization ·
 33. LSP same-graph · 34. MCP same-graph · 35. replace semantic grep/census
 
-| # | directive |
-|---|---|
-| 1 | **P3 — proof** |
+**P3 — proof**
 
 36. all crashes zero · 37. complete correctness matrix ·
 38. C-equivalent benchmark suite · 39. pinned Wasmtime suite ·
 40. positive damage controls · 41. startup/memory/size/compile/runtime separately ·
 42. B compiler · 43. C compiler · 44. semantic fixed-point evidence
 
-| # | directive |
-|---|---|
-| 1 | Phase conclusion: architecture leaves obvious anti-pattern cleanup; remaining risk is optimization architecture — representation ownership, guard/deopt, ABI, range/bounds, layout polymorphism, effect fusion, semantic incremental compilation, causal optimization diagnostics. |
-| 2 | Without explicit workstreams above, implementation can stay semantically clean yet realize everything conservatively and fail FTCFTW. |
+Phase conclusion: architecture leaves obvious anti-pattern cleanup; remaining
+risk is optimization architecture — representation ownership, guard/deopt,
+ABI, range/bounds, layout polymorphism, effect fusion, semantic incremental
+compilation, causal optimization diagnostics. Without explicit workstreams
+above, implementation can stay semantically clean yet realize everything
+conservatively and fail FTCFTW.
 
 ## BA — REPRESENTATION / GUARD / SPECIALIZE (items 1–3, P1)
 
-| # | directive |
-|---|---|
-| 1 | Current exact state: host lowering (`src/dnir_lower.zig`, `src/native_backend.zig`) still makes ad hoc boxing/register/heap decisions. |
-| 2 | Measured subject still shows ~1,271 `lua_Value`, ~120 `malloc`, ~174 tag/union sites. |
+Current exact state: host lowering (`src/dnir_lower.zig`, `src/native_backend.zig`)
+still makes ad hoc boxing/register/heap decisions. Measured subject still shows
+~1,271 `lua_Value`, ~120 `malloc`, ~174 tag/union sites.
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance criteria: |
+Measurable acceptance criteria:
 
 - [ ] One realization owner produces width/layout/location/boxing/addressability/aggregation/calling-convention facts
 - [ ] No downstream pass separately chooses boxed/stack/register/heap/struct/SIMD
@@ -625,11 +523,8 @@ unbound performance claims                     0
 
 ## BI — GRAPH SOVEREIGNTY (items G1–G12, P0 lane 3)
 
-| # | directive |
-|---|---|
-| 1 | Full definitions: `docs/spec/realization.md` § Graph sovereignty. |
-| 2 | Laws in C0 §67. |
-| 3 | File audit: `scripts/ledger/graph.id`. |
+Full definitions: `docs/spec/realization.md` § Graph sovereignty. Laws in C0 §67.
+File audit: `scripts/ledger/graph.id`.
 
 | # | Workstream | Law | Open debt (live tree) |
 |---|---|---|---|
@@ -646,9 +541,7 @@ unbound performance claims                     0
 | G11 | target + prose contamination | `law.target.contamination` · `law.prose.fact` | `hardware_lowerings`, `why` string on Node |
 | G12 | GRAPH-SOVEREIGNTY | `law.graph.sovereignty` | imports ast/sema/types/transform; host enums on Node |
 
-| # | directive |
-|---|---|
-| 1 | Measurable acceptance: |
+Measurable acceptance:
 
 - [ ] No query/lowering uses NodeKind/EdgeKind to establish semantic validity
 - [ ] Fact-location manifest: one authoritative owner per application dimension
@@ -664,10 +557,10 @@ unbound performance claims                     0
 
 ## Impact-ordered next fixes
 
-| # | directive |
-|---|---|
-| 1 | Last bound evidence subject `29f62035` (catalog deletion slice). |
-| 2 | Live HEAD, dirty tree, lane holders, and integrated counts are obtained from `git`, `tools/node/dev/orient`, and a fresh measurement run — not this register (`law.control.derived`, `law.evidence.subject`). |
+Last bound evidence subject `29f62035` (catalog
+deletion slice). Live HEAD, dirty tree, lane holders, and integrated counts
+are obtained from `git`, `tools/node/dev/orient`, and a fresh measurement run
+— not this register (`law.control.derived`, `law.evidence.subject`).
 
 1. **Keep `lib/semantic/*` dead** — gates + `resident-proof`; no catalog resurrection.
 2. **P0 authority chain** — source-family → GAP-145 → token ABI → GAP-134 →
