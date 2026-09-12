@@ -1129,12 +1129,6 @@ open: i64 = (pendingold: str, path: str)
   else
     0
 
-plus__q = (path: str, no: i64, text: str)
-  audit__q(path, no, text)
-
-plus: i64 = (path: str, no: i64, text: str)
-  audit(path, no, text)
-
 feed: i64 = (body: str, quiet: bool)
   hits = 0
   path = ""
@@ -1171,9 +1165,9 @@ feed: i64 = (body: str, quiet: bool)
             if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
               text = line:sub(2, line:len())
               if quiet
-                hits = hits + plus__q(path, no, text)
+                hits = hits + audit__q(path, no, text)
               else
-                hits = hits + plus(path, no, text)
+                hits = hits + audit(path, no, text)
               no = no + 1
       line = ""
     else
