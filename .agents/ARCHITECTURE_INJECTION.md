@@ -1,59 +1,77 @@
 # Idol architecture injection — agent orientation
 
-**Status:** durable agent orientation only. **Not language law.** If this file
-conflicts with `docs/spec/law.md` or `docs/spec/constitution.md`, stop and repair
-this projection.
+| # | directive |
+|---|---|
+| 1 | **Status:** durable agent orientation only. **Not language law.** If this file conflicts with `docs/spec/law.md` or `docs/spec/constitution.md`, stop and repair this projection. |
 
 ## Preserve the strongest fact already known
 
-If an earlier stage knows token identity, relation identity, subject,
-descriptor, pack correspondence, world, effect, witness, demand, or source span,
-then a later stage **consumes** that fact. It does not reconstruct it.
+| # | directive |
+|---|---|
+| 1 | If an earlier stage knows token identity, relation identity, subject, descriptor, pack correspondence, world, effect, witness, demand, or source span, then a later stage **consumes** that fact. |
+| 2 | It does not reconstruct it. |
 
-A missing fact is preferable to a guessed fact. Fail closed and identify its
-missing producer.
+| # | directive |
+|---|---|
+| 1 | A missing fact is preferable to a guessed fact. |
+| 2 | Fail closed and identify its missing producer. |
 
-**Paste at the top of every agent session (short form):**
+| # | directive |
+|---|---|
+| 1 | **Paste at the top of every agent session (short form):** |
 
-Do not port the host compiler. Reduce the required observation to Idol semantics.
-Preserve every exact fact already known. One meaning has one id; facts qualify it;
-realization carries physical choice. Source syntax, AST kinds, paths, names,
-hashes, opcodes, storage classes and backend distinctions are never semantic
-authority. A value is not a place. A binding is not storage. A pack is not an
-aggregate. A call is not an ABI. A table is not a hash table. A closure is not
-a heap object. Unknown is not absent. Demand determines what exists physically.
-Prefer no execution, no allocation, no copy, no representation, no runtime and
-no instruction whenever semantics permit. Never reconstruct downstream what
-upstream already knew. Never add a parallel semantic taxonomy. Never self-host
-host implementation patterns merely because they exist. Semantic graph work must
-maximize facts while physically using dense ids, packed ranges, columns, views
-and exact dependencies. Every transformation preserves application/value lineage
-and witness. Every performance change preserves or expands lawful realizations
-and accounts for compile cost as well as runtime. Every SHC claim names the
-exact production decision that moved from host ownership to executed Idol
-ownership. If a required canonical relation/fact is missing, stop and identify
-the missing authority rather than inventing a helper or fallback.
+| # | directive |
+|---|---|
+| 1 | Do not port the host compiler. |
+| 2 | Reduce the required observation to Idol semantics. |
+| 3 | Preserve every exact fact already known. |
+| 4 | One meaning has one id; facts qualify it; realization carries physical choice. |
+| 5 | Source syntax, AST kinds, paths, names, hashes, opcodes, storage classes and backend distinctions are never semantic authority. |
+| 6 | A value is not a place. |
+| 7 | A binding is not storage. |
+| 8 | A pack is not an aggregate. |
+| 9 | A call is not an ABI. |
+| 10 | A table is not a hash table. |
+| 11 | A closure is not a heap object. |
+| 12 | Unknown is not absent. |
+| 13 | Demand determines what exists physically. |
+| 14 | Prefer no execution, no allocation, no copy, no representation, no runtime and no instruction whenever semantics permit. |
+| 15 | Never reconstruct downstream what upstream already knew. |
+| 16 | Never add a parallel semantic taxonomy. |
+| 17 | Never self-host host implementation patterns merely because they exist. |
+| 18 | Semantic graph work must maximize facts while physically using dense ids, packed ranges, columns, views and exact dependencies. |
+| 19 | Every transformation preserves application/value lineage and witness. |
+| 20 | Every performance change preserves or expands lawful realizations and accounts for compile cost as well as runtime. |
+| 21 | Every SHC claim names the exact production decision that moved from host ownership to executed Idol ownership. |
+| 22 | If a required canonical relation/fact is missing, stop and identify the missing authority rather than inventing a helper or fallback. |
 
----
+| # | directive |
+|---|---|
 
 ## Mental model shift
 
-Idol is **not** a conventional multi-pass compiler with a pile of named IRs.
+| # | directive |
+|---|---|
+| 1 | Idol is **not** a conventional multi-pass compiler with a pile of named IRs. |
 
-Idol is an **information-propagation system**:
+| # | directive |
+|---|---|
+| 1 | Idol is an **information-propagation system**: |
 
 ```text
 observations → identities + facts → demand → lawful realization space → minimum physical work
 ```
 
-Stages exist only as **realization choices** over the same semantic graph. A new
-stage is admissible only when irreducibility is proved; otherwise the capability
-belongs as relations, facts, observations, demands, laws, witnesses,
-transformations, worlds, or realizations in the one graph.
+| # | directive |
+|---|---|
+| 1 | Stages exist only as **realization choices** over the same semantic graph. |
+| 2 | A new stage is admissible only when irreducibility is proved; otherwise the capability belongs as relations, facts, observations, demands, laws, witnesses, transformations, worlds, or realizations in the one graph. |
 
 ## Universal optimization state
 
-Extend the working state beyond the early tuple:
+| # | directive |
+|---|---|
+| 1 | Extend the working state beyond the early tuple: |
 
 | Dimension | Question |
 |---|---|
@@ -70,12 +88,15 @@ Extend the working state beyond the early tuple:
 | **world** | Under what target/authority/deployment constraints? |
 | **realization** | Which lawful physical choice wins? |
 
-**Directionality is not a second relation identity.** Solving mode
-(forward/inverse/partial) is a fact over the same semantic relation.
+| # | directive |
+|---|---|
+| 1 | **Directionality is not a second relation identity.** Solving mode (forward/inverse/partial) is a fact over the same semantic relation. |
 
 ## Interoperable algebras (the moat)
 
-Make these **interoperable algebras over the same identities**:
+| # | directive |
+|---|---|
+| 1 | Make these **interoperable algebras over the same identities**: |
 
 - relational composition
 - observation projection
@@ -85,18 +106,17 @@ Make these **interoperable algebras over the same identities**:
 - equivalence
 - realization selection
 
-Then compiler optimization, query planning, partial evaluation, incremental
-computation, automatic differentiation, program synthesis, hardware synthesis,
-distributed placement, and foreign adaptation become **different queries over the
-same graph**, not separate semantic kingdoms.
+| # | directive |
+|---|---|
+| 1 | Then compiler optimization, query planning, partial evaluation, incremental computation, automatic differentiation, program synthesis, hardware synthesis, distributed placement, and foreign adaptation become **different queries over the same graph**, not separate semantic kingdoms. |
 
 ## Diagnostic and refusal shape (target)
 
-Failures should surface **explanation-minimal** missing or conflicting facts —
-not cascades of parser/backend symptoms. Optimization refusals likewise: the
-smallest fact blocking realization R (`alias(x,y) unknown`, not forty downstream
-reasons). Negative knowledge, exclusion sets, and contradiction as unreachable
-region are first-class graph facts (see census § XXXV).
+| # | directive |
+|---|---|
+| 1 | Failures should surface **explanation-minimal** missing or conflicting facts — not cascades of parser/backend symptoms. |
+| 2 | Optimization refusals likewise: the smallest fact blocking realization R (`alias(x,y) unknown`, not forty downstream reasons). |
+| 3 | Negative knowledge, exclusion sets, and contradiction as unreachable region are first-class graph facts (see census § XXXV). |
 
 ## Hard rules for agents
 
@@ -120,7 +140,9 @@ region are first-class graph facts (see census § XXXV).
 
 ## Supercompilation-shaped engine (target shape)
 
-Over any demanded graph region:
+| # | directive |
+|---|---|
+| 1 | Over any demanded graph region: |
 
 ```text
 observe region
@@ -132,18 +154,20 @@ observe region
 → residualize only demanded semantics
 ```
 
-Homeomorphic embedding, memoized configurations, constructor specialization,
-deforestation-as-consequence, interprocedural fusion, and demand-aware
-equivalence are **one engine**, not named passes.
+| # | directive |
+|---|---|
+| 1 | Homeomorphic embedding, memoized configurations, constructor specialization, deforestation-as-consequence, interprocedural fusion, and demand-aware equivalence are **one engine**, not named passes. |
 
-The same engine admits a **generalize ↔ specialize** axis (anti-unification upward,
-specialization downward) and **semantic factoring** — store `common skeleton +
-varying facts` instead of N expanded copies. Re-generalization is a first-class
-response to specialization explosion and code-size FTCFTW, not an afterthought.
+| # | directive |
+|---|---|
+| 1 | The same engine admits a **generalize ↔ specialize** axis (anti-unification upward, specialization downward) and **semantic factoring** — store `common skeleton + varying facts` instead of N expanded copies. |
+| 2 | Re-generalization is a first-class response to specialization explosion and code-size FTCFTW, not an afterthought. |
 
 ## Relational solving (target shape)
 
-Same relation, multiple solving modes as facts:
+| # | directive |
+|---|---|
+| 1 | Same relation, multiple solving modes as facts: |
 
 - known inputs → outputs
 - known output → possible inputs
@@ -153,24 +177,29 @@ Same relation, multiple solving modes as facts:
 
 ## Realization below the binary
 
-World/effect facts may select realization at:
+| # | directive |
+|---|---|
+| 1 | World/effect facts may select realization at: |
 
 ```text
 process · unikernel · WASI component · eBPF · firmware · bare-metal · kernel module · GPU · FPGA
 ```
 
-Same semantics; different deployment realization. Syscall elimination/fusion,
-storage topology, network protocol choice, and NUMA/device placement are ordinary
-physical domains — not new source APIs.
-
+| # | directive |
+|---|---|
+| 1 | Same semantics; different deployment realization. |
+| 2 | Syscall elimination/fusion, storage topology, network protocol choice, and NUMA/device placement are ordinary physical domains — not new source APIs. |
 
 ## Tonight's priority injection (supersedes fixture-chasing)
 
-Read this before any code change. A **passing fixture is not the objective.**
+| # | directive |
+|---|---|
+| 1 | Read this before any code change. |
+| 2 | A **passing fixture is not the objective.** |
 
-**Never repair a downstream consumer when its upstream authoritative fact is wrong.**
-If lowering needs to filter, reinterpret, recover, or correct graph facts, stop and
-move the missing fact upstream.
+| # | directive |
+|---|---|
+| 1 | **Never repair a downstream consumer when its upstream authoritative fact is wrong.** If lowering needs to filter, reinterpret, recover, or correct graph facts, stop and move the missing fact upstream. |
 
 | Anti-pattern | Required response |
 |---|---|
@@ -181,30 +210,37 @@ move the missing fact upstream.
 | Expanding `lib/compiler/monolith.id` toward compiler B | Probe only — B must exercise real home/module composition |
 | Self-host score green without authority gain | Name the semantic fact gained, not merely the DNB removed |
 
-**Commit review question (mandatory before push):**
+| # | directive |
+|---|---|
+| 1 | **Commit review question (mandatory before push):** |
 
 > If I deleted all source spelling, AST shape, filesystem names, and host-local
 > variable names after resolution, would my change still know enough to make this
 > decision?
 
-If **no**, the change is almost certainly at the wrong layer.
+| # | directive |
+|---|---|
+| 1 | If **no**, the change is almost certainly at the wrong layer. |
 
-**Scoreboard discipline:** treat `gate/selfhost.sh` as a coarse probe with two
-dimensions — physical reach **and** semantic authority quality. Never copy counts
-from static reports; use executable ledgers only.
+| # | directive |
+|---|---|
+| 1 | **Scoreboard discipline:** treat `gate/selfhost.sh` as a coarse probe with two dimensions — physical reach **and** semantic authority quality. |
+| 2 | Never copy counts from static reports; use executable ledgers only. |
 
-**Focused experiment ≠ aggregate evidence.** A gate success on a dirty tree is not
-proof of incarnation closure.
+| # | directive |
+|---|---|
+| 1 | **Focused experiment ≠ aggregate evidence.** A gate success on a dirty tree is not proof of incarnation closure. |
 
-**Central overnight rule (mandatory):** every time a blocker disappears, ask what
-authority you added. If the answer is "the backend now recognizes another
-source/AST/storage pattern," the architecture got worse. If the answer is "the
-graph now knows an exact fact earlier and downstream code became simpler," you
-are moving toward Idol. Pipeline traversal success is not progress; removing the
-need for pipeline stages is.
+| # | directive |
+|---|---|
+| 1 | **Central overnight rule (mandatory):** every time a blocker disappears, ask what authority you added. |
+| 2 | If the answer is "the backend now recognizes another source/AST/storage pattern," the architecture got worse. |
+| 3 | If the answer is "the graph now knows an exact fact earlier and downstream code became simpler," you are moving toward Idol. |
+| 4 | Pipeline traversal success is not progress; removing the need for pipeline stages is. |
 
-See `docs/architecture-negative-controls.md` for the full systemic-misunderstanding
-catalog and companion gate IDs.
+| # | directive |
+|---|---|
+| 1 | See `docs/architecture-negative-controls.md` for the full systemic-misunderstanding catalog and companion gate IDs. |
 
 ## Where to look next
 

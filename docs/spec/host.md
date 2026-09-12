@@ -1,23 +1,34 @@
 # Idol host boundary, home projection, capability and shell closure
 
-Apply immediately to every active agent and every future agent.
+| # | directive |
+|---|---|
+| 1 | Apply immediately to every active agent and every future agent. |
 
-This is a blocking architectural redirect.
+| # | directive |
+|---|---|
+| 1 | This is a blocking architectural redirect. |
 
-Do not continue adding host API calls, host-shaped substitutes, spelling
-detectors as authority, or transport-specific policy until this closure is
-implemented and backfilled.
+| # | directive |
+|---|---|
+| 1 | Do not continue adding host API calls, host-shaped substitutes, spelling detectors as authority, or transport-specific policy until this closure is implemented and backfilled. |
 
-Repository historical host calls are migration provenance until classified and
-moved to ingress/egress boundaries.
+| # | directive |
+|---|---|
+| 1 | Repository historical host calls are migration provenance until classified and moved to ingress/egress boundaries. |
 
 ## Absolute root law
 
-Idol source sees semantic values.
+| # | directive |
+|---|---|
+| 1 | Idol source sees semantic values. |
 
-It does not see the host operating system API.
+| # | directive |
+|---|---|
+| 1 | It does not see the host operating system API. |
 
-Idol has no canonical authority-bearing API trees for:
+| # | directive |
+|---|---|
+| 1 | Idol has no canonical authority-bearing API trees for: |
 
 ```text
 os
@@ -32,15 +43,19 @@ core
 shell
 ```
 
-None of these exist in Idol source as namespace loaders, runtime tables, prelude
-graphs, or wrappers to call. They are not migration targets and not bootstrap
-substitutes. A spelling like `std.proc.capture` or `ir.node` does not become
-lawful because it compiles or because nearby debt uses it.
+| # | directive |
+|---|---|
+| 1 | None of these exist in Idol source as namespace loaders, runtime tables, prelude graphs, or wrappers to call. |
+| 2 | They are not migration targets and not bootstrap substitutes. |
+| 3 | A spelling like `std.proc.capture` or `ir.node` does not become lawful because it compiles or because nearby debt uses it. |
 
-Historical filesystem paths (`lib/…`) and realization encodings (DNIR) are
-bootstrap or realization provenance only — delete or push outward, never extend.
+| # | directive |
+|---|---|
+| 1 | Historical filesystem paths (`lib/…`) and realization encodings (DNIR) are bootstrap or realization provenance only — delete or push outward, never extend. |
 
-Renaming host spellings without semantic decomposition is forbidden:
+| # | directive |
+|---|---|
+| 1 | Renaming host spellings without semantic decomposition is forbidden: |
 
 ```text
 os.args()        → os.args[n]   (computed projection on the table under os world)
@@ -51,23 +66,24 @@ io.popen(cmd)    → structured command + process world
 environment[k]   → os.env[k]    (environment is not a thing)
 ```
 
-when the same host model remains underneath.
+| # | directive |
+|---|---|
+| 1 | when the same host model remains underneath. |
 
-`path:read()` on an absent or unreadable path FAILS CLOSED: the runtime
-refuses with an identity-first diagnostic naming the cause and the path
-(`read-refused:absent:<path>` / `read-refused:io:<path>`) and a nonzero exit,
-because an absent file is not a value and NULL-as-`str` was measured undefined
-behaviour (`law.id.one`: downstream semantic use fails closed when the required
-facts are absent; refusal pinned by `gate/readpath.sh`). A structured
-absent|present outcome family that lets source observe absence as a value
-remains open under `GAP-154`/`GAP-118` and is not admitted by this refusal.
+| # | directive |
+|---|---|
+| 1 | `path:read()` on an absent or unreadable path FAILS CLOSED: the runtime refuses with an identity-first diagnostic naming the cause and the path (`read-refused:absent:<path>` / `read-refused:io:<path>`) and a nonzero exit, because an absent file is not a value and NULL-as-`str` was measured undefined behaviour (`law.id.one`: downstream semantic use fails closed when the required facts are absent; refusal pinned by `gate/readpath.sh`). |
+| 2 | A structured absent\|present outcome family that lets source observe absence as a value remains open under `GAP-154`/`GAP-118` and is not admitted by this refusal. |
 
 ## Canonical execution model
 
-Every Idol execution begins with a semantic root/home constructed by its
-embedding, launcher, or build context.
+| # | directive |
+|---|---|
+| 1 | Every Idol execution begins with a semantic root/home constructed by its embedding, launcher, or build context. |
 
-The root may expose ordinary values such as:
+| # | directive |
+|---|---|
+| 1 | The root may expose ordinary values such as: |
 
 ```text
 input
@@ -76,15 +92,18 @@ error
 cwd
 ```
 
-`args` and `env` are **ordinary tables under the `os` world** — not separate
-root singletons and not an `environment` entity. Access:
+| # | directive |
+|---|---|
+| 1 | `args` and `env` are **ordinary tables under the `os` world** — not separate root singletons and not an `environment` entity. |
 
 ```id
 os.args[1]
 os.env["KEY"]
 ```
 
-ordinary anchored homes such as:
+| # | directive |
+|---|---|
+| 1 | ordinary anchored homes such as: |
 
 ```text
 app
@@ -93,7 +112,9 @@ http
 store
 ```
 
-and worlds such as:
+| # | directive |
+|---|---|
+| 1 | and worlds such as: |
 
 ```text
 fs
@@ -103,52 +124,71 @@ clock
 random
 ```
 
-Exact names come from current vocabulary authority — not from this projection.
+| # | directive |
+|---|---|
+| 1 | Exact names come from current vocabulary authority — not from this projection. |
 
-The root is a graph context.
+| # | directive |
+|---|---|
+| 1 | The root is a graph context. |
 
-It is not a runtime namespace object.
+| # | directive |
+|---|---|
+| 1 | It is not a runtime namespace object. |
 
 ## Arguments (`os.args`)
 
-Command-line arguments are supplied as an ordinary table under the `os` world.
+| # | directive |
+|---|---|
+| 1 | Command-line arguments are supplied as an ordinary table under the `os` world. |
 
-Wrong:
+| # | directive |
+|---|---|
 
 ```id
 args = os.args()
 command = args(1)    # bare value without an os namespace when argv is meant
 ```
 
-Canonical:
+| # | directive |
+|---|---|
+| 1 | Canonical: |
 
 ```id
 command = os.args[1]
 target = os.args[2]
 ```
 
-Launcher ingress:
+| # | directive |
+|---|---|
+| 1 | Launcher ingress: |
 
 ```text
 host argv → foreign provenance → os.args table under os world
 ```
 
-After ingress, provenance (POSIX, WASI, MCP, test harness) is not visible in
-source.
+| # | directive |
+|---|---|
+| 1 | After ingress, provenance (POSIX, WASI, MCP, test harness) is not visible in source. |
 
 ## Environment (`os.env`)
 
-`environment` is **not a thing**. Environment is the ordinary `env` table under
-the `os` world — project, read, and assign like any table field.
+| # | directive |
+|---|---|
+| 1 | `environment` is **not a thing**. |
+| 2 | Environment is the ordinary `env` table under the `os` world — project, read, and assign like any table field. |
 
-Wrong:
+| # | directive |
+|---|---|
 
 ```id
 mode = os.getenv("IDOLTREE")
 mode = environment["IDOLTREE"]
 ```
 
-Canonical:
+| # | directive |
+|---|---|
+| 1 | Canonical: |
 
 ```id
 mode = os.env["IDOLTREE"]
@@ -156,51 +196,63 @@ os.env["KEY"] = value
 os.env[key] = value
 ```
 
-Foreign `getenv` / `environ` / `GetEnvironmentVariable` are bootstrap ingress
-only. Build world != program world.
+| # | directive |
+|---|---|
+| 1 | Foreign `getenv` / `environ` / `GetEnvironmentVariable` are bootstrap ingress only. |
+| 2 | Build world != program world. |
 
 ## Endpoints and `io` world I/O
 
-Do not standardize architecture around stdin-only.
+| # | directive |
+|---|---|
+| 1 | Do not standardize architecture around stdin-only. |
 
-Launcher may project `input`, `output`, `error` endpoint values. The `io`
-world exposes subject-first relations:
+| # | directive |
+|---|---|
+| 1 | Launcher may project `input`, `output`, `error` endpoint values. |
+| 2 | The `io` world exposes subject-first relations: |
 
-Wrong:
+| # | directive |
+|---|---|
 
 ```id
 line = io.read()
 io.write(result)
 ```
 
-Canonical:
+| # | directive |
+|---|---|
+| 1 | Canonical: |
 
 ```id
 line = stdin:read()
 out:write(result)
 ```
 
-Relation is protocol: `source: read` not `source: readable` (`law.protocol.one`).
-RETRACTED under world reconciliation v2. This read: "World dot forms such as
-`io:read()` are ingress debt — subject-first `stdin:read()` / `path:read()` /
-`sink:write(value)` only." v2 rules the other way: `io` is an ordinary world
-VALUE, a table, and a legitimate subject, so `io:read()` and `io:write(x)` are
-canonical. `stdin`/`stdout`/`stderr` are host provenance and realization, not
-native semantic concepts.
+| # | directive |
+|---|---|
+| 1 | Relation is protocol: `source: read` not `source: readable` (`law.protocol.one`). |
+| 2 | RETRACTED under world reconciliation v2. |
+| 3 | This read: "World dot forms such as `io:read()` are ingress debt — subject-first `stdin:read()` / `path:read()` / `sink:write(value)` only." v2 rules the other way: `io` is an ordinary world VALUE, a table, and a legitimate subject, so `io:read()` and `io:write(x)` are canonical. `stdin`/`stdout`/`stderr` are host provenance and realization, not native semantic concepts. |
 
-What survives unchanged is the part that was never about `io`: the DOT form is
-still wrong, because a home is not a namespace. `io.read(x)` is debt;
-`io:read()` is not. Where a stream is the real subject, it stays the subject —
-`file:write(data)`, not `io:write(file, data)`.
+| # | directive |
+|---|---|
+| 1 | What survives unchanged is the part that was never about `io`: the DOT form is still wrong, because a home is not a namespace. `io.read(x)` is debt; `io:read()` is not. |
+| 2 | Where a stream is the real subject, it stays the subject — `file:write(data)`, not `io:write(file, data)`. |
 
-MCP stdin/stdout pipes are realization choices for an invocation — not
-language architecture.
+| # | directive |
+|---|---|
+| 1 | MCP stdin/stdout pipes are realization choices for an invocation — not language architecture. |
 
 ## Process execution
 
-`popen` is not an Idol relation.
+| # | directive |
+|---|---|
+| 1 | `popen` is not an Idol relation. |
 
-Decompose into:
+| # | directive |
+|---|---|
+| 1 | Decompose into: |
 
 ```text
 command value (executable, arguments, environment, cwd, endpoints)
@@ -209,14 +261,18 @@ run relation
 result/status/effects/witness
 ```
 
-Historical:
+| # | directive |
+|---|---|
+| 1 | Historical: |
 
 ```id
 pipe = io.popen("git status")
 text = pipe:read_all()
 ```
 
-Semantic migration direction (conceptual — use admitted vocabulary):
+| # | directive |
+|---|---|
+| 1 | Semantic migration direction (conceptual — use admitted vocabulary): |
 
 ```id
 git = command("git", "status")
@@ -224,25 +280,32 @@ result = git:run()
 text = result.output
 ```
 
-If vocabulary lacks the relation: `SEMANTIC-VOCABULARY-BLOCKED`. Do not invent
-another host wrapper.
+| # | directive |
+|---|---|
+| 1 | If vocabulary lacks the relation: `SEMANTIC-VOCABULARY-BLOCKED`. |
+| 2 | Do not invent another host wrapper. |
 
-Direct command and shell expression remain semantically distinct. Do not convert
-every command into `/bin/sh -c ...`.
+| # | directive |
+|---|---|
+| 1 | Direct command and shell expression remain semantically distinct. |
+| 2 | Do not convert every command into `/bin/sh -c ...`. |
 
 ## Shell interpretation and command reach
 
-Shell is command interpretation law. It is not a source law, grammar, home,
-world, authority grant, mode keyword, or hidden global flag. Possessing shell
-law never changes which grammar recognizes source.
+| # | directive |
+|---|---|
+| 1 | Shell is command interpretation law. |
+| 2 | It is not a source law, grammar, home, world, authority grant, mode keyword, or hidden global flag. |
+| 3 | Possessing shell law never changes which grammar recognizes source. |
 
-A launcher may independently provide ordinary command-provider reach, process,
-filesystem and environment authority witnesses, and input/output/error
-endpoints according to policy. Bundling those facts for an interactive launch
-does not make shell interpretation their owner and does not make the bundle a
-privileged semantic container.
+| # | directive |
+|---|---|
+| 1 | A launcher may independently provide ordinary command-provider reach, process, filesystem and environment authority witnesses, and input/output/error endpoints according to policy. |
+| 2 | Bundling those facts for an interactive launch does not make shell interpretation their owner and does not make the bundle a privileged semantic container. |
 
-Bare command resolution exists only when an exact command provider is reached:
+| # | directive |
+|---|---|
+| 1 | Bare command resolution exists only when an exact command provider is reached: |
 
 ```text
 ordinary lexical binding
@@ -253,20 +316,29 @@ ordinary lexical binding
 → failure
 ```
 
-A real Idol binding wins over command-provider projection.
+| # | directive |
+|---|---|
+| 1 | A real Idol binding wins over command-provider projection. |
 
-No reached provider: unknown bare command → unresolved identity. Multiple
-incomparable providers → ambiguity. Execution additionally requires exact
-process authority. Failure to resolve never falls back to opaque shell text.
+| # | directive |
+|---|---|
+| 1 | No reached provider: unknown bare command → unresolved identity. |
+| 2 | Multiple incomparable providers → ambiguity. |
+| 3 | Execution additionally requires exact process authority. |
+| 4 | Failure to resolve never falls back to opaque shell text. |
 
 ## Core vocabulary
 
-Do not create a `core` namespace.
+| # | directive |
+|---|---|
+| 1 | Do not create a `core` namespace. |
 
-Core vocabulary means canonical semantic identity authority at compiler
-construction — not a table source traverses.
+| # | directive |
+|---|---|
+| 1 | Core vocabulary means canonical semantic identity authority at compiler construction — not a table source traverses. |
 
-Wrong:
+| # | directive |
+|---|---|
 
 ```id
 core.len(x)
@@ -274,7 +346,9 @@ core.fs.read(path)
 core.process.run(cmd)
 ```
 
-Correct meaning:
+| # | directive |
+|---|---|
+| 1 | Correct meaning: |
 
 ```text
 canonical relation len / read / run reachable from root projection
@@ -282,9 +356,13 @@ canonical relation len / read / run reachable from root projection
 
 ## Projection and home algebra
 
-See `docs/spec/source.md` for file/home/package closure.
+| # | directive |
+|---|---|
+| 1 | See `docs/spec/source.md` for file/home/package closure. |
 
-Summary invariants:
+| # | directive |
+|---|---|
+| 1 | Summary invariants: |
 
 - No module system, import, use, using, inject, admit, open, include.
 - Selective visibility is scope/home construction at owner boundaries.
@@ -295,15 +373,19 @@ Summary invariants:
 
 ## Backend selection
 
-`--backend=c` and similar CLI spellings are foreign launcher input projected to
-target/realization facts — not canonical semantic switches inside `.id`.
+| # | directive |
+|---|---|
+| 1 | `--backend=c` and similar CLI spellings are foreign launcher input projected to target/realization facts — not canonical semantic switches inside `.id`. |
 
-C emission is migration/compatibility realization — not native semantic backend
-identity.
+| # | directive |
+|---|---|
+| 1 | C emission is migration/compatibility realization — not native semantic backend identity. |
 
 ## Bootstrap adapter law
 
-At the outer foreign boundary a temporary adapter may still use host APIs if:
+| # | directive |
+|---|---|
+| 1 | At the outer foreign boundary a temporary adapter may still use host APIs if: |
 
 - classified bootstrap
 - foreign call isolated
@@ -311,25 +393,33 @@ At the outer foreign boundary a temporary adapter may still use host APIs if:
 - downstream never sees the host API
 - deletion gate recorded
 
-Push foreignness outward. Host mechanisms belong at ingress or egress — never in
-the semantic middle.
+| # | directive |
+|---|---|
+| 1 | Push foreignness outward. |
+| 2 | Host mechanisms belong at ingress or egress — never in the semantic middle. |
 
-Migration wrappers that still call host APIs underneath are forbidden unless they
-establish the semantic boundary and name a deletion gate.
+| # | directive |
+|---|---|
+| 1 | Migration wrappers that still call host APIs underneath are forbidden unless they establish the semantic boundary and name a deletion gate. |
 
 ## Durable enforcement
 
-Lexical ratchets on **added lines** are temporary migration firewalls only:
+| # | directive |
+|---|---|
+| 1 | Lexical ratchets on **added lines** are temporary migration firewalls only: |
 
 - `gate/host.id` — blocks new host API spellings on staged additions
 - `scripts/ingress/` home — bootstrap foreign ingress boundary (`input.id`, `output.id`, `arg.id`)
 
-`gate/architecture.id` must **not** host `hostread`, `hostargs`, `hostenv`, or
-other host spelling census rows. That is the same antipattern as `suffix()`,
-`readface`, and admission string detectors. Host semantic verdicts belong to
-GAP-124 graph obligations.
+| # | directive |
+|---|---|
+| 1 | `gate/architecture.id` must **not** host `hostread`, `hostargs`, `hostenv`, or other host spelling census rows. |
+| 2 | That is the same antipattern as `suffix()`, `readface`, and admission string detectors. |
+| 3 | Host semantic verdicts belong to GAP-124 graph obligations. |
 
-Production authority:
+| # | directive |
+|---|---|
+| 1 | Production authority: |
 
 - native graph must not contain host namespace authority
 - environment reads require environment facts + world
@@ -337,12 +427,15 @@ Production authority:
 - argument access resolves root-projected args value
 - structured command execution requires exact provider reach plus independent process authority
 
-Spelling mutation must not evade these invariants.
+| # | directive |
+|---|---|
+| 1 | Spelling mutation must not evade these invariants. |
 
 ## Agent pre-write law
 
-Before writing code involving argv, env, filesystem, process, pipe, shell,
-transport, terminal, command, cwd, PATH, or backend, state:
+| # | directive |
+|---|---|
+| 1 | Before writing code involving argv, env, filesystem, process, pipe, shell, transport, terminal, command, cwd, PATH, or backend, state: |
 
 ```text
 semantic subject
@@ -354,9 +447,13 @@ demand
 possible zero-cost realization
 ```
 
-If unavailable: `SEMANTIC-VOCABULARY-BLOCKED` or `IMPLEMENTATION-BLOCKED`.
+| # | directive |
+|---|---|
+| 1 | If unavailable: `SEMANTIC-VOCABULARY-BLOCKED` or `IMPLEMENTATION-BLOCKED`. |
 
-Do not reach for host APIs.
+| # | directive |
+|---|---|
+| 1 | Do not reach for host APIs. |
 
 ## Absolute closure
 
@@ -373,10 +470,13 @@ Bare commands resolve only through exact reached providers; execution separately
 Host APIs exist only at ingress/egress realization boundaries
 ```
 
-Pipeline:
+| # | directive |
+|---|---|
+| 1 | Pipeline: |
 
 ```text
 .id → graph → demand → realization → machine
 ```
 
-FTCFTW.
+| # | directive |
+|---|---|

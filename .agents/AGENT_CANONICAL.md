@@ -1,8 +1,9 @@
 # Idol agent router
 
-`AGENTS.md` is the repository entry point — including **Idol harness
-orientation** (harness routing, not C0). This file is its stable path
-router; it contains no language law and no volatile project status.
+| # | directive |
+|---|---|
+| 1 | `AGENTS.md` is the repository entry point — including **Idol harness orientation** (harness routing, not C0). |
+| 2 | This file is its stable path router; it contains no language law and no volatile project status. |
 
 ## One law
 
@@ -33,9 +34,11 @@ router; it contains no language law and no volatile project status.
 | Performance evidence | `docs/performance.md` |
 | Open obligations | exact current `gaps/GAP-*.md` files |
 
-The constitution is structured law documentation, not executable source or a
-pattern library. Canonical implementation uses `.id`. No pass document or
-historical corpus file is an authority.
+| # | directive |
+|---|---|
+| 1 | The constitution is structured law documentation, not executable source or a pattern library. |
+| 2 | Canonical implementation uses `.id`. |
+| 3 | No pass document or historical corpus file is an authority. |
 
 ## Session start
 
@@ -58,28 +61,30 @@ historical corpus file is an authority.
    The lock wrapper is coordination transport, not semantic authority.
 7. Commit only explicit owned paths and release only your own claims.
 
-The language identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
-Semantic law lives in `docs/spec/constitution.md` (C0). Do not migrate to the
-release repository until `.agents/RELEASE_READINESS.md` authorizes release.
-The claim wrapper remains bootstrap transport until the graph-owned
-coordination world closes. It is not language semantics and is not duplicated
-inside MCP.
+| # | directive |
+|---|---|
+| 1 | The language identity is **Idol** (`idol`, `.id`, repository `idollang/idol`). |
+| 2 | Semantic law lives in `docs/spec/constitution.md` (C0). |
+| 3 | Do not migrate to the release repository until `.agents/RELEASE_READINESS.md` authorizes release. |
+| 4 | The claim wrapper remains bootstrap transport until the graph-owned coordination world closes. |
+| 5 | It is not language semantics and is not duplicated inside MCP. |
 
-No import or admission syntax in canonical source — reachability is scope and
-home projection (`docs/spec/source.md`, `GAP-153`).
+| # | directive |
+|---|---|
+| 1 | No import or admission syntax in canonical source — reachability is scope and home projection (`docs/spec/source.md`, `GAP-153`). |
 
-`std` is migration distribution, not a semantic namespace. `std.script` is
-frozen debt. New canonical `std.*` calls, APIs, generated source, and onboarding
-examples are forbidden; missing subject/world vocabulary blocks rather than
-creating another helper root.
+| # | directive |
+|---|---|
+| 1 | `std` is migration distribution, not a semantic namespace. `std.script` is frozen debt. |
+| 2 | New canonical `std.*` calls, APIs, generated source, and onboarding examples are forbidden; missing subject/world vocabulary blocks rather than creating another helper root. |
 
-PREDICATE-ZERO is also fail-closed: subject-first spelling does not admit a
-boolean helper when a semantic fact, case, transition, world, descriptor,
-demand, or realization fact owns the meaning. Preserve unknown and absence;
-missing vocabulary blocks rather than producing a helper predicate.
+| # | directive |
+|---|---|
+| 1 | PREDICATE-ZERO is also fail-closed: subject-first spelling does not admit a boolean helper when a semantic fact, case, transition, world, descriptor, demand, or realization fact owns the meaning. |
+| 2 | Preserve unknown and absence; missing vocabulary blocks rather than producing a helper predicate. |
 
 ## Fail closed
 
-If law conflicts, status cannot be verified, vocabulary is missing, or another
-owner has not exposed a required fact: stop, record the exact blocker, and do
-not create a substitute authority.
+| # | directive |
+|---|---|
+| 1 | If law conflicts, status cannot be verified, vocabulary is missing, or another owner has not exposed a required fact: stop, record the exact blocker, and do not create a substitute authority. |

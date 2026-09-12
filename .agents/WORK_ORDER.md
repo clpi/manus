@@ -1,8 +1,10 @@
 # Universal low-agent work order
 
-Every assignment to a non-architectural agent is materialized in this shape.
-Copy the block, fill every field, resolve `base_sha` to the current HEAD at
-assignment time. The order expires when HEAD changes.
+| # | directive |
+|---|---|
+| 1 | Every assignment to a non-architectural agent is materialized in this shape. |
+| 2 | Copy the block, fill every field, resolve `base_sha` to the current HEAD at assignment time. |
+| 3 | The order expires when HEAD changes. |
 
 ```yaml
 task: exact-task-id
@@ -69,5 +71,7 @@ deliverable:
 - **bounded-implementer** — one pre-decided physical realization behind
   exact graph facts; deletion-only guard removals with routed instructions.
 
-Ambiguity is a stop, not improvisation. Obtain live claims before editing;
-durable lane labels are not locks.
+| # | directive |
+|---|---|
+| 1 | Ambiguity is a stop, not improvisation. |
+| 2 | Obtain live claims before editing; durable lane labels are not locks. |

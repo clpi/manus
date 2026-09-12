@@ -1,7 +1,9 @@
 # Idol agent integration
 
-This is a durable client setup guide. It contains no language law, live claims,
-tool census, or current gate status.
+| # | directive |
+|---|---|
+| 1 | This is a durable client setup guide. |
+| 2 | It contains no language law, live claims, tool census, or current gate status. |
 
 ## Canonical locations
 
@@ -16,38 +18,36 @@ tool census, or current gate status.
 
 ## Operating model and work orders
 
-Multi-agent allocation is defined by `.agents/AGENT_OPERATING_MODEL.md`
-(roles, waves, and the never-assign list). Every assignment to a
-non-architectural agent is materialized through `.agents/WORK_ORDER.md`;
-per-agent injectables live under `.agents/briefs/`. OpenCode's assigned
-role is projected natively as the `pickle` agent (`.opencode/agent/pickle.md`).
+| # | directive |
+|---|---|
+| 1 | Multi-agent allocation is defined by `.agents/AGENT_OPERATING_MODEL.md` (roles, waves, and the never-assign list). |
+| 2 | Every assignment to a non-architectural agent is materialized through `.agents/WORK_ORDER.md`; per-agent injectables live under `.agents/briefs/`. |
+| 3 | OpenCode's assigned role is projected natively as the `pickle` agent (`.opencode/agent/pickle.md`). |
 
 ## Repository servers
 
-The version-locked MCP implementations are declared once by the
-client-neutral `tools/node/dev/mcp.manifest.json`:
+| # | directive |
+|---|---|
+| 1 | The version-locked MCP implementations are declared once by the client-neutral `tools/node/dev/mcp.manifest.json`: |
 
 | Physical server name | Entry point | State | Purpose |
 |---|---|---|---|
 | `idol` | `tools/mcp/native.id` | enabled, required | bootstrap status, head, orient transport |
 | `idol-native` | sibling `idol-native` checkout, `tools/mcp/server.id` | enabled | `check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`, `explain`, `fmt`, `asm` |
 
-A manifest entry with a `sibling` field resolves its root, entry, and launcher
-binary against the sibling checkout of this clone. The retired pre-rename
-transports (claims/bench, diagnostics, zls bridges) were removed, not
-disabled: claims use `tools/node/dev/claim`, diagnostics and language
-intelligence come from the `idol-native` server and its language server, and
-Zig navigation uses the editor's own zls directly. `tools/mcp/native.id` is a
-raw-text bootstrap compatibility transport, not a graph-owned semantic
-projection. Generated client configurations are projections of the manifest,
-not additional authorities.
+| # | directive |
+|---|---|
+| 1 | A manifest entry with a `sibling` field resolves its root, entry, and launcher binary against the sibling checkout of this clone. |
+| 2 | The retired pre-rename transports (claims/bench, diagnostics, zls bridges) were removed, not disabled: claims use `tools/node/dev/claim`, diagnostics and language intelligence come from the `idol-native` server and its language server, and Zig navigation uses the editor's own zls directly. `tools/mcp/native.id` is a raw-text bootstrap compatibility transport, not a graph-owned semantic projection. |
+| 3 | Generated client configurations are projections of the manifest, not additional authorities. |
 
 ## Client shape
 
-Clients run each server's own `idol` binary with the server's root as cwd.
-Run `tools/node/dev/generate-configs` to derive absolute client projections
-from the actual clone path (the generator emits the stable `~/x` spelling
-when applicable). Projections:
+| # | directive |
+|---|---|
+| 1 | Clients run each server's own `idol` binary with the server's root as cwd. |
+| 2 | Run `tools/node/dev/generate-configs` to derive absolute client projections from the actual clone path (the generator emits the stable `~/x` spelling when applicable). |
+| 3 | Projections: |
 
 - Codex: `.codex/mcp.generated.toml` plus a marked block in `~/.codex/config.toml`.
 - Cursor: `.cursor/mcp.json`.
@@ -61,7 +61,9 @@ when applicable). Projections:
   entrypoints; `idol_mcp_status` reports health, `idol__<server>__<tool>`
   forwards calls.
 
-The generated Codex shape is:
+| # | directive |
+|---|---|
+| 1 | The generated Codex shape is: |
 
 ```toml
 [mcp_servers.idol]
@@ -77,9 +79,10 @@ IDOL_ROOT = "<repo>"
 IDOL_BIN = "<repo>/zig-out/bin/idol"
 ```
 
-`idol-native` uses the same shape with its own root and `bin/idol` launcher.
-Keep the pinned Zig and ZLS directories in `PATH` for desktop and IDE
-launches.
+| # | directive |
+|---|---|
+| 1 | `idol-native` uses the same shape with its own root and `bin/idol` launcher. |
+| 2 | Keep the pinned Zig and ZLS directories in `PATH` for desktop and IDE launches. |
 
 ## Skills and law routing
 
@@ -91,14 +94,12 @@ launches.
 
 ## Editor language intelligence
 
-The `.id` language server is the idol-native tree's `tools/lsp/launch.sh`
-(Content-Length framing; diagnostics and symbols come from that tree's own
-compiler and semantic graph — the transport adds no second authority). Wire
-editors with `IDOL_BIN` pointing at the sibling checkout's `bin/idol`.
-The duplicate in-repository `tools/lsp` scanner, taxonomy, fixtures, and gates
-were deleted. Semantic tokens wait for graph-owned source spans and generated
-grammar-role projections in the durable sibling server; do not restore the old
-raw scanner or corpus.
+| # | directive |
+|---|---|
+| 1 | The `.id` language server is the idol-native tree's `tools/lsp/launch.sh` (Content-Length framing; diagnostics and symbols come from that tree's own compiler and semantic graph — the transport adds no second authority). |
+| 2 | Wire editors with `IDOL_BIN` pointing at the sibling checkout's `bin/idol`. |
+| 3 | The duplicate in-repository `tools/lsp` scanner, taxonomy, fixtures, and gates were deleted. |
+| 4 | Semantic tokens wait for graph-owned source spans and generated grammar-role projections in the durable sibling server; do not restore the old raw scanner or corpus. |
 
 ## Session protocol
 
@@ -116,7 +117,9 @@ raw scanner or corpus.
 
 ## Validation
 
-Run setup evidence from the repository root:
+| # | directive |
+|---|---|
+| 1 | Run setup evidence from the repository root: |
 
 ```text
 repo="$(git rev-parse --show-toplevel)"
@@ -128,8 +131,8 @@ opencode mcp list
 opencode debug skill
 ```
 
-The first two commands validate Codex client configuration. `probe-mcp`
-exercises a real JSON-RPC initialize against every enabled server;
-`mcp-gate` drives the production server plus damage controls. The OpenCode
-commands validate the OpenCode projection and skill discovery. A client
-listing tools without exercising the handlers is not MCP health evidence.
+| # | directive |
+|---|---|
+| 1 | The first two commands validate Codex client configuration. `probe-mcp` exercises a real JSON-RPC initialize against every enabled server; `mcp-gate` drives the production server plus damage controls. |
+| 2 | The OpenCode commands validate the OpenCode projection and skill discovery. |
+| 3 | A client listing tools without exercising the handlers is not MCP health evidence. |

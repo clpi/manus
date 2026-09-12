@@ -1,9 +1,12 @@
 # P0-0 — exact local truth snapshot
 
-**Captured:** 2026-08-20 (UTC) · **Not language law** · refresh before every edit wave
+| # | directive |
+|---|---|
+| 1 | **Captured:** 2026-08-20 (UTC) · **Not language law** · refresh before every edit wave |
 
-Compare against prior audit anchors: user baseline `idol` **33b36031**, `idol-native` **da649b52**
-(historical; local pair has moved — see below).
+| # | directive |
+|---|---|
+| 1 | Compare against prior audit anchors: user baseline `idol` **33b36031**, `idol-native` **da649b52** (historical; local pair has moved — see below). |
 
 ## Incarnation tuple (measurement belongs to this set)
 
@@ -16,7 +19,9 @@ Compare against prior audit anchors: user baseline `idol` **33b36031**, `idol-na
 | **Source projection blob** | `aa4a0eb37260546a3cf4f1eec3bf99a7f19b974a` |
 | **Vendored `bin/idol`** | must match Idol pin at measurement time |
 
-If any component changes mid-run: **NOT A MEASUREMENT**.
+| # | directive |
+|---|---|
+| 1 | If any component changes mid-run: **NOT A MEASUREMENT**. |
 
 ## `/Volumes/d 1/x/idol`
 
@@ -53,7 +58,10 @@ If any component changes mid-run: **NOT A MEASUREMENT**.
 
 ### normalizeModule (audit item 13)
 
-`src/table_apply.zig` — compatibility-only world ingress; explicitly **does not** reinterpret `()` as `[]` or use type_map for semantics. No `arr(i)` migration path.
+| # | directive |
+|---|---|
+| 1 | `src/table_apply.zig` — compatibility-only world ingress; explicitly **does not** reinterpret `()` as `[]` or use type_map for semantics. |
+| 2 | No `arr(i)` migration path. |
 
 ## `/Volumes/d 1/x/idol-native`
 

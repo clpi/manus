@@ -1,19 +1,20 @@
 # Idol — current tech debt + FTCFTW workstream one-pager
 
-This is the **current workstream / debt compass**. It is not semantic law.
-Supreme compact law is `docs/spec/law.md`; structured expansion is
-`docs/spec/constitution.md` (C0, including §67). Executed frontier:
-`docs/bootstrap.md`. Metrics: `docs/METRICS.md`. Measurable checkboxes:
-`WORKSTREAM_DEBT_REGISTER.md`.
+| # | directive |
+|---|---|
+| 1 | This is the **current workstream / debt compass**. |
+| 2 | It is not semantic law. |
+| 3 | Supreme compact law is `docs/spec/law.md`; structured expansion is `docs/spec/constitution.md` (C0, including §67). |
+| 4 | Executed frontier: `docs/bootstrap.md`. |
+| 5 | Metrics: `docs/METRICS.md`. |
+| 6 | Measurable checkboxes: `WORKSTREAM_DEBT_REGISTER.md`. |
 
-**Live HEAD / dirty / holders:** not recorded here (`law.control.derived`).
-Use `git rev-parse HEAD`, `git status`, `tools/node/dev/claim list`, and
-`tools/node/dev/orient`.
-**Evidence subject vs revision:** bind every metric to the measured subject
-and the evidence revision separately (`law.evidence.subject`). Catalog
-deletion + `tokenize()` route subject is `29f62035`; later evidence
-revisions must name their own subject. Do not report FTCFTW “at HEAD”
-unless subject equals the live tree.
+| # | directive |
+|---|---|
+| 1 | **Live HEAD / dirty / holders:** not recorded here (`law.control.derived`). |
+| 2 | Use `git rev-parse HEAD`, `git status`, `tools/node/dev/claim list`, and `tools/node/dev/orient`. **Evidence subject vs revision:** bind every metric to the measured subject and the evidence revision separately (`law.evidence.subject`). |
+| 3 | Catalog deletion + `tokenize()` route subject is `29f62035`; later evidence revisions must name their own subject. |
+| 4 | Do not report FTCFTW “at HEAD” unless subject equals the live tree. |
 
 ## Status
 
@@ -27,14 +28,19 @@ unless subject equals the live tree.
 | FTCFTW | architecture promising; complete current evidence **NOT PROVEN** (~0%) |
 | Release | not ready |
 
-Doctor default at live HEAD: **PASS** (MCP serve, architecture gate, unit gate
-deferred). Default doctor green is **not** combined CI / full-gate proof.
+| # | directive |
+|---|---|
+| 1 | Doctor default at live HEAD: **PASS** (MCP serve, architecture gate, unit gate deferred). |
+| 2 | Default doctor green is **not** combined CI / full-gate proof. |
 
----
+| # | directive |
+|---|---|
 
 ## Live-HEAD delta vs origin audit `dc07e5d7`
 
-Still true (do not reopen as "maybe fixed by alignment commits"):
+| # | directive |
+|---|---|
+| 1 | Still true (do not reopen as "maybe fixed by alignment commits"): |
 
 - Source-family: family is a tokenize operand; `suffix(file)` is deleted.
   Production compile/fmt/embed classify once via `sourceFacts` then
@@ -48,7 +54,9 @@ Still true (do not reopen as "maybe fixed by alignment commits"):
 - No compiler B. FTCFTW complete proof still near zero.
 - Path/corpus cleanup ≠ source closure.
 
-Closed at subject `29f62035` (catalog deletion + `tokenize()` route):
+| # | directive |
+|---|---|
+| 1 | Closed at subject `29f62035` (catalog deletion + `tokenize()` route): |
 
 - **`lib/semantic/*` deleted** — 28 hand-authored relation-catalog files
   (`io`, `fs`, `seq`, `json`, `jit`, `coroutine`, `net`, `mem`, `ffi`, `mcp`,
@@ -64,20 +72,23 @@ Closed at subject `29f62035` (catalog deletion + `tokenize()` route):
 
 ## Convergence principle (catalog death)
 
-There must eventually be **no manually maintained semantic catalog** anywhere.
-Source produces semantics; the resolver publishes exact graph ids and structural
-facts (subject, operand, result, witness, demand, effect); every downstream stage
-consumes those facts directly — never metadata rows like:
+| # | directive |
+|---|---|
+| 1 | There must eventually be **no manually maintained semantic catalog** anywhere. |
+| 2 | Source produces semantics; the resolver publishes exact graph ids and structural facts (subject, operand, result, witness, demand, effect); every downstream stage consumes those facts directly — never metadata rows like: |
 
 ```id
 read = { world = "io", possessed = true, callable = true, operation = false }
 ```
 
-That pattern violated six independent laws (lib namespace, semantic qualifier,
-string world, *able mirror, possessed mirror, operation taxonomy). Correct shape
-is application/relation exact-ids with edges — no registry row.
+| # | directive |
+|---|---|
+| 1 | That pattern violated six independent laws (lib namespace, semantic qualifier, string world, *able mirror, possessed mirror, operation taxonomy). |
+| 2 | Correct shape is application/relation exact-ids with edges — no registry row. |
 
-Closed this session (SHC A dispatch + CATALOG-ZERO enforcement):
+| # | directive |
+|---|---|
+| 1 | Closed this session (SHC A dispatch + CATALOG-ZERO enforcement): |
 
 - Production route is `tokenize()` for every source. `tokenizeHost()` is
   differential-only.
@@ -86,7 +97,9 @@ Closed this session (SHC A dispatch + CATALOG-ZERO enforcement):
 - Unit tests at subject `29f62035`: 1216 pass / 22 fail / 4 crash (was 1205 / 33 / 4).
   **Historical subject only** — re-measure live tree before citing (`law.evidence.subject`).
 
-Superseded / do not re-litigate from the origin audit text:
+| # | directive |
+|---|---|
+| 1 | Superseded / do not re-litigate from the origin audit text: |
 
 - **`d09fd376` and earlier** still contained `lib/semantic/*` catalog rows.
   Live tree at `2e5d516` does not. Do not cite pre-`29f62035` manifests as current.
@@ -98,20 +111,22 @@ Superseded / do not re-litigate from the origin audit text:
   Re-measure before citing. Default `./tools/node/dev/doctor` is PASS with
   deferred full gates; that is **not** combined CI / integrated unit proof.
 
-**Forbidden next move:** another filename / "canonical: finalize … alignment"
-round. `dd3371e5` and later “finalize alignment” commits are not closure.
-`dd3371e5` reintroduced `good`/`raw`/`:has`/`bytes`/`echo $?` in
-`gate/build.id` because (1) pre-commit only `idol check`’d gates and
-(2) `cited` exempted all of `gate/`. `gate/build.id` is no longer a
-detector home. Detectors exist for those forms.
+| # | directive |
+|---|---|
+| 1 | **Forbidden next move:** another filename / "canonical: finalize … alignment" round. `dd3371e5` and later “finalize alignment” commits are not closure. `dd3371e5` reintroduced `good`/`raw`/`:has`/`bytes`/`echo $?` in `gate/build.id` because (1) pre-commit only `idol check`’d gates and (2) `cited` exempted all of `gate/`. `gate/build.id` is no longer a detector home. |
+| 2 | Detectors exist for those forms. |
 
-`idol run gate/idiom.id` over a non-empty diff currently refuses at DNB001
-`concat` (IMPLEMENTATION-BLOCKED). Its law remains migration guidance; a static
-added-line scan is only nonsemantic pressure. Do not restore hook execution
-until the executable scan is stable. Check-pass is not a scan. Do not land
-another alignment commit that reintroduces the blocked forms.
+| # | directive |
+|---|---|
+| 1 | `idol run gate/idiom.id` over a non-empty diff currently refuses at DNB001 `concat` (IMPLEMENTATION-BLOCKED). |
+| 2 | Its law remains migration guidance; a static added-line scan is only nonsemantic pressure. |
+| 3 | Do not restore hook execution until the executable scan is stable. |
+| 4 | Check-pass is not a scan. |
+| 5 | Do not land another alignment commit that reintroduces the blocked forms. |
 
-**Critical path (not naming, not reports):**
+| # | directive |
+|---|---|
+| 1 | **Critical path (not naming, not reports):** |
 
 ```text
 source-family → lexical identity → grammar role → parser
@@ -119,10 +134,14 @@ source-family → lexical identity → grammar role → parser
 → object → evidence → B → C
 ```
 
-Eight production lanes: `.agents/AGENT_COORDINATION.md`. This compass is not
-the frontier (`docs/bootstrap.md`).
+| # | directive |
+|---|---|
+| 1 | Eight production lanes: `.agents/AGENT_COORDINATION.md`. |
+| 2 | This compass is not the frontier (`docs/bootstrap.md`). |
 
-**Highest-impact order**
+| # | directive |
+|---|---|
+| 1 | **Highest-impact order** |
 
 1. Source-family fact + remaining lexical authority (GAP-145). Path is provenance.
 2. Lexer ABI/schema/magic-code deletion — producer token view, not a Zig slot map.
@@ -133,12 +152,16 @@ the frontier (`docs/bootstrap.md`).
 7. Direct native correctness.
 8. C + Wasmtime FTCFTW evidence.
 
-FTCFTW remains **invalid** as a performance claim. No compiler B.
+| # | directive |
+|---|---|
+| 1 | FTCFTW remains **invalid** as a performance claim. |
+| 2 | No compiler B. |
 
 ## Physical-cost baseline (subject `29f62035` evidence)
 
-Directional counts from revision-bound measurement — re-measure on live tree
-before citing as current:
+| # | directive |
+|---|---|
+| 1 | Directional counts from revision-bound measurement — re-measure on live tree before citing as current: |
 
 | Category | Approximate sites |
 |---|---|
@@ -152,19 +175,21 @@ before citing as current:
 | materialized packs | dozens |
 | unit fail / crash | 22 / 4 at subject `29f62035` only — remeasure live tree |
 
-Each remaining site must name unresolved semantic alternatives or be deleted.
+| # | directive |
+|---|---|
+| 1 | Each remaining site must name unresolved semantic alternatives or be deleted. |
 
----
+| # | directive |
+|---|---|
 
 ## Optimization architecture closure (items 1–35)
 
-Post catalog-deletion phase: remaining FTCFTW risk is optimization architecture,
-not obvious semantic anti-patterns. Explicit 1–35 workstreams:
-`docs/spec/realization.md`. Register maps clusters in
-`WORKSTREAM_DEBT_REGISTER.md` (sections BA–BH + 1–35 table). C0 laws:
-`law.representation.one`, `law.guard.one`, `law.specialize.budget`,
-`law.abi.internal`, `law.representation.demand`, `law.crash.first`,
-`law.cost.explain`.
+| # | directive |
+|---|---|
+| 1 | Post catalog-deletion phase: remaining FTCFTW risk is optimization architecture, not obvious semantic anti-patterns. |
+| 2 | Explicit 1–35 workstreams: `docs/spec/realization.md`. |
+| 3 | Register maps clusters in `WORKSTREAM_DEBT_REGISTER.md` (sections BA–BH + 1–35 table). |
+| 4 | C0 laws: `law.representation.one`, `law.guard.one`, `law.specialize.budget`, `law.abi.internal`, `law.representation.demand`, `law.crash.first`, `law.cost.explain`. |
 
 | Cluster | Items | Closure test |
 |---|---|---|
@@ -177,52 +202,65 @@ not obvious semantic anti-patterns. Explicit 1–35 workstreams:
 | Reach / link / FFI / Wasm / obj | 22–27 | sealed DCE; link reachability; FFI isolated; direct object writer |
 | Tooling / gates / diagnostics | 28–35 | semantic invalidation; LSP/MCP graph; dual debt gates; OPT-EXPLAIN |
 
-Updated ranking: P0 authority (1–9) → P1 cost collapse (10–26) → P2 tooling
-(27–35) → P3 proof (36–44). Full numbered list in register.
+| # | directive |
+|---|---|
+| 1 | Updated ranking: P0 authority (1–9) → P1 cost collapse (10–26) → P2 tooling (27–35) → P3 proof (36–44). |
+| 2 | Full numbered list in register. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — authority / SHC debt
 
-Closed: production `tokenize()`; `tokenizeHost()` differential-only
-(`law.oracle.bound`); `lib/semantic/*` gone (`29f62035`).
+| # | directive |
+|---|---|
+| 1 | Closed: production `tokenize()`; `tokenizeHost()` differential-only (`law.oracle.bound`); `lib/semantic/*` gone (`29f62035`). |
 
-Open, in path order: GAP-145 remaining lexical consumers; parallel host `TokenKind` / `duo_*`
-bridge names (schema queries landed `9b475670`); GAP-134; parser; graph
-(unowned — Codex stale); demand; realization; B/C.
+| # | directive |
+|---|---|
+| 1 | Open, in path order: GAP-145 remaining lexical consumers; parallel host `TokenKind` / `duo_*` bridge names (schema queries landed `9b475670`) |
+| 2 | GAP-134; parser; graph (unowned — Codex stale); demand; realization |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — canonical authority doc debt
 
-**Training-surface regressions named in the origin audit are closed at live
-HEAD** (`canonical.md` §1 / §18 / §18a; regenerated harness / agent / CLAUDE /
-AGENTS projections).
+| # | directive |
+|---|---|
+| 1 | **Training-surface regressions named in the origin audit are closed at live HEAD** (`canonical.md` §1 / §18 / §18a; regenerated harness / agent / CLAUDE / AGENTS projections). |
 
-Ongoing: keep every provider projection, example, and skill aligned when
-authority changes. Do not teach:
+| # | directive |
+|---|---|
+| 1 | Ongoing: keep every provider projection, example, and skill aligned when authority changes. |
+| 2 | Do not teach: |
 
 ```id
 checked = value:validate()
 checked:normalize()
 ```
 
-or a canonical `value:to()` rung. Ruling:
+| # | directive |
+|---|---|
+| 1 | or a canonical `value:to()` rung. |
 
 ```text
 infer everything possible
 explicit to(target) only when target cannot be inferred
 ```
 
-SOURCE-INFER-ONE applies globally to: bindings; relation names; projections;
-conversion; world witnesses; protocol witnesses; captures; qualification;
-injection/projection composition.
+| # | directive |
+|---|---|
+| 1 | SOURCE-INFER-ONE applies globally to: bindings; relation names; projections; conversion; world witnesses; protocol witnesses; captures; qualification; injection/projection composition. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — corpus debt
 
-Latest migrations still contain canonical-corpus violations including:
+| # | directive |
+|---|---|
+| 1 | Latest migrations still contain canonical-corpus violations including: |
 
 - call-shaped aggregate access — computed projection must converge on
   `count[x + 1]`, `cells[1]`, `src[i]`, and `flag[i]`, while `value(args)`
@@ -233,24 +271,32 @@ Latest migrations still contain canonical-corpus violations including:
 - stale `end` in portions of migrated corpus
 - comments teaching outdated conversion necessity
 
-**Path cleanup ≠ source closure.** Required: entire-corpus audit / gate, not
-added-line-only. Cursor/corpus lane **prevents re-entry**; it does not become
-the SHC frontier.
+| # | directive |
+|---|---|
+| 1 | **Path cleanup ≠ source closure.** Required: entire-corpus audit / gate, not added-line-only. |
+| 2 | Cursor/corpus lane **prevents re-entry**; it does not become the SHC frontier. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — INTERMEDIATE-ZERO
 
-Source bindings name meaning, not compiler steps. Eliminate avoidable: `tmp`,
-`result`, `checked`, `converted`, `output`, `current`, `next`, `intermediate`.
+| # | directive |
+|---|---|
+| 1 | Source bindings name meaning, not compiler steps. |
+| 2 | Eliminate avoidable: `tmp`, `result`, `checked`, `converted`, `output`, `current`, `next`, `intermediate`. |
 
-Prefer `value:a():b():c()` over single-use bridge chains.
+| # | directive |
+|---|---|
+| 1 | Prefer `value:a():b():c()` over single-use bridge chains. |
 
-Exception only when the binding is semantically meaningful, reused,
-refinement-bound, effect/order/lifetime relevant, or genuinely improves human
-understanding. Bindings must never force storage.
+| # | directive |
+|---|---|
+| 1 | Exception only when the binding is semantically meaningful, reused, refinement-bound, effect/order/lifetime relevant, or genuinely improves human understanding. |
+| 2 | Bindings must never force storage. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — inference / source density
 
@@ -258,33 +304,40 @@ understanding. Bindings must never force storage.
 IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 ```
 
-Applies to: `to`; relation selection; static projection; subject; descriptor
-target; capture; world witness; protocol witness; projection/injection algebra.
+| # | directive |
+|---|---|
+| 1 | Applies to: `to`; relation selection; static projection; subject; descriptor target; capture; world witness; protocol witness; projection/injection algebra. |
 
-Examples: `env["HOME"]` not `os.env["HOME"]` when uniquely admitted; `f(x)` not
-`f:call(x)`; `x[key]` not `x(key)` or `x:get(key)` for computed projection; `consume(value)` not
-`consume(value:to(target))` when target is demanded uniquely.
+| # | directive |
+|---|---|
+| 1 | Examples: `env["HOME"]` not `os.env["HOME"]` when uniquely admitted; `f(x)` not `f:call(x)`; `x[key]` not `x(key)` or `x:get(key)` for computed projection; `consume(value)` not `consume(value:to(target))` when target is demanded uniquely. |
 
-Human-meaning exception: `source:read()` may remain because `source()` obscures
-semantic intent.
+| # | directive |
+|---|---|
+| 1 | Human-meaning exception: `source:read()` may remain because `source()` obscures semantic intent. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — graph edge / id debt
 
-Good progress: descriptor recursion now traverses `.descriptor_ref` exact-id
-edges.
+| # | directive |
+|---|---|
+| 1 | Good progress: descriptor recursion now traverses `.descriptor_ref` exact-id edges. |
 
-Remaining graph ontology must prove irreducibility. Deleted unused tags
-(never constructed): NodeKind `source_file` `concept` `comptime_value`
-`emit_artifact`; EdgeKind `def` `type_of` `transform_input`. `type_of`
-became `descriptor`.
+| # | directive |
+|---|---|
+| 1 | Remaining graph ontology must prove irreducibility. |
+| 2 | Deleted unused tags (never constructed): NodeKind `source_file` `concept` `comptime_value` `emit_artifact` |
+| 3 | EdgeKind `def` `type_of` `transform_input`. `type_of` became `descriptor`. |
 
-Still present (physical tags, must not own meaning): `module`, `func`,
-`param`, `local`, `type_node`, `call`, `relation`, `transform_app`,
-`table_shape`, `enum_shape`.
+| # | directive |
+|---|---|
+| 1 | Still present (physical tags, must not own meaning): `module`, `func`, `param`, `local`, `type_node`, `call`, `relation`, `transform_app`, `table_shape`, `enum_shape`. |
 
-Likely reductions:
+| # | directive |
+|---|---|
+| 1 | Likely reductions: |
 
 - `module` → home/member/provenance facts
 - `call` → application
@@ -293,76 +346,101 @@ Likely reductions:
 - `type_node` → descriptor id
 - `table_shape` / `enum_shape` → shape/descriptor facts
 
-Remaining suspicious EdgeKind: `contains`, `use`, `descriptor_ref`,
-`transform_output`. Audit each against structural-role law.
-Do not mint `subject`/`relation`/`result` as EdgeKind — those roles already
-live on `ApplicationFact`.
+| # | directive |
+|---|---|
+| 1 | Remaining suspicious EdgeKind: `contains`, `use`, `descriptor_ref`, `transform_output`. |
+| 2 | Audit each against structural-role law. |
+| 3 | Do not mint `subject`/`relation`/`result` as EdgeKind — those roles already live on `ApplicationFact`. |
 
-No operational edge kinds: `run`, `call`, `invoke`, `execute`, `read`, `write`,
-`parse`, `convert`, `lower`, `emit`, etc. Application owns relation id.
+| # | directive |
+|---|---|
+| 1 | No operational edge kinds: `run`, `call`, `invoke`, `execute`, `read`, `write`, `parse`, `convert`, `lower`, `emit`, etc. Application owns relation id. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — name / string / path reconstruction debt
 
-Target: **ZERO semantic rediscovery after resolution.**
+| # | directive |
+|---|---|
+| 1 | Target: **ZERO semantic rediscovery after resolution.** |
 
-Audit/delete production authority from: `findFunc(name)`, `findByName(name)`,
-name indexes, callee text matching, descriptor name matching, path suffix
-semantic selection, source filename relation selection, opcode → semantic
-relation recovery, host type → semantic fact recovery.
+| # | directive |
+|---|---|
+| 1 | Audit/delete production authority from: `findFunc(name)`, `findByName(name)`, name indexes, callee text matching, descriptor name matching, path suffix semantic selection, source filename relation selection, opcode → semantic relation recovery, host type → semantic fact recovery. |
 
-Allowed: `graph.get(exact-id)`; id-indexed physical row; actual JSON/env/user
-string key. If consumer lacks id: **fix producer**.
+| # | directive |
+|---|---|
+| 1 | Allowed: `graph.get(exact-id)`; id-indexed physical row; actual JSON/env/user string key. |
+| 2 | If consumer lacks id: **fix producer**. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — filesystem / module debt
 
-Filesystem has exactly two unrelated roles:
+| # | directive |
+|---|---|
+| 1 | Filesystem has exactly two unrelated roles: |
 
 - **SOURCE:** ingress / home / member / provenance
 - **RUNTIME:** file/path authority through world/effect semantics
 
-Never conflate them.
+| # | directive |
+|---|---|
+| 1 | Never conflate them. |
 
-Target zero: module semantics; namespace semantics; import/`req`; path-based
-resolution after ingress; parent-directory semantic lookup; sibling lookup;
-source location granting runtime authority.
+| # | directive |
+|---|---|
+| 1 | Target zero: module semantics; namespace semantics; import/`req`; path-based resolution after ingress; parent-directory semantic lookup; sibling lookup; source location granting runtime authority. |
 
-Directory may imply table/home. File is member body. After resolution, path is
-provenance only.
+| # | directive |
+|---|---|
+| 1 | Directory may imply table/home. |
+| 2 | File is member body. |
+| 3 | After resolution, path is provenance only. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — world / protocol / projection debt
 
-One fact-composition algebra only.
+| # | directive |
+|---|---|
+| 1 | One fact-composition algebra only. |
 
 - Protocol: demanded application/relation facts
 - World: authority-bearing facts/witnesses
 - Projection: select exact existing facts
 - Injection/composition: add exact selected facts to exact context/application
 
-`lib/semantic/*` relation catalogs are **deleted** (`law.catalog.zero`).
-Do not restore `world = "io"`, `callable = true`, `possessed`, `operation`,
-`seq` dumps, or `json` as a world. Relation ids come from resolution;
-authority from application witness facts.
+| # | directive |
+|---|---|
+| 1 | `lib/semantic/*` relation catalogs are **deleted** (`law.catalog.zero`). |
+| 2 | Do not restore `world = "io"`, `callable = true`, `possessed`, `operation`, `seq` dumps, or `json` as a world. |
+| 3 | Relation ids come from resolution; authority from application witness facts. |
 
-No separate: capability objects; world classes; protocol objects; injection
-framework; provider; registry; context; module import; mock framework.
+| # | directive |
+|---|---|
+| 1 | No separate: capability objects; world classes; protocol objects; injection framework; provider; registry; context; module import; mock framework. |
 
-Known witness → zero runtime abstraction. No parent world, default world,
-nearest world, last-wins.
+| # | directive |
+|---|---|
+| 1 | Known witness → zero runtime abstraction. |
+| 2 | No parent world, default world, nearest world, last-wins. |
 
-Source should normally **not** spell projection/injection/world plumbing when
-use uniquely determines it.
+| # | directive |
+|---|---|
+| 1 | Source should normally **not** spell projection/injection/world plumbing when use uniquely determines it. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — naming debt
 
-Enforce semantic, not cosmetic naming.
+| # | directive |
+|---|---|
+| 1 | Enforce semantic, not cosmetic naming. |
 
 - NO plural cardinality identities (`bytes`, `strings`, `fields`, `values`,
   `arguments`, `results`, `nodes`, `edges`, `captures`, `tests`, `examples`,
@@ -380,15 +458,19 @@ Enforce semantic, not cosmetic naming.
   `native`, `static`) — BOOLEAN-MIRROR-ZERO
 - NO relation/world/format/handler catalogs — CATALOG-ZERO
 
-Delete/decompose before rename.
+| # | directive |
+|---|---|
+| 1 | Delete/decompose before rename. |
 
----
+| # | directive |
+|---|---|
 
 ## P1 — optimization architecture (FTCFTW closure)
 
-After semantic anti-pattern cleanup, FTCFTW failure mode is **conservative
-realization** — semantically clean graphs that still box, allocate, indirect,
-and guard everything. These lanes are explicit; none may remain implicit.
+| # | directive |
+|---|---|
+| 1 | After semantic anti-pattern cleanup, FTCFTW failure mode is **conservative realization** — semantically clean graphs that still box, allocate, indirect, and guard everything. |
+| 2 | These lanes are explicit; none may remain implicit. |
 
 | Lane | Owner fact | Decision point |
 |---|---|---|
@@ -428,11 +510,13 @@ and guard everything. These lanes are explicit; none may remain implicit.
 | **DNB-CAUSAL** | backend bail | application id, missing fact/capability, consumer, expected producer — not opaque category |
 | **OPT-EXPLAIN** | cost diagnostics | why boxed/allocated/indirect/not-SIMD/copied answerable from unresolved facts via MCP |
 
-Blocked on graph + demand for most lanes. Representation/guard/ABI decisions must
-not land in host lowering ad hoc (`src/dnir_lower.zig`, `src/native_backend.zig`)
-without routing through the single realization owner.
+| # | directive |
+|---|---|
+| 1 | Blocked on graph + demand for most lanes. |
+| 2 | Representation/guard/ABI decisions must not land in host lowering ad hoc (`src/dnir_lower.zig`, `src/native_backend.zig`) without routing through the single realization owner. |
 
----
+| # | directive |
+|---|---|
 
 ## P1 — specialization, memory, effects, machine
 
@@ -488,37 +572,42 @@ without routing through the single realization owner.
   Pinned Wasmtime comparison: correctness, compile/load, instantiate/startup,
   runtime, peak memory, artifact bytes — separately measured.
 
----
+| # | directive |
+|---|---|
 
 ## P0/P1 — evidence debt
 
-Complete FTCFTW proof currently near zero. `scripts/ledger/ftcftw.id` is a
-contract-presence index — pass means contracts exist, not that the bound is
-proven. `audit(path)(pattern)` is IMPLEMENTATION-BLOCKED on direct native
-(compiles, then SIGSEGV); index uses flat `look`/`need` until that second
-apply survives. Every claim must bind subject revision and evidence revision separately
-(`law.evidence.subject`); do not report metrics "at HEAD" unless the
-measured subject equals HEAD. Then: dirty state; input; expected semantic
-result; actual result; CPU/features; target; compiler mode; competitor
-version; compile; startup; runtime; memory; binary/artifact size; sample
-count; variance.
+| # | directive |
+|---|---|
+| 1 | Complete FTCFTW proof currently near zero. `scripts/ledger/ftcftw.id` is a contract-presence index — pass means contracts exist, not that the bound is proven. `audit(path)(pattern)` is IMPLEMENTATION-BLOCKED on direct native (compiles, then SIGSEGV); index uses flat `look`/`need` until that second apply survives. |
+| 2 | Every claim must bind subject revision and evidence revision separately (`law.evidence.subject`); do not report metrics "at HEAD" unless the measured subject equals HEAD. |
+| 3 | Then: dirty state; input; expected semantic result; actual result |
+| 4 | CPU/features; target; compiler mode; competitor version; compile; startup; runtime; memory; binary/artifact size; sample count; variance. |
 
-Positive damage controls required: force allocation, force indirect, force
-hash, force copy, force startup delay, pad artifact. Measurement must worsen.
-No damage sensitivity → evidence invalid. No semantic equivalence → benchmark
-invalid. No current revision → stale evidence.
+| # | directive |
+|---|---|
+| 1 | Positive damage controls required: force allocation, force indirect, force hash, force copy, force startup delay, pad artifact. |
+| 2 | Measurement must worsen. |
+| 3 | No damage sensitivity → evidence invalid. |
+| 4 | No semantic equivalence → benchmark invalid. |
+| 5 | No current revision → stale evidence. |
 
----
+| # | directive |
+|---|---|
 
 ## P0 — build / CI debt
 
-Origin audit reported broken ledgers and no revision-bound proof. Live default
-doctor is PASS with deferred full gates; that is **not** combined CI status.
+| # | directive |
+|---|---|
+| 1 | Origin audit reported broken ledgers and no revision-bound proof. |
+| 2 | Live default doctor is PASS with deferred full gates; that is **not** combined CI status. |
 
-Before performance claims: clean integrated build; full semantic gates; full
-correctness corpus; all ledgers executable; revision-bound proof bundle.
+| # | directive |
+|---|---|
+| 1 | Before performance claims: clean integrated build; full semantic gates; full correctness corpus; all ledgers executable; revision-bound proof bundle. |
 
----
+| # | directive |
+|---|---|
 
 ## Workstream order
 
@@ -550,25 +639,34 @@ Q  EVIDENCE                correctness-locked C/Wasm/native matrix; damage contr
 R  COMPILER B/C            B from canonical Idol; B builds C; no host fallback
 ```
 
-Lane reminder: A/B lexical+grammar is **Devin** (`shc-ingress-lexer`). Lane 3
-is Cursor `graph-interim` until Codex acquires — no catalogs. Poolside is
-stale; Cursor holds 4–6 as `realization-interim` until Poolside acquires.
-Cursor also holds census MAIN-ZERO.
+| # | directive |
+|---|---|
+| 1 | Lane reminder: A/B lexical+grammar is **Devin** (`shc-ingress-lexer`). |
+| 2 | Lane 3 is Cursor `graph-interim` until Codex acquires — no catalogs. |
+| 3 | Poolside is stale |
+| 4 | Cursor holds 4–6 as `realization-interim` until Poolside acquires. |
+| 5 | Cursor also holds census MAIN-ZERO. |
 
----
+| # | directive |
+|---|---|
 
 ## Live claims
 
-**Not recorded here** (`law.control.derived`, CONTROL-PLANE-DERIVED-ZERO).
-Obtain live lane holders, locks, HEAD, and dirty state from:
+| # | directive |
+|---|---|
+| 1 | **Not recorded here** (`law.control.derived`, CONTROL-PLANE-DERIVED-ZERO). |
+| 2 | Obtain live lane holders, locks, HEAD, and dirty state from: |
 
 - `tools/node/dev/claim list`
 - `evidence/HEAD.txt` via `tools/node/dev/orient`
 
-Lane labels elsewhere in this file name durable *roles*, not active locks.
-Acquire before editing owned paths.
+| # | directive |
+|---|---|
+| 1 | Lane labels elsewhere in this file name durable *roles*, not active locks. |
+| 2 | Acquire before editing owned paths. |
 
----
+| # | directive |
+|---|---|
 
 ## Global zero target
 
@@ -607,7 +705,10 @@ THEN DELETE PHYSICAL COST.
 THEN PROVE THE WIN.
 ```
 
-100% SHC: every production semantic decision owned by Idol.
+| # | directive |
+|---|---|
+| 1 | 100% SHC: every production semantic decision owned by Idol. |
 
-FTCFTW: every avoidable physical cost removed, with correctness-bound evidence
-proving native + Wasm performance.
+| # | directive |
+|---|---|
+| 1 | FTCFTW: every avoidable physical cost removed, with correctness-bound evidence proving native + Wasm performance. |

@@ -1,16 +1,19 @@
 # Idol Specification Router
 
-Idol language law has one supreme owner and one structured expansion:
+| # | directive |
+|---|---|
+| 1 | Idol language law has one supreme owner and one structured expansion: |
 
 ```text
 docs/spec/law.md            — supreme compact law
 docs/spec/constitution.md   — structured expansion and stable law.* identity owner
 ```
 
-No pass document, summary, epoch stamp, source corpus, implementation, test, or
-generated artifact is a second law. When compact law and constitution differ,
-`law.md` wins and the constitution is repaired. Both are documentation
-projections, not executable source or canonical implementation examples.
+| # | directive |
+|---|---|
+| 1 | No pass document, summary, epoch stamp, source corpus, implementation, test, or generated artifact is a second law. |
+| 2 | When compact law and constitution differ, `law.md` wins and the constitution is repaired. |
+| 3 | Both are documentation projections, not executable source or canonical implementation examples. |
 
 ## Projections
 
@@ -26,14 +29,16 @@ projections, not executable source or canonical implementation examples.
 - `METRICS.md` — progress dashboard; three dominant metrics; audit scorecard (not C0).
 - `corpus.md` classifies source provenance for canonicality gates.
 
-These files may organize or explain law facts. They do not override `law.md` or
-contradict the constitution expansion. A contradiction is a projection defect:
-stop, report it, and repair the projection rather than choosing a convenient answer.
+| # | directive |
+|---|---|
+| 1 | These files may organize or explain law facts. |
+| 2 | They do not override `law.md` or contradict the constitution expansion. |
+| 3 | A contradiction is a projection defect: stop, report it, and repair the projection rather than choosing a convenient answer. |
 
 ## Current tree
 
-Do not add another architecture document or precedence layer. A genuinely new
-irreducible rule belongs in the constitution through its admitted change
-process; measurements and current status belong in `docs/METRICS.md` and open
-`gaps/GAP-*.md` obligations only. Git stores history; active projections describe
-current Idol only (`law.zero.history`).
+| # | directive |
+|---|---|
+| 1 | Do not add another architecture document or precedence layer. |
+| 2 | A genuinely new irreducible rule belongs in the constitution through its admitted change process; measurements and current status belong in `docs/METRICS.md` and open `gaps/GAP-*.md` obligations only. |
+| 3 | Git stores history; active projections describe current Idol only (`law.zero.history`). |

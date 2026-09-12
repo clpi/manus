@@ -1,20 +1,31 @@
 # IDOL TOTAL CONVERGENCE
 
-**Mandatory immediate instruction for every active and future agent.**
+| # | directive |
+|---|---|
+| 1 | **Mandatory immediate instruction for every active and future agent.** |
 
-Applies to Cursor, Poolside, Pi, Zai, Codex, Claude, Devin, Jules, MCP-driven agents,
-CI repair agents, and every other implementation lane.
+| # | directive |
+|---|---|
+| 1 | Applies to Cursor, Poolside, Pi, Zai, Codex, Claude, Devin, Jules, MCP-driven agents, CI repair agents, and every other implementation lane. |
 
-Do not interpret this as guidance. Treat it as a **blocking execution contract**.
+| # | directive |
+|---|---|
+| 1 | Do not interpret this as guidance. |
+| 2 | Treat it as a **blocking execution contract**. |
 
-Projection of C0 convergence laws. C0 owns verdicts; this document owns execution
-discipline and merge-blocking repair order.
+| # | directive |
+|---|---|
+| 1 | Projection of C0 convergence laws. |
+| 2 | C0 owns verdicts; this document owns execution discipline and merge-blocking repair order. |
 
----
+| # | directive |
+|---|---|
 
 ## 0. Objective
 
-The target is:
+| # | directive |
+|---|---|
+| 1 | The target is: |
 
 ```text
 100% semantic authority in Idol
@@ -27,23 +38,31 @@ The target is:
 + measured FTCFTW
 ```
 
-The governing model is:
+| # | directive |
+|---|---|
+| 1 | The governing model is: |
 
 ```text
 source → lexical identity → grammar role → semantic resolution
 → graph → demand → realization → machine
 ```
 
-Not: source → host AST → host type system → host IR → optimizer zoo → backend reconstruction.
+| # | directive |
+|---|---|
+| 1 | Not: source → host AST → host type system → host IR → optimizer zoo → backend reconstruction. |
 
-**Absolute law:** one meaning · one id · one relation · one authoritative fact producer ·
-one projection algebra · one lowering lineage.
+| # | directive |
+|---|---|
+| 1 | **Absolute law:** one meaning · one id · one relation · one authoritative fact producer · one projection algebra · one lowering lineage. |
 
----
+| # | directive |
+|---|---|
 
 ## 1. STOP conditions
 
-STOP IMPLEMENTATION IMMEDIATELY when any of these occurs:
+| # | directive |
+|---|---|
+| 1 | STOP IMPLEMENTATION IMMEDIATELY when any of these occurs: |
 
 - semantic owner unclear
 - relation identity unclear
@@ -57,98 +76,134 @@ STOP IMPLEMENTATION IMMEDIATELY when any of these occurs:
 - host architecture appears to be the easiest implementation template
 - fallback would silently decide meaning
 
-Do not unblock yourself. Record the precise missing semantic fact/boundary and continue
-only on non-overlapping work.
+| # | directive |
+|---|---|
+| 1 | Do not unblock yourself. |
+| 2 | Record the precise missing semantic fact/boundary and continue only on non-overlapping work. |
 
----
+| # | directive |
+|---|---|
 
 ## 2. Current tree is not canonical by default
 
-Never treat source as canonical merely because it ends in `.id`, builds, passes tests,
-is recent, appears in examples/docs/lib/scripts. Revalidate every touched construct
-against current C0. Implementation limitations are debt; they never become language law.
+| # | directive |
+|---|---|
+| 1 | Never treat source as canonical merely because it ends in `.id`, builds, passes tests, is recent, appears in examples/docs/lib/scripts. |
+| 2 | Revalidate every touched construct against current C0. |
+| 3 | Implementation limitations are debt; they never become language law. |
 
----
+| # | directive |
+|---|---|
 
 ## 3. Zero-history
 
-Git is the historical archive. The active tree contains only: current Idol, current
-foreign interoperability, currently executed bounded bootstrap bridges.
+| # | directive |
+|---|---|
+| 1 | Git is the historical archive. |
+| 2 | The active tree contains only: current Idol, current foreign interoperability, currently executed bounded bootstrap bridges. |
 
-Delete tracked current-project concepts for: Duo, Duon, Idsem, `.duo`, `DUO_*`,
-`duo_*`, historical/migration/legacy Idol source, Pass-number and spec-number
-architecture, closed transition narratives.
+| # | directive |
+|---|---|
+| 1 | Delete tracked current-project concepts for: Duo, Duon, Idsem, `.duo`, `DUO_*`, `duo_*`, historical/migration/legacy Idol source, Pass-number and spec-number architecture, closed transition narratives. |
 
-Do not preserve old names in comments, tests, fixtures, paths, gaps, generated context,
-environment variables, symbols, errors, build/CI/benchmark/MCP/LSP output.
+| # | directive |
+|---|---|
+| 1 | Do not preserve old names in comments, tests, fixtures, paths, gaps, generated context, environment variables, symbols, errors, build/CI/benchmark/MCP/LSP output. |
 
-No `language.history`, historical source suffix/provenance, or compatibility Idol corpus.
-Historical Idol syntax for parser testing must be generated at runtime, not checked in.
+| # | directive |
+|---|---|
+| 1 | No `language.history`, historical source suffix/provenance, or compatibility Idol corpus. |
+| 2 | Historical Idol syntax for parser testing must be generated at runtime, not checked in. |
 
----
+| # | directive |
+|---|---|
 
 ## 4. Current specific identity violations
 
-Immediately repair: retired `duo_*` bridge files and symbols, `duo_native`, `DUO_*`,
-`duo compile`, non-`.id` source acceptance.
+| # | directive |
+|---|---|
+| 1 | Immediately repair: retired `duo_*` bridge files and symbols, `duo_native`, `DUO_*`, `duo compile`, non-`.id` source acceptance. |
 
-Do **not** mechanically rename `duo_lexer_bridge` → `idol_lexer_bridge` unless `idol` is
-independently necessary. Prefer semantic reduction: lexer, dispatch, bridge, token,
-machine, realize. Brand names must not qualify internal semantics.
+| # | directive |
+|---|---|
+| 1 | Do **not** mechanically rename `duo_lexer_bridge` → `idol_lexer_bridge` unless `idol` is independently necessary. |
+| 2 | Prefer semantic reduction: lexer, dispatch, bridge, token, machine, realize. |
+| 3 | Brand names must not qualify internal semantics. |
 
----
+| # | directive |
+|---|---|
 
 ## 5. Delete `.duo` acceptance
 
-Production source law: `.id` only. Remove historical suffix acceptance, tests proving
-`.duo` behaves as Idol. A retired extension is not a source-family feature.
+| # | directive |
+|---|---|
+| 1 | Production source law: `.id` only. |
+| 2 | Remove historical suffix acceptance, tests proving `.duo` behaves as Idol. |
+| 3 | A retired extension is not a source-family feature. |
 
----
+| # | directive |
+|---|---|
 
 ## 6. STD-ZERO
 
-No Idol semantic `std`. Target: zero canonical `std.*` references, semantic std roots,
-`lib/std` homes, project vocabulary named stdlib. Zig `const std = @import("std")` is
-foreign Zig law, not an Idol violation. Classification must be origin-aware.
+| # | directive |
+|---|---|
+| 1 | No Idol semantic `std`. |
+| 2 | Target: zero canonical `std.*` references, semantic std roots, `lib/std` homes, project vocabulary named stdlib. |
+| 3 | Zig `const std = @import("std")` is foreign Zig law, not an Idol violation. |
+| 4 | Classification must be origin-aware. |
 
----
+| # | directive |
+|---|---|
 
 ## 7. LIB-ZERO
 
-`lib` is not a semantic root. Reject `lib.foo`, `lib.std.foo`, `process = lib.process`.
-Fix source/home reachability; physical topology must not participate in semantic lookup.
-If source cannot resolve without `lib.*`: **SOURCE-PROJECTION-BLOCKED**.
+| # | directive |
+|---|---|
+| 1 | `lib` is not a semantic root. |
+| 2 | Reject `lib.foo`, `lib.std.foo`, `process = lib.process`. |
+| 3 | Fix source/home reachability; physical topology must not participate in semantic lookup. |
+| 4 | If source cannot resolve without `lib.*`: **SOURCE-PROJECTION-BLOCKED**. |
 
----
+| # | directive |
+|---|---|
 
 ## 8. MODULE-ZERO
 
-Delete architecture for: req, require, import, module, namespace, package object, module
-registry/metadata/prefix, alias module, dotted source callee, source-path callee lookup,
-module C-name lookup.
+| # | directive |
+|---|---|
+| 1 | Delete architecture for: req, require, import, module, namespace, package object, module registry/metadata/prefix, alias module, dotted source callee, source-path callee lookup, module C-name lookup. |
 
-`src/native_req_support.zig` must stay deleted. Remaining `req_module_bindings` in
-codegen is bridge debt. Duties become: reachability → bindings/homes → semantic ids →
-linkage/ABI at realization. No semantic lookup through source_path, alias, dotted path, or
-C prefix after resolution.
+| # | directive |
+|---|---|
+| 1 | `src/native_req_support.zig` must stay deleted. |
+| 2 | Remaining `req_module_bindings` in codegen is bridge debt. |
+| 3 | Duties become: reachability → bindings/homes → semantic ids → linkage/ABI at realization. |
+| 4 | No semantic lookup through source_path, alias, dotted path, or C prefix after resolution. |
 
----
+| # | directive |
+|---|---|
 
 ## 9. Path-no-identity
 
-After ingress, filename/directory/suffix/path/package/module name/symbol spelling/hash
-may never select meaning. They may remain provenance, debug location, acceleration, or
-foreign linkage evidence. Missing semantic id/fact: **FAIL CLOSED**.
+| # | directive |
+|---|---|
+| 1 | After ingress, filename/directory/suffix/path/package/module name/symbol spelling/hash may never select meaning. |
+| 2 | They may remain provenance, debug location, acceleration, or foreign linkage evidence. |
+| 3 | Missing semantic id/fact: **FAIL CLOSED**. |
 
----
+| # | directive |
+|---|---|
 
 ## 10. One fact producer
 
-Producer ownership lives in this directive and `docs/spec/convergence-contract.md`
-until graph queries exist. `lib/semantic/producer.id` is deleted (`law.catalog.zero`).
-Multiple authoritative producers or consumer reconstruction: **MERGE BLOCK**.
+| # | directive |
+|---|---|
+| 1 | Producer ownership lives in this directive and `docs/spec/convergence-contract.md` until graph queries exist. `lib/semantic/producer.id` is deleted (`law.catalog.zero`). |
+| 2 | Multiple authoritative producers or consumer reconstruction: **MERGE BLOCK**. |
 
----
+| # | directive |
+|---|---|
 
 ## 11–28. Semantic invariants (summary)
 
@@ -168,9 +223,12 @@ Multiple authoritative producers or consumer reconstruction: **MERGE BLOCK**.
 - **Environment lookup (open defect):** absent and present-empty must not collapse to the
   same value.
 
-Full law text: C0 §67, `law.infer.one`, `law.world.one`, `law.projection.one`.
+| # | directive |
+|---|---|
+| 1 | Full law text: C0 §67, `law.infer.one`, `law.world.one`, `law.projection.one`. |
 
----
+| # | directive |
+|---|---|
 
 ## 29–68. Realization and FTCFTW (summary)
 
@@ -182,7 +240,8 @@ Full law text: C0 §67, `law.infer.one`, `law.world.one`, `law.projection.one`.
   equivalence, realization family, timings, memory, artifact, positive damage control.
 - **Wasm benchmark (open):** fix environment-contract mismatch before optimizing against cells.
 
----
+| # | directive |
+|---|---|
 
 ## 69–88. Process and gates (summary)
 
@@ -193,14 +252,18 @@ Full law text: C0 §67, `law.infer.one`, `law.world.one`, `law.projection.one`.
 - **CONCEPT / PHYSICAL DELTA GATE:** default zero new semantic kinds; physical regression
   needs evidence.
 
----
+| # | directive |
+|---|---|
 
 ## 89–91. SHC priority
 
-Unless P0 semantic poison blocks it, priority is earliest remaining production semantic
-authority outside Idol over cosmetic migration.
+| # | directive |
+|---|---|
+| 1 | Unless P0 semantic poison blocks it, priority is earliest remaining production semantic authority outside Idol over cosmetic migration. |
 
-**Critical SHC chain (do not reorder):**
+| # | directive |
+|---|---|
+| 1 | **Critical SHC chain (do not reorder):** |
 
 ```text
 canonical lexical identity (GAP-145)
@@ -210,52 +273,72 @@ canonical lexical identity (GAP-145)
 → binding/resolution → graph → demand → realization → machine
 ```
 
-Coordinate by fact producer/consumers, not directory alone.
+| # | directive |
+|---|---|
+| 1 | Coordinate by fact producer/consumers, not directory alone. |
 
----
+| # | directive |
+|---|---|
 
 ## 92–97. Required reviews and zero targets
 
-Every added semantic expression answers: relation, projection, subject, operands, result
-demand, world, effect — without std/lib/module/path/AST/host dependence.
+| # | directive |
+|---|---|
+| 1 | Every added semantic expression answers: relation, projection, subject, operands, result demand, world, effect — without std/lib/module/path/AST/host dependence. |
 
-Every compiler change answers: before/after authority, ids preserved, facts
-added/removed/reconstructed, bridge deletable, SHC/FTCFTW movement.
+| # | directive |
+|---|---|
+| 1 | Every compiler change answers: before/after authority, ids preserved, facts added/removed/reconstructed, bridge deletable, SHC/FTCFTW movement. |
 
-Universal zero targets for new/touched code: retired identity, `.duo`, canonical std/lib,
-req/module lookup, DNIR semantic opcode authority, known-shape hash access, performance
-claim without equivalence, closed historical gap retained, committed stale session envelope.
+| # | directive |
+|---|---|
+| 1 | Universal zero targets for new/touched code: retired identity, `.duo`, canonical std/lib, req/module lookup, DNIR semantic opcode authority, known-shape hash access, performance claim without equivalence, closed historical gap retained, committed stale session envelope. |
 
-Maintain adversarial controls: rename binding → id unchanged; remove fallback → fail or
-new authority; damage control → benchmark worsens.
+| # | directive |
+|---|---|
+| 1 | Maintain adversarial controls: rename binding → id unchanged; remove fallback → fail or new authority; damage control → benchmark worsens. |
 
----
+| # | directive |
+|---|---|
 
 ## 98. Immediate repair order
 
-**P0-A — identity/history:** `.id` only · zero retired names · delete pass/spec corpus ·
-delete closed gap narratives · stable harness vs ephemeral envelope.
+| # | directive |
+|---|---|
+| 1 | **P0-A — identity/history:** `.id` only · zero retired names · delete pass/spec corpus · delete closed gap narratives · stable harness vs ephemeral envelope. |
 
-**P0-B — source authority:** delete native_req_support architecture · remove alias/dotted
-/path lookup · STD-ZERO · LIB-ZERO.
+| # | directive |
+|---|---|
+| 1 | **P0-B — source authority:** delete native_req_support architecture · remove alias/dotted /path lookup · STD-ZERO · LIB-ZERO. |
 
-**P0-C — application:** projection pack · INFER-ONE · FROM-ZERO · protocol-as-relation ·
-curry-structural.
+| # | directive |
+|---|---|
+| 1 | **P0-C — application:** projection pack · INFER-ONE · FROM-ZERO · protocol-as-relation · curry-structural. |
 
-**P0-D — worlds/results:** RUN-ONE · fix environment absence · SENTINEL-ZERO.
+| # | directive |
+|---|---|
+| 1 | **P0-D — worlds/results:** RUN-ONE · fix environment absence · SENTINEL-ZERO. |
 
-**P0-E — lowering:** audit ResolvedType/RecordDesc/BinOpTag/Op · relation ids through
-DNIR · source→machine lineage.
+| # | directive |
+|---|---|
+| 1 | **P0-E — lowering:** audit ResolvedType/RecordDesc/BinOpTag/Op · relation ids through DNIR · source→machine lineage. |
 
-**P0-F — SHC:** GAP-145 → GAP-134 → parser transfer.
+| # | directive |
+|---|---|
+| 1 | **P0-F — SHC:** GAP-145 → GAP-134 → parser transfer. |
 
-**P0-G — FTCFTW:** fix Wasm invocation contract · value-checked perf · positive controls.
+| # | directive |
+|---|---|
+| 1 | **P0-G — FTCFTW:** fix Wasm invocation contract · value-checked perf · positive controls. |
 
----
+| # | directive |
+|---|---|
 
 ## 99. Completion report format
 
-Every agent returns:
+| # | directive |
+|---|---|
+| 1 | Every agent returns: |
 
 ```text
 revision:
@@ -279,24 +362,34 @@ benchmark evidence:
 next earliest host-owned semantic boundary:
 ```
 
-Do not report done without this.
+| # | directive |
+|---|---|
+| 1 | Do not report done without this. |
 
----
+| # | directive |
+|---|---|
 
 ## 100. Final law
 
-The active repository is current Idol, not an archive. The graph is semantic truth.
-Projection fills uniquely determined facts. World grants authority. Demand determines
-necessity. Realization determines physics. Every physical cost exists only because
-semantic uncertainty or observable requirement survives. Every bridge has a death
-condition. Every semantic fact has one producer. Every downstream stage consumes facts
-instead of reconstructing them.
+| # | directive |
+|---|---|
+| 1 | The active repository is current Idol, not an archive. |
+| 2 | The graph is semantic truth. |
+| 3 | Projection fills uniquely determined facts. |
+| 4 | World grants authority. |
+| 5 | Demand determines necessity. |
+| 6 | Realization determines physics. |
+| 7 | Every physical cost exists only because semantic uncertainty or observable requirement survives. |
+| 8 | Every bridge has a death condition. |
+| 9 | Every semantic fact has one producer. |
+| 10 | Every downstream stage consumes facts instead of reconstructing them. |
 
-If a change does not move semantic authority into Idol, remove duplicated meaning,
-retain optimization knowledge, delete physical work, or strengthen exact evidence, it
-is secondary and must not displace the 100% SHC FTCFTW critical path.
+| # | directive |
+|---|---|
+| 1 | If a change does not move semantic authority into Idol, remove duplicated meaning, retain optimization knowledge, delete physical work, or strengthen exact evidence, it is secondary and must not displace the 100% SHC FTCFTW critical path. |
 
----
+| # | directive |
+|---|---|
 
 ## Attack-first triad (current tree)
 
@@ -309,5 +402,7 @@ is secondary and must not displace the 100% SHC FTCFTW critical path.
    known invalid for affected cells; no beat-wasmtime work until semantic-result verification
    and positive controls pass.
 
-Mechanical census: `tools/node/dev/census/convergence`. Contract index:
-`docs/spec/convergence-contract.md`.
+| # | directive |
+|---|---|
+| 1 | Mechanical census: `tools/node/dev/census/convergence`. |
+| 2 | Contract index: `docs/spec/convergence-contract.md`. |

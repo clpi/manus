@@ -1,8 +1,10 @@
 # Idol agent coordination
 
-This file is a durable ownership and gate map. It is not language law, a live
-control plane, or a current-status ledger. Any line likely to drift belongs in
-the ignored `.agents/session/` state or in evidence from an exact run.
+| # | directive |
+|---|---|
+| 1 | This file is a durable ownership and gate map. |
+| 2 | It is not language law, a live control plane, or a current-status ledger. |
+| 3 | Any line likely to drift belongs in the ignored `.agents/session/` state or in evidence from an exact run. |
 
 ## State and evidence
 
@@ -21,21 +23,24 @@ the ignored `.agents/session/` state or in evidence from an exact run.
 | Source/home/package/world closure | `docs/spec/source.md` |
 | Historical changes | Git history |
 
-**Live control plane (`law.control.derived`):** do not read HEAD, dirty, or
-lane holders from this file. Obtain them from `git`, `tools/node/dev/claim`,
-and `tools/node/dev/orient`. This file names
-durable lane *roles* only.
+| # | directive |
+|---|---|
+| 1 | **Live control plane (`law.control.derived`):** do not read HEAD, dirty, or lane holders from this file. |
+| 2 | Obtain them from `git`, `tools/node/dev/claim`, and `tools/node/dev/orient`. |
+| 3 | This file names durable lane *roles* only. |
 
-No string-world / relation catalogs. Storage class is not a representation
-producer. Family is a tokenize operand; `suffix(file)` is deleted. Production
-compile/fmt/embed use `sourceFacts` then `initFacts`. Do not report metrics
-“at HEAD” unless the measured subject equals the live tree
-(`law.evidence.subject`).
+| # | directive |
+|---|---|
+| 1 | No string-world / relation catalogs. |
+| 2 | Storage class is not a representation producer. |
+| 3 | Family is a tokenize operand; `suffix(file)` is deleted. |
+| 4 | Production compile/fmt/embed use `sourceFacts` then `initFacts`. |
+| 5 | Do not report metrics “at HEAD” unless the measured subject equals the live tree (`law.evidence.subject`). |
 
-**Eight production lanes** (35 realization risks fold here — not new reports).
-Designated long-term owners: Devin = 1–2, Codex = 3, Poolside = 4–7, Cursor =
-8 + interim when a designated owner is absent. **Acquire the claim file
-before editing.** Lane labels here are not locks.
+| # | directive |
+|---|---|
+| 1 | **Eight production lanes** (35 realization risks fold here — not new reports). |
+| 2 | Designated long-term owners: Devin = 1–2, Codex = 3, Poolside = 4–7, Cursor = 8 + interim when a designated owner is absent. **Acquire the claim file before editing.** Lane labels here are not locks. |
 
 | # | Lane | Owns |
 |---|---|---|
@@ -48,34 +53,34 @@ before editing.** Lane labels here are not locks.
 | 7 | Wasm | same graph, import/export specialization, Wasmtime matrix |
 | 8 | Evidence + anti-drift | evidence-subject, MCP/LSP same-graph, census death, ratchets, B/C, miss diagnostics |
 
-**P0** source-family → GAP-145 → token ABI → GAP-134 → parser → graph
-(**GRAPH-SOVEREIGNTY G1–G12**, `scripts/ledger/graph.id`) → world/effect/witness
-→ demand → crashes/failures to zero.
-**P1** representation-one (items 1–3), then boxing/call/shape/closure/region/copy/tag/ABI/bounds/string/table/metamethod/fusion/concurrency/DCE (items 4–26).
-**P2** zero-copy tokens, dense graph, exact invalidation, parallel compiler, stage cache, object writer, LSP/MCP same-graph, replace grep census (items 27–35).
-**P3** crash 0, matrices, C + Wasmtime suites, B then C (items 36–44).
+| # | directive |
+|---|---|
+| 1 | **P0** source-family → GAP-145 → token ABI → GAP-134 → parser → graph (**GRAPH-SOVEREIGNTY G1–G12**, `scripts/ledger/graph.id`) → world/effect/witness → demand → crashes/failures to zero. **P1** representation-one (items 1–3), then boxing/call/shape/closure/region/copy/tag/ABI/bounds/string/table/metamethod/fusion/concurrency/DCE (items 4–26). **P2** zero-copy tokens, dense graph, exact invalidation, parallel compiler, stage cache, object writer, LSP/MCP same-graph, replace grep census (items 27–35). **P3** crash 0, matrices, C + Wasmtime suites, B then C (items 36–44). |
 
-Full 1–35: `docs/spec/realization.md`. Graph sovereignty G1–G12: same file § Graph sovereignty.
-Cluster map: `WORKSTREAM_DEBT_REGISTER.md` § Optimization architecture + § BI.
+| # | directive |
+|---|---|
+| 1 | Full 1–35: `docs/spec/realization.md`. |
+| 2 | Graph sovereignty G1–G12: same file § Graph sovereignty. |
+| 3 | Cluster map: `WORKSTREAM_DEBT_REGISTER.md` § Optimization architecture + § BI. |
 
-`law.representation.one`, `law.guard.one`, `law.specialize.budget`, `law.abi.internal`,
-`law.error.cold`, `law.crash.first`, `law.cost.explain`, `law.application.consumer`,
-`law.fact.locality`, `law.grammar.one`, `law.control.derived` in C0 +
-`docs/spec/canonical.md` §11i–11q.
+| # | directive |
+|---|---|
+| 1 | `law.representation.one`, `law.guard.one`, `law.specialize.budget`, `law.abi.internal`, `law.error.cold`, `law.crash.first`, `law.cost.explain`, `law.application.consumer`, `law.fact.locality`, `law.grammar.one`, `law.control.derived` in C0 + `docs/spec/canonical.md` §11i–11q. |
 
-No lane may mint relation catalogs, boolean-mirror rows, string-world tables,
-magic rejection codes, or host slot maps as substitutes for lane 3.
-Lane labels do not imply an active lock. Acquire before producing owned facts.
+| # | directive |
+|---|---|
+| 1 | No lane may mint relation catalogs, boolean-mirror rows, string-world tables, magic rejection codes, or host slot maps as substitutes for lane 3. |
+| 2 | Lane labels do not imply an active lock. |
+| 3 | Acquire before producing owned facts. |
 
 ## Implementation owners
 
-Owner means the boundary that currently decides. Existing Zig and `.id`
-paths are bootstrap or compatibility debt, not destination architecture. A
-suffix-only `.id` rename is not canonicality or self-host transfer. A new bounded
-Zig bridge is admitted when it is the fastest path to the next executed SHC
-transfer and carries a `law.bridge.death` deletion witness
-(`law.bootstrap.velocity`); foreign is forbidden only as permanent architecture
-or semantic authority.
+| # | directive |
+|---|---|
+| 1 | Owner means the boundary that currently decides. |
+| 2 | Existing Zig and `.id` paths are bootstrap or compatibility debt, not destination architecture. |
+| 3 | A suffix-only `.id` rename is not canonicality or self-host transfer. |
+| 4 | A new bounded Zig bridge is admitted when it is the fastest path to the next executed SHC transfer and carries a `law.bridge.death` deletion witness (`law.bootstrap.velocity`); foreign is forbidden only as permanent architecture or semantic authority. |
 
 | Boundary | Current implementation owner |
 |---|---|
@@ -92,9 +97,11 @@ or semantic authority.
 | MCP | `tools/mcp/` plus sibling `idol-native/tools/mcp/` |
 | Wasm consumer | `tools/wasm/` (standalone debt; destination: shared graph and realization) |
 
-Read `docs/bootstrap.md` before choosing work. Attack the earliest host-owned
-production boundary whose prerequisites exist. Do not infer progress from file
-counts or translate a host module line for line.
+| # | directive |
+|---|---|
+| 1 | Read `docs/bootstrap.md` before choosing work. |
+| 2 | Attack the earliest host-owned production boundary whose prerequisites exist. |
+| 3 | Do not infer progress from file counts or translate a host module line for line. |
 
 ## Gates
 
@@ -122,51 +129,43 @@ counts or translate a host module line for line.
 
 ## Fact handoffs (`law.coordination.fact`)
 
-When lane A needs a fact owned by lane B:
+| # | directive |
+|---|---|
+| 1 | When lane A needs a fact owned by lane B: |
 
 - record needed fact, current producer, consumer, blocking interface, owner
 - do not duplicate the fact locally or reconstruct it from names/paths/text
 - schedule work on producer→consumer chains, not directories
 - stop on ambiguity and file a gap rather than invent helper semantics
 
-Claim semantic boundaries as well as paths. Integration state outranks
-branch-local success.
+| # | directive |
+|---|---|
+| 1 | Claim semantic boundaries as well as paths. |
+| 2 | Integration state outranks branch-local success. |
 
 ## Handoff — research admission surface (main bbc54486, 2026-08-18)
 
-One admission program survives: `gaps/RESEARCH-SPINE.md` (schema, structural
-map, dependency DAG, horizons). Enforcer: `tools/node/dev/gapc0`, exposed as
-`sh gate/researchgap.sh`; it fails closed on a missing/incomplete zero-delta
-C0 block or on a role violation of law.md 111-115 in the research GAP set
-(parameter-position receiver binding, annotation-position open type or void
-descriptor — the existential relation faces `xs:any(p)` and `:any` are
-canonical and pass). Every GAP ≥ 175 carries its block;
-`docs/research-gap-admission.md` was a same-day duplicate and is deleted with
-its map absorbed. Blockers found and left for their lanes:
-`scripts/audit100.id` and `gate/idiom.id` are refused DNB001 by every current
-binary (`mod-global-written`, `concat`), so both script gates are unrunnable
-repo-wide; audit100 row-8 control parity was verified by running the row-8
-regex directly over the rendered probe strings (deny 1, decline 0, before and
-after).
+| # | directive |
+|---|---|
+| 1 | One admission program survives: `gaps/RESEARCH-SPINE.md` (schema, structural map, dependency DAG, horizons). |
+| 2 | Enforcer: `tools/node/dev/gapc0`, exposed as `sh gate/researchgap.sh`; it fails closed on a missing/incomplete zero-delta C0 block or on a role violation of law.md 111-115 in the research GAP set (parameter-position receiver binding, annotation-position open type or void descriptor — the existential relation faces `xs:any(p)` and `:any` are canonical and pass). |
+| 3 | Every GAP ≥ 175 carries its block; `docs/research-gap-admission.md` was a same-day duplicate and is deleted with its map absorbed. |
+| 4 | Blockers found and left for their lanes: `scripts/audit100.id` and `gate/idiom.id` are refused DNB001 by every current binary (`mod-global-written`, `concat`), so both script gates are unrunnable repo-wide; audit100 row-8 control parity was verified by running the row-8 regex directly over the rendered probe strings (deny 1, decline 0, before and after). |
 
 ## Handoff — canonical closure (codex/canonical-closure-20260818 @ 3afd79d6)
 
-Vocabulary closure is ruled in law.md 111-115 and C0 (user commits 72170e6a,
-e7aa01f4); this branch adds the mechanical complement: role-aware gapc0
-(receiver/open-type/void roles, canonical `xs:any(p)`/`:any` faces pass),
-gate/agentlaw.sh over agent-instruction blocks (no @-directive
-recommendation, no follow-existing-patterns guidance, no open-type/void
-teaching without a ban), the GAP-145 bytes ruling (element + shape facts, no
-bytes descriptor kingdom), and the corpus teaching-status mapping. All gates
-green with planted-defect negatives; main untouched per instruction. Open
-work: gate/corpus-status.sh reports 964 .id files awaiting TEACHING-STATUS
-headers (classification lane), and audit100/idiom remain DNB001-blocked
-repo-wide.
+| # | directive |
+|---|---|
+| 1 | Vocabulary closure is ruled in law.md 111-115 and C0 (user commits 72170e6a, e7aa01f4); this branch adds the mechanical complement: role-aware gapc0 (receiver/open-type/void roles, canonical `xs:any(p)`/`:any` faces pass), gate/agentlaw.sh over agent-instruction blocks (no @-directive recommendation, no follow-existing-patterns guidance, no open-type/void teaching without a ban), the GAP-145 bytes ruling (element + shape facts, no bytes descriptor kingdom), and the corpus teaching-status mapping. |
+| 2 | All gates green with planted-defect negatives; main untouched per instruction. |
+| 3 | Open work: gate/corpus-status.sh reports 964 .id files awaiting TEACHING-STATUS headers (classification lane), and audit100/idiom remain DNB001-blocked repo-wide. |
 
 ## Handoff — script-gate unblocking (codex/canonical-closure-20260818 @ feda71ee)
 
-The repo's script gates were dark on DNB001. Three walls moved, each with
-by-value proof on this branch:
+| # | directive |
+|---|---|
+| 1 | The repo's script gates were dark on DNB001. |
+| 2 | Three walls moved, each with by-value proof on this branch: |
 
 1. mod-global-written RETIRED (4cb1fd1c): the bss globals map answers, the
    stale scalar-precheck refusal is deleted, g066/g108 promoted into the
@@ -180,35 +179,27 @@ by-value proof on this branch:
    consumers, and a fact with no consumer is deleted, not shelved. Re-add it
    the day a lawful pack-in-text rendering needs it.
 
-Wall chain remaining, with reproduction (build zig-out first):
+| # | directive |
+|---|---|
+| 1 | Wall chain remaining, with reproduction (build zig-out first): |
 
-    gate/idiom.id is FULLY OPERATIONAL as of a5d4d0d3 — every DNB001 wall
-    cleared (mod-global storage, lawful \{\} braces, declared-owns-tail,
-    published-is-not-bootstrap, has-answers-bool) and all five rotted control
-    rows recalibrated (boundface for dot(io)/dot(os), commentline inversion,
-    binidol predicate, the vacuous std-process control, += faces). Controls
-    pass; planted-bad diff exits 1 with findings; clean diff exits 0. The
-    branch's own .id diff preflights to 10 findings, ALL pre-existing corpus
-    naming debt (native_differential directory, numeric canon/gNN taxonomy —
-    law.path.name vs the corpus's established convention): recorded debt for
-    the corpus owners, not silently renamed.
-    tailface_declared_relation.id stays in unsupported/ as the published-vs-
-    bootstrap classifier history; it compiles and answers call-ok now.
-    audit100 remains behind the scripting family (dynamic tables, os.env,
-    capture) — a capability set, not a wall; do not annotate around it.
-    AUDIT100paths=/tmp/x.list ./zig-out/bin/idol run scripts/audit100.id
-      → DNB001 native-scalar precheck — ret-type:any
-        (return-type inference, sema lane; do NOT annotate the script around
-        it — inference is the canonical face, IMPLEMENTATION-BLOCKED is honest)
+| # | directive |
+|---|---|
+| 1 | gate/idiom.id is FULLY OPERATIONAL as of a5d4d0d3 — every DNB001 wall cleared (mod-global storage, lawful \{\} braces, declared-owns-tail, published-is-not-bootstrap, has-answers-bool) and all five rotted control rows recalibrated (boundface for dot(io)/dot(os), commentline inversion, binidol predicate, the vacuous std-process control, += faces). |
+| 2 | Controls pass; planted-bad diff exits 1 with findings; clean diff exits 0. |
+| 3 | The branch's own .id diff preflights to 10 findings, ALL pre-existing corpus naming debt (native_differential directory, numeric canon/gNN taxonomy — law.path.name vs the corpus's established convention): recorded debt for the corpus owners, not silently renamed. tailface_declared_relation.id stays in unsupported/ as the published-vs- bootstrap classifier history; it compiles and answers call-ok now. audit100 remains behind the scripting family (dynamic tables, os.env, capture) — a capability set, not a wall; do not annotate around it. |
+| 4 | AUDIT100paths=/tmp/x.list ./zig-out/bin/idol run scripts/audit100.id → DNB001 native-scalar precheck — ret-type:any (return-type inference, sema lane; do NOT annotate the script around it — inference is the canonical face, IMPLEMENTATION-BLOCKED is honest) |
 
-Unit-test failure set is IDENTICAL to baseline (one pre-existing failure in
-test 'refuses source conversion absent application facts', fails at 5e1bde2d
-before any of this). main untouched.
+| # | directive |
+|---|---|
+| 1 | Unit-test failure set is IDENTICAL to baseline (one pre-existing failure in test 'refuses source conversion absent application facts', fails at 5e1bde2d before any of this). main untouched. |
 
 ## Coordination — to the parallel GLM/omp sessions (2026-08-18 ~21:40)
 
-Three concurrent sessions are in these repos; this is mine (main, GLM 5.3).
-State, so nobody re-derives it:
+| # | directive |
+|---|---|
+| 1 | Three concurrent sessions are in these repos; this is mine (main, GLM 5.3). |
+| 2 | State, so nobody re-derives it: |
 
 - clpi/idol main = 04537703 (all session work landed; gates green:
   gapc0 27/0, agentlaw 5/0, corpus-status 973/0 unclassified, idiom

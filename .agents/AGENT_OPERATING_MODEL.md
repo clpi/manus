@@ -1,19 +1,22 @@
 # AGENT_OPERATING_MODEL — multi-agent allocation for the self-host frontier
 
-Coordination projection only. The supreme law is `docs/spec/law.md`, whose
-structured expansion is `docs/spec/constitution.md`; `AGENTS.md` routes to
-both. Gates, documents,
-briefs, censuses, examples, and agent instructions derive from it and own no
-law. `AGENT_COORDINATION.md` owns lane and claim discipline; this file only
-routes work to agent classes.
+| # | directive |
+|---|---|
+| 1 | Coordination projection only. |
+| 2 | The supreme law is `docs/spec/law.md`, whose structured expansion is `docs/spec/constitution.md`; `AGENTS.md` routes to both. |
+| 3 | Gates, documents, briefs, censuses, examples, and agent instructions derive from it and own no law. `AGENT_COORDINATION.md` owns lane and claim discipline; this file only routes work to agent classes. |
 
-Expected repository base at materialization: the HEAD recorded in the
-assignment. Every work order expires immediately when HEAD differs.
+| # | directive |
+|---|---|
+| 1 | Expected repository base at materialization: the HEAD recorded in the assignment. |
+| 2 | Every work order expires immediately when HEAD differs. |
 
 ## Operating model
 
-Lower-context agents are never asked to understand Idol's full architecture.
-They receive work where:
+| # | directive |
+|---|---|
+| 1 | Lower-context agents are never asked to understand Idol's full architecture. |
+| 2 | They receive work where: |
 
 - the semantic ruling already exists
 - the current failure is reproducible
@@ -22,12 +25,14 @@ They receive work where:
 - damage controls can prove the work
 - ambiguity causes a stop, not improvisation
 
-The repository's durable coordination map divides production into eight
-lanes and requires live path/semantic claims before editing: ingress and
-parser transfer in lanes 1–2, graph authority in lane 3, realization /
-runtime / Wasm in lanes 4–7, evidence / anti-drift in lane 8.
+| # | directive |
+|---|---|
+| 1 | The repository's durable coordination map divides production into eight lanes and requires live path/semantic claims before editing: ingress and parser transfer in lanes 1–2, graph authority in lane 3, realization / runtime / Wasm in lanes 4–7, evidence / anti-drift in lane 8. |
 
-No compiler B exists. The critical chain remains:
+| # | directive |
+|---|---|
+| 1 | No compiler B exists. |
+| 2 | The critical chain remains: |
 
 ```
 source-family → lexical identity → grammar roles → parser → exact graph
@@ -35,7 +40,9 @@ source-family → lexical identity → grammar roles → parser → exact graph
 → artifact → B → C
 ```
 
-Lower-context agents therefore primarily:
+| # | directive |
+|---|---|
+| 1 | Lower-context agents therefore primarily: |
 
 1. make failures reproducible and minimal
 2. make evidence impossible to fake
@@ -44,10 +51,11 @@ Lower-context agents therefore primarily:
 5. migrate mechanical consumers only after Codex establishes the semantic
    interface
 
-They do not change closed `@{}` current-world law, retire DNIR, define worlds,
-modify application roles, invent pack laws, or decide Wasm semantics. Current
-realization is AST→DNIR with AST-expression correspondence to graph
-applications; DNIR still mixes semantic and physical data.
+| # | directive |
+|---|---|
+| 1 | They do not change closed `@{}` current-world law, retire DNIR, define worlds, modify application roles, invent pack laws, or decide Wasm semantics. |
+| 2 | Current realization is AST→DNIR with AST-expression correspondence to graph applications |
+| 3 | DNIR still mixes semantic and physical data. |
 
 ## Allocation
 
@@ -86,15 +94,14 @@ applications; DNIR still mixes semantic and physical data.
 
 ## Never assigned to lower-context agents
 
-Kept with Codex / architectural review: changes to closed `@{…}` current-world
-law, DNIR retirement, fact strata, identity/incarnation law, observation
-equivalence, graph transactions, application roles, pack/default law, worlds,
-protocol coherence, numeric and table law, foreign lawsets, compiler-B stage
-interfaces, Wasm law, representation-one, candidate/value-of-information
-selection, and new syntax.
+| # | directive |
+|---|---|
+| 1 | Kept with Codex / architectural review: changes to closed `@{…}` current-world law, DNIR retirement, fact strata, identity/incarnation law, observation equivalence, graph transactions, application roles, pack/default law, worlds, protocol coherence, numeric and table law, foreign lawsets, compiler-B stage interfaces, Wasm law, representation-one, candidate/value-of-information selection, and new syntax. |
 
-A low-context agent may implement a prewritten interface resulting from one
-of those decisions. It may not make the decision.
+| # | directive |
+|---|---|
+| 1 | A low-context agent may implement a prewritten interface resulting from one of those decisions. |
+| 2 | It may not make the decision. |
 
 ## Vocabulary, instrument, and claims law (all agents)
 
@@ -136,9 +143,10 @@ of those decisions. It may not make the decision.
 
 ## Work orders
 
-Every assignment is materialized through `.agents/WORK_ORDER.md`
-(the universal shape) and the per-agent briefs under `.agents/briefs/`.
-The briefs are the injectables; the work order is the envelope.
+| # | directive |
+|---|---|
+| 1 | Every assignment is materialized through `.agents/WORK_ORDER.md` (the universal shape) and the per-agent briefs under `.agents/briefs/`. |
+| 2 | The briefs are the injectables; the work order is the envelope. |
 
 ## Highest-value immediate allocation
 
@@ -152,7 +160,6 @@ The briefs are the injectables; the work order is the envelope.
 - **Poolside** — implement exactly one physical consequence of graph facts
   Codex already owns
 
-This advances self-hosting and FTCFTW because the primary Codex session
-spends its scarce architectural attention on actual semantic closure while
-every surrounding agent continuously converts ambiguity, masked failures,
-and unverifiable claims into small, deterministic implementation work.
+| # | directive |
+|---|---|
+| 1 | This advances self-hosting and FTCFTW because the primary Codex session spends its scarce architectural attention on actual semantic closure while every surrounding agent continuously converts ambiguity, masked failures, and unverifiable claims into small, deterministic implementation work. |

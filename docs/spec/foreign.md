@@ -1,34 +1,41 @@
 # Foreign source, classified: `toolchain@{ foreign = ledger | oracle }`
 
-Epoch 2. This file is **machine-read** by `scripts/census/foreign.id`
-(`zig build foreign-census`). Editing the prose is free; editing a rule line
-changes what the census will accept.
+| # | directive |
+|---|---|
+| 1 | Epoch 2. |
+| 2 | This file is **machine-read** by `scripts/census/foreign.id` (`zig build foreign-census`). |
+| 3 | Editing the prose is free; editing a rule line changes what the census will accept. |
 
 ## Why this file exists
 
-The strategic invariants list as anchored protocols on the
-toolchain, red in CI until true. One of them is U8:
+| # | directive |
+|---|---|
+| 1 | The strategic invariants list as anchored protocols on the toolchain, red in CI until true. |
+| 2 | One of them is U8: |
 
 ```
 toolchain@{ foreign = ledger | oracle }
 ```
 
-**There are exactly two licences for a non-Idol file in this repository.**
+| # | directive |
+|---|---|
+| 1 | **There are exactly two licences for a non-Idol file in this repository.** |
 
 | class | what it means | where it comes from |
 |---|---|---|
 | `ledger` | bootstrap debt: it exists because Idol cannot yet build itself without it. It SHRINKS, and it carries a **termination condition** | `src/*.zig` is the licensed exception with a termination condition |
 | `oracle` | test equipment: a differential reference, a performance baseline, or an input fixture. It is never on the shipping path and may persist | foreign compilers remain as oracles; the C differential is explicitly licensed — C is the oracle, test equipment, never the shipping path |
 
-Anything else is a **violation**. There is no third class and no silent
-default: a tracked foreign file that matches no rule below fails the census.
+| # | directive |
+|---|---|
+| 1 | Anything else is a **violation**. |
+| 2 | There is no third class and no silent default: a tracked foreign file that matches no rule below fails the census. |
 
-`scripts/language_census.id` (`zig build language-census`) COUNTS the same
-population and ratchets the sh/py and js debt lines. It answers "how much
-foreign code is there"; this file answers "by what right is each piece here".
-They are separate steps so that a classification failure and a debt-count
-failure are distinguishable — a census that returns one number cannot tell you
-which of those went wrong.
+| # | directive |
+|---|---|
+| 1 | `scripts/language_census.id` (`zig build language-census`) COUNTS the same population and ratchets the sh/py and js debt lines. |
+| 2 | It answers "how much foreign code is there"; this file answers "by what right is each piece here". |
+| 3 | They are separate steps so that a classification failure and a debt-count failure are distinguishable — a census that returns one number cannot tell you which of those went wrong. |
 
 ## The rule format, and what the gate enforces about it
 
@@ -51,32 +58,21 @@ which of those went wrong.
 
 ## What a file census cannot see, stated rather than hidden
 
-Foreign code also lives INSIDE `.id` files, as `@c.emit` / `@c.include`
-payloads. No extension-based census can see it, and this repository has a
-worked example of what that costs: `lib/os.id` and `lib/io.id` obtain
-their capability through raw C, which is why gap[061]'s ambient-authority grep
-could not find the authority those two modules hold. The census therefore
-**advertises** the aggregate embedded-site count (with a positive control so a
-broken grep cannot pass). Per-site **audit** and **enforce** live in
-`scripts/ledger/embed.id` (`zig build embed-ledger`): it names every remaining
-`@c` payload by file and fails until the count reaches zero. It also refuses to
-report a verdict at all when `gate/subject.sh` cannot enumerate — a tree with no
-`.git` used to produce this ledger's PASS line from nothing, which is
-`GAP-201`/`GAP-220`. Embedded sites are `ledger`-class by
-construction — bootstrap, with the no-foreign-waist ruling as the
-termination condition — and they only shrink.
+| # | directive |
+|---|---|
+| 1 | Foreign code also lives INSIDE `.id` files, as `@c.emit` / `@c.include` payloads. |
+| 2 | No extension-based census can see it, and this repository has a worked example of what that costs: `lib/os.id` and `lib/io.id` obtain their capability through raw C, which is why gap[061]'s ambient-authority grep could not find the authority those two modules hold. |
+| 3 | The census therefore **advertises** the aggregate embedded-site count (with a positive control so a broken grep cannot pass). |
+| 4 | Per-site **audit** and **enforce** live in `scripts/ledger/embed.id` (`zig build embed-ledger`): it names every remaining `@c` payload by file and fails until the count reaches zero. |
+| 5 | It also refuses to report a verdict at all when `gate/subject.sh` cannot enumerate — a tree with no `.git` used to produce this ledger's PASS line from nothing, which is `GAP-201`/`GAP-220`. |
+| 6 | Embedded sites are `ledger`-class by construction — bootstrap, with the no-foreign-waist ruling as the termination condition — and they only shrink. |
 
-Two things are stripped before that count, and both were paid for rather than
-foreseen. **Comment lines**: the moment the three enterprise gates were tracked,
-their headers' mentions of `@c.emit` took the count from 236 to 240 until the
-scanner learned to skip comment lines. **The census's own source**: adding a
-diagnostic that names the token in a string took it to 184. A scanner whose
-subject is the text it greps for reports itself, which is the exclusion
-`audit100` makes for the identical reason. The honest advertised count is
-**181**; shrinking it is enforced by `scripts/ledger/embed.id`, not a second
-census floor. That ledger carries the ratchet as an `EMBED_FLOOR` default rather
-than a hardcoded constant, so the floor and the advertised count are separately
-readable.
+| # | directive |
+|---|---|
+| 1 | Two things are stripped before that count, and both were paid for rather than foreseen. **Comment lines**: the moment the three enterprise gates were tracked, their headers' mentions of `@c.emit` took the count from 236 to 240 until the scanner learned to skip comment lines. **The census's own source**: adding a diagnostic that names the token in a string took it to 184. |
+| 2 | A scanner whose subject is the text it greps for reports itself, which is the exclusion `audit100` makes for the identical reason. |
+| 3 | The honest advertised count is **181**; shrinking it is enforced by `scripts/ledger/embed.id`, not a second census floor. |
+| 4 | That ledger carries the ratchet as an `EMBED_FLOOR` default rather than a hardcoded constant, so the floor and the advertised count are separately readable. |
 
 ## Rules
 
@@ -95,16 +91,17 @@ oracle   tests/                        license:test-oracle — differential fixt
 
 ## Unclassified today
 
-No tracked foreign file is currently unclassified. `ext/vscode-idol/extension.js`
-and `ext/tree-sitter-idol/grammar.js` are ledger rows beside the generators.
-`.pi/extensions/idol-mcp.ts` is ledger until pi speaks MCP without TypeScript.
-Spent one-shot root `*.py` and `tools/emit_grammar_role.zig` (stale duplicate of
-`src/emit_grammar_role.zig`) were deleted rather than licensed.
+| # | directive |
+|---|---|
+| 1 | No tracked foreign file is currently unclassified. `ext/vscode-idol/extension.js` and `ext/tree-sitter-idol/grammar.js` are ledger rows beside the generators. `.pi/extensions/idol-mcp.ts` is ledger until pi speaks MCP without TypeScript. |
+| 2 | Spent one-shot root `*.py` and `tools/emit_grammar_role.zig` (stale duplicate of `src/emit_grammar_role.zig`) were deleted rather than licensed. |
 
-Two earlier left the list the same way: `docs/theme/custom.js` was deleted, and
-`scripts/run_compile_size_benchmark.sh` was rewritten in Idol.
+| # | directive |
+|---|---|
+| 1 | Two earlier left the list the same way: `docs/theme/custom.js` was deleted, and `scripts/run_compile_size_benchmark.sh` was rewritten in Idol. |
 
-A file that becomes genuinely generated belongs in `ledger` with its generator
-named and a termination condition. A file that becomes test equipment belongs
-in `oracle` with the authority that licenses it. Giving one of them a rule
-without changing what it IS is how a two-class law becomes a one-class law.
+| # | directive |
+|---|---|
+| 1 | A file that becomes genuinely generated belongs in `ledger` with its generator named and a termination condition. |
+| 2 | A file that becomes test equipment belongs in `oracle` with the authority that licenses it. |
+| 3 | Giving one of them a rule without changing what it IS is how a two-class law becomes a one-class law. |

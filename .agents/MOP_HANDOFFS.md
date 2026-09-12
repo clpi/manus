@@ -1,11 +1,15 @@
 # MOP handoffs — self-host blocker laboratory results
 
-Derived from the Wave-0 Z.ai MOP workstream (.agents/AGENT_OPERATING_MODEL.md).
-Base at measurement: idol @ ecc5a3ff, compiler ee08e553. Machine-readable
-records in evidence/mop/; executable theorems in tools/reduce/fixtures/.
+| # | directive |
+|---|---|
+| 1 | Derived from the Wave-0 Z.ai MOP workstream (.agents/AGENT_OPERATING_MODEL.md). |
+| 2 | Base at measurement: idol @ ecc5a3ff, compiler ee08e553. |
+| 3 | Machine-readable records in evidence/mop/; executable theorems in tools/reduce/fixtures/. |
 
-Every item below is work-order ready. Fill `.agents/WORK_ORDER.md` and
-dispatch per `.agents/AGENT_OPERATING_MODEL.md`.
+| # | directive |
+|---|---|
+| 1 | Every item below is work-order ready. |
+| 2 | Fill `.agents/WORK_ORDER.md` and dispatch per `.agents/AGENT_OPERATING_MODEL.md`. |
 
 ## H1 — graph must publish application facts for f64 foreign writes (F1)
 
@@ -61,21 +65,22 @@ dispatch per `.agents/AGENT_OPERATING_MODEL.md`.
 
 ## Mask analysis method (MOP-C — pending)
 
-For each family: copy the compiler source tree to /tmp, bypass ONLY that
-refusal, rebuild, re-run `compile --emit obj` over all 19 units, and
-report { genuinely advanced, masked, next-blocker distribution }. The
-ratchet scripts (`tools/node/dev/census/history/zero`) already demonstrate
-the copy-patch-measure pattern; no production tree is modified.
+| # | directive |
+|---|---|
+| 1 | For each family: copy the compiler source tree to /tmp, bypass ONLY that refusal, rebuild, re-run `compile --emit obj` over all 19 units, and report { genuinely advanced, masked, next-blocker distribution }. |
+| 2 | The ratchet scripts (`tools/node/dev/census/history/zero`) already demonstrate the copy-patch-measure pattern; no production tree is modified. |
 
 ## Remeasurement discipline
 
-Do not carry "9 of 19" forward: remeasure at the exact source/compiler
-hashes above. `idol check` is green on all 19 units — check is not
-evidence of compilability; object emission is the current honest floor.
+| # | directive |
+|---|---|
+| 1 | Do not carry "9 of 19" forward: remeasure at the exact source/compiler hashes above. `idol check` is green on all 19 units — check is not evidence of compilability; object emission is the current honest floor. |
 
 ## Update 2026-08-17 — reducer landed; F5 and F2 resolved to theorems
 
-`tools/reduce/idol` (selftest-proven) reduced the open families:
+| # | directive |
+|---|---|
+| 1 | `tools/reduce/idol` (selftest-proven) reduced the open families: |
 
 - **F5 InvalidAggregateFact: 1792 → 27 lines**
   (`tools/reduce/fixtures/crash/corpus.id`). Checks clean; crashes the
@@ -92,8 +97,9 @@ evidence of compilability; object emission is the current honest floor.
 
 ## Update 2 — MOP-C mask analysis: headline counts are 100% masked
 
-`evidence/mop/mask.yaml` (shadow-copy method, tree verified identical
-after each restore):
+| # | directive |
+|---|---|
+| 1 | `evidence/mop/mask.yaml` (shadow-copy method, tree verified identical after each restore): |
 
 - **F1** (unresolved-application-facts, 3 headline units): bypassing the
   guard advances **0** units — all three immediately expose
@@ -101,22 +107,22 @@ after each restore):
 - **F3b** (global-init-not-constant, 2 headline units): bypassing advances
   **0** units — both expose `missing: unspecified` (unnamed entity hole).
 
-**Lane-3 priority derived from measurement**: publish application-id and
-global-entity facts FIRST. The refusal guards are correct; they are
-reporting absent producers. Fixing guards before publishers would unlock
-nothing (this is the routed-guard analysis conclusion, now with numbers).
+| # | directive |
+|---|---|
+| 1 | **Lane-3 priority derived from measurement**: publish application-id and global-entity facts FIRST. |
+| 2 | The refusal guards are correct; they are reporting absent producers. |
+| 3 | Fixing guards before publishers would unlock nothing (this is the routed-guard analysis conclusion, now with numbers). |
 
-New top handoff: **H6 — graph must publish application ids for foreign and
-method call sites** (unblocks F1's three units past their next hole; the
-2-line F5 reproducer and the F2 module-granularity finding are the
-companion inputs).
+| # | directive |
+|---|---|
+| 1 | New top handoff: **H6 — graph must publish application ids for foreign and method call sites** (unblocks F1's three units past their next hole; the 2-line F5 reproducer and the F2 module-granularity finding are the companion inputs). |
 
 ## Appendix — idiomatic floor and graph instrument (working notes)
 
-
-Base: idol @ 4724e589+, idol-native bin/idol. Verified by exercising
-check/graph/symbols/explain over tools/mcp/native.id and idol-native
-tools/mcp/server.id on 2026-08-17.
+| # | directive |
+|---|---|
+| 1 | Base: idol @ 4724e589+, idol-native bin/idol. |
+| 2 | Verified by exercising check/graph/symbols/explain over tools/mcp/native.id and idol-native tools/mcp/server.id on 2026-08-17. |
 
 ## The graph is the instrument (sim-v0)
 
@@ -136,13 +142,9 @@ tools/mcp/server.id on 2026-08-17.
 - `enum_shapes`, `table_shapes`, `call_shapes` (callee_kind method|direct,
   arg_count, specializable, demand).
 
-`explain` (idol-explain-v1): knowledge_snapshot entities + incarnation,
-optimization_outcomes, assumption guards, transform_provenance (hash in/out,
-evidence class), and the transform registry — tier-1 comptime transforms
-(comp.match/map/power/derive.power/fixpoint/tabulate/interpolate/each/zip/
-permute; budgets linear|exponential|factorial; parity sites) and call.*
-(inline/specialize observed; memo/devirtualize/gpu_lower/simd_lower
-registered, not yet observed).
+| # | directive |
+|---|---|
+| 1 | `explain` (idol-explain-v1): knowledge_snapshot entities + incarnation, optimization_outcomes, assumption guards, transform_provenance (hash in/out, evidence class), and the transform registry — tier-1 comptime transforms (comp.match/map/power/derive.power/fixpoint/tabulate/interpolate/each/zip/ permute; budgets linear\|exponential\|factorial; parity sites) and call.* (inline/specialize observed; memo/devirtualize/gpu_lower/simd_lower registered, not yet observed). |
 
 ## Idiom floor (what compiles under direct-native today)
 
@@ -167,14 +169,11 @@ registered, not yet observed).
 
 ## Performance doctrine (HPLS / FTCFTW)
 
-Write the semantic minimum — the fewest LOC that states the DEMAND — and
-let the graph decide the physics: demand cardinality (single vs per-item),
-region shape (refinement/alternative/recurrence), access multiplicity
-(exact/bounded), and const_index facts are what the transform registry
-consumes. Never encode a physical strategy (manual buffers, caching,
-unrolling) the graph could derive; never widen observation (order, layout,
-addresses) the law does not demand. Highest performance in least LOC =
-state the relation, publish the facts, let specialization choose.
+| # | directive |
+|---|---|
+| 1 | Write the semantic minimum — the fewest LOC that states the DEMAND — and let the graph decide the physics: demand cardinality (single vs per-item), region shape (refinement/alternative/recurrence), access multiplicity (exact/bounded), and const_index facts are what the transform registry consumes. |
+| 2 | Never encode a physical strategy (manual buffers, caching, unrolling) the graph could derive; never widen observation (order, layout, addresses) the law does not demand. |
+| 3 | Highest performance in least LOC = state the relation, publish the facts, let specialization choose. |
 
 ## Disjoint work surface (this session, Wave 0/1)
 
@@ -188,7 +187,9 @@ state the relation, publish the facts, let specialization choose.
 
 ## H7 — grammar projection drift on the GAP-134 chain (parity measured)
 
-`tools/parity/grammar` (report-only) measured:
+| # | directive |
+|---|---|
+| 1 | `tools/parity/grammar` (report-only) measured: |
 
 - canonical `TokenKind` = **114** ordinals (src/lexer.zig)
 - live projection `lib/token/grammarrole.id` = **114** — count-correct,
@@ -201,11 +202,10 @@ state the relation, publish the facts, let specialization choose.
   `lib/std/token/grammar_role.id` path (forbidden namespace)
 - BEGIN_EXPR vectors diverge at ordinal 3 between the two .id projections
 
-Owner: lane 1–2 (GAP-134 generated grammar roles / immutable token view).
-The parity checker must stay report-only; reconciling the three emitters
-is a ruled decision for that lane. `scripts/grammarconvergence.id` already
-exists as the declared convergence script for this surface.
-
+| # | directive |
+|---|---|
+| 1 | Owner: lane 1–2 (GAP-134 generated grammar roles / immutable token view). |
+| 2 | The parity checker must stay report-only; reconciling the three emitters is a ruled decision for that lane. `scripts/grammarconvergence.id` already exists as the declared convergence script for this surface. |
 
 ## Update 3 — H7 mechanical subset implemented; F4 minimized
 
@@ -222,49 +222,36 @@ exists as the declared convergence script for this surface.
   the relation SHAPE (pack param + if/else over a pack field), reported
   by name — not a name-keyed lookup. Hands lane 4 a 4-line reproducer.
 
-
 ## Vocabulary ruling (user, 2026-08-17): `baseline` is a word
 
-`baseline` is not a compound — added to the `words` authority in both
-law copies (gate/path.id and gate/idiom.id). The compound census parses
-the list at runtime and honors it with no code change.
-
+| # | directive |
+|---|---|
+| 1 | `baseline` is not a compound — added to the `words` authority in both law copies (gate/path.id and gate/idiom.id). |
+| 2 | The compound census parses the list at runtime and honors it with no code change. |
 
 ## Update 4 — compile concurrency measured; cache publish hardened in-tree
 
-Ground truth (30-way concurrent compiles, distinct content, one cwd):
-every compile succeeds, no cross-process lock exists in `idol compile`,
-and the reducer parallel-sweep regression was my throttle's spawn/poll
-overhead, not compiler serialization (README corrected).
+| # | directive |
+|---|---|
+| 1 | Ground truth (30-way concurrent compiles, distinct content, one cwd): every compile succeeds, no cross-process lock exists in `idol compile`, and the reducer parallel-sweep regression was my throttle's spawn/poll overhead, not compiler serialization (README corrected). |
 
-The one real multi-agent hazard on the roadmap modules:
-`.id/cache/semantic/state.json` was a direct truncate-write in
-src/persistent_semantic_state.zig (codex's unwired transactional-cache
-WIP). It now publishes atomically (per-process temp + rename; readers see
-old-or-new, writers never block; last consistent writer wins). The patch
-sits in the working tree beside that WIP for the owning session to wire
-and commit — committing their untracked file under my name would repeat
-the ace5f7d5 sweep mistake. Build green; unit-test parity identical
-(1663 pass / 3 pre-existing failures, reproduced with the patch reverted).
-
+| # | directive |
+|---|---|
+| 1 | The one real multi-agent hazard on the roadmap modules: `.id/cache/semantic/state.json` was a direct truncate-write in src/persistent_semantic_state.zig (codex's unwired transactional-cache WIP). |
+| 2 | It now publishes atomically (per-process temp + rename; readers see old-or-new, writers never block; last consistent writer wins). |
+| 3 | The patch sits in the working tree beside that WIP for the owning session to wire and commit — committing their untracked file under my name would repeat the ace5f7d5 sweep mistake. |
+| 4 | Build green; unit-test parity identical (1663 pass / 3 pre-existing failures, reproduced with the patch reverted). |
 
 ## Update 5 — F5 closed to a 2-line theorem: self-recursion
 
-A second serial pass reduced the 11-line crasher further: the crash is
-SELF-RECURSION. tools/reduce/fixtures/crash/corpus.id (2 lines) — a
-relation invoking itself with literal arguments reaches
-publishApplicationResultAggregate and returns InvalidAggregateFact (raw
-internal error, leaked stack trace) instead of a classified refusal.
-crash/ctrl.id is the causality control: identical shape with the call
-target renamed yields a clean return-type diagnostic. Lane 3 has the
-smallest possible reproducer plus its control.
+| # | directive |
+|---|---|
+| 1 | A second serial pass reduced the 11-line crasher further: the crash is SELF-RECURSION. tools/reduce/fixtures/crash/corpus.id (2 lines) — a relation invoking itself with literal arguments reaches publishApplicationResultAggregate and returns InvalidAggregateFact (raw internal error, leaked stack trace) instead of a classified refusal. crash/ctrl.id is the causality control: identical shape with the call target renamed yields a clean return-type diagnostic. |
+| 2 | Lane 3 has the smallest possible reproducer plus its control. |
 
-Also recorded: a second parallel-sweep attempt (xargs -P) degraded to a
-15-minute CPU-idle timeout — shell-level candidate parallelism has now
-failed twice on this workload with different mechanisms; serial plus the
-guarded inert pre-pass (3m54s for the full 1792-line reduction) is the
-standing configuration.
-
+| # | directive |
+|---|---|
+| 1 | Also recorded: a second parallel-sweep attempt (xargs -P) degraded to a 15-minute CPU-idle timeout — shell-level candidate parallelism has now failed twice on this workload with different mechanisms; serial plus the guarded inert pre-pass (3m54s for the full 1792-line reduction) is the standing configuration. |
 
 ## Update 6 — H4 fixed; H5 minimized with a corrected diagnosis
 
@@ -277,7 +264,6 @@ standing configuration.
   not pull the callee's object into the link. host.id's "ambient
   reference" comment was the workaround attempt. Owner: lane 4.
   Reducer note: predicate exit 0 means failure PRESENT (no negation).
-
 
 ## Update 7 — Mission B verdict; matrix remeasured
 
@@ -295,55 +281,46 @@ standing configuration.
   parallel ref reconcile/idol-canonical-all-work-20260817; not in this
   branch's history.
 
-
 ## H8 (corrected) — module-table REPRESENTATION gates wasm + LSP admission
 
-`zig build wasm-test` fails closed at `module_materializes_table` in
-codegen.zig: a module exporting a table built by keyed writes has no
-native-scalar representation (producer drops the writes; the consumer
-flattens `m.x` to undefined symbols). This is the REPRESENTATION
-decision, not a missing published fact — my first H8 framing repeated
-the exact false-splice main.zig:4920 documents (three historical false
-findings from that comma). The engine's real first blocker is req's own
-unresolved applications. Owner: realization lane; the reconcile branch
-is landing table semantics (src/table_apply.zig). Wart oracle BUILT at
-the frozen rev (ca2b0b9c, ReleaseFast) — the perf rail has both oracles
-pinned; the engine number waits on admission.
+| # | directive |
+|---|---|
+| 1 | `zig build wasm-test` fails closed at `module_materializes_table` in codegen.zig: a module exporting a table built by keyed writes has no native-scalar representation (producer drops the writes; the consumer flattens `m.x` to undefined symbols). |
+| 2 | This is the REPRESENTATION decision, not a missing published fact — my first H8 framing repeated the exact false-splice main.zig:4920 documents (three historical false findings from that comma). |
+| 3 | The engine's real first blocker is req's own unresolved applications. |
+| 4 | Owner: realization lane; the reconcile branch is landing table semantics (src/table_apply.zig). |
+| 5 | Wart oracle BUILT at the frozen rev (ca2b0b9c, ReleaseFast) — the perf rail has both oracles pinned; the engine number waits on admission. |
 
-Measured: `zig build wasm-test` fails closed at
-`idol compile tools/wasm/src/engine.id --backend=direct` ->
-`DNB001 missing: keyed-table-export` (dnir_lower) — the SAME missing fact
-that blocks `tools/lsp/src/server.id`. One published fact family unblocks
-both the wasm admission gate and the LSP server admission. Full wasm
-closure matrix with proposal states and wasmtime oracle baselines:
-evidence/mop/wasm/closure.md. WASIX has zero source support (the wasix
-bench is oracle corpus only); WASI p1 is real but partial.
-
+| # | directive |
+|---|---|
+| 1 | Measured: `zig build wasm-test` fails closed at `idol compile tools/wasm/src/engine.id --backend=direct` -> `DNB001 missing: keyed-table-export` (dnir_lower) — the SAME missing fact that blocks `tools/lsp/src/server.id`. |
+| 2 | One published fact family unblocks both the wasm admission gate and the LSP server admission. |
+| 3 | Full wasm closure matrix with proposal states and wasmtime oracle baselines: evidence/mop/wasm/closure.md. |
+| 4 | WASIX has zero source support (the wasix bench is oracle corpus only) |
+| 5 | WASI p1 is real but partial. |
 
 ## Update 8 — one-command theorem suite
 
-`tools/reduce/verify` runs every blocker theorem and its control with
-exact expectations (9/9 PASS at 287c17fe). The crash control asserts
-CLEAN DIAGNOSIS — never an internal InvalidAggregateFact — so the suite
-is the post-merge regression guard: after the reconcile merge lands
-(self-recursion fixed to classified refusal on that line), this command
-must stay green with `missing: parse_expr` and never revert to the
-crash. Post-merge pass order: merge -> tools/reduce/verify ->
-census/compound --record -> parity (adopt fail-closed) -> ABI rename
-window -> bridge census re-run.
+| # | directive |
+|---|---|
+| 1 | `tools/reduce/verify` runs every blocker theorem and its control with exact expectations (9/9 PASS at 287c17fe). |
+| 2 | The crash control asserts CLEAN DIAGNOSIS — never an internal InvalidAggregateFact — so the suite is the post-merge regression guard: after the reconcile merge lands (self-recursion fixed to classified refusal on that line), this command must stay green with `missing: parse_expr` and never revert to the crash. |
+| 3 | Post-merge pass order: merge -> tools/reduce/verify -> census/compound --record -> parity (adopt fail-closed) -> ABI rename window -> bridge census re-run. |
 
 ## H10 — arg-form face-equivalence (causal test now load-bearing)
 
-The audit's demand is implemented: tools/reduce/fixtures/graph/
-argface.id asserts at runtime that the same semantic application
-(same subject, relation, operand pack, demand) produces IDENTICAL
-machine behavior from both source faces. Current state:
+| # | directive |
+|---|---|
+| 1 | The audit's demand is implemented: tools/reduce/fixtures/graph/ argface.id asserts at runtime that the same semantic application (same subject, relation, operand pack, demand) produces IDENTICAL machine behavior from both source faces. |
+| 2 | Current state: |
 
-  chain=6 argform=0 FACE-DIVERGENCE
+| # | directive |
+|---|---|
+| 1 | chain=6 argform=0 FACE-DIVERGENCE |
 
-The test is wired into tools/reduce/verify and currently FAILS —
-correctly, by design: the suite is RED until the compiler fix lands,
-then turns GREEN with zero changes to the test. This is the causal
-equivalence assertion the review specified: the compiler fails the
-suite if either face lowers differently. Owner: compiler lane
-(dnir_lower argument passing). Priority: outranks Wasm breadth.
+| # | directive |
+|---|---|
+| 1 | The test is wired into tools/reduce/verify and currently FAILS — correctly, by design: the suite is RED until the compiler fix lands, then turns GREEN with zero changes to the test. |
+| 2 | This is the causal equivalence assertion the review specified: the compiler fails the suite if either face lowers differently. |
+| 3 | Owner: compiler lane (dnir_lower argument passing). |
+| 4 | Priority: outranks Wasm breadth. |

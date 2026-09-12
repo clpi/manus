@@ -1,9 +1,9 @@
 # Total convergence contract
 
-Blocking execution contract for every agent lane. Projection of C0
-`law.zero.history`, `law.fact.producer.one`, `law.projection.one`,
-`law.infer.one`, and SHC/FTCFTW obligations. **Not semantic law** — C0 owns
-verdicts.
+| # | directive |
+|---|---|
+| 1 | Blocking execution contract for every agent lane. |
+| 2 | Projection of C0 `law.zero.history`, `law.fact.producer.one`, `law.projection.one`, `law.infer.one`, and SHC/FTCFTW obligations. **Not semantic law** — C0 owns verdicts. |
 
 ## Pipeline (sole architecture)
 
@@ -18,12 +18,15 @@ source
 → machine
 ```
 
-Absolute: one meaning · one id · one relation · one fact producer · one
-projection algebra · one lowering lineage.
+| # | directive |
+|---|---|
+| 1 | Absolute: one meaning · one id · one relation · one fact producer · one projection algebra · one lowering lineage. |
 
 ## STOP conditions
 
-Stop implementation immediately when:
+| # | directive |
+|---|---|
+| 1 | Stop implementation immediately when: |
 
 - semantic owner unclear
 - relation identity unclear
@@ -37,18 +40,24 @@ Stop implementation immediately when:
 - host architecture is the easiest template
 - fallback would silently decide meaning
 
-Record the missing fact/boundary. Do not unblock with guesses.
+| # | directive |
+|---|---|
+| 1 | Record the missing fact/boundary. |
+| 2 | Do not unblock with guesses. |
 
 ## Source is not canonical by default
 
-Revalidate every touched construct against current C0. Implementation debt
-never becomes language law.
+| # | directive |
+|---|---|
+| 1 | Revalidate every touched construct against current C0. |
+| 2 | Implementation debt never becomes language law. |
 
 ## Fact producer ledger
 
-Producer ownership is this table until graph queries exist. There is no
-machine-readable relation catalog (`law.catalog.zero`; `lib/semantic/producer.id`
-deleted).
+| # | directive |
+|---|---|
+| 1 | Producer ownership is this table until graph queries exist. |
+| 2 | There is no machine-readable relation catalog (`law.catalog.zero`; `lib/semantic/producer.id` deleted). |
 
 | fact | producer | consumers |
 |---|---|---|
@@ -65,32 +74,46 @@ deleted).
 | representation | realization | machine, object |
 | instruction range | machine emitter | object, provenance |
 
-Multiple producers for one fact: **merge block**.
+| # | directive |
+|---|---|
+| 1 | Multiple producers for one fact: **merge block**. |
 
 ## P0 repair order (current)
 
-**A — identity/history:** `.id` only · zero retired names · no pass taxonomy ·
-ephemeral session envelope · current corpus states only.
+| # | directive |
+|---|---|
+| 1 | **A — identity/history:** `.id` only · zero retired names · no pass taxonomy · ephemeral session envelope · current corpus states only. |
 
-**B — source authority:** delete `native_req_support` module lookup · MODULE-ZERO ·
-STD-ZERO · LIB-ZERO · home reachability.
+| # | directive |
+|---|---|
+| 1 | **B — source authority:** delete `native_req_support` module lookup · MODULE-ZERO · STD-ZERO · LIB-ZERO · home reachability. |
 
-**C — application:** projection pack records · INFER-ONE · FROM-ZERO ·
-protocol-as-relation · curry-structural.
+| # | directive |
+|---|---|
+| 1 | **C — application:** projection pack records · INFER-ONE · FROM-ZERO · protocol-as-relation · curry-structural. |
 
-**D — worlds/results:** RUN-ONE · SENTINEL-ZERO · environment absence distinct.
+| # | directive |
+|---|---|
+| 1 | **D — worlds/results:** RUN-ONE · SENTINEL-ZERO · environment absence distinct. |
 
-**E — lowering:** DNIR realization-only · relation ids not BinOpTag authority ·
-lineage to machine.
+| # | directive |
+|---|---|
+| 1 | **E — lowering:** DNIR realization-only · relation ids not BinOpTag authority · lineage to machine. |
 
-**F — SHC:** GAP-145 lexical → GAP-134 grammar roles → parser recognition → graph.
+| # | directive |
+|---|---|
+| 1 | **F — SHC:** GAP-145 lexical → GAP-134 grammar roles → parser recognition → graph. |
 
-**G — FTCFTW:** value-checked benchmarks · positive damage controls · evidence rows.
+| # | directive |
+|---|---|
+| 1 | **G — FTCFTW:** value-checked benchmarks · positive damage controls · evidence rows. |
 
 ## Completion report
 
-Every task returns the §99 format from the convergence directive: semantic diff,
-physical delta, bridges with deletion conditions, positive/negative controls,
-SHC frontier movement, evidence bindings.
+| # | directive |
+|---|---|
+| 1 | Every task returns the §99 format from the convergence directive: semantic diff, physical delta, bridges with deletion conditions, positive/negative controls, SHC frontier movement, evidence bindings. |
 
-Mechanical census: `tools/node/dev/convergencecensus`.
+| # | directive |
+|---|---|
+| 1 | Mechanical census: `tools/node/dev/convergencecensus`. |

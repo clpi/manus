@@ -1,15 +1,17 @@
 # IDOL — blind one-pager / total canonical + repository law
 
-**AUTHORITY:** This document is authoritative over repository accidents.
+| # | directive |
+|---|---|
+| 1 | **AUTHORITY:** This document is authoritative over repository accidents. |
 
-**SUPREME one-page law:** `docs/spec/law.md` is authoritative over every document,
-including this one; wherever this file diverges from `docs/spec/law.md`, that page
-wins and this file must be corrected. `docs/spec/constitution.md` (C0) is the
-structured long-form expansion of `docs/spec/law.md` and the home of the `law.*`
-identities. Readable bootstrap: `docs/spec/agent.md`. **Read this file before
-repository code.**
+| # | directive |
+|---|---|
+| 1 | **SUPREME one-page law:** `docs/spec/law.md` is authoritative over every document, including this one; wherever this file diverges from `docs/spec/law.md`, that page wins and this file must be corrected. `docs/spec/constitution.md` (C0) is the structured long-form expansion of `docs/spec/law.md` and the home of the `law.*` identities. |
+| 2 | Readable bootstrap: `docs/spec/agent.md`. **Read this file before repository code.** |
 
-Existing Git state may contain:
+| # | directive |
+|---|---|
+| 1 | Existing Git state may contain: |
 
 - stale syntax
 - stale names
@@ -18,7 +20,9 @@ Existing Git state may contain:
 - host-language patterns
 - historical tests/docs
 
-**Do not infer language law from frequency in Git.**
+| # | directive |
+|---|---|
+| 1 | **Do not infer language law from frequency in Git.** |
 
 ```text
 SOURCE MINIMUM.
@@ -31,12 +35,14 @@ EDGES EXPRESS STRUCTURAL ROLES.
 EDGES NEVER NAME OPERATIONS.
 ```
 
-**Enforcement nuance:** regex owns **lexical impossibility**; semantic gates own
-**conceptual impossibility**. Do not “solve” naming with one giant regexp —
-`broker` is as wrong as `router`, `bundle` can encode plurality without ending
-in `s`, and `tokenview` satisfies `^[a-z][a-z0-9]*$` while encoding two meanings.
+| # | directive |
+|---|---|
+| 1 | **Enforcement nuance:** regex owns **lexical impossibility**; semantic gates own **conceptual impossibility**. |
+| 2 | Do not “solve” naming with one giant regexp — `broker` is as wrong as `router`, `bundle` can encode plurality without ending in `s`, and `tokenview` satisfies `^[a-z][a-z0-9]*$` while encoding two meanings. |
 
-**Gate pipeline (mechanical → semantic):**
+| # | directive |
+|---|---|
+| 1 | **Gate pipeline (mechanical → semantic):** |
 
 ```text
 lexical regex
@@ -47,36 +53,52 @@ lexical regex
 → adversarial negative controls
 ```
 
-Current migration implementation: `gate/idiom.id`, `gate/path.id`, `gate/host.id`,
-`gate/admission.id`, `gate/graph.id` — partial coverage until GAP-124 graph gate.
+| # | directive |
+|---|---|
+| 1 | Current migration implementation: `gate/idiom.id`, `gate/path.id`, `gate/host.id`, `gate/admission.id`, `gate/graph.id` — partial coverage until GAP-124 graph gate. |
 
----
+| # | directive |
+|---|---|
 
 ## 1. Canonical source
 
-**Bindings:**
+| # | directive |
+|---|---|
+| 1 | **Bindings:** |
 
 ```id
 x = value
 x: descriptor = value
 ```
 
-**Functions:**
+| # | directive |
+|---|---|
+| 1 | **Functions:** |
 
 ```id
 add = (a, b) a + b
 normalize = (value) value:validate():normalize()
 ```
 
-**Static projection:** `x.y`
+| # | directive |
+|---|---|
+| 1 | **Static projection:** `x.y` |
 
-**Subject relation:** `x:y(...)`
+| # | directive |
+|---|---|
+| 1 | **Subject relation:** `x:y(...)` |
 
-**Application:** `x(...)` — ordinary relation application and grouping
+| # | directive |
+|---|---|
+| 1 | **Application:** `x(...)` — ordinary relation application and grouping |
 
-**Computed projection:** `x[key]`
+| # | directive |
+|---|---|
+| 1 | **Computed projection:** `x[key]` |
 
-**Canonical aggregate lookup:**
+| # | directive |
+|---|---|
+| 1 | **Canonical aggregate lookup:** |
 
 ```id
 table[key]
@@ -84,7 +106,9 @@ env["HOME"]
 args[1]
 ```
 
-**Meaningful relation verbs remain:**
+| # | directive |
+|---|---|
+| 1 | **Meaningful relation verbs remain:** |
 
 ```id
 source:read()
@@ -95,14 +119,23 @@ text:find(pattern)
 text:parse(json)
 ```
 
-Root body executes. Tail expression returns. Blocks are offside. Comments use `#`.
-Text uses `"..."`. Interpolation uses `"{value}"`.
+| # | directive |
+|---|---|
+| 1 | Root body executes. |
+| 2 | Tail expression returns. |
+| 3 | Blocks are offside. |
+| 4 | Comments use `#`. |
+| 5 | Text uses `"..."`. |
+| 6 | Interpolation uses `"{value}"`. |
 
----
+| # | directive |
+|---|---|
 
 ## 2. Canonical source zero list
 
-Canonical Idol **must not introduce:**
+| # | directive |
+|---|---|
+| 1 | Canonical Idol **must not introduce:** |
 
 - `function`, `fun`, `fn`
 - `local`, `let`, `var`, `const`
@@ -121,18 +154,26 @@ Canonical Idol **must not introduce:**
   compiler/host/runtime/emit directive namespace, and never `@.member` or
   `@:member` — `@` already accesses, so `@.` and `@:` are INVALID
 
-**Aggregate access must not be:**
+| # | directive |
+|---|---|
+| 1 | **Aggregate access must not be:** |
 
 - `x:get(k)`, `x:set(k,v)`, `get(x, k)`, `set(x, k, v)` — computed projection is
   `x[k]`, and its place face is `x[k] = v`
 
-**Ordinary application must not be:**
+| # | directive |
+|---|---|
+| 1 | **Ordinary application must not be:** |
 
 - `f:call(x)`, `f.call(x)`, `table(key)` standing in for aggregate indexing
 
-**Presence must not be reboxed as:** `has`, `contains`, `exists`, `present`
+| # | directive |
+|---|---|
+| 1 | **Presence must not be reboxed as:** `has`, `contains`, `exists`, `present` |
 
-**Use instead:**
+| # | directive |
+|---|---|
+| 1 | **Use instead:** |
 
 ```id
 value = x[key]
@@ -140,46 +181,58 @@ position = text:find(pattern)
 # then nil/value refinement
 ```
 
----
+| # | directive |
+|---|---|
 
 ## 3. Application / table dispatch
 
-One application algebra owns:
+| # | directive |
+|---|---|
+| 1 | One application algebra owns: |
 
 - relation, subject, operand, result
 - descriptor, demand, effect
 - world requirement, witness
 - stage, provenance, realization
 
-There are **not** separate semantic kingdoms for: function call, method call,
-table call, accessor call, protocol call, builtin call, generic call.
+| # | directive |
+|---|---|
+| 1 | There are **not** separate semantic kingdoms for: function call, method call, table call, accessor call, protocol call, builtin call, generic call. |
 
-A table may admit application when the applied value is genuinely callable.
-`table(key)` does **not** mean aggregate indexing and does **not** secretly mean
-`table:get(key)`. Aggregate access is computed projection `table[key]`; its
-read/write face is selected by demand: `table[key] = value` — no separate
-setter ontology. The resolver determines application semantics from facts, never
-from call shape.
+| # | directive |
+|---|---|
+| 1 | A table may admit application when the applied value is genuinely callable. `table(key)` does **not** mean aggregate indexing and does **not** secretly mean `table:get(key)`. |
+| 2 | Aggregate access is computed projection `table[key]`; its read/write face is selected by demand: `table[key] = value` — no separate setter ontology. |
+| 3 | The resolver determines application semantics from facts, never from call shape. |
 
----
+| # | directive |
+|---|---|
 
 ## 4. Edge law
 
-Edges encode **structural semantic roles**.
+| # | directive |
+|---|---|
+| 1 | Edges encode **structural semantic roles**. |
 
-Permissible conceptual edge roles include only irreducible structural facts such
-as: `relation`, `subject`, `operand`, `result`, `member`, `binding`, `descriptor`,
-`projection`, `capture`, `provenance`, `origin`, `witness`, `demand`, `target`.
+| # | directive |
+|---|---|
+| 1 | Permissible conceptual edge roles include only irreducible structural facts such as: `relation`, `subject`, `operand`, `result`, `member`, `binding`, `descriptor`, `projection`, `capture`, `provenance`, `origin`, `witness`, `demand`, `target`. |
 
-Each still must prove irreducibility.
+| # | directive |
+|---|---|
+| 1 | Each still must prove irreducibility. |
 
-**Never define operational edge kinds:**
+| # | directive |
+|---|---|
+| 1 | **Never define operational edge kinds:** |
 
-`run`, `call`, `invoke`, `execute`, `read`, `write`, `get`, `set`, `open`,
-`close`, `parse`, `encode`, `decode`, `convert`, `compile`, `lower`, `emit`,
-`generate`, `transform`, `dispatch`, `resolve`, `load`, `store`
+| # | directive |
+|---|---|
+| 1 | `run`, `call`, `invoke`, `execute`, `read`, `write`, `get`, `set`, `open`, `close`, `parse`, `encode`, `decode`, `convert`, `compile`, `lower`, `emit`, `generate`, `transform`, `dispatch`, `resolve`, `load`, `store` |
 
-**Correct:**
+| # | directive |
+|---|---|
+| 1 | **Correct:** |
 
 ```text
 application --relation--> read-id
@@ -187,7 +240,9 @@ application --subject--> file-id
 application --result--> value-id
 ```
 
-**Wrong:**
+| # | directive |
+|---|---|
+| 1 | **Wrong:** |
 
 ```text
 file --read--> value
@@ -195,13 +250,18 @@ application --call--> function
 command --run--> process
 ```
 
-Relation identity owns operation semantics.
+| # | directive |
+|---|---|
+| 1 | Relation identity owns operation semantics. |
 
----
+| # | directive |
+|---|---|
 
 ## 5. Reverse edge zero
 
-Do not create semantic inverse duplicates:
+| # | directive |
+|---|---|
+| 1 | Do not create semantic inverse duplicates: |
 
 - `calls` / `calledby`
 - `contains` / `containedby`
@@ -209,18 +269,27 @@ Do not create semantic inverse duplicates:
 - `reads` / `readby`
 - `parent` / `child`
 
-Store one authoritative relation. Reverse traversal is query, index, or derived
-view — not second semantic truth.
+| # | directive |
+|---|---|
+| 1 | Store one authoritative relation. |
+| 2 | Reverse traversal is query, index, or derived view — not second semantic truth. |
 
----
+| # | directive |
+|---|---|
 
 ## 6. Resolve once
 
-Source spelling may participate in **initial resolution** only.
+| # | directive |
+|---|---|
+| 1 | Source spelling may participate in **initial resolution** only. |
 
-After exact id exists, **never** recover meaning from spelling again.
+| # | directive |
+|---|---|
+| 1 | After exact id exists, **never** recover meaning from spelling again. |
 
-After resolution there is no:
+| # | directive |
+|---|---|
+| 1 | After resolution there is no: |
 
 - `findFunc(name)`, `findByName(name)`
 - semantic `.get(name)`, semantic `["name"]`
@@ -229,14 +298,19 @@ After resolution there is no:
 - path-based lookup, module lookup
 - namespace / global / parent-scope / parent-world fallback
 
-Use exact ids + graph edges. If consumer lacks id: **fix producer.** Never patch
-consumer with a search.
+| # | directive |
+|---|---|
+| 1 | Use exact ids + graph edges. |
+| 2 | If consumer lacks id: **fix producer.** Never patch consumer with a search. |
 
----
+| # | directive |
+|---|---|
 
 ## 7. String matching classification
 
-Every compiler string comparison must be classified:
+| # | directive |
+|---|---|
+| 1 | Every compiler string comparison must be classified: |
 
 | Class | Role |
 |---|---|
@@ -247,27 +321,35 @@ Every compiler string comparison must be classified:
 | CACHE | candidate narrowing; exact facts must verify |
 | SEMANTIC | **forbidden after resolution** |
 
-**Legitimate:** JSON field key, env variable key, user text, source token spelling
-during resolution, diagnostic rendering.
+| # | directive |
+|---|---|
+| 1 | **Legitimate:** JSON field key, env variable key, user text, source token spelling during resolution, diagnostic rendering. |
 
-**Forbidden:** relation selected by `"add"`, descriptor identified by `"point"`,
-world selected by `"io"`, handler selected by `"read"`, target selected by
-path/name.
+| # | directive |
+|---|---|
+| 1 | **Forbidden:** relation selected by `"add"`, descriptor identified by `"point"`, world selected by `"io"`, handler selected by `"read"`, target selected by path/name. |
 
----
+| # | directive |
+|---|---|
 
 ## 8. `.get` / `[]` host rule
 
-Do **not** blindly ban host-language indexing.
+| # | directive |
+|---|---|
+| 1 | Do **not** blindly ban host-language indexing. |
 
-**Allowed:**
+| # | directive |
+|---|---|
+| 1 | **Allowed:** |
 
 - `graph.get(exact_id)`
 - `rows[application_id]`
 - `json.object.get("field")`
 - runtime user-data map lookup
 
-**Forbidden:**
+| # | directive |
+|---|---|
+| 1 | **Forbidden:** |
 
 - `functions.get(name)`
 - `descriptors.get(name)`
@@ -275,70 +357,90 @@ Do **not** blindly ban host-language indexing.
 - `worlds.get("io")`
 - `semantic["read"]`
 
-**Question:** accessing already-resolved storage/data? → allowed. Recovering
-semantic meaning from label/path? → forbidden.
+| # | directive |
+|---|---|
+| 1 | **Question:** accessing already-resolved storage/data? → allowed. |
+| 2 | Recovering semantic meaning from label/path? → forbidden. |
 
----
+| # | directive |
+|---|---|
 
 ## 9. Naming — one word / one thing
 
-Project-owned semantic identities are: lowercase, singular, one irreducible word.
+| # | directive |
+|---|---|
+| 1 | Project-owned semantic identities are: lowercase, singular, one irreducible word. |
 
-**No:** underscores, hyphens, camelCase, PascalCase, mashed compounds,
-numeric/historical taxonomy.
+| # | directive |
+|---|---|
+| 1 | **No:** underscores, hyphens, camelCase, PascalCase, mashed compounds, numeric/historical taxonomy. |
 
-**Still invalid (examples):** `tokenview`, `scanfiles`, `canonicalid`,
-`arm64check`, `perfledger`, `hostcensus`, `semanticgraph`, `nativevalue`
+| # | directive |
+|---|---|
+| 1 | **Still invalid (examples):** `tokenview`, `scanfiles`, `canonicalid`, `arm64check`, `perfledger`, `hostcensus`, `semanticgraph`, `nativevalue` |
 
-Do not remove separator and call migration complete. **Decompose before rename.**
+| # | directive |
+|---|---|
+| 1 | Do not remove separator and call migration complete. **Decompose before rename.** |
 
----
+| # | directive |
+|---|---|
 
 ## 10. Plural zero
 
-Semantic identity denotes **one thing**. Plurality belongs to table membership,
-pack membership, shape, cardinality.
+| # | directive |
+|---|---|
+| 1 | Semantic identity denotes **one thing**. |
+| 2 | Plurality belongs to table membership, pack membership, shape, cardinality. |
 
-**Presumptively forbidden semantic identities:**
+| # | directive |
+|---|---|
+| 1 | **Presumptively forbidden semantic identities:** |
 
-`bytes`, `strings`, `chars`, `fields`, `variants`, `tokens`, `nodes`, `edges`,
-`values`, `arguments`, `results`, `captures`, `tests`, `gates`, `examples`,
-`fixtures`, `files`, `rules`, `worlds`, `protocols`, `descriptors`, `collections`,
-`contracts`, `encodings`, `formats`
+| # | directive |
+|---|---|
+| 1 | `bytes`, `strings`, `chars`, `fields`, `variants`, `tokens`, `nodes`, `edges`, `values`, `arguments`, `results`, `captures`, `tests`, `gates`, `examples`, `fixtures`, `files`, `rules`, `worlds`, `protocols`, `descriptors`, `collections`, `contracts`, `encodings`, `formats` |
 
-Do not evade using `collection`, `bundle`, `suite`, `set`, `catalog`, `group`,
-`pool`, `container`, `family` when meaning is merely “many X.”
+| # | directive |
+|---|---|
+| 1 | Do not evade using `collection`, `bundle`, `suite`, `set`, `catalog`, `group`, `pool`, `container`, `family` when meaning is merely “many X.” |
 
-A sequence of byte-like values is: value + element descriptor + shape +
-cardinality + stride/layout facts — not `bytes`. Even `byte` must prove
-irreducibility.
+| # | directive |
+|---|---|
+| 1 | A sequence of byte-like values is: value + element descriptor + shape + cardinality + stride/layout facts — not `bytes`. |
+| 2 | Even `byte` must prove irreducibility. |
 
----
+| # | directive |
+|---|---|
 
 ## 11. Able zero
 
-Project-owned identities encoding capability are forbidden:
+| # | directive |
+|---|---|
+| 1 | Project-owned identities encoding capability are forbidden: |
 
-`callable`, `readable`, `writable`, `iterable`, `indexable`, `hashable`,
-`comparable`, `serializable`, `encodable`, `decodable`, `parseable`, `printable`,
-`executable`, `runnable`, `awaitable`, `seekable`
+| # | directive |
+|---|---|
+| 1 | `callable`, `readable`, `writable`, `iterable`, `indexable`, `hashable`, `comparable`, `serializable`, `encodable`, `decodable`, `parseable`, `printable`, `executable`, `runnable`, `awaitable`, `seekable` |
 
-**General rule:** `*able` / `*ible` forbidden when meaning is “admits relation/application X.”
-Use actual relation/application fact.
+| # | directive |
+|---|---|
+| 1 | **General rule:** `*able` / `*ible` forbidden when meaning is “admits relation/application X.” Use actual relation/application fact. |
 
-**Exception — the boundary keyword `able(...)`:** the bare relation `able(r)` is
-NOT an adjective identity; it is the one explicit protocol/requirement boundary
-(`docs/spec/law.md` §9), e.g. `able(eq)`, `able(read)`, `able(to(str))`. It is
-normally inferred and spelled only at a real boundary; it mints no trait,
-dictionary, or vtable. A name ending in `able`/`ible` (`readable`, `iterable`)
-remains forbidden.
+| # | directive |
+|---|---|
+| 1 | **Exception — the boundary keyword `able(...)`:** the bare relation `able(r)` is NOT an adjective identity; it is the one explicit protocol/requirement boundary (`docs/spec/law.md` §9), e.g. `able(eq)`, `able(read)`, `able(to(str))`. |
+| 2 | It is normally inferred and spelled only at a real boundary; it mints no trait, dictionary, or vtable. |
+| 3 | A name ending in `able`/`ible` (`readable`, `iterable`) remains forbidden. |
 
----
+| # | directive |
+|---|---|
 
 ## 11a. Boolean-mirror zero (BOOLEAN-MIRROR-ZERO)
 
-Do not store a boolean flag that merely restates a structural graph fact
-(`law.boolean.mirror.zero`).
+| # | directive |
+|---|---|
+| 1 | Do not store a boolean flag that merely restates a structural graph fact (`law.boolean.mirror.zero`). |
 
 | Graph fact | Forbidden mirror |
 |---|---|
@@ -350,56 +452,72 @@ Do not store a boolean flag that merely restates a structural graph fact
 | identity participates | `operation = true` / `operation = false` |
 | projection / binding / stage / target | `projected` `resolved` `imported` `native` `static` |
 
-Absence of the fact is the answer. Never `world = ""`, `world = nil`,
-`world = "none"`, or `world = false`.
+| # | directive |
+|---|---|
+| 1 | Absence of the fact is the answer. |
+| 2 | Never `world = ""`, `world = nil`, `world = "none"`, or `world = false`. |
 
----
+| # | directive |
+|---|---|
 
 ## 11b. Catalog zero (CATALOG-ZERO)
 
-Do not create a table whose primary purpose is to enumerate relations,
-descriptors, worlds, formats, handlers, operations, or capabilities
-(`law.catalog.zero`).
+| # | directive |
+|---|---|
+| 1 | Do not create a table whose primary purpose is to enumerate relations, descriptors, worlds, formats, handlers, operations, or capabilities (`law.catalog.zero`). |
 
-If the items already have identities and facts in the graph, the catalog is a
-second authority and must be deleted. Do not rename a catalog to preserve it
-(`seq` → `sequence` keeps the architecture).
+| # | directive |
+|---|---|
+| 1 | If the items already have identities and facts in the graph, the catalog is a second authority and must be deleted. |
+| 2 | Do not rename a catalog to preserve it (`seq` → `sequence` keeps the architecture). |
 
-Deleted second authorities include: `lib/semantic/*` relation rows, `seq`
-catalog, `semantic/io`, `semantic/fs`, encoding/builtin/directive catalogs,
-producer relation ledger.
+| # | directive |
+|---|---|
+| 1 | Deleted second authorities include: `lib/semantic/*` relation rows, `seq` catalog, `semantic/io`, `semantic/fs`, encoding/builtin/directive catalogs, producer relation ledger. |
 
-Relation facts come from resolution. Authority comes from world or witness
-facts on the application. JSON is a format or descriptor, not a world.
+| # | directive |
+|---|---|
+| 1 | Relation facts come from resolution. |
+| 2 | Authority comes from world or witness facts on the application. |
+| 3 | JSON is a format or descriptor, not a world. |
 
----
+| # | directive |
+|---|---|
 
 ## 11c. Magic-code zero (MAGIC-CODE-ZERO)
 
-Do not reconstruct semantic identity from a numeric code, ordinal, or sentinel
-(`law.magic.zero`). The producer already knows the rejection, kind, or
-outcome. The consumer must not switch on `-103` or `@enumFromInt`.
+| # | directive |
+|---|---|
+| 1 | Do not reconstruct semantic identity from a numeric code, ordinal, or sentinel (`law.magic.zero`). |
+| 2 | The producer already knows the rejection, kind, or outcome. |
+| 3 | The consumer must not switch on `-103` or `@enumFromInt`. |
 
-Forbidden reconstructions:
+| # | directive |
+|---|---|
+| 1 | Forbidden reconstructions: |
 
 - negative status → diagnostic (`lexErrorFromCode`)
 - enum ordinal → host enum (`tokenKindFromOrdinal`)
 - opcode → semantic relation
 - foreign `$?` → run outcome
 
-Carry the rejection-id, token-role-id, or outcome fact across the seam.
+| # | directive |
+|---|---|
+| 1 | Carry the rejection-id, token-role-id, or outcome fact across the seam. |
 
----
+| # | directive |
+|---|---|
 
 ## 11d. Schema-one (SCHEMA-ONE)
 
-One producer per record law (`law.schema.one`, `law.fact.producer.one`).
-Host `RECORD_SLOTS` and positional field decoding are a second schema.
-The producer projects the record; the consumer reads that projection.
-`duo_lexer_tokenize_full` / `duo_lexer_error_line` / `useDuoTokens` are
-bridge-death names (`law.bridge.death`).
+| # | directive |
+|---|---|
+| 1 | One producer per record law (`law.schema.one`, `law.fact.producer.one`). |
+| 2 | Host `RECORD_SLOTS` and positional field decoding are a second schema. |
+| 3 | The producer projects the record; the consumer reads that projection. `duo_lexer_tokenize_full` / `duo_lexer_error_line` / `useDuoTokens` are bridge-death names (`law.bridge.death`). |
 
----
+| # | directive |
+|---|---|
 
 ## 11e. Main zero / generic-action zero / collision zero
 
@@ -412,186 +530,214 @@ bridge-death names (`law.bridge.death`).
   `apply`, `project`, `realize`, `resolve`, `bind`, `demand`, `witness`,
   `relation`, `subject`, `world`, `shape`, `descriptor` as generic helpers.
 
----
+| # | directive |
+|---|---|
 
 ## 11f. Evidence-subject one (EVIDENCE-SUBJECT-ONE)
 
-Evidence identity and measured-program identity are separate facts.
-A measurement commit must name `subject revision` and `evidence revision`.
-Do not report metrics “at HEAD” unless the measured subject equals HEAD.
+| # | directive |
+|---|---|
+| 1 | Evidence identity and measured-program identity are separate facts. |
+| 2 | A measurement commit must name `subject revision` and `evidence revision`. |
+| 3 | Do not report metrics “at HEAD” unless the measured subject equals HEAD. |
 
-Status authorities:
+| # | directive |
+|---|---|
+| 1 | Status authorities: |
 
 - executed frontier → `docs/bootstrap.md`
 - metrics interpretation → `docs/METRICS.md`
 - revision-bound evidence → generated evidence artifact
 
-Other reports are snapshots or projections. They are not a second frontier.
+| # | directive |
+|---|---|
+| 1 | Other reports are snapshots or projections. |
+| 2 | They are not a second frontier. |
 
----
+| # | directive |
+|---|---|
 
 ## 11g. Oracle bound
 
-A differential oracle covers the legacy-equivalent subset only. Idol law is
-the constitution and the canonical lexer. When Idol intentionally diverges,
-the host scanner must not veto the new behavior. `tokenizeHost()` remains
-deletable (`law.bridge.death`).
+| # | directive |
+|---|---|
+| 1 | A differential oracle covers the legacy-equivalent subset only. |
+| 2 | Idol law is the constitution and the canonical lexer. |
+| 3 | When Idol intentionally diverges, the host scanner must not veto the new behavior. `tokenizeHost()` remains deletable (`law.bridge.death`). |
 
----
+| # | directive |
+|---|---|
 
 ## 11h. Source-family one
 
-Path suffix is provenance only (`law.family.one`). One ingress authority
-produces the source-family fact. Later components must not call
-`is_canonical_source(path)` or re-parse `.id` bytes to decide law.
-Every lexer export takes family as an operand. `new()` does not read suffix
-bytes. Production compile, fmt, and embed classify once via `sourceFacts` then
-`Lexer.initFacts`; they must not call `Lexer.init` or `is_canonical_source`.
-`route()`, parse, sema, and token-view consume `lex.family` / the family
-operand. The executed Idol producer owns physical source forms, corpus-role
-admission, unlisted fallback, law, and provenance. The host may normalize a
-filesystem path into provenance and bind producer-returned names to its
-bootstrap ABI; it may not own a roster or role→law mapping. `Lexer.init`
-remains a test convenience.
+| # | directive |
+|---|---|
+| 1 | Path suffix is provenance only (`law.family.one`). |
+| 2 | One ingress authority produces the source-family fact. |
+| 3 | Later components must not call `is_canonical_source(path)` or re-parse `.id` bytes to decide law. |
+| 4 | Every lexer export takes family as an operand. `new()` does not read suffix bytes. |
+| 5 | Production compile, fmt, and embed classify once via `sourceFacts` then `Lexer.initFacts`; they must not call `Lexer.init` or `is_canonical_source`. `route()`, parse, sema, and token-view consume `lex.family` / the family operand. |
+| 6 | The executed Idol producer owns physical source forms, corpus-role admission, unlisted fallback, law, and provenance. |
+| 7 | The host may normalize a filesystem path into provenance and bind producer-returned names to its bootstrap ABI; it may not own a roster or role→law mapping. `Lexer.init` remains a test convenience. |
 
----
+| # | directive |
+|---|---|
 
 ## 11i. Representation one
 
-A semantic value has no physical representation until realization demand
-requires one (`law.representation.one`). One producer decides width, layout,
-location, boxing, addressability, aggregation, and calling convention from
-descriptor × lifetime × alias × mutation × escape × demand × ABI × target.
+| # | directive |
+|---|---|
+| 1 | A semantic value has no physical representation until realization demand requires one (`law.representation.one`). |
+| 2 | One producer decides width, layout, location, boxing, addressability, aggregation, and calling convention from descriptor × lifetime × alias × mutation × escape × demand × ABI × target. |
 
-Downstream must not separately decide boxed / stack / register / heap /
-struct / SIMD. Those are that one realization decision, not later repairs.
-Every remaining physical structure must name its observation
-(`law.representation.demand`).
+| # | directive |
+|---|---|
+| 1 | Downstream must not separately decide boxed / stack / register / heap / struct / SIMD. |
+| 2 | Those are that one realization decision, not later repairs. |
+| 3 | Every remaining physical structure must name its observation (`law.representation.demand`). |
 
----
+| # | directive |
+|---|---|
 
 ## 11j. Guard one
 
-A guard is an unresolved semantic alternative whose fast realization depends
-on a fact (`law.guard.one`). Not an optimization artifact, type-check object,
-or a reason to box everything.
+| # | directive |
+|---|---|
+| 1 | A guard is an unresolved semantic alternative whose fast realization depends on a fact (`law.guard.one`). |
+| 2 | Not an optimization artifact, type-check object, or a reason to box everything. |
 
 - fact known → guard 0
 - fact speculated from evidence → exact guard + exact slow alternative
 - fact unknown → lawful general realization
 
-Every guard retains the assumed fact, witness/evidence, recovery realization,
-and provenance. Rare failure must not poison hot representation
-(`law.error.cold`).
+| # | directive |
+|---|---|
+| 1 | Every guard retains the assumed fact, witness/evidence, recovery realization, and provenance. |
+| 2 | Rare failure must not poison hot representation (`law.error.cold`). |
 
----
+| # | directive |
+|---|---|
 
 ## 11k. Specialize budget
 
-Specialize only when expected runtime gain exceeds compile cost + code size +
-I-cache + startup (`law.specialize.budget`, `perf.worth`). Same semantic id;
-multiple realizations only when profitable. Do not mint new semantic identities
-for clones. Each specialization records applications, branches/allocs/indirects
-removed, bytes added, compile time added.
+| # | directive |
+|---|---|
+| 1 | Specialize only when expected runtime gain exceeds compile cost + code size + I-cache + startup (`law.specialize.budget`, `perf.worth`). |
+| 2 | Same semantic id; multiple realizations only when profitable. |
+| 3 | Do not mint new semantic identities for clones. |
+| 4 | Each specialization records applications, branches/allocs/indirects removed, bytes added, compile time added. |
 
----
+| # | directive |
+|---|---|
 
 ## 11l. Internal ABI
 
-Semantic pack → demanded physical slots → target ABI (`law.abi.internal`,
-`law.abi.demand`). Known internal calls use an optimized internal ABI.
-Foreign ABI only at an actual foreign boundary. Objectives: register
-args/returns, aggregate elision, no tuple/sret/temp pack, tail-call
-compatibility.
+| # | directive |
+|---|---|
+| 1 | Semantic pack → demanded physical slots → target ABI (`law.abi.internal`, `law.abi.demand`). |
+| 2 | Known internal calls use an optimized internal ABI. |
+| 3 | Foreign ABI only at an actual foreign boundary. |
+| 4 | Objectives: register args/returns, aggregate elision, no tuple/sret/temp pack, tail-call compatibility. |
 
----
+| # | directive |
+|---|---|
 
 ## 11m. Crash first / cost explain
 
-Crash > wrong diagnostic > reject valid > optimization miss
-(`law.crash.first`). Backend refusal names application id, missing fact,
-consumer, expected producer. Every remaining box/alloc/indirect/copy/hash/tag
-names the unresolved fact (`law.cost.explain`). Every compiler refusal —
-parser, resolver, world, descriptor, realization, specialization,
-vectorization — names the same four: entity/application, missing fact,
-expected producer, consumer.
+| # | directive |
+|---|---|
+| 1 | Crash > wrong diagnostic > reject valid > optimization miss (`law.crash.first`). |
+| 2 | Backend refusal names application id, missing fact, consumer, expected producer. |
+| 3 | Every remaining box/alloc/indirect/copy/hash/tag names the unresolved fact (`law.cost.explain`). |
+| 4 | Every compiler refusal — parser, resolver, world, descriptor, realization, specialization, vectorization — names the same four: entity/application, missing fact, expected producer, consumer. |
 
----
+| # | directive |
+|---|---|
 
 ## 11n. Application consumer zero
 
-Lowering and later stages consume application facts from the graph
-(`law.application.consumer`). Forbidden independent derivation: subject,
-operand identity, result identity, descriptor, effect, world requirement,
-witness, demand, target. Consuming `ApplicationFact.relation` from the graph
-while reconstructing adjacent fields from AST, host types, or callee text is
-partial transfer, not closure. Downstream reconstructed application facts
-target zero. The graph entity is identity — no three-coordinate record.
+| # | directive |
+|---|---|
+| 1 | Lowering and later stages consume application facts from the graph (`law.application.consumer`). |
+| 2 | Forbidden independent derivation: subject, operand identity, result identity, descriptor, effect, world requirement, witness, demand, target. |
+| 3 | Consuming `ApplicationFact.relation` from the graph while reconstructing adjacent fields from AST, host types, or callee text is partial transfer, not closure. |
+| 4 | Downstream reconstructed application facts target zero. |
+| 5 | The graph entity is identity — no three-coordinate record. |
 
----
+| # | directive |
+|---|---|
 
 ## 11o. Fact locality one
 
-The graph remains authority. After an application is resolved, frequently
-consumed facts live in compact application-local ranges or dense-id tables
-(`law.fact.locality`). Do not re-query through global hash maps or repeated
-edge scans on every lowering instruction. Semantic correctness must not
-create compile-time query overhead.
+| # | directive |
+|---|---|
+| 1 | The graph remains authority. |
+| 2 | After an application is resolved, frequently consumed facts live in compact application-local ranges or dense-id tables (`law.fact.locality`). |
+| 3 | Do not re-query through global hash maps or repeated edge scans on every lowering instruction. |
+| 4 | Semantic correctness must not create compile-time query overhead. |
 
----
+| # | directive |
+|---|---|
 
 ## 11p. Grammar one
 
-Exactly one executable grammar-fact owner (`law.grammar.one`). Each source
-position has exactly one explicit or ingress-derived source law before
-lexing. The owner projects that law into token identities, roles, precedence,
-and structural recognition. Canonical Idol is the default projection for
-canonical `.id` source; it is not the authority for every admitted source law.
-Generated Zig/C tables are bridge projections. `grammar.md`, Tree-sitter, and
-other editor/tooling artifacts are projections from that same owner. A host
-`grammar_roles.zig` table is transitional and has a deletion condition.
-Parser-local BinOp maps, spelling lists, category switches, grammar unions,
-try-parser selection, and world-selected grammar are reconstruction debt.
-Worlds supply semantic context and authority only after recognition. They
-never select grammar. Parser, formatter, and any admitted editor/tooling
-consumer use the same law-qualified facts or generated projections.
+| # | directive |
+|---|---|
+| 1 | Exactly one executable grammar-fact owner (`law.grammar.one`). |
+| 2 | Each source position has exactly one explicit or ingress-derived source law before lexing. |
+| 3 | The owner projects that law into token identities, roles, precedence, and structural recognition. |
+| 4 | Canonical Idol is the default projection for canonical `.id` source; it is not the authority for every admitted source law. |
+| 5 | Generated Zig/C tables are bridge projections. `grammar.md`, Tree-sitter, and other editor/tooling artifacts are projections from that same owner. |
+| 6 | A host `grammar_roles.zig` table is transitional and has a deletion condition. |
+| 7 | Parser-local BinOp maps, spelling lists, category switches, grammar unions, try-parser selection, and world-selected grammar are reconstruction debt. |
+| 8 | Worlds supply semantic context and authority only after recognition. |
+| 9 | They never select grammar. |
+| 10 | Parser, formatter, and any admitted editor/tooling consumer use the same law-qualified facts or generated projections. |
 
----
+| # | directive |
+|---|---|
 
 ## 11q. Control plane derived zero
 
-Durable human status docs do not manually encode live HEAD, lane holder,
-lock state, or dirty tree (`law.control.derived`). Those facts come from
-git, claims, session state, and orient. Workstream definitions may live in
-projections; live control-plane values may not.
+| # | directive |
+|---|---|
+| 1 | Durable human status docs do not manually encode live HEAD, lane holder, lock state, or dirty tree (`law.control.derived`). |
+| 2 | Those facts come from git, claims, session state, and orient. |
+| 3 | Workstream definitions may live in projections; live control-plane values may not. |
 
----
+| # | directive |
+|---|---|
 
 ## 12. Role noun zero
 
-Do not evade ability rules with noun roles:
+| # | directive |
+|---|---|
+| 1 | Do not evade ability rules with noun roles: |
 
-`reader`, `writer`, `runner`, `caller`, `encoder`, `decoder`, `serializer`,
-`parser`, `formatter`, `checker`, `validator`, `builder`, `emitter`, `generator`,
-`scanner`, `resolver`, `evaluator`, `interpreter`, `provider`, `producer`,
-`consumer`, `receiver`, `sender`
+| # | directive |
+|---|---|
+| 1 | `reader`, `writer`, `runner`, `caller`, `encoder`, `decoder`, `serializer`, `parser`, `formatter`, `checker`, `validator`, `builder`, `emitter`, `generator`, `scanner`, `resolver`, `evaluator`, `interpreter`, `provider`, `producer`, `consumer`, `receiver`, `sender` |
 
-when identity merely means “thing performing relation X.” Use actual subject +
-relation.
+| # | directive |
+|---|---|
+| 1 | when identity merely means “thing performing relation X.” Use actual subject + relation. |
 
----
+| # | directive |
+|---|---|
 
 ## 13. Collision zero
 
-Presumptively forbidden compiler semantic roles:
+| # | directive |
+|---|---|
+| 1 | Presumptively forbidden compiler semantic roles: |
 
-`router`, `gateway`, `dispatcher`, `registry`, `manager`, `factory`, `adapter`,
-`broker`, `mediator`, `controller`, `coordinator`, `orchestrator`, `handler`,
-`executor`, `engine`, `pipeline`, `scheduler`, `loader`, `bridge`, `shim`,
-`proxy`, `wrapper`, `frontend`, `backend`, `context`, `session`, `service`,
-`provider`, `driver`, `framework`, `container`
+| # | directive |
+|---|---|
+| 1 | `router`, `gateway`, `dispatcher`, `registry`, `manager`, `factory`, `adapter`, `broker`, `mediator`, `controller`, `coordinator`, `orchestrator`, `handler`, `executor`, `engine`, `pipeline`, `scheduler`, `loader`, `bridge`, `shim`, `proxy`, `wrapper`, `frontend`, `backend`, `context`, `session`, `service`, `provider`, `driver`, `framework`, `container` |
 
-**Role is forbidden, not spelling.**
+| # | directive |
+|---|---|
+| 1 | **Role is forbidden, not spelling.** |
 
 | Wrong role | Right decomposition |
 |---|---|
@@ -601,61 +747,83 @@ Presumptively forbidden compiler semantic roles:
 | Execution selection | demand + realization |
 | Adaptation | foreign projection / realization |
 
----
+| # | directive |
+|---|---|
 
 ## 14. Qualifier zero
 
-Do not mint identities from qualifying facts:
+| # | directive |
+|---|---|
+| 1 | Do not mint identities from qualifying facts: |
 
-`native`, `static`, `dynamic`, `sealed`, `guarded`, `foreign`, `local`, `global`,
-`mutable`, `immutable`, `resolved`, `unresolved`, `generated`, `inferred`,
-`boxed`, `unboxed`, `cached`, `active`, `ready`, `valid`, `invalid`, `readonly`,
-`optimized`
+| # | directive |
+|---|---|
+| 1 | `native`, `static`, `dynamic`, `sealed`, `guarded`, `foreign`, `local`, `global`, `mutable`, `immutable`, `resolved`, `unresolved`, `generated`, `inferred`, `boxed`, `unboxed`, `cached`, `active`, `ready`, `valid`, `invalid`, `readonly`, `optimized` |
 
-Thus reject: `nativevalue`, `staticcall`, `dynamicvalue`, `generatednode`,
-`validtype`, `resolvedrelation` — represent underlying id + fact.
+| # | directive |
+|---|---|
+| 1 | Thus reject: `nativevalue`, `staticcall`, `dynamicvalue`, `generatednode`, `validtype`, `resolvedrelation` — represent underlying id + fact. |
 
----
+| # | directive |
+|---|---|
 
 ## 15. Meta / organizational zero
 
-Do not create semantic homes from generic organizational/meta vocabulary:
+| # | directive |
+|---|---|
+| 1 | Do not create semantic homes from generic organizational/meta vocabulary: |
 
-`core`, `base`, `common`, `shared`, `helper`, `util`, `utility`, `support`,
-`misc`, `internal`, `foundation`, `platform`, `system`, `default`, `generic`,
-`framework`, `algebra`, `model`, `layer`, `mechanism`, `schema`, `meta`
+| # | directive |
+|---|---|
+| 1 | `core`, `base`, `common`, `shared`, `helper`, `util`, `utility`, `support`, `misc`, `internal`, `foundation`, `platform`, `system`, `default`, `generic`, `framework`, `algebra`, `model`, `layer`, `mechanism`, `schema`, `meta` |
 
-unless independently irreducible. If name means “stuff goes here,” semantic
-ownership is unresolved.
+| # | directive |
+|---|---|
+| 1 | unless independently irreducible. |
+| 2 | If name means “stuff goes here,” semantic ownership is unresolved. |
 
----
+| # | directive |
+|---|---|
 
 ## 16. Abbreviation zero
 
-Do not invent abbreviations to evade naming law:
+| # | directive |
+|---|---|
+| 1 | Do not invent abbreviations to evade naming law: |
 
-`ctx`, `mgr`, `cfg`, `req`, `res`, `msg`, `cmd`, `proc`, `buf`, `fmt`, `gen`,
-`impl`, `util`, `tmp`, `aux`, `svc`
+| # | directive |
+|---|---|
+| 1 | `ctx`, `mgr`, `cfg`, `req`, `res`, `msg`, `cmd`, `proc`, `buf`, `fmt`, `gen`, `impl`, `util`, `tmp`, `aux`, `svc` |
 
-Allowed only if abbreviation itself is established irreducible domain term
-(`abi`, `ffi`, `rpc`, `wasm`, `json` — still subject to semantic review).
+| # | directive |
+|---|---|
+| 1 | Allowed only if abbreviation itself is established irreducible domain term (`abi`, `ffi`, `rpc`, `wasm`, `json` — still subject to semantic review). |
 
----
+| # | directive |
+|---|---|
 
 ## 17. Nil / presence
 
-Ordinary absence: `nil`
+| # | directive |
+|---|---|
+| 1 | Ordinary absence: `nil` |
 
-**No** `absent`, `present`, `maybe`, `option`, `none`, `some`, `missing` for
-ordinary absence. **No `has`.** Use value/search result + refinement.
+| # | directive |
+|---|---|
+| 1 | **No** `absent`, `present`, `maybe`, `option`, `none`, `some`, `missing` for ordinary absence. **No `has`.** Use value/search result + refinement. |
 
----
+| # | directive |
+|---|---|
 
 ## 18. Conversion / format
 
-One conversion relation: `to`
+| # | directive |
+|---|---|
+| 1 | One conversion relation: `to` |
 
-**Conversion ladder** (shortest uniquely resolving form wins):
+| # | directive |
+|---|---|
+| 1 | **Conversion ladder** (shortest uniquely resolving form wins): |
 
 ```text
 level 0   enabled: bool = value          # graph records to(bool) when unique
@@ -663,37 +831,44 @@ level 1   value:to(target)               # ONLY when target is not inferable
 migrate   to(target)(value) → value:to(target) → value
 ```
 
-`to` is written **only** when the target conversion cannot be inferred from
-graph-visible demand/context. There is no canonical `value:to()` rung — if the
-relation is explicit and the target is uniquely inferable, spelling `to` adds
-no information.
+| # | directive |
+|---|---|
+| 1 | `to` is written **only** when the target conversion cannot be inferred from graph-visible demand/context. |
+| 2 | There is no canonical `value:to()` rung — if the relation is explicit and the target is uniquely inferable, spelling `to` adds no information. |
 
-If demand uniquely determines target: `consume(value)`, not
-`consume(value:to(target))`.
+| # | directive |
+|---|---|
+| 1 | If demand uniquely determines target: `consume(value)`, not `consume(value:to(target))`. |
 
-Do not create `cast`, `coerce`, `convert`, `into`, `stringify`, `encode` when
-ordinary conversion suffices.
+| # | directive |
+|---|---|
+| 1 | Do not create `cast`, `coerce`, `convert`, `into`, `stringify`, `encode` when ordinary conversion suffices. |
 
-Parsing may remain distinct: `text:parse(json)`
+| # | directive |
+|---|---|
+| 1 | Parsing may remain distinct: `text:parse(json)` |
 
-Generic systems forbidden unless independently irreducible: `encoding`, `codec`,
-`encoder`, `decoder`, `serialize`, `deserialize`, `marshal`, `unmarshal`,
-`transcode`
+| # | directive |
+|---|---|
+| 1 | Generic systems forbidden unless independently irreducible: `encoding`, `codec`, `encoder`, `decoder`, `serialize`, `deserialize`, `marshal`, `unmarshal`, `transcode` |
 
-Formats (`json`, `cbor`, `protobuf`, `pem`) may survive as descriptors if
-irreducible.
+| # | directive |
+|---|---|
+| 1 | Formats (`json`, `cbor`, `protobuf`, `pem`) may survive as descriptors if irreducible. |
 
----
+| # | directive |
+|---|---|
 
 ## 18a. Source inference (SOURCE-INFER-ONE)
 
-No source spelling should survive merely to restate a semantic fact the compiler
-can already recover uniquely. This applies to `to`, relation/method names,
-projections, explicit subjects, world/protocol witnesses, capture declarations,
-and projection/injection composition — not conversion alone.
+| # | directive |
+|---|---|
+| 1 | No source spelling should survive merely to restate a semantic fact the compiler can already recover uniquely. |
+| 2 | This applies to `to`, relation/method names, projections, explicit subjects, world/protocol witnesses, capture declarations, and projection/injection composition — not conversion alone. |
 
-**SOURCE-INFER-ONE:** Every source token must contribute semantic information
-that is **not** already uniquely recoverable from:
+| # | directive |
+|---|---|
+| 1 | **SOURCE-INFER-ONE:** Every source token must contribute semantic information that is **not** already uniquely recoverable from: |
 
 ```text
 subject
@@ -708,50 +883,65 @@ provenance
 control-flow refinement
 ```
 
-If a spelling contributes no new semantic information: **omit it.**
+| # | directive |
+|---|---|
+| 1 | If a spelling contributes no new semantic information: **omit it.** |
 
-If omission would leave more than one lawful semantic solution: spell **only**
-the minimum fact needed to disambiguate.
+| # | directive |
+|---|---|
+| 1 | If omission would leave more than one lawful semantic solution: spell **only** the minimum fact needed to disambiguate. |
 
-If omission is compiler-unique but human-ambiguous: retain the meaningful
-irreducible relation name.
+| # | directive |
+|---|---|
+| 1 | If omission is compiler-unique but human-ambiguous: retain the meaningful irreducible relation name. |
 
-Source syntax is a **disambiguation surface**, not a transcript of graph facts.
+| # | directive |
+|---|---|
+| 1 | Source syntax is a **disambiguation surface**, not a transcript of graph facts. |
 
-**Relation/method inference:** hierarchy is `no relation spelling` → `explicit
-relation only when necessary`. `source:read()` stays explicit because
-`source()` is human-ambiguous — `read` carries useful intent. `env["HOME"]` is better than `env:get("HOME")`. `f(x)` not `f:call(x)`.
+| # | directive |
+|---|---|
+| 1 | **Relation/method inference:** hierarchy is `no relation spelling` → `explicit relation only when necessary`. `source:read()` stays explicit because `source()` is human-ambiguous — `read` carries useful intent. `env["HOME"]` is better than `env:get("HOME")`. `f(x)` not `f:call(x)`. |
 
-**Projection inference:** do not write a projection merely because the compiler
-internally has a projection edge. Keep `os.env["HOME"]` only when it disambiguates two different env values; when exactly one env is admitted and obvious, `env["HOME"]` is canonical. Progression: fully inferred → smallest
-static projection required for uniqueness. Never fully-qualified-everything by
-default.
+| # | directive |
+|---|---|
+| 1 | **Projection inference:** do not write a projection merely because the compiler internally has a projection edge. |
+| 2 | Keep `os.env["HOME"]` only when it disambiguates two different env values; when exactly one env is admitted and obvious, `env["HOME"]` is canonical. |
+| 3 | Progression: fully inferred → smallest static projection required for uniqueness. |
+| 4 | Never fully-qualified-everything by default. |
 
-**Conversion:** `to` is written **only** when the target conversion cannot be
-inferred. There is no canonical `value:to()` rung. If demand uniquely determines
-target: `consume(value)`, not `consume(value:to(target))`.
+| # | directive |
+|---|---|
+| 1 | **Conversion:** `to` is written **only** when the target conversion cannot be inferred. |
+| 2 | There is no canonical `value:to()` rung. |
+| 3 | If demand uniquely determines target: `consume(value)`, not `consume(value:to(target))`. |
 
-**INTERMEDIATE-ZERO:** do not name intermediate values used once when the chain
-preserves semantic identity — chain relations directly. Retain a named
-intermediate only when the name contributes semantic information the chain does
-not (multiple consumers, or human-clarity place identity).
+| # | directive |
+|---|---|
+| 1 | **INTERMEDIATE-ZERO:** do not name intermediate values used once when the chain preserves semantic identity — chain relations directly. |
+| 2 | Retain a named intermediate only when the name contributes semantic information the chain does not (multiple consumers, or human-clarity place identity). |
 
-Do not spell relation wrappers that add no semantic choice: `f(x)`, not
-`f:call(x)`; `table[key]`, not `table:get(key)`.
+| # | directive |
+|---|---|
+| 1 | Do not spell relation wrappers that add no semantic choice: `f(x)`, not `f:call(x)`; `table[key]`, not `table:get(key)`. |
 
-**Human clarity guard:** if compiler inference is unique but omission would make
-the operation genuinely unclear to a human, retain the irreducible meaningful
-relation (`source:read()` may remain).
+| # | directive |
+|---|---|
+| 1 | **Human clarity guard:** if compiler inference is unique but omission would make the operation genuinely unclear to a human, retain the irreducible meaningful relation (`source:read()` may remain). |
 
-Never preserve explicit syntax merely because compiler inference is not
-implemented yet. Mark `IMPLEMENTATION-BLOCKED`, then implement inference. Do not
-canonize the workaround.
+| # | directive |
+|---|---|
+| 1 | Never preserve explicit syntax merely because compiler inference is not implemented yet. |
+| 2 | Mark `IMPLEMENTATION-BLOCKED`, then implement inference. |
+| 3 | Do not canonize the workaround. |
 
-**Graph fact deletion is NOT implied by source spelling deletion.** Inferred
-relation, projection, conversion, witness, capture remain exact graph
-ids/edges/facts.
+| # | directive |
+|---|---|
+| 1 | **Graph fact deletion is NOT implied by source spelling deletion.** Inferred relation, projection, conversion, witness, capture remain exact graph ids/edges/facts. |
 
-**Canonical density objective:**
+| # | directive |
+|---|---|
+| 1 | **Canonical density objective:** |
 
 ```text
 MINIMUM SOURCE SPELLING
@@ -759,24 +949,32 @@ MAXIMUM GRAPH SEMANTICS
 ZERO REDUNDANT REALIZATION
 ```
 
-Gate every explicit source: `.to(`, explicit projection chain, helper binding
-used once, `.get(`, `:call(`, world/injection declaration. Ask: WHAT INFORMATION
-HERE COULD NOT HAVE BEEN INFERRED? No answer: delete spelling.
+| # | directive |
+|---|---|
+| 1 | Gate every explicit source: `.to(`, explicit projection chain, helper binding used once, `.get(`, `:call(`, world/injection declaration. |
+| 2 | Ask: WHAT INFORMATION HERE COULD NOT HAVE BEEN INFERRED? |
+| 3 | No answer: delete spelling. |
 
----
+| # | directive |
+|---|---|
 
 ## 18b. Fact composition inference (FACT-COMPOSITION-INFER-ONE)
 
-Projection, injection, capture, protocol satisfaction, world satisfaction,
-descriptor refinement, and target selection are **graph facts**. Do not require
-source syntax for them when they can be derived uniquely.
+| # | directive |
+|---|---|
+| 1 | Projection, injection, capture, protocol satisfaction, world satisfaction, descriptor refinement, and target selection are **graph facts**. |
+| 2 | Do not require source syntax for them when they can be derived uniquely. |
 
-Explicit source projection exists only to disambiguate actual semantic choice.
-Explicit source conversion exists only to disambiguate actual semantic choice.
-Explicit world/protocol/injection declarations normally do **not** exist. The
-graph is explicit; the source is not redundant.
+| # | directive |
+|---|---|
+| 1 | Explicit source projection exists only to disambiguate actual semantic choice. |
+| 2 | Explicit source conversion exists only to disambiguate actual semantic choice. |
+| 3 | Explicit world/protocol/injection declarations normally do **not** exist. |
+| 4 | The graph is explicit; the source is not redundant. |
 
-Do not write:
+| # | directive |
+|---|---|
+| 1 | Do not write: |
 
 ```id
 @{
@@ -785,17 +983,22 @@ Do not write:
 }
 ```
 
-merely because the graph needs those facts. Usage derives dependencies:
+| # | directive |
+|---|---|
+| 1 | merely because the graph needs those facts. |
+| 2 | Usage derives dependencies: |
 
 ```id
 stdout:write(env["HOME"])
 ```
 
-The graph can contain projection, world requirement, witness, application,
-relation, subject, and result demand without the programmer spelling that
-bookkeeping.
+| # | directive |
+|---|---|
+| 1 | The graph can contain projection, world requirement, witness, application, relation, subject, and result demand without the programmer spelling that bookkeeping. |
 
-**Source-density order** (complete collapse sequence):
+| # | directive |
+|---|---|
+| 1 | **Source-density order** (complete collapse sequence): |
 
 ```text
 1. omit redundant binding
@@ -806,11 +1009,14 @@ bookkeeping.
 6. retain only minimum spelling for uniqueness + human meaning
 ```
 
-Example collapse: `stdout:write(value:to(json))` → `stdout:write(value)` when
-`write` uniquely demands the representation. The graph still records inferred
-`to`; source deletion does not erase graph facts.
+| # | directive |
+|---|---|
+| 1 | Example collapse: `stdout:write(value:to(json))` → `stdout:write(value)` when `write` uniquely demands the representation. |
+| 2 | The graph still records inferred `to`; source deletion does not erase graph facts. |
 
-**Final:**
+| # | directive |
+|---|---|
+| 1 | **Final:** |
 
 ```text
 IF THE GRAPH CAN KNOW IT, THE PROGRAMMER SHOULD NOT HAVE TO SAY IT.
@@ -822,26 +1028,37 @@ IF INJECTION CAN BE DERIVED FROM USE, DO NOT EXPOSE IT.
 SOURCE MINIMUM. GRAPH MAXIMUM. REALIZATION MINIMUM.
 ```
 
----
+| # | directive |
+|---|---|
 
 ## 19. File / directory law
 
-Directory implies table/home:
+| # | directive |
+|---|---|
+| 1 | Directory implies table/home: |
 
 ```text
 gate/
     idiom.id    → gate, gate.idiom
 ```
 
-File is member body. **Do not** redeclare filename/member inside.
+| # | directive |
+|---|---|
+| 1 | File is member body. **Do not** redeclare filename/member inside. |
 
-Callable child whose parent is subject: `gate:idiom(diff)` — not `gate.idiom(diff)`
+| # | directive |
+|---|---|
+| 1 | Callable child whose parent is subject: `gate:idiom(diff)` — not `gate.idiom(diff)` |
 
-Source filesystem: ingestion + provenance only. After resolution, path has no
-semantic lookup authority. Runtime filesystem authority is separate world/effect
-matter. Source path never grants runtime filesystem authority.
+| # | directive |
+|---|---|
+| 1 | Source filesystem: ingestion + provenance only. |
+| 2 | After resolution, path has no semantic lookup authority. |
+| 3 | Runtime filesystem authority is separate world/effect matter. |
+| 4 | Source path never grants runtime filesystem authority. |
 
----
+| # | directive |
+|---|---|
 
 ## 20. World / universe / projection
 
@@ -850,44 +1067,58 @@ matter. Source path never grants runtime filesystem authority.
 - **Projection:** select exact facts preserving id/origin
 - **Injection/composition:** make exact selected facts available to exact context/application
 
-Do not create separate source systems for import, dependency injection, protocol
-injection, world injection, mock injection, descriptor injection, stage injection,
-capture injection — all reduce to exact fact edges + coherent composition.
+| # | directive |
+|---|---|
+| 1 | Do not create separate source systems for import, dependency injection, protocol injection, world injection, mock injection, descriptor injection, stage injection, capture injection — all reduce to exact fact edges + coherent composition. |
 
-Users normally do **not** write explicit world declarations. `@{ k=v }` is
-world derivation by injection (`thing@{ k=v }` interjection), not an import,
-dependency list, or universe-construction ceremony. Graph injection normally
-has **zero** source syntax — usage derives exact world/protocol dependencies
-(`stdout:write(env["HOME"])`, not an explicit `@{ os.env io.stdout }` block).
-Explicit `@{ k=v }` injection exists only when fact composition is not uniquely
-inferable from use.
+| # | directive |
+|---|---|
+| 1 | Users normally do **not** write explicit world declarations. `@{ k=v }` is world derivation by injection (`thing@{ k=v }` interjection), not an import, dependency list, or universe-construction ceremony. |
+| 2 | Graph injection normally has **zero** source syntax — usage derives exact world/protocol dependencies (`stdout:write(env["HOME"])`, not an explicit `@{ os.env io.stdout }` block). |
+| 3 | Explicit `@{ k=v }` injection exists only when fact composition is not uniquely inferable from use. |
 
-Known authority witness → runtime abstraction cost 0. Missing → fail. Multiple
-incomparable → ambiguity. No parent/default/global/nearest world.
+| # | directive |
+|---|---|
+| 1 | Known authority witness → runtime abstraction cost 0. |
+| 2 | Missing → fail. |
+| 3 | Multiple incomparable → ambiguity. |
+| 4 | No parent/default/global/nearest world. |
 
----
+| # | directive |
+|---|---|
 
 ## 21. Protocol
 
-Protocol is demanded relation/application facts.
+| # | directive |
+|---|---|
+| 1 | Protocol is demanded relation/application facts. |
 
-**Never ask:** is callable? is readable?
+| # | directive |
+|---|---|
+| 1 | **Never ask:** is callable? is readable? |
 
-**Ask:** does subject admit relation/application satisfying demanded shape?
+| # | directive |
+|---|---|
+| 1 | **Ask:** does subject admit relation/application satisfying demanded shape? |
 
-Static satisfaction is graph fact with runtime cost 0. No mandatory protocol
-object, dictionary, vtable, or interface instance. Protocol satisfaction does
-**not** grant world authority.
+| # | directive |
+|---|---|
+| 1 | Static satisfaction is graph fact with runtime cost 0. |
+| 2 | No mandatory protocol object, dictionary, vtable, or interface instance. |
+| 3 | Protocol satisfaction does **not** grant world authority. |
 
----
+| # | directive |
+|---|---|
 
 ## 22. FTCFTW
 
-Every physical cost must identify unresolved semantic possibility requiring it:
-allocation, box, copy, tag, hash, indirect call, guard, runtime descriptor,
-closure environment, world object, lock, atomic, materialized pack.
+| # | directive |
+|---|---|
+| 1 | Every physical cost must identify unresolved semantic possibility requiring it: allocation, box, copy, tag, hash, indirect call, guard, runtime descriptor, closure environment, world object, lock, atomic, materialized pack. |
 
-**Required zeros:**
+| # | directive |
+|---|---|
+| 1 | **Required zeros:** |
 
 | When | Cost must be zero |
 |---|---|
@@ -900,52 +1131,79 @@ closure environment, world object, lock, atomic, materialized pack.
 | unused result | materialization |
 | known world witness | world dispatch/object |
 
----
+| # | directive |
+|---|---|
 
 ## 23. SHC
 
-Self-hosting means semantic authority transfer. Track earliest host-owned fact:
-lexical identity, grammar, binding, relation, subject, descriptor, application,
-graph, world/effect, demand, realization, machine.
+| # | directive |
+|---|---|
+| 1 | Self-hosting means semantic authority transfer. |
+| 2 | Track earliest host-owned fact: lexical identity, grammar, binding, relation, subject, descriptor, application, graph, world/effect, demand, realization, machine. |
 
-Move producer into Idol. Disable old host producer.
+| # | directive |
+|---|---|
+| 1 | Move producer into Idol. |
+| 2 | Disable old host producer. |
 
-Do **not** self-host stale architecture: module loader, scope chain, registry,
-dispatcher, context object, string lookup.
+| # | directive |
+|---|---|
+| 1 | Do **not** self-host stale architecture: module loader, scope chain, registry, dispatcher, context object, string lookup. |
 
----
+| # | directive |
+|---|---|
 
 ## 24. Hard file / path rules
 
-**Canonical project-owned source extension:** `.id`
+| # | directive |
+|---|---|
+| 1 | **Canonical project-owned source extension:** `.id` |
 
-New canonical `.id` is admitted.
+| # | directive |
+|---|---|
+| 1 | New canonical `.id` is admitted. |
 
-**Retired / forbidden active project source extensions:** `.duo`, `.duon`, `.idsem`
+| # | directive |
+|---|---|
+| 1 | **Retired / forbidden active project source extensions:** `.duo`, `.duon`, `.idsem` |
 
-No active generated/cache/source path may contain retired project identity.
+| # | directive |
+|---|---|
+| 1 | No active generated/cache/source path may contain retired project identity. |
 
-**Forbidden active semantic directory concepts include:**
+| # | directive |
+|---|---|
+| 1 | **Forbidden active semantic directory concepts include:** |
 
-`std`, `lib` (as semantic namespace), `modules`, `namespaces`, `imports`,
-`registry`, `registries`, `adapters`, `bridges`, `contexts`, `engines`, `pipelines`
+| # | directive |
+|---|---|
+| 1 | `std`, `lib` (as semantic namespace), `modules`, `namespaces`, `imports`, `registry`, `registries`, `adapters`, `bridges`, `contexts`, `engines`, `pipelines` |
 
-Physical repository grouping may temporarily survive only if explicitly
-**nonsemantic** and scheduled for removal/rehome.
+| # | directive |
+|---|---|
+| 1 | Physical repository grouping may temporarily survive only if explicitly **nonsemantic** and scheduled for removal/rehome. |
 
-Current canonical repository paths **should not** encode: pass numbers, gap numbers,
-migration chronology, historical project identity, implementation strategy,
-plural-cardinality homes.
+| # | directive |
+|---|---|
+| 1 | Current canonical repository paths **should not** encode: pass numbers, gap numbers, migration chronology, historical project identity, implementation strategy, plural-cardinality homes. |
 
----
+| # | directive |
+|---|---|
 
 ## 25. Hard lexical regex gates
 
-These are mechanical **pre-filters**. Semantic gates still apply afterward.
+| # | directive |
+|---|---|
+| 1 | These are mechanical **pre-filters**. |
+| 2 | Semantic gates still apply afterward. |
 
-**Project-owned identifier base shape:** `^[a-z][a-z0-9]*$`
+| # | directive |
+|---|---|
+| 1 | **Project-owned identifier base shape:** `^[a-z][a-z0-9]*$` |
 
-Lexical shape alone does **not** prove semantic validity.
+| # | directive |
+|---|---|
+| 1 | Lexical shape alone does **not** prove semantic validity. |
 
 | Pattern | Rejects |
 |---|---|
@@ -964,18 +1222,26 @@ Lexical shape alone does **not** prove semantic validity.
 | `@(comp\|host\|runtime)\.` | compiler-host namespace in Idol |
 | `(?i)\b(pass\s*[0-9]+\|gap[-_ ]?[0-9]+\|formerly\|legacy migration\|migrat(?:e\|ed\|ion) from)\b` | migration/history prose |
 
----
+| # | directive |
+|---|---|
 
 ## 26. File-name regex gates
 
-**Canonical project-owned `.id` filename:** `^[a-z][a-z0-9]*\.id$` (lexical only)
+| # | directive |
+|---|---|
+| 1 | **Canonical project-owned `.id` filename:** `^[a-z][a-z0-9]*\.id$` (lexical only) |
 
-Reject filename separators/case: `[_A-Z-]`
+| # | directive |
+|---|---|
+| 1 | Reject filename separators/case: `[_A-Z-]` |
 
-Mashed compounds require **semantic segmentation review** — regex alone cannot
-prove compounds.
+| # | directive |
+|---|---|
+| 1 | Mashed compounds require **semantic segmentation review** — regex alone cannot prove compounds. |
 
-**High-risk filename suffix/prefix review patterns:**
+| # | directive |
+|---|---|
+| 1 | **High-risk filename suffix/prefix review patterns:** |
 
 - `(?i)(reader|writer|runner|caller|encoder|decoder|parser|formatter|checker|validator|builder|emitter|generator|scanner|resolver|provider|producer|consumer)\.id$`
 - `(?i)(router|gateway|dispatcher|registry|manager|factory|adapter|broker|mediator|controller|coordinator|orchestrator|handler|executor|engine|pipeline|scheduler|loader|bridge|shim|proxy|wrapper|frontend|backend|context|session|service|provider|framework|container)\.id$`
@@ -984,47 +1250,77 @@ prove compounds.
 - `(?i)(pass|phase|gap)[-_]?[0-9]+`
 - `(?i)(showcase|smoke|legacy|migration|deprecated|old|compat)`
 
-These are **review/isolation triggers**, not always-semantic bans.
+| # | directive |
+|---|---|
+| 1 | These are **review/isolation triggers**, not always-semantic bans. |
 
----
+| # | directive |
+|---|---|
 
 ## 27. Directory-name regex gates
 
-**Canonical semantic directory lexical shape:** `^[a-z][a-z0-9]*$`
+| # | directive |
+|---|---|
+| 1 | **Canonical semantic directory lexical shape:** `^[a-z][a-z0-9]*$` |
 
-**Obvious plurality roots (review — do not mechanically singularize):**
+| # | directive |
+|---|---|
+| 1 | **Obvious plurality roots (review — do not mechanically singularize):** |
 
-`(?i)^(tests|examples|fixtures|scripts|gates|gaps|agents|worlds|protocols|descriptors|encodings|collections)$`
+| # | directive |
+|---|---|
+| 1 | `(?i)^(tests\|examples\|fixtures\|scripts\|gates\|gaps\|agents\|worlds\|protocols\|descriptors\|encodings\|collections)$` |
 
-**Organizational semantic namespace candidates:**
+| # | directive |
+|---|---|
+| 1 | **Organizational semantic namespace candidates:** |
 
-`(?i)^(std|lib|core|common|shared|utils?|helpers?|support|internal|framework|platform|system|modules?|namespaces?)$`
+| # | directive |
+|---|---|
+| 1 | `(?i)^(std\|lib\|core\|common\|shared\|utils?\|helpers?\|support\|internal\|framework\|platform\|system\|modules?\|namespaces?)$` |
 
-**Mediator/collision homes:**
+| # | directive |
+|---|---|
+| 1 | **Mediator/collision homes:** |
 
-`(?i)^(router|gateway|dispatcher|registry|manager|factory|adapter|broker|context|engine|pipeline|service|provider|bridge|wrapper)s?$`
+| # | directive |
+|---|---|
+| 1 | `(?i)^(router\|gateway\|dispatcher\|registry\|manager\|factory\|adapter\|broker\|context\|engine\|pipeline\|service\|provider\|bridge\|wrapper)s?$` |
 
-Lexical detection is first pass only. **Semantic role determines final rejection.**
+| # | directive |
+|---|---|
+| 1 | Lexical detection is first pass only. **Semantic role determines final rejection.** |
 
----
+| # | directive |
+|---|---|
 
 ## 28. Plural regex is not sufficient
 
-Do **not** globally reject every word ending in `s`. Some irreducible domain
-words naturally end in `s`.
+| # | directive |
+|---|---|
+| 1 | Do **not** globally reject every word ending in `s`. |
+| 2 | Some irreducible domain words naturally end in `s`. |
 
-Plural law is semantic: **does the identity mean “many singular X”?**
+| # | directive |
+|---|---|
+| 1 | Plural law is semantic: **does the identity mean “many singular X”?** |
 
-Regex may flag `[a-z]+s` for review but **must not** be sole authority.
+| # | directive |
+|---|---|
+| 1 | Regex may flag `[a-z]+s` for review but **must not** be sole authority. |
 
-Likewise `*able`/`*ible` is stronger (project-owned capability adjectives are
-categorically closed), but external domain nouns still require contextual review.
+| # | directive |
+|---|---|
+| 1 | Likewise `*able`/`*ible` is stronger (project-owned capability adjectives are categorically closed), but external domain nouns still require contextual review. |
 
----
+| # | directive |
+|---|---|
 
 ## 29. Semantic role gates — regex cannot replace these
 
-For every new/changed project-owned identity ask:
+| # | directive |
+|---|---|
+| 1 | For every new/changed project-owned identity ask: |
 
 1. What independently observable thing exists?
 2. Is this name merely: capability, role, cardinality, transformation, direction,
@@ -1033,13 +1329,18 @@ For every new/changed project-owned identity ask:
 3. Would changing one of those facts force renaming the entity?
 4. Does existing Idol machinery already own the implied behavior?
 
-If yes → reject/decompose. **No regex proves semantic irreducibility.**
+| # | directive |
+|---|---|
+| 1 | If yes → reject/decompose. **No regex proves semantic irreducibility.** |
 
----
+| # | directive |
+|---|---|
 
 ## 30. Format / file content gate
 
-Every changed `.id` file must be classified:
+| # | directive |
+|---|---|
+| 1 | Every changed `.id` file must be classified: |
 
 | Class | Requirement |
 |---|---|
@@ -1049,13 +1350,18 @@ Every changed `.id` file must be classified:
 | GENERATED | derive from authority; must not become second law |
 | TRANSITIONAL | explicit deletion prerequisite; may not be copied into new code |
 
-No unclassified `.id` source.
+| # | directive |
+|---|---|
+| 1 | No unclassified `.id` source. |
 
----
+| # | directive |
+|---|---|
 
 ## 31. Source-file content hard stops
 
-A **new canonical** `.id` file may not introduce:
+| # | directive |
+|---|---|
+| 1 | A **new canonical** `.id` file may not introduce: |
 
 - `main` wrapper, import/module syntax
 - `std`/`lib`/`core` namespace
@@ -1067,7 +1373,9 @@ A **new canonical** `.id` file may not introduce:
 - collision mediator object
 - Pass/history prose, old project identity
 
-A **new compiler graph change** may not introduce:
+| # | directive |
+|---|---|
+| 1 | A **new compiler graph change** may not introduce: |
 
 - operational edge kind
 - semantic string dispatch, semantic path dispatch
@@ -1075,11 +1383,14 @@ A **new compiler graph change** may not introduce:
 - reverse-edge duplicate authority
 - parent-scope downstream lookup
 
----
+| # | directive |
+|---|---|
 
 ## 32. Final agent stop rule
 
-**STOP** if:
+| # | directive |
+|---|---|
+| 1 | **STOP** if: |
 
 - only semantic key available is string
 - only semantic locator is path
@@ -1088,9 +1399,13 @@ A **new compiler graph change** may not introduce:
 - easiest fix is registry/router/context
 - easiest fix is operation edge, `.get(name)`, bracket-string dispatch, parent lookup, or compatibility fallback
 
-**Fix producer. Do not patch consumer.**
+| # | directive |
+|---|---|
+| 1 | **Fix producer. |
+| 2 | Do not patch consumer.** |
 
----
+| # | directive |
+|---|---|
 
 ## 33. Final compression
 
@@ -1128,21 +1443,26 @@ FTCFTW: LEARN EARLY. PRESERVE EXACTLY. DELETE COST.
 SHC: MAKE IDOL PRODUCE THE FACTS ITSELF.
 ```
 
----
+| # | directive |
+|---|---|
 
 ## Corpus
 
-Git is history. Canonical current source/docs do not contain old project names,
-`.duo`, Pass N, migration narrative, or historical syntax — unless describing a
-currently executed bounded foreign/bootstrap boundary. Negative fixtures must not
-train agents. See `docs/spec/corpus.md`.
+| # | directive |
+|---|---|
+| 1 | Git is history. |
+| 2 | Canonical current source/docs do not contain old project names, `.duo`, Pass N, migration narrative, or historical syntax — unless describing a currently executed bounded foreign/bootstrap boundary. |
+| 3 | Negative fixtures must not train agents. |
+| 4 | See `docs/spec/corpus.md`. |
 
----
+| # | directive |
+|---|---|
 
 ## Live gate mapping (migration)
 
-Until graph-owned admission (GAP-124), mechanical layers approximate sections
-25–31:
+| # | directive |
+|---|---|
+| 1 | Until graph-owned admission (GAP-124), mechanical layers approximate sections 25–31: |
 
 | Layer | Owner |
 |---|---|
@@ -1153,10 +1473,11 @@ Until graph-owned admission (GAP-124), mechanical layers approximate sections
 | Staged architecture census | `gate/architecture.id` |
 | Semantic admission shape | `gate/admission.id` |
 
-Negative controls in `gate/idiom.id` convict synonym evasions (`callable`,
-`router`, `jsonencoder`, `tokenview`, operation-first faces, mashed gate
-compounds) via semantic-role rows — not regex alone.
+| # | directive |
+|---|---|
+| 1 | Negative controls in `gate/idiom.id` convict synonym evasions (`callable`, `router`, `jsonencoder`, `tokenview`, operation-first faces, mashed gate compounds) via semantic-role rows — not regex alone. |
 
-**Edge law reminder:** graph edges are structural roles — never operational edge
-kinds (`.call`, `.run`, `.read`, …). Relation identity lives on the application;
-edges connect application → relation/subject/operand/result.
+| # | directive |
+|---|---|
+| 1 | **Edge law reminder:** graph edges are structural roles — never operational edge kinds (`.call`, `.run`, `.read`, …). |
+| 2 | Relation identity lives on the application; edges connect application → relation/subject/operand/result. |

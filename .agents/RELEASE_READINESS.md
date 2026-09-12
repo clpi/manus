@@ -1,8 +1,9 @@
 # Idol release readiness ledger
 
-This is a release-gating checklist, not semantic law and not live project status.
-Active development stays in **`clpi/idol`**. **`idollang/idol`** remains untouched
-until every blocker below is closed and explicit release authorization is recorded.
+| # | directive |
+|---|---|
+| 1 | This is a release-gating checklist, not semantic law and not live project status. |
+| 2 | Active development stays in **`clpi/idol`**. **`idollang/idol`** remains untouched until every blocker below is closed and explicit release authorization is recorded. |
 
 ## Repository separation
 
@@ -52,15 +53,17 @@ until every blocker below is closed and explicit release authorization is record
 
 ## Authorization
 
-Release migration to `idollang/idol` requires an explicit authorization record
-(named release operator, candidate commit, aggregate gate evidence, and signed
-acceptance that this ledger is complete). Until then, treat any
-`idollang/idol` push as out of policy.
+| # | directive |
+|---|---|
+| 1 | Release migration to `idollang/idol` requires an explicit authorization record (named release operator, candidate commit, aggregate gate evidence, and signed acceptance that this ledger is complete). |
+| 2 | Until then, treat any `idollang/idol` push as out of policy. |
 
 ## SHC frontend dependency (implementation lane — not Cursor)
 
-Parser authority transfer (`GAP-134`) is **blocked upstream** until the lexical
-→ grammar-role prerequisite closes. Order is fixed:
+| # | directive |
+|---|---|
+| 1 | Parser authority transfer (`GAP-134`) is **blocked upstream** until the lexical → grammar-role prerequisite closes. |
+| 2 | Order is fixed: |
 
 1. `gaps/GAP-145.md` — distinct lexical token identities (text, bytes, compat
    literals/comments, shebang, reserved backtick) without delimiter-text
@@ -72,8 +75,9 @@ Parser authority transfer (`GAP-134`) is **blocked upstream** until the lexical
    `src/token_view.zig` for observation/lookahead.
 4. `gaps/GAP-134.md` — first bounded production parser recognition slice.
 
-**Owner:** Devin / SHC frontend lane. **Cursor does not implement this chain.**
-Status and closure evidence live in the gaps and bootstrap ledger, not here.
+| # | directive |
+|---|---|
+| 1 | **Owner:** Devin / SHC frontend lane. **Cursor does not implement this chain.** Status and closure evidence live in the gaps and bootstrap ledger, not here. |
 
 ## Agent lanes (disjoint write ownership)
 
@@ -85,7 +89,11 @@ Status and closure evidence live in the gaps and bootstrap ledger, not here.
 | **AGY** | Adversarial audit / evidence truth |
 | **Codex** | Semantic graph producer (when active) |
 
-Claim exact paths before write. No broad cleanup. No release migration.
+| # | directive |
+|---|---|
+| 1 | Claim exact paths before write. |
+| 2 | No broad cleanup. |
+| 3 | No release migration. |
 
 ## Current node dev admission notes (2026-08-11)
 
@@ -96,10 +104,8 @@ Claim exact paths before write. No broad cleanup. No release migration.
 | Single MCP manifest | **met** — `tools/node/dev/mcp.manifest.json` only |
 | Cursor rules as routers | **met** — 9 scoped `.mdc`, all under 50 lines except always-on (21 lines) |
 
-Doctor failures observed on this checkout (not an exhaustive census): pinned tool
-version drift (zig, cursor, cursor-agent); stale compiler artifact vs
-`src/dnir_lower.zig`; `gate/idiom.id` / `scripts/idol_lock.id` referenced
-by doctor and coordination docs but **absent on disk** (only `.id` variants
-present); aggregate build gates blocked (`src/sema.zig` compile error); MCP raw
-initialize probe fail per `orient`. These are release/coordination blockers, not
-permission to duplicate manifests or client constitutions.
+| # | directive |
+|---|---|
+| 1 | Doctor failures observed on this checkout (not an exhaustive census): pinned tool version drift (zig, cursor, cursor-agent); stale compiler artifact vs `src/dnir_lower.zig`; `gate/idiom.id` / `scripts/idol_lock.id` referenced by doctor and coordination docs but **absent on disk** (only `.id` variants present); aggregate build gates blocked (`src/sema.zig` compile error) |
+| 2 | MCP raw initialize probe fail per `orient`. |
+| 3 | These are release/coordination blockers, not permission to duplicate manifests or client constitutions. |

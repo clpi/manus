@@ -1,25 +1,28 @@
 # Application record (PROJECTION-ONE step 4)
 
-Projection of C0 `law.projection.pack`, `law.projection.census`, and
-`law.projection.repair` step four. Not semantic law — the constitution owns
-verdicts. This document is the resolver→graph contract until GAP-124 ingests
-live graph queries.
+| # | directive |
+|---|---|
+| 1 | Projection of C0 `law.projection.pack`, `law.projection.census`, and `law.projection.repair` step four. |
+| 2 | Not semantic law — the constitution owns verdicts. |
+| 3 | This document is the resolver→graph contract until GAP-124 ingests live graph queries. |
 
 ## Purpose
 
-Every resolved application must become one **application record** in the graph.
-The record carries a **projection pack** as first-class facts — not curry stages,
-not nested callable intermediates, not namespace-selected meaning.
+| # | directive |
+|---|---|
+| 1 | Every resolved application must become one **application record** in the graph. |
+| 2 | The record carries a **projection pack** as first-class facts — not curry stages, not nested callable intermediates, not namespace-selected meaning. |
 
-Source elision (omitted `to` → graph-inferred target) must **not** erase
-projection pack facts. Omitted syntax is provenance; the graph retains inferred
-projection with causal link to demand and binding context. `value:to()` is not
-a canonical rung — elision covers the general case where target is uniquely
-inferable from demand.
+| # | directive |
+|---|---|
+| 1 | Source elision (omitted `to` → graph-inferred target) must **not** erase projection pack facts. |
+| 2 | Omitted syntax is provenance; the graph retains inferred projection with causal link to demand and binding context. `value:to()` is not a canonical rung — elision covers the general case where target is uniquely inferable from demand. |
 
 ## Record shape
 
-Each application record is one graph entity with scalar ids and pack references:
+| # | directive |
+|---|---|
+| 1 | Each application record is one graph entity with scalar ids and pack references: |
 
 | field | role | producer |
 |---|---|---|
@@ -38,19 +41,23 @@ Each application record is one graph entity with scalar ids and pack references:
 | `law` | conversion or protocol law edge when applicable | resolver |
 | `provenance` | source span and elision witness chain | parser + resolver |
 
-Packs (`operand`, `result`, `constraint`) are graph-owned structured values with
-slot correspondence — not host arrays, not flattened argument lists recovered
-from callee strings.
+| # | directive |
+|---|---|
+| 1 | Packs (`operand`, `result`, `constraint`) are graph-owned structured values with slot correspondence — not host arrays, not flattened argument lists recovered from callee strings. |
 
 ## Projection pack is not curry
 
-Declaration:
+| # | directive |
+|---|---|
+| 1 | Declaration: |
 
 ```id
 read(number) = (lx, b)
 ```
 
-Graph record (conceptual):
+| # | directive |
+|---|---|
+| 1 | Graph record (conceptual): |
 
 ```text
 relation     read
@@ -60,16 +67,22 @@ operand      pack(b)
 result       demand(void)
 ```
 
-Invocation `lx:read(number)(b)` is **one** application with explicit projection
-`number`. It is not `read(number)` returning a callable that is applied to `b`.
+| # | directive |
+|---|---|
+| 1 | Invocation `lx:read(number)(b)` is **one** application with explicit projection `number`. |
+| 2 | It is not `read(number)` returning a callable that is applied to `b`. |
 
-Declaration:
+| # | directive |
+|---|---|
+| 1 | Declaration: |
 
 ```id
 to(str) = (value)
 ```
 
-Graph record for `text:to(str)`:
+| # | directive |
+|---|---|
+| 1 | Graph record for `text:to(str)`: |
 
 ```text
 relation     to
@@ -79,7 +92,9 @@ operand      pack()
 result       demand(str)     # or continuation demand per binding site
 ```
 
-Graph record when source omits `to` and `str` is uniquely demanded:
+| # | directive |
+|---|---|
+| 1 | Graph record when source omits `to` and `str` is uniquely demanded: |
 
 ```text
 relation     to
@@ -99,12 +114,15 @@ provenance   result demand on binding + direct bridge witness
 | conversion | `to` relation + projection pack + law witnesses | machine representation choice |
 | realization | deferred to demand→realization — DNIR reads graph ids | callee string, opcode tag |
 
-Satisfaction is not “default type then convert.” `exact integer n i32 = 5` is
-descriptor specialization on the binding, not `i64` plus hidden `to(i32)`.
+| # | directive |
+|---|---|
+| 1 | Satisfaction is not “default type then convert.” `exact integer n i32 = 5` is descriptor specialization on the binding, not `i64` plus hidden `to(i32)`. |
 
 ## Resolver obligations (step 4 acceptance)
 
-Before GAP-124 graph gates own verdicts, the resolver must:
+| # | directive |
+|---|---|
+| 1 | Before GAP-124 graph gates own verdicts, the resolver must: |
 
 1. Mint one application record per resolved application occurrence.
 2. Split relation declaration parameters into **projection pack** vs **subject**
@@ -119,36 +137,43 @@ Before GAP-124 graph gates own verdicts, the resolver must:
 
 ## DNIR and tooling consumption
 
-DNIR lowering reads **graph ids and facts** from the application record. It must
-not recover projection from:
+| # | directive |
+|---|---|
+| 1 | DNIR lowering reads **graph ids and facts** from the application record. |
+| 2 | It must not recover projection from: |
 
 - nested call shape alone
 - literal `"to"` string compares in codegen (GAP-082 debt)
 - home path or module prefix
 - type name or method flag
 
-Tooling (LSP, MCP, diagnostics) displays inferred projection when source elided,
-with provenance chain — same facts the graph retains (`law.infer.one`).
+| # | directive |
+|---|---|
+| 1 | Tooling (LSP, MCP, diagnostics) displays inferred projection when source elided, with provenance chain — same facts the graph retains (`law.infer.one`). |
 
 ## No bootstrap catalog
 
-`lib/semantic/application.id` is deleted (`law.catalog.zero`). Application
-records are graph facts published by the resolver (GAP-124). Until that
-boundary executes, missing records are `IMPLEMENTATION-BLOCKED` — not
-permission to revive a hand-authored schema.
+| # | directive |
+|---|---|
+| 1 | `lib/semantic/application.id` is deleted (`law.catalog.zero`). |
+| 2 | Application records are graph facts published by the resolver (GAP-124). |
+| 3 | Until that boundary executes, missing records are `IMPLEMENTATION-BLOCKED` — not permission to revive a hand-authored schema. |
 
 ## Census linkage
 
-`scripts/census/projection.id` reports source-level debt classes. When step 4
-lands in the resolver, `law.projection.census` requires a parallel **graph
-census** counting:
+| # | directive |
+|---|---|
+| 1 | `scripts/census/projection.id` reports source-level debt classes. |
+| 2 | When step 4 lands in the resolver, `law.projection.census` requires a parallel **graph census** counting: |
 
 - applications missing projection pack facts
 - explicit projections redundant with inferred facts
 - ambiguous inferred projections
 - DNIR/codegen reconstruction sites
 
-Text census classifies; graph census owns removal verdicts (GAP-165, GAP-124).
+| # | directive |
+|---|---|
+| 1 | Text census classifies; graph census owns removal verdicts (GAP-165, GAP-124). |
 
 ## Repair order context
 
@@ -160,13 +185,15 @@ Text census classifies; graph census owns removal verdicts (GAP-165, GAP-124).
 | **4 application record + projection pack in resolver→graph** | **this document + bootstrap catalog** |
 | 5–15 inference, canonicalizer, codegen, DNIR, graph gates | blocked on GAP-124 implementation |
 
-Do not bulk-rewrite `:to(` or `:from(` in source until per-site repair class
-proof (`law.repair.infer`, `law.repair.class`).
+| # | directive |
+|---|---|
+| 1 | Do not bulk-rewrite `:to(` or `:from(` in source until per-site repair class proof (`law.repair.infer`, `law.repair.class`). |
 
 ## Step 5 — demand inference (preview)
 
-When binding, parameter, field, or result **demand** uniquely determines
-projection, the resolver records:
+| # | directive |
+|---|---|
+| 1 | When binding, parameter, field, or result **demand** uniquely determines projection, the resolver records: |
 
 | field | role |
 |---|---|
@@ -177,10 +204,12 @@ projection, the resolver records:
 | `bridge` | unique admitted direct bridge relation id, if any |
 | `inferredprojection` | projection pack when elided in source |
 
-Inference mints the same application record as step 4; it only populates
-`projectioninferred` and provenance when source omits `:to(T)` (or elides `to`
-entirely when target is uniquely inferable). See `examples/infer/direct.id` and
-`law.infer.one`.
+| # | directive |
+|---|---|
+| 1 | Inference mints the same application record as step 4; it only populates `projectioninferred` and provenance when source omits `:to(T)` (or elides `to` entirely when target is uniquely inferable). |
+| 2 | See `examples/infer/direct.id` and `law.infer.one`. |
 
-Blocked on GAP-124 resolver implementation. Debt census:
-`docs/spec/projection-debt.md`.
+| # | directive |
+|---|---|
+| 1 | Blocked on GAP-124 resolver implementation. |
+| 2 | Debt census: `docs/spec/projection-debt.md`. |
