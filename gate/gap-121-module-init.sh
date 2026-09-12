@@ -40,7 +40,7 @@ idol=${IDOL_BIN:-"$root/zig-out/bin/idol"}
 cc=${CC:-cc}
 work=$(mktemp -d "${TMPDIR:-/tmp}/idol-gap121.XXXXXX")
 
-# Private scratch root, same reasoning as gate/gap-118-env-absence.sh: never
+# Private scratch root, same reasoning as gate/gap-118-env-absence.id: never
 # diff or delete inside a /tmp cache every lane on the machine writes.
 TMPDIR="$work/scratch"
 export TMPDIR

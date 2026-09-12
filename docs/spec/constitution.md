@@ -6123,7 +6123,7 @@ environmentone = law{
         "foreign symbol names and package paths do not become native relations",
         "the admitted face is the os.env[key] computed projection per law.host, and absence stays a distinct runtime fact rather than an empty string",
     }
-    keep = "gate/gap-118-env-absence.sh executes the three-outcome proof; GAP-118 records the admission and the deleted erasing wrapper"
+    keep = "gate/gap-118-env-absence.id executes the three-outcome proof; GAP-118 records the admission and the deleted erasing wrapper"
 }
 
 sentinelzero = law{
