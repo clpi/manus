@@ -6450,6 +6450,23 @@ const Arm64Compiler = struct {
     /// sequence rests on — `shifted product = floor(n/k) - [n<0 AND k|n]` — is
     /// derived for `k > 0`; the mirrored statement for `k < 0` is a different
     /// proof, and an unproved sequence is worth less than the divide it saves.
+    /// Z3-verified shift-add multiply constants. Returns the lsl shift for
+    /// `add d, x, x, lsl #sh` (k = 2^sh + 1), or the negated shift for
+    /// `sub d, x, x, lsl #sh` (k = -(2^sh - 1)). Proofs in
+    /// research/wsuperopt/proofs/mul_const_*. Each beats mov+mul by 1 insn.
+    fn mulShiftAddShift(k: i64) ?struct { sh: u6, neg: bool } {
+        return switch (k) {
+            3 => .{ .sh = 1, .neg = false },
+            5 => .{ .sh = 2, .neg = false },
+            9 => .{ .sh = 3, .neg = false },
+            17 => .{ .sh = 4, .neg = false },
+            33 => .{ .sh = 5, .neg = false },
+            65 => .{ .sh = 6, .neg = false },
+            -7 => .{ .sh = 3, .neg = true },
+            else => null,
+        };
+    }
+
     fn constBinopRealization(ins: dnir.Instr) ?i64 {
         if (comparisonCondition(ins.binop) != null) return null;
         const k: i64 = switch (ins.rhs) {
@@ -6458,8 +6475,8 @@ const Arm64Compiler = struct {
         };
         return switch (ins.binop) {
             .add, .sub => if (k == 0 or (k > 0 and k <= 4095) or (k < 0 and k >= -4095)) k else null,
-            .mul => if (k == 0 or k == 1 or powerOfTwoShift(k) != null) k else null,
-            .div => if (k == 1) k else null,
+            .mul => if (k == 0 or k == 1 or powerOfTwoShift(k) != null or mulShiftAddShift(k) != null) k else null,
+            .div => if (k == 1 or (k > 1 and powerOfTwoShift(k) != null)) k else null,
             .idiv => if (k == 1 or powerOfTwoShift(k) != null or magicFlooredDivisor(k) != null) k else null,
             .mod => if (k == 1 or k == -1 or powerOfTwoShift(k) != null or magicFlooredDivisor(k) != null) k else null,
             .band => if (k == 0 or k == -1 or lowMaskWidth(k) != null) k else null,
@@ -6685,15 +6702,34 @@ const Arm64Compiler = struct {
                     fitted = w32;
                 } else if (k == 1) {
                     try self.emitMovReg(dst, lhs);
-                } else {
-                    const sh = powerOfTwoShift(k).?;
+                } else if (powerOfTwoShift(k)) |sh| {
                     if (w32 and sh < 32) {
                         try self.emitLslImmW32(dst, lhs, sh);
                         fitted = true;
                     } else try self.emitLslImm(dst, lhs, sh);
+                } else if (mulShiftAddShift(k)) |spec| {
+                    // Z3-verified: 1 insn vs mov+mul (2+). Proofs in
+                    // research/wsuperopt/proofs/mul_const_*.
+                    if (spec.neg) {
+                        try self.emitSubLslReg(dst, lhs, lhs, spec.sh);
+                    } else {
+                        try self.emitAddLslReg(dst, lhs, lhs, spec.sh);
+                    }
+                } else unreachable; // constBinopRealization gates
+            },
+            .div => {
+                if (k == 1) {
+                    try self.emitMovReg(dst, lhs);
+                } else {
+                    // Z3-verified trunc div by 2^a: bias+asr.
+                    // Proofs: research/wsuperopt/proofs/div_pow2_*.
+                    const sh = powerOfTwoShift(k).?;
+                    try self.emitAsrImm(dst, lhs, 63);
+                    try self.emitLsrImm(dst, dst, 64 - sh);
+                    try self.emitAddReg(dst, lhs, dst);
+                    try self.emitAsrImm(dst, dst, sh);
                 }
             },
-            .div => try self.emitMovReg(dst, lhs),
             // `x // 1 = x`; `x // 2^n = x asr n` under FLOORED law, for every
             // x, with no range fact. `asr` and not `lsr`: the arithmetic shift
             // is the one that rounds toward negative infinity, which is what
@@ -9790,6 +9826,22 @@ const Arm64Compiler = struct {
         try self.ensureRegLive(lhs);
         try self.ensureRegLive(rhs);
         try self.emitFmt(0xcb000000 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "sub x{d}, x{d}, x{d}", .{ dst, lhs, rhs });
+    }
+
+    /// `add xd, xn, xm, lsl #sh` — Z3-verified shift-add for constant multiply.
+    /// Proof: research/wsuperopt/proofs/mul_const_*.
+    fn emitAddLslReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, sh: u6) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.ensureRegLive(rhs);
+        try self.emitFmt(0x8b000000 | (@as(u32, sh) << 10) | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "add x{d}, x{d}, x{d}, lsl #{d}", .{ dst, lhs, rhs, sh });
+    }
+
+    /// `sub xd, xn, xm, lsl #sh` — Z3-verified for x * -7.
+    /// Proof: research/wsuperopt/proofs/mul_const_m7.
+    fn emitSubLslReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, sh: u6) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.ensureRegLive(rhs);
+        try self.emitFmt(0xcb000000 | (@as(u32, sh) << 10) | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "sub x{d}, x{d}, x{d}, lsl #{d}", .{ dst, lhs, rhs, sh });
     }
 
     /// `sub xd, xn, #imm12` — SUB immediate, 64-bit, no shift.
