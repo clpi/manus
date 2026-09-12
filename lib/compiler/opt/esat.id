@@ -641,3 +641,9 @@ e2s: str = (g: str, eid: i64)
     l = e2s(g, lfof(g, bn))
     r = e2s(g, rtof(g, bn))
     "(" .. l .. opchar(op) .. r .. ")"
+optblock: str = (g: str, eid: i64)
+    r = saturate(g, 8, 200)
+    g2 = hd(r)
+    c = ecost(g2, eid)
+    s = e2s(g2, eid)
+    px(c) .. ";" .. s
