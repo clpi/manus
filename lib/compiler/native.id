@@ -71,6 +71,9 @@ powtwo: i64 = (v: i64)
 mov: i64 = (rd: i64, rm: i64)
     2852126720 | (rm << 16) | (31 << 5) | rd
 
+band: i64 = (rd: i64, rn: i64, rm: i64)
+    2315255808 | (rm << 16) | (rn << 5) | rd
+
 cmp: i64 = (rn: i64, rm: i64)
     3942645760 | (rm << 16) | (rn << 5) | 31
 
@@ -82,6 +85,9 @@ bcond: i64 = (cond: i64, off: i64)
 
 ret: i64 = ()
     3596551104
+
+udf: i64 = ()
+    3556769792
 
 digit: i64 = (c: i64)
     if c >= 48 and c <= 57
@@ -190,9 +196,106 @@ imm: str = (c: str, r: i64, v: i64)
     c
 
 term: str = (c: str, t: str, r: i64, names: str)
-    if digit(t:byte(1)) == 1
+    expr(c, t, r, 11, names)
+
+strip: str = (t: str)
+    n = t:len()
+    if n < 2
+        return t
+    if t:byte(1) != 40 or t:byte(n) != 41
+        return t
+    d = 0
+    i = 1
+    while i <= n
+        b = t:byte(i)
+        if b == 40
+            d = d + 1
+        else
+            if b == 41
+                d = d - 1
+        if d == 0 and i < n
+            return t
+        i = i + 1
+    t:sub(2, n - 1)
+
+hasop: i64 = (t: str)
+    d = 0
+    i = 1
+    n = t:len()
+    while i <= n
+        b = t:byte(i)
+        if b == 40
+            d = d + 1
+        else
+            if b == 41
+                d = d - 1
+            else
+                if d == 0
+                    if b == 38 or b == 42 or b == 43 or b == 45 or b == 47
+                        return 1
+        i = i + 1
+    0
+
+simple: i64 = (t: str)
+    if isnum(t) == 1
+        return 1
+    if hasop(t) == 1
+        return 0
+    if t:len() == 0
+        return 0
+    if t:byte(1) == 40
+        return 0
+    1
+
+splitop: str = (t: str)
+    oppos = 0
+    op = 0
+    opp = 4
+    d = 0
+    q = 1
+    n = t:len()
+    while q <= n
+        oc = t:byte(q)
+        if oc == 40
+            d = d + 1
+        else
+            if oc == 41
+                d = d - 1
+            else
+                if d == 0
+                    p = 0
+                    if oc == 38
+                        p = 1
+                    else
+                        if oc == 43 or oc == 45
+                            p = 2
+                        else
+                            if oc == 42 or oc == 47
+                                p = 3
+                    if p > 0 and p <= opp
+                        oppos = q
+                        op = oc
+                        opp = p
+        q = q + 1
+    dec(oppos) .. "|" .. dec(op)
+
+expr: str = (c: str, t: str, r: i64, base: i64, names: str)
+    t = trim(t)
+    if isnum(t) == 1
         return imm(c, r, num(t))
-    c .. word(mov(r, reg(names, t)))
+    s = strip(t)
+    if s != t
+        return expr(c, s, r, base, names)
+    if hasop(t) == 0
+        return c .. word(mov(r, reg(names, t)))
+    if base > 17
+        return c .. word(udf())
+    sp = splitop(t)
+    oppos = at(sp, 0)
+    op = at(sp, 1)
+    a = trim(t:sub(1, oppos - 1))
+    e = trim(t:sub(oppos + 1, t:len()))
+    calc(c, r, a, op, e, base, names)
 
 foldop: i64 = (a: i64, o: i64, b: i64)
     if o == 43
@@ -201,6 +304,8 @@ foldop: i64 = (a: i64, o: i64, b: i64)
         return a - b
     if o == 42
         return a * b
+    if o == 38
+        return a & b
     0
 
 simpadd: i64 = (a: i64, isa: i64, b: i64, isb: i64)
@@ -283,26 +388,40 @@ hassub: i64 = (hay: str, key: str)
         i = i + 1
     0
 
-calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
-    aconst = digit(a:byte(1))
-    econst = digit(e:byte(1))
+calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
+    sa = simple(a)
+    se = simple(e)
+    if sa == 0 or se == 0
+        c = expr(c, a, base, base + 2, names)
+        c = expr(c, e, base + 1, base + 2, names)
+        if o == 43
+            return c .. word(add(rd, base, base + 1))
+        if o == 45
+            return c .. word(minus(rd, base, base + 1))
+        if o == 42
+            return c .. word(mul(rd, base, base + 1))
+        if o == 38
+            return c .. word(band(rd, base, base + 1))
+        c .. word(div(rd, base, base + 1))
+    an = isnum(a)
+    en = isnum(e)
     av = 0
     ev = 0
-    if aconst == 1
+    if an == 1
         av = num(a)
-    if econst == 1
+    if en == 1
         ev = num(e)
-    if aconst == 1 and econst == 1 and o != 47
+    if an == 1 and en == 1 and o != 47
         return imm(c, rd, foldop(av, o, ev))
     skip = 0
     if o == 43
-        s = simpadd(av, aconst, ev, econst)
+        s = simpadd(av, an, ev, en)
         if s == 1
             return term(c, e, rd, names)
         if s == 2
             return term(c, a, rd, names)
     if o == 42
-        s = simpmul(av, aconst, ev, econst)
+        s = simpmul(av, an, ev, en)
         if s == 1
             return term(c, a, rd, names)
         if s == 2
@@ -310,25 +429,25 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
         if s == 3
             return imm(c, rd, 0)
     if o == 45
-        if econst == 1 and ev == 0
+        if en == 1 and ev == 0
             return term(c, a, rd, names)
-        if aconst == 0 and econst == 0 and a == e
+        if an == 0 and en == 0 and a == e
             return imm(c, rd, 0)
-    if o == 43 and aconst == 1 and econst == 0 and av < 4096
+    if o == 43 and an == 1 and en == 0 and av < 4096
         return c .. word(addi(rd, reg(names, e), av))
-    if o == 43 and aconst == 0 and econst == 1 and ev < 4096
+    if o == 43 and an == 0 and en == 1 and ev < 4096
         return c .. word(addi(rd, reg(names, a), ev))
-    if o == 45 and aconst == 0 and econst == 1 and ev < 4096
+    if o == 45 and an == 0 and en == 1 and ev < 4096
         return c .. word(subi(rd, reg(names, a), ev))
-    if o == 42 and aconst == 0 and econst == 1
+    if o == 42 and an == 0 and en == 1
         m = mulred(c, rd, a, ev, names)
         if m:len() > 0
             return m
-    if o == 42 and aconst == 1 and econst == 0
+    if o == 42 and an == 1 and en == 0
         m = mulred(c, rd, e, av, names)
         if m:len() > 0
             return m
-    if o == 47 and econst == 1 and aconst == 0
+    if o == 47 and en == 1 and an == 0
         dd = ev
         ra = reg(names, a)
         if dd == 1
@@ -401,12 +520,12 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
             return c .. word(mov(rd, 10))
     ra = 0
     rb = 0
-    if aconst == 1
+    if an == 1
         c = imm(c, 9, av)
         ra = 9
     else
         ra = reg(names, a)
-    if econst == 1
+    if en == 1
         c = imm(c, 10, ev)
         rb = 10
     else
@@ -417,6 +536,8 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
         return c .. word(minus(rd, ra, rb))
     if o == 42
         return c .. word(mul(rd, ra, rb))
+    if o == 38
+        return c .. word(band(rd, ra, rb))
     c .. word(div(rd, ra, rb))
 
 indent: i64 = (s: str)
@@ -1122,16 +1243,9 @@ main: i64 = ()
                         if wopen > 0 and at(wcd, wopen - 1) == 1 and rd == at(wrl, wopen - 1)
                             skip = 1
                         if skip == 0
-                            oppos = 0
-                            op = 0
-                            q = 1
-                            while q <= rhs:len()
-                                oc = rhs:byte(q)
-                                if oc == 43 or oc == 45 or oc == 42 or oc == 47
-                                    if oppos == 0
-                                        oppos = q
-                                        op = oc
-                                q = q + 1
+                            sp = splitop(rhs)
+                            oppos = at(sp, 0)
+                            op = at(sp, 1)
                             if oppos == 0
                                 if pendname != ""
                                     prd = reg(names, pendname)
@@ -1205,7 +1319,7 @@ main: i64 = ()
                                             code = imm(code, 10, pv)
                                             code = code .. word(mul(prd, prd, 10))
                                 pendname = ""
-                                code = calc(code, rd, a, op, e, names)
+                                code = calc(code, rd, a, op, e, 11, names)
                             else
                                 if skind == 0 and sval == 0
                                     nop = 1
@@ -1249,16 +1363,9 @@ main: i64 = ()
                                             pendkind = skind
                                             pendval = sval
                 else
-                    oppos = 0
-                    op = 0
-                    q = 1
-                    while q <= t:len()
-                        oc = t:byte(q)
-                        if oc == 43 or oc == 45 or oc == 42 or oc == 47
-                            if oppos == 0
-                                oppos = q
-                                op = oc
-                        q = q + 1
+                    sp = splitop(t)
+                    oppos = at(sp, 0)
+                    op = at(sp, 1)
                     if pendname != ""
                         prd = reg(names, pendname)
                         if pendkind == 0
@@ -1286,7 +1393,7 @@ main: i64 = ()
                     else
                         a = trim(t:sub(1, oppos - 1))
                         e = trim(t:sub(oppos + 1, t:len()))
-                        code = calc(code, 0, a, op, e, names)
+                        code = calc(code, 0, a, op, e, 11, names)
                     code = code .. word(ret())
                     k = lc
             k = k + 1
