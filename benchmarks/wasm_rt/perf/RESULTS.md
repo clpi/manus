@@ -1,4 +1,6 @@
-# Idol WASM engine vs wasmtime — measured baseline
+| field | value |
+|---|---|
+| title | Idol WASM engine vs wasmtime — measured baseline |
 
 | # | directive |
 |---|---|
@@ -9,7 +11,9 @@
 |---|---|
 | 1 | machine Apple M2 Pro, 10 cores, 16 GiB, macOS 26.5.2 revision d4745587 (the tree also contains uncommitted edits by other agents; those were NOT measured) control wasmtime 47.0.3 (5554cc1a6 2026-07-31) also ran wasmer 7.2.1, wasm3 v0.5.0 toolchain wabt 1.0.41, LLVM clang (brew llvm) + wasi-libc sysroot |
 
-## 0. The engine does not build from source
+| section |
+|---|---|
+| 0. The engine does not build from source |
 
 | # | directive |
 |---|---|
@@ -61,7 +65,9 @@
 |---|---|
 | 1 | Every wasm module is therefore shorter than 8 bytes as far as the engine is concerned, so every module fails the magic-number check and the engine exits 1 — in silence, because the diagnostic goes through `iom.err` = `io.err`, which the C runtime does not define. **Unpatched, the engine at d4745587 cannot load any wasm module at all.** |
 
-## 1. Conformance, scored against the whole suite
+| section |
+|---|---|
+| 1. Conformance, scored against the whole suite |
 
 | # | directive |
 |---|---|
@@ -100,7 +106,9 @@
 |---|---|
 | 1 | The committed harness `conform/run_spec.id` cannot produce this number, or any number: it does not parse (`run_spec.id:36:8: error: write ')' at this token edge`), and it drives the engine through `WARD_INVOKE` / `WARD_ARGS`, which the engine has never read. |
 
-## 2. Workloads
+| section |
+|---|---|
+| 2. Workloads |
 
 | # | directive |
 |---|---|
@@ -115,7 +123,9 @@
 |---|---|
 | 1 | `k_int32`, `k_mem32` and `k_data32` exist only because the i64 and malloc versions do not run on the Idol engine; see §4. |
 
-## 3. The comparison
+| section |
+|---|---|
+| 3. The comparison |
 
 | # | directive |
 |---|---|
@@ -157,9 +167,13 @@
 |---|---|
 | 1 | wasm3's `CANNOT RUN` on k_calls is wasm3's own limit, not a property of the module: `wasm3 wasm/k_calls.wasm` reports `Error: LEB encoded value overflow`. wasmtime, wasmer and the Idol engine all execute it and agree on the answer. |
 
-## 4. Where the time goes, ranked by measured contribution
+| section |
+|---|---|
+| 4. Where the time goes, ranked by measured contribution |
 
-### 1. There is no JIT. Everything runs on the interpreter. (the whole 5-18x)
+| section |
+|---|---|
+| 1. There is no JIT. Everything runs on the interpreter. (the whole 5-18x) |
 
 | # | directive |
 |---|---|
@@ -182,7 +196,9 @@
 |---|---|
 | 1 | `src/wasm/jit.id` is a separate, unused stub (`// TODO: bytecode-to-C translation`, returns 0) that `engine.id` does not import, and it is corrupted at HEAD by a mechanical `#` -> `:len()` rewrite: it contains `"include:len() <stdint.h>"` and `sig:len().params`. |
 
-### 2. Interpreter dispatch is a linear if/elseif chain (51 arms)
+| section |
+|---|---|
+| 2. Interpreter dispatch is a linear if/elseif chain (51 arms) |
 
 | # | directive |
 |---|---|
@@ -207,7 +223,9 @@
 | 1 | Closing this (jump table / computed goto) plausibly buys 1.3x-2.8x on anything that is not in the four fast arms. |
 | 2 | It is not a path to parity. |
 
-### 3. Indirect-call dispatch: +29.1 ns per call
+| section |
+|---|---|
+| 3. Indirect-call dispatch: +29.1 ns per call |
 
 | # | directive |
 |---|---|
@@ -222,7 +240,9 @@
 | 1 | On k_calls (6M indirect calls, 692 ms steady state) that is ~175 ms (25%) for table lookup plus signature check beyond a plain call, and ~250 ms (36%) for call machinery in total. |
 | 2 | The remaining ~64% is ordinary opcode dispatch. |
 
-### 4. Per-opcode interpretive overhead itself — the residual
+| section |
+|---|---|
+| 4. Per-opcode interpretive overhead itself — the residual |
 
 | # | directive |
 |---|---|
@@ -256,27 +276,35 @@
 |---|---|
 | 1 | 768 of 768 samples are inside `run_body`, with no calls out — no allocator, no boxing helpers, no host calls. |
 
-### 5. Memory bounds-checking strategy — UNMEASURED in isolation
+| section |
+|---|---|
+| 5. Memory bounds-checking strategy — UNMEASURED in isolation |
 
 | # | directive |
 |---|---|
 | 1 | `k_data32` (dependent chase, no hoistable check) has the *best* ratio of the four at 5.1x, which argues bounds checking is not the dominant term relative to dispatch. |
 | 2 | But it was not isolated with a checks-off build, so the split between check cost and dispatch cost inside that 5.1x is UNMEASURED. |
 
-### 6. Missing SIMD — UNMEASURED as a time contribution
+| section |
+|---|---|
+| 6. Missing SIMD — UNMEASURED as a time contribution |
 
 | # | directive |
 |---|---|
 | 1 | A capability gap, not a measured cost: zero assertions pass in every `simd_*` suite except `simd_const`. |
 | 2 | No workload here uses SIMD, so it contributes nothing to the numbers above. |
 
-### 7. Host-call overhead — measured as approximately zero
+| section |
+|---|---|
+| 7. Host-call overhead — measured as approximately zero |
 
 | # | directive |
 |---|---|
 | 1 | See the `sample` profile in item 4: no frames outside `run_body`. |
 
-## 5. Capability gaps (results, not timings)
+| section |
+|---|---|
+| 5. Capability gaps (results, not timings) |
 
 | gap | evidence |
 |---|---|
@@ -287,7 +315,9 @@
 | f64 fixture fails | `benchmarks/wasm_rt/loop_f64.wasm` exits 70 |
 | The engine's own JIT demo fails | `jitable.wasm` exports `compute(i32)`, which cannot be invoked without an argument channel |
 
-## 6. Reproducing all of it
+| section |
+|---|---|
+| 6. Reproducing all of it |
 
 | # | directive |
 |---|---|

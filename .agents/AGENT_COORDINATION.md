@@ -1,4 +1,6 @@
-# Idol agent coordination
+| field | value |
+|---|---|
+| title | Idol agent coordination |
 
 | # | directive |
 |---|---|
@@ -6,7 +8,9 @@
 | 2 | It is not language law, a live control plane, or a current-status ledger. |
 | 3 | Any line likely to drift belongs in the ignored `.agents/session/` state or in evidence from an exact run. |
 
-## State and evidence
+| section |
+|---|---|
+| State and evidence |
 
 | Purpose | Owner |
 |---|---|
@@ -73,7 +77,9 @@
 | 2 | Lane labels do not imply an active lock. |
 | 3 | Acquire before producing owned facts. |
 
-## Implementation owners
+| section |
+|---|---|
+| Implementation owners |
 
 | # | directive |
 |---|---|
@@ -103,7 +109,9 @@
 | 2 | Attack the earliest host-owned production boundary whose prerequisites exist. |
 | 3 | Do not infer progress from file counts or translate a host module line for line. |
 
-## Gates
+| section |
+|---|---|
+| Gates |
 
 | Step | Scope |
 |---|---|
@@ -116,34 +124,41 @@
 | `zig build test` | unit and compile-fail aggregate |
 | `zig build bench` | serialized performance gate |
 
-## Protocol
+| section |
+|---|---|
+| Protocol |
 
-1. Never use `git stash`, `git reset --hard`, or hidden worktree cleanup.
-2. Claim exact paths and commit only explicit owned pathspecs.
-3. Serialize heavy commands through
-   `repo="$(git rev-parse --show-toplevel)"` and
-   `"$repo/tools/node/dev/idol-lock" -- <command>`.
-4. Positive-control every zero and report the inner requested outcome.
-5. Never repair an integration failure by restoring a shadow authority another
-   owner removed.
+| # | directive |
+|---|---|
+| 1 | Never use `git stash`, `git reset --hard`, or hidden worktree cleanup. |
+| 2 | Claim exact paths and commit only explicit owned pathspecs. |
+| 3 | Serialize heavy commands through `repo="$(git rev-parse --show-toplevel)"` and `"$repo/tools/node/dev/idol-lock" -- <command>`. |
+| 4 | Positive-control every zero and report the inner requested outcome. |
+| 5 | Never repair an integration failure by restoring a shadow authority another owner removed. |
 
-## Fact handoffs (`law.coordination.fact`)
+| section |
+|---|---|
+| Fact handoffs (`law.coordination.fact`) |
 
 | # | directive |
 |---|---|
 | 1 | When lane A needs a fact owned by lane B: |
 
-- record needed fact, current producer, consumer, blocking interface, owner
-- do not duplicate the fact locally or reconstruct it from names/paths/text
-- schedule work on producer→consumer chains, not directories
-- stop on ambiguity and file a gap rather than invent helper semantics
+| # | directive |
+|---|---|
+| 1 | record needed fact, current producer, consumer, blocking interface, owner |
+| 2 | do not duplicate the fact locally or reconstruct it from names/paths/text |
+| 3 | schedule work on producer→consumer chains, not directories |
+| 4 | stop on ambiguity and file a gap rather than invent helper semantics |
 
 | # | directive |
 |---|---|
 | 1 | Claim semantic boundaries as well as paths. |
 | 2 | Integration state outranks branch-local success. |
 
-## Handoff — research admission surface (main bbc54486, 2026-08-18)
+| section |
+|---|---|
+| Handoff — research admission surface (main bbc54486, 2026-08-18) |
 
 | # | directive |
 |---|---|
@@ -152,7 +167,9 @@
 | 3 | Every GAP ≥ 175 carries its block; `docs/research-gap-admission.md` was a same-day duplicate and is deleted with its map absorbed. |
 | 4 | Blockers found and left for their lanes: `scripts/audit100.id` and `gate/idiom.id` are refused DNB001 by every current binary (`mod-global-written`, `concat`), so both script gates are unrunnable repo-wide; audit100 row-8 control parity was verified by running the row-8 regex directly over the rendered probe strings (deny 1, decline 0, before and after). |
 
-## Handoff — canonical closure (codex/canonical-closure-20260818 @ 3afd79d6)
+| section |
+|---|---|
+| Handoff — canonical closure (codex/canonical-closure-20260818 @ 3afd79d6) |
 
 | # | directive |
 |---|---|
@@ -160,24 +177,20 @@
 | 2 | All gates green with planted-defect negatives; main untouched per instruction. |
 | 3 | Open work: gate/corpus-status.sh reports 964 .id files awaiting TEACHING-STATUS headers (classification lane), and audit100/idiom remain DNB001-blocked repo-wide. |
 
-## Handoff — script-gate unblocking (codex/canonical-closure-20260818 @ feda71ee)
+| section |
+|---|---|
+| Handoff — script-gate unblocking (codex/canonical-closure-20260818 @ feda71ee) |
 
 | # | directive |
 |---|---|
 | 1 | The repo's script gates were dark on DNB001. |
 | 2 | Three walls moved, each with by-value proof on this branch: |
 
-1. mod-global-written RETIRED (4cb1fd1c): the bss globals map answers, the
-   stale scalar-precheck refusal is deleted, g066/g108 promoted into the
-   differential corpus proper agreeing with the C column (6 5 / exit 6, 8 8).
-2. The `{{}}` class (feda71ee): `{{` is a PACK HOLE by law, literal braces are
-   `\{\}`; both gates' display strings were parsed as pack holes and refused
-   by the concat planner. Fixed in gate/idiom.id (3 sites) and
-   scripts/audit100.id (2 sites).
-3. An idol_str_concat runtime export was drafted for the concat lane and
-   DELETED: after the brace fix routed around the pack-hole parse, it had zero
-   consumers, and a fact with no consumer is deleted, not shelved. Re-add it
-   the day a lawful pack-in-text rendering needs it.
+| # | directive |
+|---|---|
+| 1 | mod-global-written RETIRED (4cb1fd1c): the bss globals map answers, the stale scalar-precheck refusal is deleted, g066/g108 promoted into the differential corpus proper agreeing with the C column (6 5 / exit 6, 8 8). |
+| 2 | The `{{}}` class (feda71ee): `{{` is a PACK HOLE by law, literal braces are `\{\}`; both gates' display strings were parsed as pack holes and refused by the concat planner. Fixed in gate/idiom.id (3 sites) and scripts/audit100.id (2 sites). |
+| 3 | An idol_str_concat runtime export was drafted for the concat lane and DELETED: after the brace fix routed around the pack-hole parse, it had zero consumers, and a fact with no consumer is deleted, not shelved. Re-add it the day a lawful pack-in-text rendering needs it. |
 
 | # | directive |
 |---|---|
@@ -194,29 +207,19 @@
 |---|---|
 | 1 | Unit-test failure set is IDENTICAL to baseline (one pre-existing failure in test 'refuses source conversion absent application facts', fails at 5e1bde2d before any of this). main untouched. |
 
-## Coordination — to the parallel GLM/omp sessions (2026-08-18 ~21:40)
+| section |
+|---|---|
+| Coordination — to the parallel GLM/omp sessions (2026-08-18 ~21:40) |
 
 | # | directive |
 |---|---|
 | 1 | Three concurrent sessions are in these repos; this is mine (main, GLM 5.3). |
 | 2 | State, so nobody re-derives it: |
 
-- clpi/idol main = 04537703 (all session work landed; gates green:
-  gapc0 27/0, agentlaw 5/0, corpus-status 973/0 unclassified, idiom
-  operational). Local main ref synced to idol/main.
-- SLOT-ROLE-ONE (48fb6a5f, found unpushed on local main) is MERGED then
-  REVERTED (9c4f22d1): it fails idol-native gate/narrow.sh with 36 wrong
-  oracle rows. Reland it WITH the narrow oracle green — the narrow law is
-  "a declared width applies at every write". Note the separate width fix
-  that DID land: typeOfGlobal now resolves i8/i16/u8/u16/u32 (was erasing
-  to i64), and written narrow-width globals refuse mod-global-written:
-  until stores mask — that is gate/narrow.sh's OWED contract.
-- idol-native protocol.sh SPLIT (live/call vs live/subject graphs disagree
-  on the subject slot) is GAP-187 slot-role work — the argform gate that
-  landed tonight pins it. My tail/classifier fixes made 3:up() RESOLVE
-  (it used to bail), which EXPOSED the split; the split itself predates.
-- Claims: only devin/GAP-201 held. The idol-native tree had an ACTIVE
-  lane committing during my final suite (argform, benchmark-gaming audit)
-  — bin/idol churn made protocol flaky-looking; against a frozen snapshot
-  it is a stable SPLIT, not flake.
-- /tmp/idol-cache-* is shared and flat — clear between measurements.
+| # | directive |
+|---|---|
+| 1 | clpi/idol main = 04537703 (all session work landed; gates green: gapc0 27/0, agentlaw 5/0, corpus-status 973/0 unclassified, idiom operational). Local main ref synced to idol/main. |
+| 2 | SLOT-ROLE-ONE (48fb6a5f, found unpushed on local main) is MERGED then REVERTED (9c4f22d1): it fails idol-native gate/narrow.sh with 36 wrong oracle rows. Reland it WITH the narrow oracle green — the narrow law is "a declared width applies at every write". Note the separate width fix that DID land: typeOfGlobal now resolves i8/i16/u8/u16/u32 (was erasing to i64), and written narrow-width globals refuse mod-global-written: until stores mask — that is gate/narrow.sh's OWED contract. |
+| 3 | idol-native protocol.sh SPLIT (live/call vs live/subject graphs disagree on the subject slot) is GAP-187 slot-role work — the argform gate that landed tonight pins it. My tail/classifier fixes made 3:up() RESOLVE (it used to bail), which EXPOSED the split; the split itself predates. |
+| 4 | Claims: only devin/GAP-201 held. The idol-native tree had an ACTIVE lane committing during my final suite (argform, benchmark-gaming audit) — bin/idol churn made protocol flaky-looking; against a frozen snapshot it is a stable SPLIT, not flake. |
+| 5 | /tmp/idol-cache-* is shared and flat — clear between measurements. |

@@ -1,4 +1,6 @@
-# Idol operative projection
+| field | value |
+|---|---|
+| title | Idol operative projection |
 
 | # | directive |
 |---|---|
@@ -12,7 +14,9 @@
 | 1 | The constitution is structured law documentation, not executable source or a pattern library. |
 | 2 | Canonical implementation remains `.id`; `GAP-145` records the separate unclosed lexical and grammar projection. |
 
-## The decomposition (read before writing Idol)
+| section |
+|---|---|
+| The decomposition (read before writing Idol) |
 
 > **A name is a SUBJECT and an EDGE.** The edge is the relation; the subject is
 > the value the relation is about. You write `subject:edge(rest)`.
@@ -36,7 +40,9 @@
 | 1 | It places each canonical form beside the retired one it replaces and requires them to AGREE on every input, so it is simultaneously the lesson and its proof. |
 | 2 | Prefer it to this file wherever the two could disagree, and prefer running it to quoting it: **numbers live in the runner that checks them, never in prose.** Every rule this project recorded as an assertion has decayed — a sibling `AGENTS.md` asserted a gate exited 34 while it exited 42, in two places at once. |
 
-## Identity
+| section |
+|---|---|
+| Identity |
 
 | # | directive |
 |---|---|
@@ -75,7 +81,9 @@
 | 3 | Demand carries need. |
 | 4 | Realization carries physical choice. |
 
-### Gate scan boundaries
+| section |
+|---|---|
+| Gate scan boundaries |
 
 | # | directive |
 |---|---|
@@ -97,7 +105,9 @@ dot(io) = (code: str)
 | 2 | Use `audit`, `head`, `bare`, and `scan(diff)(…)` / `scan(path)(…)` per `AGENTS.md` and `gate/idiom.id`. |
 | 3 | Ingress home checks use **`ingress(path)`** — ingress is the subject; never `only(ingress)(path)` or `ingressonly`. |
 
-### Home, world, and protocol algebra
+| section |
+|---|---|
+| Home, world, and protocol algebra |
 
 | # | directive |
 |---|---|
@@ -123,7 +133,9 @@ dot(io) = (code: str)
 | 6 | Concrete knowledge survives relation constraint crossing. |
 | 7 | The ONE explicit protocol/requirement boundary is `able(...)` — `able(eq)`, `able(read)`, `able(to(str))` — meaning the unknown subject must admit the demanded relation/application shape. `able` is normally INFERRED and spelled only at a real boundary (open generic contract, implementation unavailable, higher-order boundary, ambiguity); it mints no trait, dictionary, or vtable and grants no authority (`docs/spec/law.md` §9, `able` in C0 §6). |
 
-## Architecture
+| section |
+|---|---|
+| Architecture |
 
 | # | directive |
 |---|---|
@@ -166,7 +178,9 @@ source/import -> graph -> demand -> realization -> machine
 | 3 | Same-directory references need no dependency syntax — the semantic reference is the dependency edge. |
 | 4 | Visibility is already a graph fact; change scope facts at the owner boundary instead of writing admission ceremony in source. |
 
-## Host boundary
+| section |
+|---|---|
+| Host boundary |
 
 | # | directive |
 |---|---|
@@ -179,7 +193,9 @@ source/import -> graph -> demand -> realization -> machine
 | 7 | Do not rename `os.args` / `getenv` / `popen` without semantic decomposition. |
 | 8 | Host APIs belong only at classified bootstrap ingress/egress with deletion gates. |
 
-## Source
+| section |
+|---|---|
+| Source |
 
 | # | directive |
 |---|---|
@@ -229,19 +245,20 @@ Canonical callable result demand is on the binding:
 
 ```
 
-### Relation projection vs curry
+| section |
+|---|---|
+| Relation projection vs curry |
 
 `()` is the sole grouping delimiter; resolution assigns its role — punctuation
 alone does not define curry (`law.paren.one`, `law.projection.head`).
 
 Three roles after resolution:
 
-1. **Relation projection** — `to(str)`, `read(number)`, `index(key)` attached to
-   a relation identity in declaration, selection, or constraint position. No call
-   has happened; no intermediate callable is produced.
-2. **Ordinary operand application** — `f(x)` when `f` is a callable value.
-3. **Genuine curried application** — `f(x)(y)` only when `f(x)` actually yields
-   another callable semantic value.
+| # | directive |
+|---|---|
+| 1 | **Relation projection** — `to(str)`, `read(number)`, `index(key)` attached to a relation identity in declaration, selection, or constraint position. No call has happened; no intermediate callable is produced. |
+| 2 | **Ordinary operand application** — `f(x)` when `f` is a callable value. |
+| 3 | **Genuine curried application** — `f(x)(y)` only when `f(x)` actually yields another callable semantic value. |
 
 Declaration and invocation stay distinct faces (`call.face`):
 
@@ -276,7 +293,9 @@ Prefer subject → relation projection → operand pack → genuine currying →
 capture when choosing syntax. Operation-first `to(str)(n)` at a call site is
 migratable debt; canonical invocation is `n:to(str)`.
 
-### Inference (SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE)
+| section |
+|---|---|
+| Inference (SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE) |
 
 No source spelling should survive merely to restate a semantic fact the compiler
 can already recover uniquely — not only `to`, but relation/method names,
@@ -325,15 +344,19 @@ not semantic `to`.
 Do not add `:to(T)` when `T` is already the exact demanded descriptor.
 `IMPLEMENTATION-BLOCKED` — not a redundant workaround — when inference is missing.
 
-### Convergence meta-invariants (SHC · multi-agent)
+| section |
+|---|---|
+| Convergence meta-invariants (SHC · multi-agent) |
 
 Before substantive work, audit seams per `docs/spec/harness-projection.md` and
 §67 convergence closure. Named laws agents must not neglect:
 
-- **BRIDGE-DEATH** (`law.bridge.death`) — no bridge without deletion witness
-- **UNKNOWN-ONE** (`law.unknown.one`) — unknown is graph state, not placeholder value
-- **OWNERSHIP-ZERO** (`law.ownership.zero`) — alias/lifetime/escape as facts, not Rust
-- **PROFILE-EVIDENCE** (`law.profile.evidence`) — profile selects realization, never truth
+| # | directive |
+|---|---|
+| 1 | **BRIDGE-DEATH** (`law.bridge.death`) — no bridge without deletion witness |
+| 2 | **UNKNOWN-ONE** (`law.unknown.one`) — unknown is graph state, not placeholder value |
+| 3 | **OWNERSHIP-ZERO** (`law.ownership.zero`) — alias/lifetime/escape as facts, not Rust |
+| 4 | **PROFILE-EVIDENCE** (`law.profile.evidence`) — profile selects realization, never truth |
 
 Also: one fact producer (`law.fact.producer.one`), no silent fallback
 (`law.fallback.zero`), bounded inference (`law.infer.contract`), concept/physical
@@ -346,7 +369,9 @@ delta budgets (`law.delta.budget`), producer→consumer scheduling
 projection pack is first-class, not curry (`law.projection.pack`); Idol is current
 identity only (`law.identity.projection`).
 
-### Projection (PROJECTION-ONE)
+| section |
+|---|---|
+| Projection (PROJECTION-ONE) |
 
 One projection algebra (`law.projection.one`) — no separate conversion/protocol/world/shell
 subsystems. **FROM-ZERO:** `to` only; `from` normalizes to same edge. **STD-ZERO /
@@ -362,7 +387,9 @@ host save/restore observation, source-category flags, helper predicates,
 sentinel states, visitor taxonomies, string dispatch, or bridge temporaries
 into Idol.
 
-### Update of place
+| section |
+|---|---|
+| Update of place |
 
 An admitted compound update is canonical only when a witness proves it
 equivalent to `place = place op value`. Normalization keeps the base relation
@@ -391,7 +418,9 @@ or a sentinel comparison. Preserve unknown, absent, not applicable, and
 unresolved distinctly. Prefer an admitted fact or transition; missing semantic
 vocabulary is `SEMANTIC-VOCABULARY-BLOCKED`.
 
-## Compiler B
+| section |
+|---|---|
+| Compiler B |
 
 The immediate objective is the earliest remaining production authority
 boundary, not backend polish. Read the current executed-authority ledger in
@@ -412,7 +441,9 @@ owner after, and the next host-owned boundary. Do not build a bootstrap AST,
 identity service, graph, grammar registry, IR, or error model beside the
 production owner.
 
-## Project admission
+| section |
+|---|---|
+| Project admission |
 
 Every material change classifies its effect on:
 
@@ -523,7 +554,9 @@ transformation, realization, instruction, and object range where that boundary
 is supported. Tooling consumes graph facts; it does not invent a vocabulary or
 reconstruct meaning from formatted text.
 
-## Evidence
+| section |
+|---|---|
+| Evidence |
 
 Use one chain:
 
@@ -546,7 +579,9 @@ Git, live ownership from `tools/node/dev/claim list`, open obligations from
 `GAP-131` closure; inspect every matching `gaps/GAP-*.md` record directly before
 work because the derived count does not replace status authority.
 
-## Workflow
+| section |
+|---|---|
+| Workflow |
 
 Start at `AGENTS.md`, then use `.agents/AGENT_CANONICAL.md` as the stable path
 router. Read `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the relevant

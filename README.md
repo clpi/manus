@@ -1,6 +1,10 @@
-# idol
+| field | value |
+|---|---|
+| title | idol |
 
-## identity
+| section |
+|---|---|
+| identity |
 
 | key | value |
 |---|---|
@@ -8,7 +12,9 @@
 | suffix | .id |
 | repo | idollang/idol |
 
-## pipeline
+| section |
+|---|---|
+| pipeline |
 
 | stage |
 |---|
@@ -18,7 +24,9 @@
 | realization |
 | machine |
 
-## bootstrap
+| section |
+|---|---|
+| bootstrap |
 
 | stage |
 |---|
@@ -33,7 +41,9 @@
 | compiler b |
 | b builds c |
 
-## build
+| section |
+|---|---|
+| build |
 
 | act | command |
 |---|---|
@@ -41,7 +51,9 @@
 | check | ./zig-out/bin/idol check main.id |
 | run | ./zig-out/bin/idol run |
 
-## law
+| section |
+|---|---|
+| law |
 
 | doc | scope |
 |---|---|

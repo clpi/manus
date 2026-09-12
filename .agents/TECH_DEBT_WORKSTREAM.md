@@ -1,4 +1,7 @@
-# Idol — current tech debt + FTCFTW workstream one-pager
+| field | value |
+|---|---|
+| title | Idol — current tech debt + FTCFTW workstream one-pager |
+| live head / dirty / holders | not recorded here (). |
 
 | # | directive |
 |---|---|
@@ -11,12 +14,13 @@
 
 | # | directive |
 |---|---|
-| 1 | **Live HEAD / dirty / holders:** not recorded here (`law.control.derived`). |
 | 2 | Use `git rev-parse HEAD`, `git status`, `tools/node/dev/claim list`, and `tools/node/dev/orient`. **Evidence subject vs revision:** bind every metric to the measured subject and the evidence revision separately (`law.evidence.subject`). |
 | 3 | Catalog deletion + `tokenize()` route subject is `29f62035`; later evidence revisions must name their own subject. |
 | 4 | Do not report FTCFTW “at HEAD” unless subject equals the live tree. |
 
-## Status
+| section |
+|---|---|
+| Status |
 
 | Dimension | State |
 |---|---|
@@ -36,41 +40,35 @@
 | # | directive |
 |---|---|
 
-## Live-HEAD delta vs origin audit `dc07e5d7`
+| section |
+|---|---|
+| Live-HEAD delta vs origin audit `dc07e5d7` |
 
 | # | directive |
 |---|---|
 | 1 | Still true (do not reopen as "maybe fixed by alignment commits"): |
 
-- Source-family: family is a tokenize operand; `suffix(file)` is deleted.
-  Production compile/fmt/embed classify once via `sourceFacts` then
-  `initFacts`. `isIdolSourcePath` is deleted. Executed `sourceform*`,
-  `sourceentry*`, and `sourcefact*` now own source admission; the host residual
-  is filesystem normalization plus ABI name binding.
-- GAP-145 not closed: distinct producer identities and source admission now
-  cross production, but remaining semantic quote/source-law consumers and the
-  Tree-sitter lexical projection have not converged.
-- GAP-134 grammar roles still blocked. Parser onward remain host-owned.
-- No compiler B. FTCFTW complete proof still near zero.
-- Path/corpus cleanup ≠ source closure.
+| # | directive |
+|---|---|
+| 1 | Source-family: family is a tokenize operand; `suffix(file)` is deleted. Production compile/fmt/embed classify once via `sourceFacts` then `initFacts`. `isIdolSourcePath` is deleted. Executed `sourceform*`, `sourceentry*`, and `sourcefact*` now own source admission; the host residual is filesystem normalization plus ABI name binding. |
+| 2 | GAP-145 not closed: distinct producer identities and source admission now cross production, but remaining semantic quote/source-law consumers and the Tree-sitter lexical projection have not converged. |
+| 3 | GAP-134 grammar roles still blocked. Parser onward remain host-owned. |
+| 4 | No compiler B. FTCFTW complete proof still near zero. |
+| 5 | Path/corpus cleanup ≠ source closure. |
 
 | # | directive |
 |---|---|
 | 1 | Closed at subject `29f62035` (catalog deletion + `tokenize()` route): |
 
-- **`lib/semantic/*` deleted** — 28 hand-authored relation-catalog files
-  (`io`, `fs`, `seq`, `json`, `jit`, `coroutine`, `net`, `mem`, `ffi`, `mcp`,
-  `debug`, `keyword`, `application`, `bit`, `census`, `clock`, `gate`, `graph`,
-  `ingest`, `os`, `process`, `producer`, `simd`, `verdict`, `vocabulary`,
-  `zerostd`, …). Do not restore, rename (`seq` → `sequence`), or relocate rows.
-- **`law.boolean.mirror.zero`** and **`law.catalog.zero`** in C0 §67; added-line
-  gates convict `callable`/`possessed`/`operation`/string `world` rows and
-  `lib/semantic/` paths. `scripts/proof/resident.id` + `zig build resident-proof`
-  ratchet absence.
-- Bootstrap subset rewritten as **required capabilities/facts**, not container
-  kingdoms (`docs/bootstrap.md` § Bootstrap subset).
+| # | directive |
+|---|---|
+| 1 | **`lib/semantic/*` deleted** — 28 hand-authored relation-catalog files (`io`, `fs`, `seq`, `json`, `jit`, `coroutine`, `net`, `mem`, `ffi`, `mcp`, `debug`, `keyword`, `application`, `bit`, `census`, `clock`, `gate`, `graph`, `ingest`, `os`, `process`, `producer`, `simd`, `verdict`, `vocabulary`, `zerostd`, …). Do not restore, rename (`seq` → `sequence`), or relocate rows. |
+| 2 | **`law.boolean.mirror.zero`** and **`law.catalog.zero`** in C0 §67; added-line gates convict `callable`/`possessed`/`operation`/string `world` rows and `lib/semantic/` paths. `scripts/proof/resident.id` + `zig build resident-proof` ratchet absence. |
+| 3 | Bootstrap subset rewritten as **required capabilities/facts**, not container kingdoms (`docs/bootstrap.md` § Bootstrap subset). |
 
-## Convergence principle (catalog death)
+| section |
+|---|---|
+| Convergence principle (catalog death) |
 
 | # | directive |
 |---|---|
@@ -90,26 +88,21 @@ read = { world = "io", possessed = true, callable = true, operation = false }
 |---|---|
 | 1 | Closed this session (SHC A dispatch + CATALOG-ZERO enforcement): |
 
-- Production route is `tokenize()` for every source. `tokenizeHost()` is
-  differential-only.
-- `src/lexer_tokenize.c` regenerated from `lib/compiler/lexer.id`
-  via `idol dump-c --lib` (`KIND_EOF = 109`, `family` on Lexer; no `is_canonical_source`).
-- Unit tests at subject `29f62035`: 1216 pass / 22 fail / 4 crash (was 1205 / 33 / 4).
-  **Historical subject only** — re-measure live tree before citing (`law.evidence.subject`).
+| # | directive |
+|---|---|
+| 1 | Production route is `tokenize()` for every source. `tokenizeHost()` is differential-only. |
+| 2 | `src/lexer_tokenize.c` regenerated from `lib/compiler/lexer.id` via `idol dump-c --lib` (`KIND_EOF = 109`, `family` on Lexer; no `is_canonical_source`). |
+| 3 | Unit tests at subject `29f62035`: 1216 pass / 22 fail / 4 crash (was 1205 / 33 / 4). **Historical subject only** — re-measure live tree before citing (`law.evidence.subject`). |
 
 | # | directive |
 |---|---|
 | 1 | Superseded / do not re-litigate from the origin audit text: |
 
-- **`d09fd376` and earlier** still contained `lib/semantic/*` catalog rows.
-  Live tree at `2e5d516` does not. Do not cite pre-`29f62035` manifests as current.
-- `docs/spec/canonical.md` now teaches `value:validate():normalize()` and
-  **no** `value:to()` rung; SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE /
-  INTERMEDIATE-ZERO are in §18 / §18a. Constitution retains `checked` /
-  `value:to()` only as **negative** exhibits.
-- Origin-audit "19 semantic_graph build errors" and "doctor FAIL" are **stale**.
-  Re-measure before citing. Default `./tools/node/dev/doctor` is PASS with
-  deferred full gates; that is **not** combined CI / integrated unit proof.
+| # | directive |
+|---|---|
+| 1 | **`d09fd376` and earlier** still contained `lib/semantic/*` catalog rows. Live tree at `2e5d516` does not. Do not cite pre-`29f62035` manifests as current. |
+| 2 | `docs/spec/canonical.md` now teaches `value:validate():normalize()` and **no** `value:to()` rung; SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE / INTERMEDIATE-ZERO are in §18 / §18a. Constitution retains `checked` / `value:to()` only as **negative** exhibits. |
+| 3 | Origin-audit "19 semantic_graph build errors" and "doctor FAIL" are **stale**. Re-measure before citing. Default `./tools/node/dev/doctor` is PASS with deferred full gates; that is **not** combined CI / integrated unit proof. |
 
 | # | directive |
 |---|---|
@@ -143,21 +136,25 @@ source-family → lexical identity → grammar role → parser
 |---|---|
 | 1 | **Highest-impact order** |
 
-1. Source-family fact + remaining lexical authority (GAP-145). Path is provenance.
-2. Lexer ABI/schema/magic-code deletion — producer token view, not a Zig slot map.
-3. Resolver/graph is unowned (Codex stale). Do not invent catalogs.
-4. Grammar/parser into Idol (GAP-134) only after GAP-145.
-5. Demand.
-6. Kill `lua_Value` / `lua_invoke` / malloc / memcpy from known facts.
-7. Direct native correctness.
-8. C + Wasmtime FTCFTW evidence.
+| # | directive |
+|---|---|
+| 1 | Source-family fact + remaining lexical authority (GAP-145). Path is provenance. |
+| 2 | Lexer ABI/schema/magic-code deletion — producer token view, not a Zig slot map. |
+| 3 | Resolver/graph is unowned (Codex stale). Do not invent catalogs. |
+| 4 | Grammar/parser into Idol (GAP-134) only after GAP-145. |
+| 5 | Demand. |
+| 6 | Kill `lua_Value` / `lua_invoke` / malloc / memcpy from known facts. |
+| 7 | Direct native correctness. |
+| 8 | C + Wasmtime FTCFTW evidence. |
 
 | # | directive |
 |---|---|
 | 1 | FTCFTW remains **invalid** as a performance claim. |
 | 2 | No compiler B. |
 
-## Physical-cost baseline (subject `29f62035` evidence)
+| section |
+|---|---|
+| Physical-cost baseline (subject `29f62035` evidence) |
 
 | # | directive |
 |---|---|
@@ -182,7 +179,9 @@ source-family → lexical identity → grammar role → parser
 | # | directive |
 |---|---|
 
-## Optimization architecture closure (items 1–35)
+| section |
+|---|---|
+| Optimization architecture closure (items 1–35) |
 
 | # | directive |
 |---|---|
@@ -210,7 +209,9 @@ source-family → lexical identity → grammar role → parser
 | # | directive |
 |---|---|
 
-## P0 — authority / SHC debt
+| section |
+|---|---|
+| P0 — authority / SHC debt |
 
 | # | directive |
 |---|---|
@@ -224,7 +225,9 @@ source-family → lexical identity → grammar role → parser
 | # | directive |
 |---|---|
 
-## P0 — canonical authority doc debt
+| section |
+|---|---|
+| P0 — canonical authority doc debt |
 
 | # | directive |
 |---|---|
@@ -256,20 +259,22 @@ explicit to(target) only when target cannot be inferred
 | # | directive |
 |---|---|
 
-## P0 — corpus debt
+| section |
+|---|---|
+| P0 — corpus debt |
 
 | # | directive |
 |---|---|
 | 1 | Latest migrations still contain canonical-corpus violations including: |
 
-- call-shaped aggregate access — computed projection must converge on
-  `count[x + 1]`, `cells[1]`, `src[i]`, and `flag[i]`, while `value(args)`
-  remains ordinary application
-- explicit inferable `i:to(str)`
-- one-use temporaries
-- plural bindings: `rows`, `lines`, `words`, `chars`
-- stale `end` in portions of migrated corpus
-- comments teaching outdated conversion necessity
+| # | directive |
+|---|---|
+| 1 | call-shaped aggregate access — computed projection must converge on `count[x + 1]`, `cells[1]`, `src[i]`, and `flag[i]`, while `value(args)` remains ordinary application |
+| 2 | explicit inferable `i:to(str)` |
+| 3 | one-use temporaries |
+| 4 | plural bindings: `rows`, `lines`, `words`, `chars` |
+| 5 | stale `end` in portions of migrated corpus |
+| 6 | comments teaching outdated conversion necessity |
 
 | # | directive |
 |---|---|
@@ -279,7 +284,9 @@ explicit to(target) only when target cannot be inferred
 | # | directive |
 |---|---|
 
-## P0 — INTERMEDIATE-ZERO
+| section |
+|---|---|
+| P0 — INTERMEDIATE-ZERO |
 
 | # | directive |
 |---|---|
@@ -298,7 +305,9 @@ explicit to(target) only when target cannot be inferred
 | # | directive |
 |---|---|
 
-## P0 — inference / source density
+| section |
+|---|---|
+| P0 — inference / source density |
 
 ```text
 IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
@@ -319,7 +328,9 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## P0 — graph edge / id debt
+| section |
+|---|---|
+| P0 — graph edge / id debt |
 
 | # | directive |
 |---|---|
@@ -339,12 +350,14 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 |---|---|
 | 1 | Likely reductions: |
 
-- `module` → home/member/provenance facts
-- `call` → application
-- `transform_app` → transformation facts
-- `local` / `param` → binding/value roles
-- `type_node` → descriptor id
-- `table_shape` / `enum_shape` → shape/descriptor facts
+| # | directive |
+|---|---|
+| 1 | `module` → home/member/provenance facts |
+| 2 | `call` → application |
+| 3 | `transform_app` → transformation facts |
+| 4 | `local` / `param` → binding/value roles |
+| 5 | `type_node` → descriptor id |
+| 6 | `table_shape` / `enum_shape` → shape/descriptor facts |
 
 | # | directive |
 |---|---|
@@ -359,7 +372,9 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## P0 — name / string / path reconstruction debt
+| section |
+|---|---|
+| P0 — name / string / path reconstruction debt |
 
 | # | directive |
 |---|---|
@@ -377,14 +392,18 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## P0 — filesystem / module debt
+| section |
+|---|---|
+| P0 — filesystem / module debt |
 
 | # | directive |
 |---|---|
 | 1 | Filesystem has exactly two unrelated roles: |
 
-- **SOURCE:** ingress / home / member / provenance
-- **RUNTIME:** file/path authority through world/effect semantics
+| # | directive |
+|---|---|
+| 1 | **SOURCE:** ingress / home / member / provenance |
+| 2 | **RUNTIME:** file/path authority through world/effect semantics |
 
 | # | directive |
 |---|---|
@@ -403,16 +422,20 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## P0 — world / protocol / projection debt
+| section |
+|---|---|
+| P0 — world / protocol / projection debt |
 
 | # | directive |
 |---|---|
 | 1 | One fact-composition algebra only. |
 
-- Protocol: demanded application/relation facts
-- World: authority-bearing facts/witnesses
-- Projection: select exact existing facts
-- Injection/composition: add exact selected facts to exact context/application
+| # | directive |
+|---|---|
+| 1 | Protocol: demanded application/relation facts |
+| 2 | World: authority-bearing facts/witnesses |
+| 3 | Projection: select exact existing facts |
+| 4 | Injection/composition: add exact selected facts to exact context/application |
 
 | # | directive |
 |---|---|
@@ -436,27 +459,24 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## P0 — naming debt
+| section |
+|---|---|
+| P0 — naming debt |
 
 | # | directive |
 |---|---|
 | 1 | Enforce semantic, not cosmetic naming. |
 
-- NO plural cardinality identities (`bytes`, `strings`, `fields`, `values`,
-  `arguments`, `results`, `nodes`, `edges`, `captures`, `tests`, `examples`,
-  `collections`, …)
-- NO `*able`/`*ible` (`callable`, `readable`, `writable`, `iterable`,
-  `encodable`, …)
-- NO role-noun evasions (`reader`, `writer`, `encoder`, `runner`, `resolver`,
-  `provider`, …)
-- NO collision roles (`router`, `gateway`, `registry`, `manager`, `adapter`,
-  `engine`, `pipeline`, `context`, `service`, `bridge`, `wrapper`, …)
-- NO mashed compounds (`tokenview`, `canonicalid`, `perfledger`, `arm64check`, …)
-- NO qualifier identity (`nativevalue`, `staticcall`, `resolvedtype`, …)
-- NO boolean mirrors of graph structure (`callable`, `possessed`, `operation`,
-  `typed`, `authorized`, `captured`, `projected`, `resolved`, `imported`,
-  `native`, `static`) — BOOLEAN-MIRROR-ZERO
-- NO relation/world/format/handler catalogs — CATALOG-ZERO
+| # | directive |
+|---|---|
+| 1 | NO plural cardinality identities (`bytes`, `strings`, `fields`, `values`, `arguments`, `results`, `nodes`, `edges`, `captures`, `tests`, `examples`, `collections`, …) |
+| 2 | NO `*able`/`*ible` (`callable`, `readable`, `writable`, `iterable`, `encodable`, …) |
+| 3 | NO role-noun evasions (`reader`, `writer`, `encoder`, `runner`, `resolver`, `provider`, …) |
+| 4 | NO collision roles (`router`, `gateway`, `registry`, `manager`, `adapter`, `engine`, `pipeline`, `context`, `service`, `bridge`, `wrapper`, …) |
+| 5 | NO mashed compounds (`tokenview`, `canonicalid`, `perfledger`, `arm64check`, …) |
+| 6 | NO qualifier identity (`nativevalue`, `staticcall`, `resolvedtype`, …) |
+| 7 | NO boolean mirrors of graph structure (`callable`, `possessed`, `operation`, `typed`, `authorized`, `captured`, `projected`, `resolved`, `imported`, `native`, `static`) — BOOLEAN-MIRROR-ZERO |
+| 8 | NO relation/world/format/handler catalogs — CATALOG-ZERO |
 
 | # | directive |
 |---|---|
@@ -465,7 +485,9 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## P1 — optimization architecture (FTCFTW closure)
+| section |
+|---|---|
+| P1 — optimization architecture (FTCFTW closure) |
 
 | # | directive |
 |---|---|
@@ -518,64 +540,35 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## P1 — specialization, memory, effects, machine
+| section |
+|---|---|
+| P1 — specialization, memory, effects, machine |
 
-- **Shape specialization** — known table shape eliminates generic hash, dynamic
-  field dispatch, boxed records, runtime shape checks, redundant descriptor
-  lookup. Known fixed field → direct offset/register/scalarized value.
-- **Application specialization** — exact application facts drive direct target,
-  inlining, constant propagation, pack/subject/descriptor/world specialization.
-  Exact sealed target: indirect dispatch = 0. Clone code only when runtime gain
-  beats compile cost, size, I-cache, startup.
-- **Closure specialization** — exact capture edges. No captures → no
-  environment; constant → fold; nonescaping → register/stack; escaping → only
-  then durable allocation. No generic heap closure by default. No parent-frame
-  semantic links.
-- **Value / place / allocation zero** — binding ≠ value ≠ place. Every stack
-  slot, heap object, temporary aggregate, load/store, copy must prove mutation,
-  alias, address, ABI, lifetime, observability — otherwise scalarize/eliminate.
-- **Pack / return zero** — operand/result packs are semantic. Do not
-  materialize tuples because a backend likes them. Unused results: zero
-  materialization. Demand deletes undemanded result work before realization.
-- **Union / tag zero** — union = remaining alternatives. After refinement to
-  one alternative: tag = 0; branch = 0 where possible.
-- **World cost zero** — known authority witness: runtime world object = 0;
-  capability dictionary = 0; service lookup = 0; world dispatch = 0.
-- **Effect-driven optimization** — no binary pure/impure collapse. Effects
-  drive reorder, eliminate, duplicate, speculate, fuse, parallelize, vectorize,
-  stage, CSE, hoisting, loop fusion, SIMD legality.
-- **Loop / iteration / fusion** — one iteration semantic relation. No mandatory
-  iterator object. map/filter/reduce-like chains fuse to one loop, zero
-  intermediate table when facts permit.
-- **SIMD / hardware** — realizations, not source semantic kingdoms. No
-  target-qualified semantic relation ids.
-- **Native backend** — direct native is the production destination. Generated C
-  is bounded bridge debt. Do not shape Idol semantics around C emission.
-  Delete C-only semantic dependencies as native coverage closes.
-- **Machine lineage** — source → semantic id → application → relation → value
-  → demand → realization → instruction → object byte range. No optimizer may
-  destroy lineage.
-- **Compile-time FTCFTW** — dense ids, arenas, packed fact ranges, compact
-  bitsets, lazy indexes, exact dependency invalidation. No repeated scope
-  walks, name resolution, string-key semantic maps, or heap object per fact.
-  Lexer bridge currently copies source, filename, a pessimistic
-  `len × 7 × i64` record buffer, then rematerializes host `Token`s. Target:
-  source → immutable token/fact view → parser. No filename copy; no source
-  copy where ABI permits; no second token array if the parser can consume
-  the producer view.
-- **Startup / binary size** — sealed program links only required machinery.
-  OS loader → entry. No mandatory GC, scheduler, reflection, dynamic table
-  runtime, world framework, coroutine machinery unless demanded.
-- **GC / memory** — GC is realization only, chosen from lifetime/escape/alias/
-  mutation/world/effect facts. No GC because "table" exists.
-- **Wasm FTCFTW** — same semantic graph as native. No Wasm semantic universe.
-  Pinned Wasmtime comparison: correctness, compile/load, instantiate/startup,
-  runtime, peak memory, artifact bytes — separately measured.
+| # | directive |
+|---|---|
+| 1 | **Shape specialization** — known table shape eliminates generic hash, dynamic field dispatch, boxed records, runtime shape checks, redundant descriptor lookup. Known fixed field → direct offset/register/scalarized value. |
+| 2 | **Application specialization** — exact application facts drive direct target, inlining, constant propagation, pack/subject/descriptor/world specialization. Exact sealed target: indirect dispatch = 0. Clone code only when runtime gain beats compile cost, size, I-cache, startup. |
+| 3 | **Closure specialization** — exact capture edges. No captures → no environment; constant → fold; nonescaping → register/stack; escaping → only then durable allocation. No generic heap closure by default. No parent-frame semantic links. |
+| 4 | **Value / place / allocation zero** — binding ≠ value ≠ place. Every stack slot, heap object, temporary aggregate, load/store, copy must prove mutation, alias, address, ABI, lifetime, observability — otherwise scalarize/eliminate. |
+| 5 | **Pack / return zero** — operand/result packs are semantic. Do not materialize tuples because a backend likes them. Unused results: zero materialization. Demand deletes undemanded result work before realization. |
+| 6 | **Union / tag zero** — union = remaining alternatives. After refinement to one alternative: tag = 0; branch = 0 where possible. |
+| 7 | **World cost zero** — known authority witness: runtime world object = 0; capability dictionary = 0; service lookup = 0; world dispatch = 0. |
+| 8 | **Effect-driven optimization** — no binary pure/impure collapse. Effects drive reorder, eliminate, duplicate, speculate, fuse, parallelize, vectorize, stage, CSE, hoisting, loop fusion, SIMD legality. |
+| 9 | **Loop / iteration / fusion** — one iteration semantic relation. No mandatory iterator object. map/filter/reduce-like chains fuse to one loop, zero intermediate table when facts permit. |
+| 10 | **SIMD / hardware** — realizations, not source semantic kingdoms. No target-qualified semantic relation ids. |
+| 11 | **Native backend** — direct native is the production destination. Generated C is bounded bridge debt. Do not shape Idol semantics around C emission. Delete C-only semantic dependencies as native coverage closes. |
+| 12 | **Machine lineage** — source → semantic id → application → relation → value → demand → realization → instruction → object byte range. No optimizer may destroy lineage. |
+| 13 | **Compile-time FTCFTW** — dense ids, arenas, packed fact ranges, compact bitsets, lazy indexes, exact dependency invalidation. No repeated scope walks, name resolution, string-key semantic maps, or heap object per fact. Lexer bridge currently copies source, filename, a pessimistic `len × 7 × i64` record buffer, then rematerializes host `Token`s. Target: source → immutable token/fact view → parser. No filename copy; no source copy where ABI permits; no second token array if the parser can consume the producer view. |
+| 14 | **Startup / binary size** — sealed program links only required machinery. OS loader → entry. No mandatory GC, scheduler, reflection, dynamic table runtime, world framework, coroutine machinery unless demanded. |
+| 15 | **GC / memory** — GC is realization only, chosen from lifetime/escape/alias/ mutation/world/effect facts. No GC because "table" exists. |
+| 16 | **Wasm FTCFTW** — same semantic graph as native. No Wasm semantic universe. Pinned Wasmtime comparison: correctness, compile/load, instantiate/startup, runtime, peak memory, artifact bytes — separately measured. |
 
 | # | directive |
 |---|---|
 
-## P0/P1 — evidence debt
+| section |
+|---|---|
+| P0/P1 — evidence debt |
 
 | # | directive |
 |---|---|
@@ -595,7 +588,9 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## P0 — build / CI debt
+| section |
+|---|---|
+| P0 — build / CI debt |
 
 | # | directive |
 |---|---|
@@ -609,7 +604,9 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 | # | directive |
 |---|---|
 
-## Workstream order
+| section |
+|---|---|
+| Workstream order |
 
 ```text
 A  SOURCE/LEXER SHC        close GAP-145 identities; delete parallel
@@ -650,15 +647,19 @@ R  COMPILER B/C            B from canonical Idol; B builds C; no host fallback
 | # | directive |
 |---|---|
 
-## Live claims
+| section |
+|---|---|
+| Live claims |
 
 | # | directive |
 |---|---|
 | 1 | **Not recorded here** (`law.control.derived`, CONTROL-PLANE-DERIVED-ZERO). |
 | 2 | Obtain live lane holders, locks, HEAD, and dirty state from: |
 
-- `tools/node/dev/claim list`
-- `evidence/HEAD.txt` via `tools/node/dev/orient`
+| # | directive |
+|---|---|
+| 1 | `tools/node/dev/claim list` |
+| 2 | `evidence/HEAD.txt` via `tools/node/dev/orient` |
 
 | # | directive |
 |---|---|
@@ -668,7 +669,9 @@ R  COMPILER B/C            B from canonical Idol; B builds C; no host fallback
 | # | directive |
 |---|---|
 
-## Global zero target
+| section |
+|---|---|
+| Global zero target |
 
 ```text
 semantic string lookup after resolution        0
@@ -696,7 +699,9 @@ silent host semantic fallback                  0
 unbound performance claims                     0
 ```
 
-## Final priority
+| section |
+|---|---|
+| Final priority |
 
 ```text
 FIRST MOVE AUTHORITY.

@@ -1,11 +1,15 @@
-# GAP-145 boundary measurement — .quoted consumer census (lane 8 evidence)
+| field | value |
+|---|---|
+| title | GAP-145 boundary measurement — .quoted consumer census (lane 8 evidence) |
 
 | # | directive |
 |---|---|
 | 1 | Measured at 84c437f0 (canonical main). |
 | 2 | This is a read-only census for the lexical-identity frontier; no source was modified. |
 
-## Identity projection state (all agree)
+| section |
+|---|---|
+| Identity projection state (all agree) |
 
 | # | directive |
 |---|---|
@@ -14,7 +18,9 @@
 | 3 | Slot 3 correctly absent (comment "Not an identity. |
 | 4 | Do not renumber"). |
 
-## Remaining work census: .quoted → semantic consumers
+| section |
+|---|---|
+| Remaining work census: .quoted → semantic consumers |
 
 | # | directive |
 |---|---|
@@ -35,7 +41,9 @@
 | 3 | The collapse class is the subset that READS .quoted text AS .str without consulting the quote fact (text vs bytes vs compat). |
 | 4 | Distinguishing structural from collapsing per-site is the owning lane's work; this census is the map. |
 
-## Source-law admission (crossed, verified)
+| section |
+|---|---|
+| Source-law admission (crossed, verified) |
 
 | # | directive |
 |---|---|
@@ -43,7 +51,9 @@
 | 2 | Zig supplies only filesystem normalization and temporary ABI binding. |
 | 3 | The `suffix(file)` face is deleted. `ledger/shc` PASS on this transfer. |
 
-## Assessment
+| section |
+|---|---|
+| Assessment |
 
 | # | directive |
 |---|---|

@@ -1,4 +1,6 @@
-# Idol WebAssembly implementation projection
+| field | value |
+|---|---|
+| title | Idol WebAssembly implementation projection |
 
 | # | directive |
 |---|---|
@@ -6,7 +8,9 @@
 | 2 | It routes to the sole language law, the stable agent router, the executed compiler frontier, live ownership, performance evidence, and repository gates. |
 | 3 | This file adds no law and records no dated status. |
 
-## Boundary
+| section |
+|---|---|
+| Boundary |
 
 | # | directive |
 |---|---|
@@ -33,7 +37,9 @@
 | 2 | Until then, preserve the exact foreign lawset and symbol as provenance. |
 | 3 | Never flatten incompatible traps, numeric behavior, memory rules, imports, failures, or host effects to gain a shared name. |
 
-## Authority and distribution
+| section |
+|---|---|
+| Authority and distribution |
 
 | # | directive |
 |---|---|
@@ -58,7 +64,9 @@
 | 2 | Validation, capability, presence, trap, and refinement states remain semantic facts or cases rather than `is`, `has`, `can`, `exists`, sentinel, or unknown-as-false helpers. |
 | 3 | Predicate-shaped foreign imports retain foreign provenance until an exact mapping to native facts is witnessed. |
 
-## Source and migration
+| section |
+|---|---|
+| Source and migration |
 
 | # | directive |
 |---|---|
@@ -78,7 +86,9 @@
 | 1 | Physical tool, environment, or artifact names containing `duo` are bootstrap aliases and deletion targets only. |
 | 2 | Foreign `.wasm` and `.wat` files are test or interchange inputs, not canonical Idol source. |
 
-## Evidence
+| section |
+|---|---|
+| Evidence |
 
 | # | directive |
 |---|---|

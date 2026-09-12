@@ -1,22 +1,25 @@
-# Idol agent integration
+| field | value |
+|---|---|
+| title | Idol agent integration |
 
 | # | directive |
 |---|---|
 | 1 | This is a durable client setup guide. |
 | 2 | It contains no language law, live claims, tool census, or current gate status. |
 
-## Canonical locations
+| section |
+|---|---|
+| Canonical locations |
 
-- Development repository: the current `clpi/idol` checkout (worktrees may live
-  on another volume; derive the root with `git rev-parse --show-toplevel`).
-- Native benchmark repository: the sibling `idol-native` checkout (remote
-  `clpi/idol-native`, branch `main`) — owns the end-user `.id` language server
-  and its compiler-backed graph queries.
-- The pre-rename project identity is **fully retired**. Server names, tool
-  names, environment keys, and skill names are `idol`-named only; no client
-  configuration may reintroduce retired spellings.
+| # | directive |
+|---|---|
+| 1 | Development repository: the current `clpi/idol` checkout (worktrees may live on another volume; derive the root with `git rev-parse --show-toplevel`). |
+| 2 | Native benchmark repository: the sibling `idol-native` checkout (remote `clpi/idol-native`, branch `main`) — owns the end-user `.id` language server and its compiler-backed graph queries. |
+| 3 | The pre-rename project identity is **fully retired**. Server names, tool names, environment keys, and skill names are `idol`-named only; no client configuration may reintroduce retired spellings. |
 
-## Operating model and work orders
+| section |
+|---|---|
+| Operating model and work orders |
 
 | # | directive |
 |---|---|
@@ -24,7 +27,9 @@
 | 2 | Every assignment to a non-architectural agent is materialized through `.agents/WORK_ORDER.md`; per-agent injectables live under `.agents/briefs/`. |
 | 3 | OpenCode's assigned role is projected natively as the `pickle` agent (`.opencode/agent/pickle.md`). |
 
-## Repository servers
+| section |
+|---|---|
+| Repository servers |
 
 | # | directive |
 |---|---|
@@ -41,7 +46,9 @@
 | 2 | The retired pre-rename transports (claims/bench, diagnostics, zls bridges) were removed, not disabled: claims use `tools/node/dev/claim`, diagnostics and language intelligence come from the `idol-native` server and its language server, and Zig navigation uses the editor's own zls directly. `tools/mcp/native.id` is a raw-text bootstrap compatibility transport, not a graph-owned semantic projection. |
 | 3 | Generated client configurations are projections of the manifest, not additional authorities. |
 
-## Client shape
+| section |
+|---|---|
+| Client shape |
 
 | # | directive |
 |---|---|
@@ -49,17 +56,14 @@
 | 2 | Run `tools/node/dev/generate-configs` to derive absolute client projections from the actual clone path (the generator emits the stable `~/x` spelling when applicable). |
 | 3 | Projections: |
 
-- Codex: `.codex/mcp.generated.toml` plus a marked block in `~/.codex/config.toml`.
-- Cursor: `.cursor/mcp.json`.
-- OpenCode: `.opencode/opencode.json` (project) plus the managed `mcp` entries
-  of `~/.config/opencode/opencode.jsonc`; user-owned keys are preserved.
-- OpenCode skills: `.opencode/skills/{idol,idol-dev}` symlinks into
-  `.pi/skills`, and the same skills synced to `~/.config/opencode/skills`.
-- Claude Code: user-scope `mcpServers` in `~/.claude.json` (same servers;
-  `sh -c` cd-wrappers because Claude has no cwd field).
-- pi: `.pi/extensions/idol-mcp.ts` reads the same manifest and spawns the same
-  entrypoints; `idol_mcp_status` reports health, `idol__<server>__<tool>`
-  forwards calls.
+| # | directive |
+|---|---|
+| 1 | Codex: `.codex/mcp.generated.toml` plus a marked block in `~/.codex/config.toml`. |
+| 2 | Cursor: `.cursor/mcp.json`. |
+| 3 | OpenCode: `.opencode/opencode.json` (project) plus the managed `mcp` entries of `~/.config/opencode/opencode.jsonc`; user-owned keys are preserved. |
+| 4 | OpenCode skills: `.opencode/skills/{idol,idol-dev}` symlinks into `.pi/skills`, and the same skills synced to `~/.config/opencode/skills`. |
+| 5 | Claude Code: user-scope `mcpServers` in `~/.claude.json` (same servers; `sh -c` cd-wrappers because Claude has no cwd field). |
+| 6 | pi: `.pi/extensions/idol-mcp.ts` reads the same manifest and spawns the same entrypoints; `idol_mcp_status` reports health, `idol__<server>__<tool>` forwards calls. |
 
 | # | directive |
 |---|---|
@@ -84,15 +88,18 @@ IDOL_BIN = "<repo>/zig-out/bin/idol"
 | 1 | `idol-native` uses the same shape with its own root and `bin/idol` launcher. |
 | 2 | Keep the pinned Zig and ZLS directories in `PATH` for desktop and IDE launches. |
 
-## Skills and law routing
+| section |
+|---|---|
+| Skills and law routing |
 
-- Every agent starts at `AGENTS.md`; OpenCode additionally loads it through
-  `instructions` in its global config.
-- Skills `idol` and `idol-dev` live canonically in `.pi/skills`.
-  `tools/node/dev/install-skills` installs them for Codex and Devin;
-  `tools/node/dev/generate-configs` projects them for OpenCode (paths above).
+| # | directive |
+|---|---|
+| 1 | Every agent starts at `AGENTS.md`; OpenCode additionally loads it through `instructions` in its global config. |
+| 2 | Skills `idol` and `idol-dev` live canonically in `.pi/skills`. `tools/node/dev/install-skills` installs them for Codex and Devin; `tools/node/dev/generate-configs` projects them for OpenCode (paths above). |
 
-## Editor language intelligence
+| section |
+|---|---|
+| Editor language intelligence |
 
 | # | directive |
 |---|---|
@@ -101,21 +108,25 @@ IDOL_BIN = "<repo>/zig-out/bin/idol"
 | 3 | The duplicate in-repository `tools/lsp` scanner, taxonomy, fixtures, and gates were deleted. |
 | 4 | Semantic tokens wait for graph-owned source spans and generated grammar-role projections in the durable sibling server; do not restore the old raw scanner or corpus. |
 
-## Session protocol
+| section |
+|---|---|
+| Session protocol |
 
-1. Start at `AGENTS.md` and `.agents/AGENT_CANONICAL.md`.
-2. Use skill **`idol-dev`** (`.pi/skills/idol-dev`).
-3. Orient: `tools/node/dev/orient`, or the `orient` tool on the `idol` server.
-4. Inspect current HEAD, dirty state, recent commits, `tools/node/dev/claim list`,
-   every current `gaps/GAP-*.md`, and the verified `docs/bootstrap.md` frontier.
-5. Treat `orient`'s `activep0` as a derived census; the exact gap files own
-   obligation status (`GAP-131` is closed).
-6. Claim exact paths with `tools/node/dev/claim acquire` before editing.
-7. Delegate only bounded independent work with disjoint write ownership.
-8. Serialize heavy gates through `tools/node/dev/idol-lock`.
-9. Commit explicit pathspecs and release only claims owned by the session.
+| # | directive |
+|---|---|
+| 1 | Start at `AGENTS.md` and `.agents/AGENT_CANONICAL.md`. |
+| 2 | Use skill **`idol-dev`** (`.pi/skills/idol-dev`). |
+| 3 | Orient: `tools/node/dev/orient`, or the `orient` tool on the `idol` server. |
+| 4 | Inspect current HEAD, dirty state, recent commits, `tools/node/dev/claim list`, every current `gaps/GAP-*.md`, and the verified `docs/bootstrap.md` frontier. |
+| 5 | Treat `orient`'s `activep0` as a derived census; the exact gap files own obligation status (`GAP-131` is closed). |
+| 6 | Claim exact paths with `tools/node/dev/claim acquire` before editing. |
+| 7 | Delegate only bounded independent work with disjoint write ownership. |
+| 8 | Serialize heavy gates through `tools/node/dev/idol-lock`. |
+| 9 | Commit explicit pathspecs and release only claims owned by the session. |
 
-## Validation
+| section |
+|---|---|
+| Validation |
 
 | # | directive |
 |---|---|

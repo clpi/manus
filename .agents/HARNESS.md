@@ -1,20 +1,21 @@
-| # | directive |
+<!-- GENERATED — do not edit by hand. -->
+<!-- Source: docs/spec/harness-projection.md via tools/node/dev/generate-harness -->
+<!-- Regenerate: tools/node/dev/generate-harness (orient calls this) -->
+
+| field | value |
 |---|---|
-| 1 | <!-- GENERATED — do not edit by hand. --> <!-- Source: docs/spec/harness-projection.md via tools/node/dev/generate-harness --> <!-- Regenerate: tools/node/dev/generate-harness (orient calls this) --> |
+| title | Idol universal harness boot payload |
 
-# Idol universal harness boot payload
+This file is a **generated projection**, not semantic law. The supreme law is
+docs/spec/law.md, whose structured expansion is docs/spec/constitution.md.
+Stable harness template: docs/spec/harness-projection.md.
 
-| # | directive |
+**Invariant:** the harness must reason in Idol — not as a conventional coding
+agent with Idol syntax pasted onto output.
+
+| field | value |
 |---|---|
-| 1 | This file is a **generated projection**, not semantic law. |
-| 2 | The supreme law is docs/spec/law.md, whose structured expansion is docs/spec/constitution.md. |
-| 3 | Stable harness template: docs/spec/harness-projection.md. |
-
-| # | directive |
-|---|---|
-| 1 | **Invariant:** the harness must reason in Idol — not as a conventional coding agent with Idol syntax pasted onto output. |
-
-# Idol universal harness projection
+| title | Idol universal harness projection |
 
 | # | directive |
 |---|---|
@@ -42,44 +43,40 @@
 | 1 | Generated boot payload: `.agents/HARNESS.md` from `tools/node/dev/generate-harness`. **Blocking contract:** `docs/spec/convergence-contract.md` (STOP conditions, P0 order). |
 | 2 | Provider files add mechanics only — not a second harness law. |
 
-| # | directive |
+| section |
 |---|---|
-
-## nine harness failures corrected
+| nine harness failures corrected |
 
 | # | directive |
 |---|---|
 | 1 | These are execution requirements, not session advice. |
 
-1. **Pre-task reduction before task selection** — not merely before naming. No edit
-   until facts-before/after and disappear-when-done are stated.
-2. **Deletion-biased convergence** — see deletion order below; additions are
-   extraordinary last resorts.
-3. **Goal-directed work selection** — every task must move executed authority,
-   reduce reconstruction, or fill FTCFTW evidence; corpus rewrite alone fails.
-4. **Semantic diff requirement** — gate pass and tests pass are insufficient.
-5. **Host-abstraction quarantine** — host code is oracle for behavior, not
-   architectural template; see host quarantine below.
-6. **Negative-space reasoning** — ask what should **cease to exist**; removal of
-   storage, wrappers, conversions, passes, and helper APIs is first-class output.
-7. **Single harness vocabulary** — frame tasks in id/relation/subject/world/demand/
-   run/outcome/evidence; never parser helpers, module imports, process status, AST
-   nodes, opcode enums as the question ontology.
-8. **FTCFTW rejection rule** — reject architecture that adds physical state without
-   measured freedom or explicit tradeoff; see ftcftw acceptance below.
-9. **SHC frontier scheduler** — prefer the earliest host-owned production boundary
-   in `docs/bootstrap.md` over peripheral cleanup; see shc scheduler below.
+| # | directive |
+|---|---|
+| 1 | **Pre-task reduction before task selection** — not merely before naming. No edit until facts-before/after and disappear-when-done are stated. |
+| 2 | **Deletion-biased convergence** — see deletion order below; additions are extraordinary last resorts. |
+| 3 | **Goal-directed work selection** — every task must move executed authority, reduce reconstruction, or fill FTCFTW evidence; corpus rewrite alone fails. |
+| 4 | **Semantic diff requirement** — gate pass and tests pass are insufficient. |
+| 5 | **Host-abstraction quarantine** — host code is oracle for behavior, not architectural template; see host quarantine below. |
+| 6 | **Negative-space reasoning** — ask what should **cease to exist**; removal of storage, wrappers, conversions, passes, and helper APIs is first-class output. |
+| 7 | **Single harness vocabulary** — frame tasks in id/relation/subject/world/demand/ run/outcome/evidence; never parser helpers, module imports, process status, AST nodes, opcode enums as the question ontology. |
+| 8 | **FTCFTW rejection rule** — reject architecture that adds physical state without measured freedom or explicit tradeoff; see ftcftw acceptance below. |
+| 9 | **SHC frontier scheduler** — prefer the earliest host-owned production boundary in `docs/bootstrap.md` over peripheral cleanup; see shc scheduler below. |
 
 | # | directive |
 |---|---|
 
-## mission
+| section |
+|---|---|
+| mission |
 
 | # | directive |
 |---|---|
 | 1 | Two overriding implementation goals. |
 
-### shc
+| section |
+|---|---|
+| shc |
 
 | # | directive |
 |---|---|
@@ -89,7 +86,9 @@
 |---|---|
 | 1 | Self-hosting progress is measured by **executed semantic authority transferred** from the host into production Idol — not source-file count, `.id` percentage, translated lines, or test fixtures. |
 
-### ftcftw
+| section |
+|---|---|
+| ftcftw |
 
 | # | directive |
 |---|---|
@@ -107,7 +106,9 @@
 | # | directive |
 |---|---|
 
-## one system
+| section |
+|---|---|
+| one system |
 
 | # | directive |
 |---|---|
@@ -136,24 +137,28 @@
 | # | directive |
 |---|---|
 
-## pre-task reduction
+| section |
+|---|---|
+| pre-task reduction |
 
 | # | directive |
 |---|---|
 | 1 | Before choosing or accepting work, answer: |
 
-1. What exact semantic fact or authority is missing?
-2. What existing semantic fact is being reconstructed, duplicated, renamed, or lost?
-3. Which identity is authoritative?
-4. Who currently produces it?
-5. Who currently consumes it?
-6. What should disappear when this task succeeds?
-7. Does this advance the executed shc frontier?
-8. Does this reduce reconstruction debt?
-9. Does this improve ftcftw evidence or realization freedom?
-10. Is the task merely surface cleanup?
-11. Is the proposed abstraction inherited from the host?
-12. Can the result be expressed by existing facts rather than a new concept?
+| # | directive |
+|---|---|
+| 1 | What exact semantic fact or authority is missing? |
+| 2 | What existing semantic fact is being reconstructed, duplicated, renamed, or lost? |
+| 3 | Which identity is authoritative? |
+| 4 | Who currently produces it? |
+| 5 | Who currently consumes it? |
+| 6 | What should disappear when this task succeeds? |
+| 7 | Does this advance the executed shc frontier? |
+| 8 | Does this reduce reconstruction debt? |
+| 9 | Does this improve ftcftw evidence or realization freedom? |
+| 10 | Is the task merely surface cleanup? |
+| 11 | Is the proposed abstraction inherited from the host? |
+| 12 | Can the result be expressed by existing facts rather than a new concept? |
 
 | # | directive |
 |---|---|
@@ -165,7 +170,9 @@
 | # | directive |
 |---|---|
 
-## work selection
+| section |
+|---|---|
+| work selection |
 
 | # | directive |
 |---|---|
@@ -203,13 +210,17 @@ new ontology
 | # | directive |
 |---|---|
 
-## dominant metrics
+| section |
+|---|---|
+| dominant metrics |
 
 | # | directive |
 |---|---|
 | 1 | Reason from these three metrics first (`docs/METRICS.md`). |
 
-### authority
+| section |
+|---|---|
+| authority |
 
 | # | directive |
 |---|---|
@@ -217,7 +228,9 @@ new ontology
 | 2 | Current frontier: `docs/bootstrap.md`. |
 | 3 | Do not infer from file extension or implementation language. |
 
-### reconstruction
+| section |
+|---|---|
+| reconstruction |
 
 | # | directive |
 |---|---|
@@ -225,7 +238,9 @@ new ontology
 | 2 | Target: zero. |
 | 3 | Examples: callee name → relation, path → identity, AST shape → visibility, opcode → semantic relation, hash → identity, source punctuation → subject, host temporary → place, filename suffix → semantic law after ingress, text spelling → grammar role after lexing. |
 
-### ftcftw evidence
+| section |
+|---|---|
+| ftcftw evidence |
 
 | # | directive |
 |---|---|
@@ -236,7 +251,9 @@ new ontology
 | # | directive |
 |---|---|
 
-## universal anti-drift rules
+| section |
+|---|---|
+| universal anti-drift rules |
 
 | # | directive |
 |---|---|
@@ -268,15 +285,17 @@ new ontology
 |---|---|
 | 1 | When solving a problem: |
 
-1. delete the concept
-2. consume an existing authoritative fact
-3. expose an existing fact that was hidden
-4. derive the fact
-5. project the fact
-6. generalize an existing relation
-7. select a realization
-8. retain a bounded migration bridge
-9. introduce a new irreducible semantic concept
+| # | directive |
+|---|---|
+| 1 | delete the concept |
+| 2 | consume an existing authoritative fact |
+| 3 | expose an existing fact that was hidden |
+| 4 | derive the fact |
+| 5 | project the fact |
+| 6 | generalize an existing relation |
+| 7 | select a realization |
+| 8 | retain a bounded migration bridge |
+| 9 | introduce a new irreducible semantic concept |
 
 | # | directive |
 |---|---|
@@ -286,7 +305,9 @@ new ontology
 | # | directive |
 |---|---|
 
-## semantic reduction
+| section |
+|---|---|
+| semantic reduction |
 
 | # | directive |
 |---|---|
@@ -306,7 +327,9 @@ new ontology
 | # | directive |
 |---|---|
 
-## host quarantine
+| section |
+|---|---|
+| host quarantine |
 
 | # | directive |
 |---|---|
@@ -324,7 +347,9 @@ new ontology
 | # | directive |
 |---|---|
 
-## semantic diff
+| section |
+|---|---|
+| semantic diff |
 
 | # | directive |
 |---|---|
@@ -350,27 +375,27 @@ new ontology
 | # | directive |
 |---|---|
 
-## identity · relation · subject · pack · value · place · world
+| section |
+|---|---|
+| identity · relation · subject · pack · value · place · world |
 
-- One semantic id concept. Do not create identity from name, path, span, file,
-  source spelling, hash, pointer, AST node, opcode, instruction, slot, or address.
-- One irreducible meaning has one relation. Facts carry qualification.
-- Subject is semantic, established once by resolver, not argument zero or namespace
-  receiver.
-- Packs preserve id, slot correspondence, order, labels, values, descriptors,
-  provenance, demand. Do not flatten to host arrays.
-- A value is not storage. Do not mint local/temp/stack/heap/register kinds.
-- Create a place only when observable storage is demanded.
-- Authority belongs to world facts, not std/process/filesystem namespaces or imports.
-- **Idol algebra closure** is C0 §67 only. A home supplies context only;
-  a world grants authority; a protocol demands facts; witness ≠ world grant.
-  No trait/impl/interface/vtable ontology. No independent algebra prompt is
-  authority. See `docs/spec/constitution.md` §67.
+| # | directive |
+|---|---|
+| 1 | One semantic id concept. Do not create identity from name, path, span, file, source spelling, hash, pointer, AST node, opcode, instruction, slot, or address. |
+| 2 | One irreducible meaning has one relation. Facts carry qualification. |
+| 3 | Subject is semantic, established once by resolver, not argument zero or namespace receiver. |
+| 4 | Packs preserve id, slot correspondence, order, labels, values, descriptors, provenance, demand. Do not flatten to host arrays. |
+| 5 | A value is not storage. Do not mint local/temp/stack/heap/register kinds. |
+| 6 | Create a place only when observable storage is demanded. |
+| 7 | Authority belongs to world facts, not std/process/filesystem namespaces or imports. |
+| 8 | **Idol algebra closure** is C0 §67 only. A home supplies context only; a world grants authority; a protocol demands facts; witness ≠ world grant. No trait/impl/interface/vtable ontology. No independent algebra prompt is authority. See `docs/spec/constitution.md` §67. |
 
 | # | directive |
 |---|---|
 
-## home · world · protocol · witness · injection
+| section |
+|---|---|
+| home · world · protocol · witness · injection |
 
 | # | directive |
 |---|---|
@@ -393,7 +418,9 @@ new ontology
 | # | directive |
 |---|---|
 
-## inference (SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE / INTERMEDIATE-ZERO)
+| section |
+|---|---|
+| inference (SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE / INTERMEDIATE-ZERO) |
 
 | # | directive |
 |---|---|
@@ -448,11 +475,13 @@ new ontology
 |---|---|
 | 1 | Required workflow: |
 
-1. What descriptor does the binding, parameter, field, or result demand?
-2. Does the supplied value already satisfy it? (descriptor satisfaction — no `to`)
-3. Is exactly one direct bridge relation admissible? (`law.direct.bridge.one`)
-4. Are failure, effect, and world obligations preserved?
-5. Spell conversion, relation, or projection only if ambiguity remains.
+| # | directive |
+|---|---|
+| 1 | What descriptor does the binding, parameter, field, or result demand? |
+| 2 | Does the supplied value already satisfy it? (descriptor satisfaction — no `to`) |
+| 3 | Is exactly one direct bridge relation admissible? (`law.direct.bridge.one`) |
+| 4 | Are failure, effect, and world obligations preserved? |
+| 5 | Spell conversion, relation, or projection only if ambiguity remains. |
 
 | # | directive |
 |---|---|
@@ -477,7 +506,9 @@ to(str)(x) → x:to(str) → x
 |---|---|
 | 1 | **Absolute new-code rule:** no new explicit conversion/projection/curry/world plumbing, and no new single-use intermediate binding, until the author proves the fact cannot be uniquely recovered from existing context. |
 
-### INTERMEDIATE-ZERO (`law.intermediate.zero`)
+| section |
+|---|---|
+| INTERMEDIATE-ZERO (`law.intermediate.zero`) |
 
 | # | directive |
 |---|---|
@@ -504,7 +535,9 @@ xs:first():to(str)
 | 2 | The canonicalizer collapses single-use intermediates by proving chain re-resolution preserves semantic identity before removing the binding — never regex-delete bindings without graph proof. |
 | 3 | Intermediate elision does not erase the graph fact. |
 
-### Density gate
+| section |
+|---|---|
+| Density gate |
 
 | # | directive |
 |---|---|
@@ -521,7 +554,9 @@ ZERO REDUNDANT REALIZATION
 | # | directive |
 |---|---|
 
-## projection (PROJECTION-ONE)
+| section |
+|---|---|
+| projection (PROJECTION-ONE) |
 
 | # | directive |
 |---|---|
@@ -547,16 +582,17 @@ fully inferred (graph-owned relation + projection when unique)
 |---|---|
 | 1 | **Rulings agents must not neglect:** |
 
-- **FROM-ZERO** — `to` is the one conversion relation; `from` normalizes to same edge
-- **STD-ZERO / LIB-ZERO** — no canonical `std.*` or `lib.*` traversal; fix reachability
-- **WORLD-ONE** — worlds grant authority, not intent; prefer `stdin:read()`, `args(1)`, `stdout:write()`
-- **SHELL-NOT-WORLD** — shell is law; process world authorizes run
-- **HOME-PROJECTION** — hierarchy is reachability, not `compiler.parser.parse`
-- Protocol constraints are relation projections (`source: read`), not adjective traits
-- DNIR/parser must not recover projection from callee strings or namespace shape
-- **Application record** (repair step 4): `docs/spec/application-record.md` — resolver
-  mints one graph record per application with explicit/inferred projection pack facts
-- **Debt census** (classify, never bulk replace): `docs/spec/projection-debt.md`
+| # | directive |
+|---|---|
+| 1 | **FROM-ZERO** — `to` is the one conversion relation; `from` normalizes to same edge |
+| 2 | **STD-ZERO / LIB-ZERO** — no canonical `std.*` or `lib.*` traversal; fix reachability |
+| 3 | **WORLD-ONE** — worlds grant authority, not intent; prefer `stdin:read()`, `args(1)`, `stdout:write()` |
+| 4 | **SHELL-NOT-WORLD** — shell is law; process world authorizes run |
+| 5 | **HOME-PROJECTION** — hierarchy is reachability, not `compiler.parser.parse` |
+| 6 | Protocol constraints are relation projections (`source: read`), not adjective traits |
+| 7 | DNIR/parser must not recover projection from callee strings or namespace shape |
+| 8 | **Application record** (repair step 4): `docs/spec/application-record.md` — resolver mints one graph record per application with explicit/inferred projection pack facts |
+| 9 | **Debt census** (classify, never bulk replace): `docs/spec/projection-debt.md` |
 
 | # | directive |
 |---|---|
@@ -567,11 +603,12 @@ fully inferred (graph-owned relation + projection when unique)
 |---|---|
 | 1 | **Universal code-review** (every changed expression): |
 
-- What is explicit vs implied vs injectable vs organizational hierarchy only?
-- What relation id, subject, projection facts, operands, descriptors, world, origin/law survive?
-- Why can any explicit qualifier be omitted?
-- If the answer relies on `std`, `lib`, namespace, method, adjective, host API,
-  callee spelling, path, or text pattern → not Idollic yet.
+| # | directive |
+|---|---|
+| 1 | What is explicit vs implied vs injectable vs organizational hierarchy only? |
+| 2 | What relation id, subject, projection facts, operands, descriptors, world, origin/law survive? |
+| 3 | Why can any explicit qualifier be omitted? |
+| 4 | If the answer relies on `std`, `lib`, namespace, method, adjective, host API, callee spelling, path, or text pattern → not Idollic yet. |
 
 | # | directive |
 |---|---|
@@ -597,20 +634,22 @@ fully inferred (graph-owned relation + projection when unique)
 | # | directive |
 |---|---|
 
-## run · outcome · evidence
+| section |
+|---|---|
+| run · outcome · evidence |
 
-- One semantic run architecture. Do not mint separate kingdoms for execute,
-  capture, popen, shell run, process run unless world/origin/demand/law facts
-  require distinct qualification — not namespace shape.
-- One requested run has one authoritative outcome. Transport completion is not
-  outcome. Evidence supports outcome; evidence is not outcome.
-- A claim is valid only when the requested production boundary actually executed.
-  Missing evidence means unknown. Fail closed.
+| # | directive |
+|---|---|
+| 1 | One semantic run architecture. Do not mint separate kingdoms for execute, capture, popen, shell run, process run unless world/origin/demand/law facts require distinct qualification — not namespace shape. |
+| 2 | One requested run has one authoritative outcome. Transport completion is not outcome. Evidence supports outcome; evidence is not outcome. |
+| 3 | A claim is valid only when the requested production boundary actually executed. Missing evidence means unknown. Fail closed. |
 
 | # | directive |
 |---|---|
 
-## grammar · lexical law
+| section |
+|---|---|
+| grammar · lexical law |
 
 | # | directive |
 |---|---|
@@ -634,24 +673,25 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## predicate zero · bridge zero · failure · numbers · dnir · realization
+| section |
+|---|---|
+| predicate zero · bridge zero · failure · numbers · dnir · realization |
 
-- Reject native helpers whose only job is bool projection of owned facts
-  (has/is/can/exists/valid/ready/supported). Consume the fact directly.
-- One-consumer bindings/wrappers are presumed unnecessary unless multiple
-  consumers, mutation, place, lifetime, effect ordering, or demand boundary
-  requires them.
-- Do not propagate sentinel architecture. Resolve foreign sentinel laws at ingress.
-- Numeric faces are not primitive kingdoms until observable law demands width/law.
-- DNIR is realization projection over the same identities — never opcode-defined
-  program meaning.
-- Prefer graph → demand → compact lawful realization candidates → commitment →
-  machine. Maximum semantic knowledge, minimum physical compiler state.
+| # | directive |
+|---|---|
+| 1 | Reject native helpers whose only job is bool projection of owned facts (has/is/can/exists/valid/ready/supported). Consume the fact directly. |
+| 2 | One-consumer bindings/wrappers are presumed unnecessary unless multiple consumers, mutation, place, lifetime, effect ordering, or demand boundary requires them. |
+| 3 | Do not propagate sentinel architecture. Resolve foreign sentinel laws at ingress. |
+| 4 | Numeric faces are not primitive kingdoms until observable law demands width/law. |
+| 5 | DNIR is realization projection over the same identities — never opcode-defined program meaning. |
+| 6 | Prefer graph → demand → compact lawful realization candidates → commitment → machine. Maximum semantic knowledge, minimum physical compiler state. |
 
 | # | directive |
 |---|---|
 
-## ftcftw acceptance
+| section |
+|---|---|
+| ftcftw acceptance |
 
 | # | directive |
 |---|---|
@@ -664,7 +704,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## wasm
+| section |
+|---|---|
+| wasm |
 
 | # | directive |
 |---|---|
@@ -675,7 +717,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## shc scheduler
+| section |
+|---|---|
+| shc scheduler |
 
 | # | directive |
 |---|---|
@@ -700,7 +744,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## foreign authority · agent concurrency · anti-drift
+| section |
+|---|---|
+| foreign authority · agent concurrency · anti-drift |
 
 | # | directive |
 |---|---|
@@ -722,119 +768,160 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## before writing code — audit seams
+| section |
+|---|---|
+| before writing code — audit seams |
 
 | # | directive |
 |---|---|
 | 1 | Mandatory pre-edit audit for every agent harness. |
 | 2 | Constitutional authority: §67 convergence closure (`law.bridge.death` through `law.gate.convergence`). |
 
-### authority
+| section |
+|---|---|
+| authority |
 
-- exactly one producer for every semantic fact
-- no fallback may silently regain semantic authority
-- every bridge has a deletion condition at introduction
-- unknown remains unknown; no placeholder semantic values
-- negative facts are preserved when useful
+| # | directive |
+|---|---|
+| 1 | exactly one producer for every semantic fact |
+| 2 | no fallback may silently regain semantic authority |
+| 3 | every bridge has a deletion condition at introduction |
+| 4 | unknown remains unknown; no placeholder semantic values |
+| 5 | negative facts are preserved when useful |
 
-### semantics
+| section |
+|---|---|
+| semantics |
 
-- relation / projection / subject / operand / result remain distinct
-- value / binding / place remain distinct
-- descriptor satisfaction / conversion / realization remain distinct
-- world authority / semantic intent remain distinct
-- effect / ordering / lifetime / alias remain explicit facts
-- profile evidence never becomes semantic truth
-- speculative assumptions carry guards, lineage, and invalidation
+| # | directive |
+|---|---|
+| 1 | relation / projection / subject / operand / result remain distinct |
+| 2 | value / binding / place remain distinct |
+| 3 | descriptor satisfaction / conversion / realization remain distinct |
+| 4 | world authority / semantic intent remain distinct |
+| 5 | effect / ordering / lifetime / alias remain explicit facts |
+| 6 | profile evidence never becomes semantic truth |
+| 7 | speculative assumptions carry guards, lineage, and invalidation |
 
-### inference
+| section |
+|---|---|
+| inference |
 
-- infer only direct uniquely witnessed semantics
-- no arbitrary relation-chain search
-- no global backtracking
-- no inference by declaration/file/import order
-- inference is monotonic where possible
-- minimal syntax must remain fully explainable
-- explicit syntax is rejected when it only repeats uniquely known facts
+| # | directive |
+|---|---|
+| 1 | infer only direct uniquely witnessed semantics |
+| 2 | no arbitrary relation-chain search |
+| 3 | no global backtracking |
+| 4 | no inference by declaration/file/import order |
+| 5 | inference is monotonic where possible |
+| 6 | minimal syntax must remain fully explainable |
+| 7 | explicit syntax is rejected when it only repeats uniquely known facts |
 
-### physics
+| section |
+|---|---|
+| physics |
 
-- no source construct implies allocation
-- no protocol/constraint implies runtime witness
-- no union implies tag/box
-- no curry implies closure allocation
-- no world implies world object
-- no binding implies storage
-- no structured value implies aggregate
-- no physical cast implies semantic `to`
-- every physical object can explain the demand that forced it
-- one realization owner decides width/layout/location/boxing/ABI — later passes do not re-decide (`law.representation.one`)
-- a guard is an unresolved alternative with witness + recovery, not a reason to box (`law.guard.one`)
+| # | directive |
+|---|---|
+| 1 | no source construct implies allocation |
+| 2 | no protocol/constraint implies runtime witness |
+| 3 | no union implies tag/box |
+| 4 | no curry implies closure allocation |
+| 5 | no world implies world object |
+| 6 | no binding implies storage |
+| 7 | no structured value implies aggregate |
+| 8 | no physical cast implies semantic `to` |
+| 9 | every physical object can explain the demand that forced it |
+| 10 | one realization owner decides width/layout/location/boxing/ABI — later passes do not re-decide (`law.representation.one`) |
+| 11 | a guard is an unresolved alternative with witness + recovery, not a reason to box (`law.guard.one`) |
 
-### foreign
+| section |
+|---|---|
+| foreign |
 
-- foreign law preserved both ingress and egress
-- zero-copy requires layout/lifetime/alias/ownership proof
-- ABI is realization unless semantically observable
-- Wasm law enters the same graph and does not create a permanent VM ontology
+| # | directive |
+|---|---|
+| 1 | foreign law preserved both ingress and egress |
+| 2 | zero-copy requires layout/lifetime/alias/ownership proof |
+| 3 | ABI is realization unless semantically observable |
+| 4 | Wasm law enters the same graph and does not create a permanent VM ontology |
 
-### compiler
+| section |
+|---|---|
+| compiler |
 
-- incremental invalidation follows semantic dependencies, not module/file boundaries
-- caches use semantic reuse proof, not hashes as identity
-- generated artifacts carry law/fact/revision provenance
-- graph representation remains dense and demand-driven
-- expensive analyses require expected payoff
-- deterministic output is required unless nondeterminism is explicitly lawful
+| # | directive |
+|---|---|
+| 1 | incremental invalidation follows semantic dependencies, not module/file boundaries |
+| 2 | caches use semantic reuse proof, not hashes as identity |
+| 3 | generated artifacts carry law/fact/revision provenance |
+| 4 | graph representation remains dense and demand-driven |
+| 5 | expensive analyses require expected payoff |
+| 6 | deterministic output is required unless nondeterminism is explicitly lawful |
 
-### shc
+| section |
+|---|---|
+| shc |
 
-- measure executed semantic authority, not `.id` volume
-- every milestone shrinks the foreign semantic trusted base
-- attack earliest remaining host semantic owner
-- never port host structure line for line
-- B→C closure compares semantics/behavior/evidence, not merely file hashes
-- utilities before authorities is forbidden
+| # | directive |
+|---|---|
+| 1 | measure executed semantic authority, not `.id` volume |
+| 2 | every milestone shrinks the foreign semantic trusted base |
+| 3 | attack earliest remaining host semantic owner |
+| 4 | never port host structure line for line |
+| 5 | B→C closure compares semantics/behavior/evidence, not merely file hashes |
+| 6 | utilities before authorities is forbidden |
 
-### coordination
+| section |
+|---|---|
+| coordination |
 
-- claim semantic boundaries as well as paths
-- duplicate facts are forbidden across agent lanes
-- missing upstream fact becomes an explicit dependency, not local reconstruction
-- schedule producer→consumer chains
-- integration state outranks branch-local success
-- stop on ambiguity rather than inventing architecture
+| # | directive |
+|---|---|
+| 1 | claim semantic boundaries as well as paths |
+| 2 | duplicate facts are forbidden across agent lanes |
+| 3 | missing upstream fact becomes an explicit dependency, not local reconstruction |
+| 4 | schedule producer→consumer chains |
+| 5 | integration state outranks branch-local success |
+| 6 | stop on ambiguity rather than inventing architecture |
 
-### ftcftw report
+| section |
+|---|---|
+| ftcftw report |
 
 | # | directive |
 |---|---|
 | 1 | For every change report: |
 
-- semantic concepts added/removed
-- facts retained/lost
-- reconstruction added/removed
-- allocations, copies, indirections, runtime branches, metadata, compiler state
-- compile time, startup, runtime, memory, artifact size
-- specialization/vectorization/fusion freedom
+| # | directive |
+|---|---|
+| 1 | semantic concepts added/removed |
+| 2 | facts retained/lost |
+| 3 | reconstruction added/removed |
+| 4 | allocations, copies, indirections, runtime branches, metadata, compiler state |
+| 5 | compile time, startup, runtime, memory, artifact size |
+| 6 | specialization/vectorization/fusion freedom |
 
 | # | directive |
 |---|---|
 | 1 | A change that does not move semantic authority, remove reconstruction, increase optimization knowledge, or delete physical work is secondary migration and must not displace the compiler-B critical path. |
 
-### three derailment seams
+| section |
+|---|---|
+| three derailment seams |
 
-1. **Temporary bridges becoming permanent authorities** — deletion-gate every
-   bootstrap seam; repo fallback scaffolding requires systematic invariants.
-2. **Sophisticated inference becoming expensive hidden magic** — INFER-ONE needs
-   bounded/direct/unique solver contract (`law.infer.contract`).
-3. **Semantic richness becoming physical compiler bloat** — rich facts, brutally
-   compact representation (`law.representation.demand`, `law.project.economy`).
+| # | directive |
+|---|---|
+| 1 | **Temporary bridges becoming permanent authorities** — deletion-gate every bootstrap seam; repo fallback scaffolding requires systematic invariants. |
+| 2 | **Sophisticated inference becoming expensive hidden magic** — INFER-ONE needs bounded/direct/unique solver contract (`law.infer.contract`). |
+| 3 | **Semantic richness becoming physical compiler bloat** — rich facts, brutally compact representation (`law.representation.demand`, `law.project.economy`). |
 
 | # | directive |
 |---|---|
 
-## error-class generalization
+| section |
+|---|---|
+| error-class generalization |
 
 | # | directive |
 |---|---|
@@ -854,7 +941,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## negative space
+| section |
+|---|---|
+| negative space |
 
 | # | directive |
 |---|---|
@@ -868,7 +957,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## new-concept admission
+| section |
+|---|---|
+| new-concept admission |
 
 | # | directive |
 |---|---|
@@ -878,7 +969,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## no premature success
+| section |
+|---|---|
+| no premature success |
 
 | # | directive |
 |---|---|
@@ -887,7 +980,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## completion review
+| section |
+|---|---|
+| completion review |
 
 | # | directive |
 |---|---|
@@ -896,7 +991,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## mandatory completion report
+| section |
+|---|---|
+| mandatory completion report |
 
 | # | directive |
 |---|---|
@@ -906,7 +1003,9 @@ source → lexer → token → grammar role → parser recognition → resolver 
 | # | directive |
 |---|---|
 
-## seam audit (mandatory before code)
+| section |
+|---|---|
+| seam audit (mandatory before code) |
 
 | # | directive |
 |---|---|
@@ -917,125 +1016,173 @@ source → lexer → token → grammar role → parser recognition → resolver 
 |---|---|
 | 1 | **Before writing code, audit these seams.** |
 
-### AUTHORITY
+| section |
+|---|---|
+| AUTHORITY |
 
-- exactly one producer for every semantic fact
-- no fallback may silently regain semantic authority
-- every bridge has a deletion condition at introduction
-- unknown remains unknown; no placeholder semantic values
-- negative facts are preserved when useful
+| # | directive |
+|---|---|
+| 1 | exactly one producer for every semantic fact |
+| 2 | no fallback may silently regain semantic authority |
+| 3 | every bridge has a deletion condition at introduction |
+| 4 | unknown remains unknown; no placeholder semantic values |
+| 5 | negative facts are preserved when useful |
 
-### SEMANTICS
+| section |
+|---|---|
+| SEMANTICS |
 
-- relation / projection / subject / operand / result remain distinct
-- value / binding / place remain distinct
-- descriptor satisfaction / conversion / realization remain distinct
-- world authority / semantic intent remain distinct
-- effect / ordering / lifetime / alias remain explicit facts
-- profile evidence never becomes semantic truth
-- speculative assumptions carry guards, lineage, and invalidation
+| # | directive |
+|---|---|
+| 1 | relation / projection / subject / operand / result remain distinct |
+| 2 | value / binding / place remain distinct |
+| 3 | descriptor satisfaction / conversion / realization remain distinct |
+| 4 | world authority / semantic intent remain distinct |
+| 5 | effect / ordering / lifetime / alias remain explicit facts |
+| 6 | profile evidence never becomes semantic truth |
+| 7 | speculative assumptions carry guards, lineage, and invalidation |
 
-### INFERENCE
+| section |
+|---|---|
+| INFERENCE |
 
-- infer only direct uniquely witnessed semantics
-- no arbitrary relation-chain search
-- no global backtracking
-- no inference by declaration/file/import order
-- inference is monotonic where possible
-- minimal syntax must remain fully explainable
-- explicit syntax is rejected when it only repeats uniquely known facts
+| # | directive |
+|---|---|
+| 1 | infer only direct uniquely witnessed semantics |
+| 2 | no arbitrary relation-chain search |
+| 3 | no global backtracking |
+| 4 | no inference by declaration/file/import order |
+| 5 | inference is monotonic where possible |
+| 6 | minimal syntax must remain fully explainable |
+| 7 | explicit syntax is rejected when it only repeats uniquely known facts |
 
-### PHYSICS
+| section |
+|---|---|
+| PHYSICS |
 
-- no source construct implies allocation
-- no protocol/constraint implies runtime witness
-- no union implies tag/box
-- no curry implies closure allocation
-- no world implies world object
-- no binding implies storage
-- no structured value implies aggregate
-- no physical cast implies semantic `to`
-- every physical object can explain the demand that forced it
-- one realization owner decides width/layout/location/boxing/ABI — later passes do not re-decide (`law.representation.one`)
-- a guard is an unresolved alternative with witness + recovery, not a reason to box (`law.guard.one`)
+| # | directive |
+|---|---|
+| 1 | no source construct implies allocation |
+| 2 | no protocol/constraint implies runtime witness |
+| 3 | no union implies tag/box |
+| 4 | no curry implies closure allocation |
+| 5 | no world implies world object |
+| 6 | no binding implies storage |
+| 7 | no structured value implies aggregate |
+| 8 | no physical cast implies semantic `to` |
+| 9 | every physical object can explain the demand that forced it |
+| 10 | one realization owner decides width/layout/location/boxing/ABI — later passes do not re-decide (`law.representation.one`) |
+| 11 | a guard is an unresolved alternative with witness + recovery, not a reason to box (`law.guard.one`) |
 
-### FOREIGN
+| section |
+|---|---|
+| FOREIGN |
 
-- foreign law preserved both ingress and egress
-- zero-copy requires layout/lifetime/alias/ownership proof
-- ABI is realization unless semantically observable
-- Wasm law enters the same graph and does not create a permanent VM ontology
+| # | directive |
+|---|---|
+| 1 | foreign law preserved both ingress and egress |
+| 2 | zero-copy requires layout/lifetime/alias/ownership proof |
+| 3 | ABI is realization unless semantically observable |
+| 4 | Wasm law enters the same graph and does not create a permanent VM ontology |
 
-### COMPILER
+| section |
+|---|---|
+| COMPILER |
 
-- incremental invalidation follows semantic dependencies, not module/file boundaries
-- caches use semantic reuse proof, not hashes as identity
-- generated artifacts carry law/fact/revision provenance
-- graph representation remains dense and demand-driven
-- expensive analyses require expected payoff
-- deterministic output is required unless nondeterminism is explicitly lawful
+| # | directive |
+|---|---|
+| 1 | incremental invalidation follows semantic dependencies, not module/file boundaries |
+| 2 | caches use semantic reuse proof, not hashes as identity |
+| 3 | generated artifacts carry law/fact/revision provenance |
+| 4 | graph representation remains dense and demand-driven |
+| 5 | expensive analyses require expected payoff |
+| 6 | deterministic output is required unless nondeterminism is explicitly lawful |
 
-### SHC
+| section |
+|---|---|
+| SHC |
 
-- measure executed semantic authority, not `.id` volume
-- every milestone shrinks the foreign semantic trusted base
-- attack earliest remaining host semantic owner
-- never port host structure line for line
-- B→C closure compares semantics/behavior/evidence, not merely file hashes
+| # | directive |
+|---|---|
+| 1 | measure executed semantic authority, not `.id` volume |
+| 2 | every milestone shrinks the foreign semantic trusted base |
+| 3 | attack earliest remaining host semantic owner |
+| 4 | never port host structure line for line |
+| 5 | B→C closure compares semantics/behavior/evidence, not merely file hashes |
 
-### COORDINATION
+| section |
+|---|---|
+| COORDINATION |
 
-- claim semantic boundaries as well as paths
-- duplicate facts are forbidden across agent lanes
-- missing upstream fact becomes an explicit dependency, not local reconstruction
-- schedule producer→consumer chains
-- integration state outranks branch-local success
-- stop on ambiguity rather than inventing architecture
+| # | directive |
+|---|---|
+| 1 | claim semantic boundaries as well as paths |
+| 2 | duplicate facts are forbidden across agent lanes |
+| 3 | missing upstream fact becomes an explicit dependency, not local reconstruction |
+| 4 | schedule producer→consumer chains |
+| 5 | integration state outranks branch-local success |
+| 6 | stop on ambiguity rather than inventing architecture |
 
-### PROJECTION (law.projection.one)
+| section |
+|---|---|
+| PROJECTION (law.projection.one) |
 
-- one projection algebra for conversion, protocol, generic, world, home, shell, foreign, staging
-- projection is fact completion, not namespace selection
-- `to` is the one conversion orientation; `from` is not a second universe (FROM-ZERO)
-- `std` and `lib` are not semantic roots (STD-ZERO, LIB-ZERO)
-- home hierarchy supplies reachability, not relation identity (HOME-PROJECTION)
-- shell is law, process is authority, command is value (SHELL-NOT-WORLD)
-- cross-boundary projection needs explicit witness (CROSS-ONE)
-- conversion derivation is bounded: no arbitrary path search, no declaration-order ties
-- conversion declarations prefer home-based subject orientation, not operation-first
-- parser must not produce semantic AST kinds; DNIR must not reconstruct meaning from callee/path/text
-- projection wrappers (ProjectedCall, ConversionProjection, etc.) are forbidden as semantic kinds
+| # | directive |
+|---|---|
+| 1 | one projection algebra for conversion, protocol, generic, world, home, shell, foreign, staging |
+| 2 | projection is fact completion, not namespace selection |
+| 3 | `to` is the one conversion orientation; `from` is not a second universe (FROM-ZERO) |
+| 4 | `std` and `lib` are not semantic roots (STD-ZERO, LIB-ZERO) |
+| 5 | home hierarchy supplies reachability, not relation identity (HOME-PROJECTION) |
+| 6 | shell is law, process is authority, command is value (SHELL-NOT-WORLD) |
+| 7 | cross-boundary projection needs explicit witness (CROSS-ONE) |
+| 8 | conversion derivation is bounded: no arbitrary path search, no declaration-order ties |
+| 9 | conversion declarations prefer home-based subject orientation, not operation-first |
+| 10 | parser must not produce semantic AST kinds; DNIR must not reconstruct meaning from callee/path/text |
+| 11 | projection wrappers (ProjectedCall, ConversionProjection, etc.) are forbidden as semantic kinds |
 
-### ZERO-HISTORY (law.zero.history)
+| section |
+|---|---|
+| ZERO-HISTORY (law.zero.history) |
 
-- the active tree is not a museum — current Idol, current foreign, bounded bridges only
-- durable corpus states: `current` and `foreign` only — git owns archive
-- durable corpus states: current and foreign only — not historical, legacy, migration, compat
-- delete comments referencing formerly/was X/migration/legacy/retired/old path
-- resolved gaps are deleted; open gaps contain only current obligation
-- generated projections consume current C0 only — no old brands or committed session state
-- do not preserve old names/symbols/paths/env prefixes/artifacts as permanent residents
+| # | directive |
+|---|---|
+| 1 | the active tree is not a museum — current Idol, current foreign, bounded bridges only |
+| 2 | durable corpus states: `current` and `foreign` only — git owns archive |
+| 3 | durable corpus states: current and foreign only — not historical, legacy, migration, compat |
+| 4 | delete comments referencing formerly/was X/migration/legacy/retired/old path |
+| 5 | resolved gaps are deleted; open gaps contain only current obligation |
+| 6 | generated projections consume current C0 only — no old brands or committed session state |
+| 7 | do not preserve old names/symbols/paths/env prefixes/artifacts as permanent residents |
 
-### C-BACKEND-ORTHOGONAL (law.backend.c.orthogonal)
+| section |
+|---|---|
+| C-BACKEND-ORTHOGONAL (law.backend.c.orthogonal) |
 
-- generated C is an explicit physical realization over the shared graph
-- direct native is the default, self-host, release, correctness, and performance path
-- direct native never emits C, invokes a C compiler, depends on C, or falls back to C
-- `auto` never selects C; C evidence proves only the C feature
-- the `c` foreign world is a separate interop capability and does not select a backend
+| # | directive |
+|---|---|
+| 1 | generated C is an explicit physical realization over the shared graph |
+| 2 | direct native is the default, self-host, release, correctness, and performance path |
+| 3 | direct native never emits C, invokes a C compiler, depends on C, or falls back to C |
+| 4 | `auto` never selects C; C evidence proves only the C feature |
+| 5 | the `c` foreign world is a separate interop capability and does not select a backend |
 
-### FTCFTW
+| section |
+|---|---|
+| FTCFTW |
 
 | # | directive |
 |---|---|
 | 1 | For every change report: |
 
-- semantic concepts added/removed
-- facts retained/lost
-- reconstruction added/removed
-- allocations, copies, indirections, runtime branches, metadata, compiler state
-- compile time, startup, runtime, memory, artifact size
-- specialization/vectorization/fusion freedom
+| # | directive |
+|---|---|
+| 1 | semantic concepts added/removed |
+| 2 | facts retained/lost |
+| 3 | reconstruction added/removed |
+| 4 | allocations, copies, indirections, runtime branches, metadata, compiler state |
+| 5 | compile time, startup, runtime, memory, artifact size |
+| 6 | specialization/vectorization/fusion freedom |
 
 | # | directive |
 |---|---|
@@ -1045,11 +1192,15 @@ source → lexer → token → grammar role → parser recognition → resolver 
 |---|---|
 | 1 | **Three derailment risks (always check):** |
 
-1. Temporary bridges becoming permanent authorities
-2. Sophisticated inference becoming expensive hidden magic
-3. Semantic richness becoming physical compiler bloat (`law.representation.demand`)
+| # | directive |
+|---|---|
+| 1 | Temporary bridges becoming permanent authorities |
+| 2 | Sophisticated inference becoming expensive hidden magic |
+| 3 | Semantic richness becoming physical compiler bloat (`law.representation.demand`) |
 
-### Bridge deletion witness (required at introduction)
+| section |
+|---|---|
+| Bridge deletion witness (required at introduction) |
 
 | # | directive |
 |---|---|
@@ -1073,7 +1224,9 @@ gap:              <gaps/GAP-*.md filed if prerequisite not yet met>
 | 1 | File the witness in the task handoff / coordination update / gap record. |
 | 2 | A bridge without an executable deletion condition is permanent architecture. |
 
-### Fact dependency handoff (cross-agent)
+| section |
+|---|---|
+| Fact dependency handoff (cross-agent) |
 
 | # | directive |
 |---|---|
@@ -1090,7 +1243,9 @@ owner_lane:
 | # | directive |
 |---|---|
 
-## harness behavior
+| section |
+|---|---|
+| harness behavior |
 
 | # | directive |
 |---|---|
@@ -1106,7 +1261,9 @@ owner_lane:
 | # | directive |
 |---|---|
 
-## pool scheduling
+| section |
+|---|---|
+| pool scheduling |
 
 | # | directive |
 |---|---|
@@ -1118,7 +1275,9 @@ owner_lane:
 | # | directive |
 |---|---|
 
-## absolute project direction
+| section |
+|---|---|
+| absolute project direction |
 
 | # | directive |
 |---|---|
@@ -1138,7 +1297,9 @@ owner_lane:
 | # | directive |
 |---|---|
 
-## absolute failure conditions
+| section |
+|---|---|
+| absolute failure conditions |
 
 | # | directive |
 |---|---|
@@ -1147,7 +1308,9 @@ owner_lane:
 | # | directive |
 |---|---|
 
-## absolute success function
+| section |
+|---|---|
+| absolute success function |
 
 | # | directive |
 |---|---|
@@ -1167,7 +1330,9 @@ owner_lane:
 | # | directive |
 |---|---|
 
-## zero-history (law.zero.history)
+| section |
+|---|---|
+| zero-history (law.zero.history) |
 
 | # | directive |
 |---|---|
@@ -1180,18 +1345,13 @@ owner_lane:
 |---|---|
 | 1 | Mandatory for every agent: |
 
-1. **Current identities only** — language Idol, source `.id`, binary `idol`,
-   repository `idollang/idol`. Git is sole historical archive. Durable corpus
-   states: `current` and `foreign` only.
-2. **Delete before rename** — do not rebrand host-shaped subsystems (`process.*`,
-   `std.*`, `lib.*`, `req`) when the architecture should disappear.
-3. **Gap steady state** — open gaps hold current obligation + acceptance +
-   deletion condition only; resolved gaps delete.
-4. **Generated harness** — stable law projection in `.agents/HARNESS.md`;
-   session envelope in `.agents/session/ENVELOPE.md` is ephemeral and never
-   committed.
-5. **Verification** — run `./tools/node/dev/census/history/zero` and
-   `./tools/node/dev/census/identity` before claiming purge complete.
+| # | directive |
+|---|---|
+| 1 | **Current identities only** — language Idol, source `.id`, binary `idol`, repository `idollang/idol`. Git is sole historical archive. Durable corpus states: `current` and `foreign` only. |
+| 2 | **Delete before rename** — do not rebrand host-shaped subsystems (`process.*`, `std.*`, `lib.*`, `req`) when the architecture should disappear. |
+| 3 | **Gap steady state** — open gaps hold current obligation + acceptance + deletion condition only; resolved gaps delete. |
+| 4 | **Generated harness** — stable law projection in `.agents/HARNESS.md`; session envelope in `.agents/session/ENVELOPE.md` is ephemeral and never committed. |
+| 5 | **Verification** — run `./tools/node/dev/census/history/zero` and `./tools/node/dev/census/identity` before claiming purge complete. |
 
 | # | directive |
 |---|---|
@@ -1200,21 +1360,27 @@ owner_lane:
 | # | directive |
 |---|---|
 
-## anti-drift universal rules (mandatory for every agent)
+| section |
+|---|---|
+| anti-drift universal rules (mandatory for every agent) |
 
 | # | directive |
 |---|---|
 | 1 | These two rules are the strongest remaining protection against architectural drift. |
 | 2 | They are mandatory pre-work checks, not advice. |
 
-### rule 1: current source is not canonical proof
+| section |
+|---|---|
+| rule 1: current source is not canonical proof |
 
 | # | directive |
 |---|---|
 | 1 | Never treat current repository source as proof of canonical Idol merely because it is `.id`, builds under a semantic example home, or was recently "canonicalized." Resolve every touched construct against current C0 plus current owner directives. |
 | 2 | If the shortest uniquely resolving form, semantic fact ownership, world authority, relation identity, or demand-driven realization is not yet implemented, classify the existing spelling as bootstrap/migration debt rather than making it the new pattern. |
 
-### rule 2: specimen repair requires class proof
+| section |
+|---|---|
+| rule 2: specimen repair requires class proof |
 
 | # | directive |
 |---|---|
@@ -1224,34 +1390,42 @@ owner_lane:
 |---|---|
 | 1 | A specimen fix without a class invariant is cosmetic cleanup, not convergence. |
 
-### rule 3: stale-law check (every in-flight lane)
+| section |
+|---|---|
+| rule 3: stale-law check (every in-flight lane) |
 
 | # | directive |
 |---|---|
 | 1 | Before each substantial commit, check: |
 
-- branch base revision
-- constitution revision (`docs/spec/constitution.md`)
-- owner-directive revision
+| # | directive |
+|---|---|
+| 1 | branch base revision |
+| 2 | constitution revision (`docs/spec/constitution.md`) |
+| 3 | owner-directive revision |
 
 | # | directive |
 |---|---|
 | 1 | If law changed since task start: reconcile before continuing. |
 | 2 | Otherwise in-flight work faithfully implements yesterday's architecture. |
 
-### rule 4: integration needs semantic diff, not only green CI
+| section |
+|---|---|
+| rule 4: integration needs semantic diff, not only green CI |
 
 | # | directive |
 |---|---|
 | 1 | After merging parallel lanes, compare: |
 
-- semantic kinds
-- authorities
-- fact producers
-- relation ids
-- world requirements
-- reconstruction count
-- materializations
+| # | directive |
+|---|---|
+| 1 | semantic kinds |
+| 2 | authorities |
+| 3 | fact producers |
+| 4 | relation ids |
+| 5 | world requirements |
+| 6 | reconstruction count |
+| 7 | materializations |
 
 | # | directive |
 |---|---|

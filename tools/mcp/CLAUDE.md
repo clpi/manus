@@ -1,4 +1,6 @@
-# MCP transport law (tools/mcp projection)
+| field | value |
+|---|---|
+| title | MCP transport law (tools/mcp projection) |
 
 | # | directive |
 |---|---|

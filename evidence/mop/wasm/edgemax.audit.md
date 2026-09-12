@@ -1,11 +1,15 @@
-# EDGE-MAX audit — ingest relations vs existing edges (measured)
+| field | value |
+|---|---|
+| title | EDGE-MAX audit — ingest relations vs existing edges (measured) |
 
 | # | directive |
 |---|---|
 | 1 | Existing str edges in the canonical corpus (native.id, comptime.id): `len`, `sub`, `byte`, `find`, `has`, `to`. |
 | 2 | Plus `stdin:line`, `stdout:write`, `path:read`, `os.args`, `os.env`, `mem.*`. |
 
-## Violations found (mashed compounds, not law-known, not edges)
+| section |
+|---|---|
+| Violations found (mashed compounds, not law-known, not edges) |
 
 | My relation | Violation | Fix per EDGE-MAX |
 |---|---|---|
@@ -19,7 +23,9 @@
 | `hexdigit` | hex+digit | `c:hex()` — hex is the encoding provenance |
 | `pow2` | pow+2 — number-suffixed | inline: it exists because `pow2` has no arithmetic edge — fold when the compiler admits `1 << k` |
 
-## Verdict
+| section |
+|---|---|
+| Verdict |
 
 | # | directive |
 |---|---|

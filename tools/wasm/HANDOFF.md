@@ -1,32 +1,30 @@
-# idol wasm — handoff
+| field | value |
+|---|---|
+| title | idol wasm — handoff |
 
-## 2026-08-26 (later) — the owed repair LANDED and is now execution-verified; one asymmetric gap closed
+| section |
+|---|---|
+| 2026-08-26 (later) — the owed repair LANDED and is now execution-verified; one asymmetric gap closed |
 
 | # | directive |
 |---|---|
 | 1 | The entry bytes below are repaired in `src/engine.id` (`48 89 F8 48 01 F0 C3`, `codesz 7`, entry check restored, arch-refusal arm kept), and the repair is no longer prose — it has been executed: |
 
-* `dump-c` + `cc -O2` of `src/probe_jit.id` on this x86_64 host:
-  `VERDICT: the jit substrate is whole and executes emitted code (42).`, exit 0.
-* Sabotage control (byte 5 `0xF0`→`0xF8`, i.e. the exact staged defect):
-  `VERDICT: emitted entry code returned 80 for (40, 2), not 42.`, exit 1.
-* The repaired `jit_substrate_gap()` itself, driven inside a compiled
-  `src/engine.id` artifact (swap of the `engine_main()` call at `main`'s tail
-  for a gap driver — source untouched): `SUBSTRATE OK`, exit 0.
-* **New this session:** the x86_64 arm now reads back the written bytes
-  (`r32(word0) == 0x48F88948`) BEFORE seal+entry, matching the ARM64 arm's
-  stated invariant ("a hollow writer is a clean refusal... rather than a
-  fault"). Negative control: stubbing every `jit__w8` call to `{}` in the
-  compiled artifact yields `SUBSTRATE GAP: jit.w8 wrote nothing (jit.r32 read
-  back 0, expected 0x48F88948)`, exit 1 — clean refusal, no SIGSEGV. Without
-  the read-back that same sabotage sealed and entered a zero page.
-* `idol check src/engine.id` clean after the edit.
+| # | directive |
+|---|---|
+| 1 | `dump-c` + `cc -O2` of `src/probe_jit.id` on this x86_64 host: `VERDICT: the jit substrate is whole and executes emitted code (42).`, exit 0. |
+| 2 | Sabotage control (byte 5 `0xF0`→`0xF8`, i.e. the exact staged defect): `VERDICT: emitted entry code returned 80 for (40, 2), not 42.`, exit 1. |
+| 3 | The repaired `jit_substrate_gap()` itself, driven inside a compiled `src/engine.id` artifact (swap of the `engine_main()` call at `main`'s tail for a gap driver — source untouched): `SUBSTRATE OK`, exit 0. |
+| 4 | **New this session:** the x86_64 arm now reads back the written bytes (`r32(word0) == 0x48F88948`) BEFORE seal+entry, matching the ARM64 arm's stated invariant ("a hollow writer is a clean refusal... rather than a fault"). Negative control: stubbing every `jit__w8` call to `{}` in the compiled artifact yields `SUBSTRATE GAP: jit.w8 wrote nothing (jit.r32 read back 0, expected 0x48F88948)`, exit 1 — clean refusal, no SIGSEGV. Without the read-back that same sabotage sealed and entered a zero page. |
+| 5 | `idol check src/engine.id` clean after the edit. |
 
 | # | directive |
 |---|---|
 | 1 | The 2026-08-15 entry below stays as written: its five-fault record is why every claim here carries a sabotage control. |
 
-## 2026-08-26 — the x86_64 substrate entry bytes in engine.id are wrong (measured), and probe_jit.id now proves entry per-arch
+| section |
+|---|---|
+| 2026-08-26 — the x86_64 substrate entry bytes in engine.id are wrong (measured), and probe_jit.id now proves entry per-arch |
 
 | # | directive |
 |---|---|
@@ -59,7 +57,9 @@
 | 1 | **The engine.id change still owed by the claim owner:** replace the staged x86_64 bytes `48 01 F8` (+`C3`) with `48 89 F8 48 01 F0 C3` (codesz 7) — or restore the entry check the working-tree edit deleted; either alone leaves the defect class alive. |
 | 2 | Note `idol run gate/idiom.id` over a diff is DNB004-blocked on x86_64 hosts (direct backend), so admission there is `idol check` on the gate sources, per `.githooks/pre-commit`. |
 
-## 2026-08-15 — five wrong answers in the ARM64 emitter, and the call/stack-depth grid
+| section |
+|---|---|
+| 2026-08-15 — five wrong answers in the ARM64 emitter, and the call/stack-depth grid |
 
 | # | directive |
 |---|---|
@@ -80,7 +80,9 @@
 | 1 | **3 and 4 were found after the corpus had already gone green on 1 and 2.** The criterion the gate comment then stated — "delete the default-off arm when the differential reads DIFFER 0" — was satisfied at a moment when the emitter still answered 1200 for 46. |
 | 2 | That is why the sample was fixed too, not just the code. |
 
-### the call/stack-depth grid
+| section |
+|---|---|
+| the call/stack-depth grid |
 
 | # | directive |
 |---|---|
@@ -93,18 +95,20 @@
 | 1 | They are **negative-controlled**, which is the only thing that makes them evidence. |
 | 2 | Rebuild `src/engine.id` with the four lines above reverted and: |
 
-* the three targeted fixtures answer `21`, `1200` and nothing;
-* 7 of the 18 grid points answer wrongly;
-* the same generator at full size — arity 0..4 × depth 0..4 × 3 kinds × 2
-  result arities, 150 points — finds **21 wrong** on the pre-fix emitter and
-  **0 wrong** on this one, with the interpreter correct on all 150 in both runs.
+| # | directive |
+|---|---|
+| 1 | the three targeted fixtures answer `21`, `1200` and nothing; |
+| 2 | 7 of the 18 grid points answer wrongly; |
+| 3 | the same generator at full size — arity 0..4 × depth 0..4 × 3 kinds × 2 result arities, 150 points — finds **21 wrong** on the pre-fix emitter and **0 wrong** on this one, with the interpreter correct on all 150 in both runs. |
 
 | # | directive |
 |---|---|
 | 1 | To regenerate or extend the grid: emit one module per point whose `run` pushes `depth` constants, then `arity` arguments, then the call, then folds the survivors with `i32.add` and `return`; make the callee non-leaf to force the real-call path and leaf to force the inline path; assemble with `wat2wasm` and difference `DUO_WASM_ENGINE=interp` against `=jit` against `wasmtime --invoke`. |
 | 2 | The axis that still has no grid is memory (width × offset × alignment), `br_table`, globals and the float compare/convert families — see the JIT gate comment in `src/engine.id`, condition 3. |
 
-### the suite grew a third column
+| section |
+|---|---|
+| the suite grew a third column |
 
 | # | directive |
 |---|---|
@@ -124,36 +128,30 @@
 | 1 | **The JIT stays gated off.** With the arm removed the same run is green (`default path: jit-arm64=69, interp=14`, DIFFER 0) — that was measured, not predicted — but the grid covers only the call axis, and the axes it does not cover are at exactly the coverage level that let this morning's five faults through. |
 | 2 | The full argument, and the three conditions that would license the flip (two of which already hold), are in the gate comment in `src/engine.id`. |
 
-## 2026-08-08 — `call_indirect` compiles, and it found a wrong answer
+| section |
+|---|---|
+| 2026-08-08 — `call_indirect` compiles, and it found a wrong answer |
 
 | # | directive |
 |---|---|
 | 1 | `call_indirect` (0x11) has a JIT arm. |
 | 2 | It was 10 of the 18 refusals across both fixture corpora and the largest coverage gap left; **it is 0 of the 17 now.** |
 
-### The design, and why it could not be an emit-time fold
+| section |
+|---|---|
+| The design, and why it could not be an emit-time fold |
 
 | # | directive |
 |---|---|
 | 1 | A direct `call` becomes a `BL` whose displacement is patched once the callee has an address. `call_indirect` has no such target: it is `table[i]`, chosen at run time. |
 | 2 | The shape that works: |
 
-- **`jidt`, a dispatch table**, 16 bytes per slot — the callee's absolute code
-  address, then its declared type index. It is `mem.alloc`ed **before** any body
-  is compiled, so its address is a constant the emitter bakes in (`std.jit.addr`,
-  below), and **filled after the call-patch phase**, which is the earliest moment
-  every body has an address. That ordering is the whole reason this is a third
-  phase and not a fold.
-- **Element segments are seeded** into `jtbl` by the same walk `run_body` uses,
-  plus `jtoc`, a per-slot OCCUPIED flag. `jtoc` is not bookkeeping: funcidx 0 is
-  a real function, so a zeroed table cannot say "empty" by value.
-- **Every table-reachable function is queued**, on the FIRST `call_indirect`
-  rather than up front — queuing eagerly would drag a module that merely owns a
-  table to the interpreter whenever some function nothing dispatches to has an
-  opcode with no arm.
-- **A table slot naming an IMPORTED function declines the module.** Dispatching
-  one would mean resolving a host effect by field name at run time, which this
-  emitter cannot do, and emitting a branch anyway is how you get a wrong call.
+| # | directive |
+|---|---|
+| 1 | **`jidt`, a dispatch table**, 16 bytes per slot — the callee's absolute code address, then its declared type index. It is `mem.alloc`ed **before** any body is compiled, so its address is a constant the emitter bakes in (`std.jit.addr`, below), and **filled after the call-patch phase**, which is the earliest moment every body has an address. That ordering is the whole reason this is a third phase and not a fold. |
+| 2 | **Element segments are seeded** into `jtbl` by the same walk `run_body` uses, plus `jtoc`, a per-slot OCCUPIED flag. `jtoc` is not bookkeeping: funcidx 0 is a real function, so a zeroed table cannot say "empty" by value. |
+| 3 | **Every table-reachable function is queued**, on the FIRST `call_indirect` rather than up front — queuing eagerly would drag a module that merely owns a table to the interpreter whenever some function nothing dispatches to has an opcode with no arm. |
+| 4 | **A table slot naming an IMPORTED function declines the module.** Dispatching one would mean resolving a host effect by field name at run time, which this emitter cannot do, and emitting a branch anyway is how you get a wrong call. |
 
 | # | directive |
 |---|---|
@@ -179,7 +177,9 @@ BLR  x16
 |---|---|
 | 1 | `TRAP` is the same six words `unreachable` emits — the host's `exit` with the interpreter's status 71 — so a trap is byte-identical on both engines. |
 
-### The type check is not optional, and here is the proof it was missing
+| section |
+|---|---|
+| The type check is not optional, and here is the proof it was missing |
 
 | # | directive |
 |---|---|
@@ -215,7 +215,9 @@ BLR  x16
     (call_indirect (type $t2) (i32.const 7) (i32.const 8) (i32.const 0))))
 ```
 
-### Coverage, before and after
+| section |
+|---|---|
+| Coverage, before and after |
 
 | # | directive |
 |---|---|
@@ -242,7 +244,9 @@ BLR  x16
 |---|---|
 | 1 | **No timing claim.** Every module `call_indirect` blocked sits under the 40 ms process-startup floor this repo established, so there is nothing to measure and nothing is quoted. `call_indirect.wasm` runs in 0.075 ms. |
 
-### New fixture
+| section |
+|---|---|
+| New fixture |
 
 | # | directive |
 |---|---|
@@ -273,32 +277,28 @@ BLR  x16
     (local.get $acc)))
 ```
 
-### `std.jit.addr`
+| section |
+|---|---|
+| `std.jit.addr` |
 
 | # | directive |
 |---|---|
 | 1 | One new primitive, and the second one emitted code needed: `sym` let it reach a HOST function, `addr` lets it reach ITS OWN through a table. `mem.addr` cannot answer for these buffers — `jit.alloc` returns a `VAL_BUFFER` and casting that struct to an integer is a C type error. |
 | 2 | Like `sym`, the `return` is load-bearing and is not the denied trailing-return: as a bare tail expression it answers 0 for every buffer. |
 
-### Still open on `call_indirect`
+| section |
+|---|---|
+| Still open on `call_indirect` |
 
-- The nine wasi-libc modules above, blocked one layer down.
-- `table.set` / `table.init` / `table.copy` / `table.fill` at run time: the JIT
-  has no arm for any of them, so it declines the module and the interpreter runs
-  it. That is why the emitted dispatch table can be static. The interpreter's
-  copies of those ops now carry `toc` alongside `tbl` so its own occupancy stays
-  right.
-- `0xFC` 4..7, the `i64.trunc_sat` family, are still open and were deliberately
-  NOT taken in this pass. The JIT half is one instruction (`FCVTZS`/`FCVTZU`
-  with `sf=1` saturate exactly as wasm specifies, same as the i32 family). The
-  INTERPRETER half is not: the unsigned bound is 2^64-1, which has no Duo i64
-  value to clamp against, and the [2^63, 2^64) window has to be assembled
-  through a bias. Shipping the JIT half alone would put the two engines on
-  different answers for a case **no fixture in either corpus exercises**, so
-  there would be nothing to verify it against. Do both halves with fixtures, or
-  neither.
+| # | directive |
+|---|---|
+| 1 | The nine wasi-libc modules above, blocked one layer down. |
+| 2 | `table.set` / `table.init` / `table.copy` / `table.fill` at run time: the JIT has no arm for any of them, so it declines the module and the interpreter runs it. That is why the emitted dispatch table can be static. The interpreter's copies of those ops now carry `toc` alongside `tbl` so its own occupancy stays right. |
+| 3 | `0xFC` 4..7, the `i64.trunc_sat` family, are still open and were deliberately NOT taken in this pass. The JIT half is one instruction (`FCVTZS`/`FCVTZU` with `sf=1` saturate exactly as wasm specifies, same as the i32 family). The INTERPRETER half is not: the unsigned bound is 2^64-1, which has no Duo i64 value to clamp against, and the [2^63, 2^64) window has to be assembled through a bias. Shipping the JIT half alone would put the two engines on different answers for a case **no fixture in either corpus exercises**, so there would be nothing to verify it against. Do both halves with fixtures, or neither. |
 
-## 2026-08-08 — the JIT can leave its own code buffer
+| section |
+|---|---|
+| 2026-08-08 — the JIT can leave its own code buffer |
 
 | # | directive |
 |---|---|
@@ -322,7 +322,9 @@ wasm: jit declined -- call target is an IMPORTED function, which the jit
 | 1 | `fd_write` is 71 emitted words at a fixed shape (so every branch offset is arithmetic, not a patch): prologue, an outer loop over the iovec array, an inner loop that drains each iovec because a short `write` is a real outcome on a pipe, and an epilogue that reports the byte count and answers errno 0. `write` clobbers x0..x17, so the loop state lives in a 64-byte scratch block whose address is baked in and re-materialized after every call. |
 | 2 | Cold path — once per `fd_write`, never inside a kernel. |
 
-### Six workloads, before and after (ms, min of 3, interleaved, verified by value)
+| section |
+|---|---|
+| Six workloads, before and after (ms, min of 3, interleaved, verified by value) |
 
 | workload | before | after | wart | wasmtime | first now |
 |---|---:|---:|---:|---:|---|
@@ -338,7 +340,9 @@ wasm: jit declined -- call target is an IMPORTED function, which the jit
 | 1 | **`hash` and `hash2b` are TIES.** Three runs disagree about the winner — `hash2b` read 3671/3613, then 3763/3699, then 3678/3763 — the sign flips inside about 2 % of drift. |
 | 2 | Do not quote either as a win. **`hot_big` is still ~20 % behind wasmtime**, and that is codegen quality now, not a refusal. |
 
-### The wrong-answer bug compiling those bodies exposed
+| section |
+|---|---|
+| The wrong-answer bug compiling those bodies exposed |
 
 | # | directive |
 |---|---|
@@ -347,32 +351,27 @@ wasm: jit declined -- call target is an IMPORTED function, which the jit
 | 3 | Latent for as long as an imported call bailed the whole module. |
 | 4 | All four immediate folds read both channels now. |
 
-### Three smaller gaps closed with it
+| section |
+|---|---|
+| Three smaller gaps closed with it |
 
-- **`i32.trunc_sat_f32/f64_s/u`** (0xFC 0..3) on **both** engines. ARM64's
-  `FCVTZS`/`FCVTZU` already saturate exactly as wasm specifies — NaN to zero,
-  clamp to range — so the JIT arm is one instruction and emits no range test.
-  `loop_f64` could not run on either engine without it. 0xFC 4..7 (the i64
-  family) still bail honestly: u64's upper half has no Duo value to clamp
-  against, so the bound itself would be wrong.
-- **The interpreter's label stack was a GLOBAL ceiling.** `ltgt`/`lelse` were
-  one shared 64-entry buffer across every frame and `lsp` is not reset on a
-  call, so a recursion 32 frames deep exhausted it: `fib(34)` exited 70 on the
-  interpreter while the JIT answered it correctly. Sized to the frame cap
-  (64 × 64). Both engines now answer 5702887, as wasmtime does.
-- **A JIT `unreachable` was `BRK #0`** (SIGTRAP, status 133) where the
-  interpreter's `bailtrap` exits 71. Nothing reached it before; wasi-libc's
-  `__wasi_proc_exit` ends on exactly that opcode, so compiling imported calls
-  made it reachable. It now calls the host's `exit` with the interpreter's
-  status, and falls back to `BRK` only if the host has no `exit` symbol.
+| # | directive |
+|---|---|
+| 1 | **`i32.trunc_sat_f32/f64_s/u`** (0xFC 0..3) on **both** engines. ARM64's `FCVTZS`/`FCVTZU` already saturate exactly as wasm specifies — NaN to zero, clamp to range — so the JIT arm is one instruction and emits no range test. `loop_f64` could not run on either engine without it. 0xFC 4..7 (the i64 family) still bail honestly: u64's upper half has no Duo value to clamp against, so the bound itself would be wrong. |
+| 2 | **The interpreter's label stack was a GLOBAL ceiling.** `ltgt`/`lelse` were one shared 64-entry buffer across every frame and `lsp` is not reset on a call, so a recursion 32 frames deep exhausted it: `fib(34)` exited 70 on the interpreter while the JIT answered it correctly. Sized to the frame cap (64 × 64). Both engines now answer 5702887, as wasmtime does. |
+| 3 | **A JIT `unreachable` was `BRK #0`** (SIGTRAP, status 133) where the interpreter's `bailtrap` exits 71. Nothing reached it before; wasi-libc's `__wasi_proc_exit` ends on exactly that opcode, so compiling imported calls made it reachable. It now calls the host's `exit` with the interpreter's status, and falls back to `BRK` only if the host has no `exit` symbol. |
 
-### Suite
+| section |
+|---|---|
+| Suite |
 
 | # | directive |
 |---|---|
 | 1 | **128 rows, 124 PASS, 0 DIFF, 0 UNSUPPORTED, exit 0** (was 122 PASS / 2 UNSUPPORTED). **The JIT compiles 47 of the 64 rows it is asked for, up from 36.** All five controls re-fired and still exit 3. |
 
-### The largest remaining gap: `call_indirect`
+| section |
+|---|---|
+| The largest remaining gap: `call_indirect` |
 
 | # | directive |
 |---|---|
@@ -381,19 +380,22 @@ wasm: jit declined -- call target is an IMPORTED function, which the jit
 | 3 | Every module it blocks sits under the 40 ms startup floor, so it buys coverage, not a measured number. |
 | 4 | The rest: `i32.load` with an offset above 16 MiB (3), `prefix.simd` (2), `i32.extend8_s` (2), one `return` inside an inlined body. |
 
-## 2026-08-08 (late) — the engine has a test suite, and it found eight real bugs
+| section |
+|---|---|
+| 2026-08-08 (late) — the engine has a test suite, and it found eight real bugs |
 
 | # | directive |
 |---|---|
 | 1 | `test/conform.id` is the suite. `zig build wasm-test` is the step. |
 | 2 | It runs **every `.wasm` fixture under both engines and both entry shapes**, differences the answer against wasmtime BY VALUE, and refuses to print a score until five controls pass in the same process (exit 3, distinct from exit 1, so a broken harness can never be read as a failing runtime): |
 
-1. both binaries under test exist and respond;
-2. the module path REACHES the runtime — two fixtures with different oracle
-   answers must give the engine two different answers;
-3. the comparator returns PASS on a matched pair and DIFF on a mismatched one;
-4. a PERTURBED module (byte 4 of the magic overwritten) is refused by both;
-5. a MISSING module is refused rather than defaulted.
+| # | directive |
+|---|---|
+| 1 | both binaries under test exist and respond; |
+| 2 | the module path REACHES the runtime — two fixtures with different oracle answers must give the engine two different answers; |
+| 3 | the comparator returns PASS on a matched pair and DIFF on a mismatched one; |
+| 4 | a PERTURBED module (byte 4 of the magic overwritten) is refused by both; |
+| 5 | a MISSING module is refused rather than defaulted. |
 
 | # | directive |
 |---|---|
@@ -422,7 +424,9 @@ wasm: jit declined -- call target is an IMPORTED function, which the jit
 | 2 | Printed bytes now win unconditionally. |
 | 3 | This is why a new harness's first red is worth reading before it is believed. |
 
-## 2026-08-08 (late) — why the JIT declined `hot_big`, and where it still does
+| section |
+|---|---|
+| 2026-08-08 (late) — why the JIT declined `hot_big`, and where it still does |
 
 | # | directive |
 |---|---|
@@ -446,13 +450,10 @@ wasm: jit declined -- call target is an IMPORTED function, which the jit
 | 2 | Nothing in `lib/jit.id` can express one: its surface is `alloc / w32 / r32 / w8 / seal / call0..call2 / release / arch`, and **none of those yields the ADDRESS of a host function**, so emitted code has no way to call back into the engine. |
 | 3 | The two ways out are both larger than a fix: |
 
-- give `std.jit` a primitive that returns a callable host address, and refactor
-  the engine's WASI (which today lives inline inside `run_body`'s dispatch) into a
-  C-ABI trampoline the emitted `BLR` can target; or
-- mixed mode: interpret the outer frames and JIT only the hot inner function.
-  That needs per-function entry points that take arguments (the current entry
-  trampoline takes none) and a compiled-code cache that survives a Duo function
-  boundary, which BUG B forbids for pointer locals.
+| # | directive |
+|---|---|
+| 1 | give `std.jit` a primitive that returns a callable host address, and refactor the engine's WASI (which today lives inline inside `run_body`'s dispatch) into a C-ABI trampoline the emitted `BLR` can target; or |
+| 2 | mixed mode: interpret the outer frames and JIT only the hot inner function. That needs per-function entry points that take arguments (the current entry trampoline takes none) and a compiled-code cache that survives a Duo function boundary, which BUG B forbids for pointer locals. |
 
 | # | directive |
 |---|---|
@@ -463,7 +464,9 @@ wasm: jit declined -- call target is an IMPORTED function, which the jit
 |---|---|
 | 1 | `call_indirect` (0x11) still has no JIT arm, and `ltgt` is still ONE shared label buffer across frames. |
 
-## 2026-08-08 (late) — six runtimes, 61 rows, and where the engine is not first
+| section |
+|---|---|
+| 2026-08-08 (late) — six runtimes, 61 rows, and where the engine is not first |
 
 | # | directive |
 |---|---|
@@ -504,7 +507,9 @@ wasm: jit declined -- call target is an IMPORTED function, which the jit
 | 2 | The 2026-08-06 handoff's numbers were not reproducible; two separate "it passes the whole corpus" results turned out to be the same measurement bug (see "The trap"). |
 | 3 | Sections below the "state" block are the bug lore from that session and are still accurate as CAUSES — the coverage counts they quote (`8/18`, `11/18`) are superseded by the table here. |
 
-## State, re-measured 2026-08-08
+| section |
+|---|---|
+| State, re-measured 2026-08-08 |
 
 | # | directive |
 |---|---|
@@ -574,7 +579,9 @@ duo compile src/engine.id --backend=c --emit exe -o /tmp/duowasm
 |---|---|
 | 1 | Every parser / hang / `#s` / boxing blocker from earlier handoffs is **resolved**. |
 
-## `src/wasm/*.id` was DEAD CODE — DELETED 2026-08-15
+| section |
+|---|---|
+| `src/wasm/*.id` was DEAD CODE — DELETED 2026-08-15 |
 
 | # | directive |
 |---|---|
@@ -611,7 +618,9 @@ duo compile src/engine.id --backend=c --emit exe -o /tmp/duowasm
 | 1 | **`bench/derived.id`'s orphan report is now wrong**: it globs `src/wasm/*.id` and calls everything it finds an orphan, and the only two files left there (`wasi.id`, `wasi_abi.id`) are both live. |
 | 2 | It has not run in some time — see the `script` note below — so nothing currently reads that number. |
 
-## Six more harnesses are dead on `script`, and it is not their fault
+| section |
+|---|---|
+| Six more harnesses are dead on `script`, and it is not their fault |
 
 | # | directive |
 |---|---|
@@ -629,7 +638,9 @@ duo compile src/engine.id --backend=c --emit exe -o /tmp/duowasm
 | 2 | Re-run today against the shipping binary: the engine **3.4 s on the interpreter**, wasm3 0.77 s, iwasm 0.74 s, wasmtime 0.12 s — the engine is **4.5x slower than wasm3**, the opposite of the claim. |
 | 3 | The value is right (2331661441, matching wasmtime); only the claim is wrong. |
 
-## wart IS a usable baseline now — with one hard limit
+| section |
+|---|---|
+| wart IS a usable baseline now — with one hard limit |
 
 | # | directive |
 |---|---|
@@ -646,7 +657,9 @@ duo compile src/engine.id --backend=c --emit exe -o /tmp/duowasm
 | 1 | `bench/wart.id` is the repair: generate the kernel, ask wasmtime for the value, then emit a second module whose `_start` traps unless the value matches. wart's exit status becomes a value check and the engine's `-1` bail becomes one too. |
 | 2 | It runs a deliberately-wrong assert first and refuses to report if either runtime accepts it. |
 
-## The trap that invalidated two benchmark sweeps
+| section |
+|---|---|
+| The trap that invalidated two benchmark sweeps |
 
 | # | directive |
 |---|---|
@@ -666,17 +679,18 @@ duo compile src/engine.id --backend=c --emit exe -o /tmp/duowasm
 DUO_WASM_MODULE=<abs path> DUO_WASM_INVOKE=<export> DUO_WASM_ENGINE=jit|interp  the engine
 ```
 
-## Also fixed this session
+| section |
+|---|---|
+| Also fixed this session |
 
-- **Export name is selectable.** `find_run_body` hardcoded a byte compare
-  against `r`,`u`,`n`. It now matches `DUO_WASM_INVOKE` (default `run`), which is
-  what makes the `_start`-exporting wart corpus reachable at all.
-- **Removed the "largest body" fallback.** When no export matched, the engine picked
-  the biggest function in the module and ran it, reporting a plausible number.
-  `wart_core_i32_compute` burned 0.127 s on garbage that way. A miss is now a
-  clean diagnostic.
+| # | directive |
+|---|---|
+| 1 | **Export name is selectable.** `find_run_body` hardcoded a byte compare against `r`,`u`,`n`. It now matches `DUO_WASM_INVOKE` (default `run`), which is what makes the `_start`-exporting wart corpus reachable at all. |
+| 2 | **Removed the "largest body" fallback.** When no export matched, the engine picked the biggest function in the module and ran it, reporting a plausible number. `wart_core_i32_compute` burned 0.127 s on garbage that way. A miss is now a clean diagnostic. |
 
-## `call` is implemented (this session)
+| section |
+|---|---|
+| `call` is implemented (this session) |
 
 | # | directive |
 |---|---|
@@ -689,14 +703,18 @@ DUO_WASM_MODULE=<abs path> DUO_WASM_INVOKE=<export> DUO_WASM_ENGINE=jit|interp  
 | 1 | Verified: `wart_simple` (`42 + 58` through a 2-param callee) returns **100**, and hash.wasm is unchanged at `1899277430`. |
 | 2 | Imported/WASI functions still bail. |
 
-## Measured coverage: 11/18 VERIFIED — SUPERSEDED, see the 2026-08-08 table above (43/44)
+| section |
+|---|---|
+| Measured coverage: 11/18 VERIFIED — SUPERSEDED, see the 2026-08-08 table above (43/44) |
 
 | # | directive |
 |---|---|
 | 1 | Everything from here down is the 2026-08-06 session's record. |
 | 2 | The BUGS and their causes are still correct and still worth reading; the coverage counts and the speed table are not current. |
 
-## THE CONVERSION FAMILY (168-187)
+| section |
+|---|---|
+| THE CONVERSION FAMILY (168-187) |
 
 | # | directive |
 |---|---|
@@ -714,7 +732,9 @@ DUO_WASM_MODULE=<abs path> DUO_WASM_INVOKE=<export> DUO_WASM_ENGINE=jit|interp  
 | 1 | Truncation is **toward zero**, not floor: `-2.7` -> `-2`, so negatives need `math.ceil`. |
 | 2 | Verified against wasmtime for both signs and both widths. |
 
-## THE i64 STACK OFF-BY-ONE — every i64 binop was broken
+| section |
+|---|---|
+| THE i64 STACK OFF-BY-ONE — every i64 binop was broken |
 
 | # | directive |
 |---|---|
@@ -749,7 +769,9 @@ grep -n 'mem.write_i64(st, (sp - 1)' src/engine.id   # then check each for a
 |---|---|
 | 1 | Symptom to remember: **a binop returning its first operand** means the result write missed the slot, not that the operator is wrong. |
 
-## THE HARDCODED GLOBAL 0
+| section |
+|---|---|
+| THE HARDCODED GLOBAL 0 |
 
 | # | directive |
 |---|---|
@@ -770,7 +792,9 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 | 1 | Now parsed from section id 6 (valtype, mut, init expr, `0x0B`), falling back to the 65536 shadow-stack default **only when there is no global section**, which preserves the wasi-libc case. |
 | 2 | 8/18 -> 9/18. |
 
-## NaN IS THE BAIL SIGNAL for a float-returning function
+| section |
+|---|---|
+| NaN IS THE BAIL SIGNAL for a float-returning function |
 
 | # | directive |
 |---|---|
@@ -788,7 +812,9 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 | 1 | `f64.nearest` is **roundTiesToEven**, not `floor(x + 0.5)`: 2.5 -> 2 but 3.5 -> 4. |
 | 2 | Verified against wasmtime including the negative tie (-2.5 -> -2). |
 
-## THE BRANCH LABEL POP — block vs loop
+| section |
+|---|---|
+| THE BRANCH LABEL POP — block vs loop |
 
 | # | directive |
 |---|---|
@@ -807,11 +833,10 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 |---|---|
 | 1 | Two related pieces landed with it, both required: |
 
-- `ltgt` is ONE shared buffer, so a callee must NOT reset `lsp = 0` — its labels
-  stack above the caller's.
-- therefore `end` cannot use `lsp > 0` to mean "block end". Frames now carry
-  **`lsp_base`** (frame slot 4, widened 4->8 slots) and `end` tests
-  `lsp > lsp_base`.
+| # | directive |
+|---|---|
+| 1 | `ltgt` is ONE shared buffer, so a callee must NOT reset `lsp = 0` — its labels stack above the caller's. |
+| 2 | therefore `end` cannot use `lsp > 0` to mean "block end". Frames now carry **`lsp_base`** (frame slot 4, widened 4->8 slots) and `end` tests `lsp > lsp_base`. |
 
 | # | directive |
 |---|---|
@@ -822,7 +847,9 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 | 1 | Note `wart_f32_bench`/`wart_f64_bench` moved to `nan` and `wart_mixed_type_bench` to `-1` afterwards. |
 | 2 | That is not a regression: their loops now run to completion instead of exiting early, so the previous near-looking numbers were partial sums. |
 
-## THE SILENT-ZERO BUG — read before adding any range arm
+| section |
+|---|---|
+| THE SILENT-ZERO BUG — read before adding any range arm |
 
 | # | directive |
 |---|---|
@@ -870,7 +897,9 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 | 1 | **Return-type handling is FIXED** (`find_run_body(... , 2)` reports the target's declared result type; `run_body` no longer masks with `M32`; the entry formats f64 by bitcasting the bits back). `wart_f64_bench` went `1929046707` -> `1000100019002752` against wasmtime's `1000100048462729.9` — the magnitude is now right, so what remains is an **accumulation difference**, not truncation. |
 | 2 | No perf regression: hash.wasm 0.457-0.464 s. |
 
-## f32 + f64 + i64 all execute now; correctness is the gate
+| section |
+|---|---|
+| f32 + f64 + i64 all execute now; correctness is the gate |
 
 | # | directive |
 |---|---|
@@ -924,7 +953,9 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 | 1 | `-1` means the engine genuinely could not execute it (unsupported opcode / stack underflow). |
 | 2 | So the limiter is **opcode coverage**, not the decoder. |
 
-## Speed, on the one workload that stresses it — SUPERSEDED
+| section |
+|---|---|
+| Speed, on the one workload that stresses it — SUPERSEDED |
 
 | runtime | `hash.wasm` | re-measured 2026-08-08 |
 | --- | --- | --- |
@@ -938,7 +969,9 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 | 1 | Note the interpreter went **backwards**, 5.26 s -> 7.10 s, while the JIT improved. |
 | 2 | That is the cost of the dispatch growing from 20 opcodes to 170 hard-coded predicates on one `if`/`elseif` ladder, and it is the same fact the derived-lines ratio is measuring from the other side. |
 
-## There is no local wart baseline — NO LONGER TRUE, see above
+| section |
+|---|---|
+| There is no local wart baseline — NO LONGER TRUE, see above |
 
 | # | directive |
 |---|---|
@@ -963,7 +996,9 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 |---|---|
 | 1 | Also note: wart's `build.zig` rejects `-Doptimize`; use **`-Drelease=true`**. `zig build ... \| tail` hides the failure because `$status` then reads `tail`. |
 
-## Critical path
+| section |
+|---|---|
+| Critical path |
 
 | # | directive |
 |---|---|
@@ -982,7 +1017,9 @@ mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
 | 1 | The 2026-08-06 note said the engine's 20 constants were a hand-copied subset of a 63-op subset, and that hand-writing the rest "across interpreter arms *and* JIT emitters is the thing to avoid." **That is exactly what happened**, and it was repaired the same day: the engine had grown to 170 distinct hard-coded opcode numbers, only 19 of them behind a name, the other 151 bare integers inside dispatch predicates. |
 | 2 | All 184 are now projected — see below. |
 
-### The projection landed, 2026-08-08
+| section |
+|---|---|
+| The projection landed, 2026-08-08 |
 
 | # | directive |
 |---|---|
@@ -1016,8 +1053,7 @@ DUO_WASM_DERIVE=1 duo run tools/opcodes.id # fail if src/engine.id drifted
 |---|---|
 | 1 | Two constraints still shape this, and both held: |
 
-1. The upstream generator is `src/wasm_semantic_gen.zig` — **Zig**, which
-   collides with the standing "no zig no c only duo" directive. `tools/` is
-   Duo; only the eight-word `then` fix touched the Zig.
-2. Cross-file module embedding is still broken in duo, so the projection
-   writes **into** `engine.id` rather than being required from it.
+| # | directive |
+|---|---|
+| 1 | The upstream generator is `src/wasm_semantic_gen.zig` — **Zig**, which collides with the standing "no zig no c only duo" directive. `tools/` is Duo; only the eight-word `then` fix touched the Zig. |
+| 2 | Cross-file module embedding is still broken in duo, so the projection writes **into** `engine.id` rather than being required from it. |

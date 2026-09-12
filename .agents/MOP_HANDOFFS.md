@@ -1,4 +1,6 @@
-# MOP handoffs — self-host blocker laboratory results
+| field | value |
+|---|---|
+| title | MOP handoffs — self-host blocker laboratory results |
 
 | # | directive |
 |---|---|
@@ -11,101 +13,104 @@
 | 1 | Every item below is work-order ready. |
 | 2 | Fill `.agents/WORK_ORDER.md` and dispatch per `.agents/AGENT_OPERATING_MODEL.md`. |
 
-## H1 — graph must publish application facts for f64 foreign writes (F1)
+| section |
+|---|---|
+| H1 — graph must publish application facts for f64 foreign writes (F1) |
 
-- tier: bounded-implementer (after Codex publishes the accessor)
-- before: `mem.write_f64(buf, off, v)` after `mem.ptr_from_addr` refuses
-  `unresolved-application-facts` (graph producer); write_i64 compiles.
-- fixture: `tools/reduce/fixtures/graph/f64.id` (+ f1_neg
-  negative control in the same directory).
-- after: fixture compiles to an object; f1_neg still compiles; a damage
-  control that drops the f64 fact re-refuses.
-- likely files: graph fact production for foreign applications (lane 3,
-  Codex-owned); consumer already expects the fact.
+| # | directive |
+|---|---|
+| 1 | tier: bounded-implementer (after Codex publishes the accessor) |
+| 2 | before: `mem.write_f64(buf, off, v)` after `mem.ptr_from_addr` refuses `unresolved-application-facts` (graph producer); write_i64 compiles. |
+| 3 | fixture: `tools/reduce/fixtures/graph/f64.id` (+ f1_neg negative control in the same directory). |
+| 4 | after: fixture compiles to an object; f1_neg still compiles; a damage control that drops the f64 fact re-refuses. |
+| 5 | likely files: graph fact production for foreign applications (lane 3, Codex-owned); consumer already expects the fact. |
 
-## H2 — module-global facts (F3a/F3b)
+| section |
+|---|---|
+| H2 — module-global facts (F3a/F3b) |
 
-- tier: bounded-implementer
-- before: any module-global read refuses with the bare name; a written
-  module-global refuses `global-init-not-constant:<name>`.
-- fixtures: f3_neg.id (F3a), f3_global_init_not_constant.id (F3b).
-- note: the repo contains a routed note that direct-native module-global
-  storage exists and a specific precheck should be removed only after its
-  storage controls pass (MOP-D candidate — verify against current source;
-  the guard text matches dnir_lower.zig:1010 refusal shape).
-- after: both fixtures compile; damage control on the storage path
-  re-refuses exactly F3b.
+| # | directive |
+|---|---|
+| 1 | tier: bounded-implementer |
+| 2 | before: any module-global read refuses with the bare name; a written module-global refuses `global-init-not-constant:<name>`. |
+| 3 | fixtures: f3_neg.id (F3a), f3_global_init_not_constant.id (F3b). |
+| 4 | note: the repo contains a routed note that direct-native module-global storage exists and a specific precheck should be removed only after its storage controls pass (MOP-D candidate — verify against current source; the guard text matches dnir_lower.zig:1010 refusal shape). |
+| 5 | after: both fixtures compile; damage control on the storage path re-refuses exactly F3b. |
 
-## H3 — reducer needed for three unminimized families (F2, F4, F5)
+| section |
+|---|---|
+| H3 — reducer needed for three unminimized families (F2, F4, F5) |
 
-- tier: OpenCode Pickle Mission A (tooling)
-- F2 `application-operand-abi`: verbatim `has` body + conditional call
-  compiles clean; refusal depends on remaining graph.id/bind.id context.
-  Reduce `lib/compiler/graph.id` against the predicate
-  `first error contains "application-operand-abi"`.
-- F4 `view`: 30-line token_view slice reproduces; continue reduction to
-  the minimal construct (suspect: array-field pack identity + indexing).
-- F5 `InvalidAggregateFact`: parser.id (1792 lines) crashes the compiler
-  with a leaked stack trace at semantic_graph.zig:3945. Reduce against
-  `process exits non-zero with InvalidAggregateFact`.
+| # | directive |
+|---|---|
+| 1 | tier: OpenCode Pickle Mission A (tooling) |
+| 2 | F2 `application-operand-abi`: verbatim `has` body + conditional call compiles clean; refusal depends on remaining graph.id/bind.id context. Reduce `lib/compiler/graph.id` against the predicate `first error contains "application-operand-abi"`. |
+| 3 | F4 `view`: 30-line token_view slice reproduces; continue reduction to the minimal construct (suspect: array-field pack identity + indexing). |
+| 4 | F5 `InvalidAggregateFact`: parser.id (1792 lines) crashes the compiler with a leaked stack trace at semantic_graph.zig:3945. Reduce against `process exits non-zero with InvalidAggregateFact`. |
 
-## H4 — diagnostics defect (F5, independent of the reducer)
+| section |
+|---|---|
+| H4 — diagnostics defect (F5, independent of the reducer) |
 
-- tier: mechanic (once replacement text is ruled)
-- before: internal Zig stack traces leak into user-facing diagnostics.
-- after: classified refusal with a DNB code, no internal frames.
+| # | directive |
+|---|---|
+| 1 | tier: mechanic (once replacement text is ruled) |
+| 2 | before: internal Zig stack traces leak into user-facing diagnostics. |
+| 3 | after: classified refusal with a DNB code, no internal frames. |
 
-## H5 — host link symbol (F6)
+| section |
+|---|---|
+| H5 — host link symbol (F6) |
 
-- tier: bounded-implementer, coordinates with the C-symbol ABI rename
-- before: host.id object links fail on undefined
-  `_idol_compiler_host__duo_lexer_host_stride`.
-- after: symbol provided (or renamed consistently with the idol C-ABI
-  rename) and host.id links to an executable.
+| # | directive |
+|---|---|
+| 1 | tier: bounded-implementer, coordinates with the C-symbol ABI rename |
+| 2 | before: host.id object links fail on undefined `_idol_compiler_host__duo_lexer_host_stride`. |
+| 3 | after: symbol provided (or renamed consistently with the idol C-ABI rename) and host.id links to an executable. |
 
-## Mask analysis method (MOP-C — pending)
+| section |
+|---|---|
+| Mask analysis method (MOP-C — pending) |
 
 | # | directive |
 |---|---|
 | 1 | For each family: copy the compiler source tree to /tmp, bypass ONLY that refusal, rebuild, re-run `compile --emit obj` over all 19 units, and report { genuinely advanced, masked, next-blocker distribution }. |
 | 2 | The ratchet scripts (`tools/node/dev/census/history/zero`) already demonstrate the copy-patch-measure pattern; no production tree is modified. |
 
-## Remeasurement discipline
+| section |
+|---|---|
+| Remeasurement discipline |
 
 | # | directive |
 |---|---|
 | 1 | Do not carry "9 of 19" forward: remeasure at the exact source/compiler hashes above. `idol check` is green on all 19 units — check is not evidence of compilability; object emission is the current honest floor. |
 
-## Update 2026-08-17 — reducer landed; F5 and F2 resolved to theorems
+| section |
+|---|---|
+| Update 2026-08-17 — reducer landed; F5 and F2 resolved to theorems |
 
 | # | directive |
 |---|---|
 | 1 | `tools/reduce/idol` (selftest-proven) reduced the open families: |
 
-- **F5 InvalidAggregateFact: 1792 → 27 lines**
-  (`tools/reduce/fixtures/crash/corpus.id`). Checks clean; crashes the
-  compiler at semantic_graph.zig:3945. Perturbation experiment: hoisting
-  the tail nested call `tail_pack(lx, proj_expr(lx))` to a flat binding
-  does NOT clear the crash — the aggregate crash lives in the chained
-  condition applications (`lexer.peek(lx).kind`). H4 (diagnostics defect)
-  stands; the graph lane now has a 2-line reproducer.
-- **F2 application-operand-abi: line-irreducible.** graph.id is 112 lines
-  and EVERY single-line deletion breaks the predicate — the missing fact
-  is module-granularity (whole-file context), not a local construct.
-  The graph lane needs the module as the unit of analysis.
-- F3b re-confirmed at 4 lines by the reducer (was 8 by hand).
+| # | directive |
+|---|---|
+| 1 | **F5 InvalidAggregateFact: 1792 → 27 lines** (`tools/reduce/fixtures/crash/corpus.id`). Checks clean; crashes the compiler at semantic_graph.zig:3945. Perturbation experiment: hoisting the tail nested call `tail_pack(lx, proj_expr(lx))` to a flat binding does NOT clear the crash — the aggregate crash lives in the chained condition applications (`lexer.peek(lx).kind`). H4 (diagnostics defect) stands; the graph lane now has a 2-line reproducer. |
+| 2 | **F2 application-operand-abi: line-irreducible.** graph.id is 112 lines and EVERY single-line deletion breaks the predicate — the missing fact is module-granularity (whole-file context), not a local construct. The graph lane needs the module as the unit of analysis. |
+| 3 | F3b re-confirmed at 4 lines by the reducer (was 8 by hand). |
 
-## Update 2 — MOP-C mask analysis: headline counts are 100% masked
+| section |
+|---|---|
+| Update 2 — MOP-C mask analysis: headline counts are 100% masked |
 
 | # | directive |
 |---|---|
 | 1 | `evidence/mop/mask.yaml` (shadow-copy method, tree verified identical after each restore): |
 
-- **F1** (unresolved-application-facts, 3 headline units): bypassing the
-  guard advances **0** units — all three immediately expose
-  `missing-application-id` at the same sites.
-- **F3b** (global-init-not-constant, 2 headline units): bypassing advances
-  **0** units — both expose `missing: unspecified` (unnamed entity hole).
+| # | directive |
+|---|---|
+| 1 | **F1** (unresolved-application-facts, 3 headline units): bypassing the guard advances **0** units — all three immediately expose `missing-application-id` at the same sites. |
+| 2 | **F3b** (global-init-not-constant, 2 headline units): bypassing advances **0** units — both expose `missing: unspecified` (unnamed entity hole). |
 
 | # | directive |
 |---|---|
@@ -117,57 +122,49 @@
 |---|---|
 | 1 | New top handoff: **H6 — graph must publish application ids for foreign and method call sites** (unblocks F1's three units past their next hole; the 2-line F5 reproducer and the F2 module-granularity finding are the companion inputs). |
 
-## Appendix — idiomatic floor and graph instrument (working notes)
+| section |
+|---|---|
+| Appendix — idiomatic floor and graph instrument (working notes) |
 
 | # | directive |
 |---|---|
 | 1 | Base: idol @ 4724e589+, idol-native bin/idol. |
 | 2 | Verified by exercising check/graph/symbols/explain over tools/mcp/native.id and idol-native tools/mcp/server.id on 2026-08-17. |
 
-## The graph is the instrument (sim-v0)
+| section |
+|---|---|
+| The graph is the instrument (sim-v0) |
 
-- `applications[]` — {relation, caller, arguments, results, demand,
-  provenance{file,start,end}, and cardinality cards:
-  applied/effect/authority/witness/target/realization ∈ none|one|unknown}.
-- `unresolved_applications` + `fact_coverage{candidates,published,bootstrap,
-  blocking}` — the blocker-laboratory measurement. server.id today:
-  37 candidates, 2 published, 35 bootstrap. native.id: 1/0/1.
-- `bodies[].places[]` — shape (parameter|scalar), region, determinacy,
-  mutation, escape, lifetime, residency (register), origin, accesses
-  {bind|read, point, depth, mult exact|bounded, const_index}.
-- `bodies[].regions[]` — shape refinement|alternative|recurrence with
-  parent sites and carried places: the control-region algebra. while loops
-  are `recurrence` regions.
-- `worlds[]` (home/reach/members) + `draws[]` (application→world card).
-- `enum_shapes`, `table_shapes`, `call_shapes` (callee_kind method|direct,
-  arg_count, specializable, demand).
+| # | directive |
+|---|---|
+| 1 | `applications[]` — {relation, caller, arguments, results, demand, provenance{file,start,end}, and cardinality cards: applied/effect/authority/witness/target/realization ∈ none\|one\|unknown}. |
+| 2 | `unresolved_applications` + `fact_coverage{candidates,published,bootstrap, blocking}` — the blocker-laboratory measurement. server.id today: 37 candidates, 2 published, 35 bootstrap. native.id: 1/0/1. |
+| 3 | `bodies[].places[]` — shape (parameter\|scalar), region, determinacy, mutation, escape, lifetime, residency (register), origin, accesses {bind\|read, point, depth, mult exact\|bounded, const_index}. |
+| 4 | `bodies[].regions[]` — shape refinement\|alternative\|recurrence with parent sites and carried places: the control-region algebra. while loops are `recurrence` regions. |
+| 5 | `worlds[]` (home/reach/members) + `draws[]` (application→world card). |
+| 6 | `enum_shapes`, `table_shapes`, `call_shapes` (callee_kind method\|direct, arg_count, specializable, demand). |
 
 | # | directive |
 |---|---|
 | 1 | `explain` (idol-explain-v1): knowledge_snapshot entities + incarnation, optimization_outcomes, assumption guards, transform_provenance (hash in/out, evidence class), and the transform registry — tier-1 comptime transforms (comp.match/map/power/derive.power/fixpoint/tabulate/interpolate/each/zip/ permute; budgets linear\|exponential\|factorial; parity sites) and call.* (inline/specialize observed; memo/devirtualize/gpu_lower/simd_lower registered, not yet observed). |
 
-## Idiom floor (what compiles under direct-native today)
+| section |
+|---|---|
+| Idiom floor (what compiles under direct-native today) |
 
-- `subject:edge(rest)` — the name follows the relation; know the edge and
-  the spelling is decided (gate/subject.id is the teacher; run it).
-- Flat loop-body bindings only: the native subset rejects nested
-  method-calls-as-arguments and bare expression-statement tails
-  (GAP-155 constraints). Bind intermediates; end blocks with statements.
-- PREDICATE-ZERO: no `== 0`, `== ""`, `== nil` sentinels. Presence facts
-  (`x:has(needle)`) select; `:find` coordinates are used only inside a
-  branch that proved presence.
-- Framing: `stdout:write(resp .. "\n")` line-delimits; `stdin:line()`
-  ingress; EOF ends the process (no EOF flag exists).
-- JSON literals in source stay single-quoted; command substitution strips
-  trailing newlines so responses never embed raw newlines.
-- Module-globals: reads refuse with the bare name; runtime writes refuse
-  `global-init-not-constant:<name>` (facts F3a/F3b) — avoid module-global
-  state until those facts publish.
-- `idol check` green ≠ compilable. Object emission is the floor;
-  `--emit exe` additionally demands a process (tail / one zero-arg
-  function / --entry).
+| # | directive |
+|---|---|
+| 1 | `subject:edge(rest)` — the name follows the relation; know the edge and the spelling is decided (gate/subject.id is the teacher; run it). |
+| 2 | Flat loop-body bindings only: the native subset rejects nested method-calls-as-arguments and bare expression-statement tails (GAP-155 constraints). Bind intermediates; end blocks with statements. |
+| 3 | PREDICATE-ZERO: no `== 0`, `== ""`, `== nil` sentinels. Presence facts (`x:has(needle)`) select; `:find` coordinates are used only inside a branch that proved presence. |
+| 4 | Framing: `stdout:write(resp .. "\n")` line-delimits; `stdin:line()` ingress; EOF ends the process (no EOF flag exists). |
+| 5 | JSON literals in source stay single-quoted; command substitution strips trailing newlines so responses never embed raw newlines. |
+| 6 | Module-globals: reads refuse with the bare name; runtime writes refuse `global-init-not-constant:<name>` (facts F3a/F3b) — avoid module-global state until those facts publish. |
+| 7 | `idol check` green ≠ compilable. Object emission is the floor; `--emit exe` additionally demands a process (tail / one zero-arg function / --entry). |
 
-## Performance doctrine (HPLS / FTCFTW)
+| section |
+|---|---|
+| Performance doctrine (HPLS / FTCFTW) |
 
 | # | directive |
 |---|---|
@@ -175,61 +172,59 @@
 | 2 | Never encode a physical strategy (manual buffers, caching, unrolling) the graph could derive; never widen observation (order, layout, addresses) the law does not demand. |
 | 3 | Highest performance in least LOC = state the relation, publish the facts, let specialization choose. |
 
-## Disjoint work surface (this session, Wave 0/1)
+| section |
+|---|---|
+| Disjoint work surface (this session, Wave 0/1) |
 
-- /tmp/idol-mop/** — matrix, fixtures, mask analysis (compiler copies
-  under /tmp only).
-- tools/reduce/** (new paths) — reducer + perturbation helper (Pickle
-  Missions A/C): predicate = external command + expected outcome;
-  selftests per the brief. Unblocks F2/F4/F5 minimization.
-- Verifier rotation on demand (V-A/V-B).
-- Agent-integration and work-order tooling (my established lane).
+| # | directive |
+|---|---|
+| 1 | /tmp/idol-mop/** — matrix, fixtures, mask analysis (compiler copies under /tmp only). |
+| 2 | tools/reduce/** (new paths) — reducer + perturbation helper (Pickle Missions A/C): predicate = external command + expected outcome; selftests per the brief. Unblocks F2/F4/F5 minimization. |
+| 3 | Verifier rotation on demand (V-A/V-B). |
+| 4 | Agent-integration and work-order tooling (my established lane). |
 
-## H7 — grammar projection drift on the GAP-134 chain (parity measured)
+| section |
+|---|---|
+| H7 — grammar projection drift on the GAP-134 chain (parity measured) |
 
 | # | directive |
 |---|---|
 | 1 | `tools/parity/grammar` (report-only) measured: |
 
-- canonical `TokenKind` = **114** ordinals (src/lexer.zig)
-- live projection `lib/token/grammarrole.id` = **114** — count-correct,
-  emitted by `idol token-tables emit` (main.zig:901), consumed by
-  `lib/compiler/token_view.id`; carries the old dialect (`--` comments,
-  `req("std.compiler.token")`) and a retired regen banner
-- `lib/token/grammar_role.id` = **110** — STALE by four ordinals and no
-  emitter writes it (dead artifact or stale rename target)
-- `tools/emit_grammar_role.zig` writes a third, dead
-  `lib/std/token/grammar_role.id` path (forbidden namespace)
-- BEGIN_EXPR vectors diverge at ordinal 3 between the two .id projections
+| # | directive |
+|---|---|
+| 1 | canonical `TokenKind` = **114** ordinals (src/lexer.zig) |
+| 2 | live projection `lib/token/grammarrole.id` = **114** — count-correct, emitted by `idol token-tables emit` (main.zig:901), consumed by `lib/compiler/token_view.id`; carries the old dialect (`--` comments, `req("std.compiler.token")`) and a retired regen banner |
+| 3 | `lib/token/grammar_role.id` = **110** — STALE by four ordinals and no emitter writes it (dead artifact or stale rename target) |
+| 4 | `tools/emit_grammar_role.zig` writes a third, dead `lib/std/token/grammar_role.id` path (forbidden namespace) |
+| 5 | BEGIN_EXPR vectors diverge at ordinal 3 between the two .id projections |
 
 | # | directive |
 |---|---|
 | 1 | Owner: lane 1–2 (GAP-134 generated grammar roles / immutable token view). |
 | 2 | The parity checker must stay report-only; reconciling the three emitters is a ruled decision for that lane. `scripts/grammarconvergence.id` already exists as the declared convergence script for this surface. |
 
-## Update 3 — H7 mechanical subset implemented; F4 minimized
+| section |
+|---|---|
+| Update 3 — H7 mechanical subset implemented; F4 minimized |
 
-- Generator banner `duo token-tables emit` -> `idol token-tables emit`
-  (src/grammar_role_gen.zig); `idol token-tables emit` regenerated the
-  tracked projection (114, current format). Stale 110 artifact and the
-  spent tools/ emitter deleted (foreign.md's ledger already recorded the
-  latter as spent). `tools/parity/grammar`: **all projections agree**.
-  The remaining H7 decisions (old-dialect emission face, tree-sitter
-  convergence) stay with lane 1-2.
-- F4 `missing: view` minimized 29 -> 4 lines
-  (tools/reduce/fixtures/view/minimal.id). Renaming the relation moves
-  the missing-fact name with it; renaming the param does not. The fact is
-  the relation SHAPE (pack param + if/else over a pack field), reported
-  by name — not a name-keyed lookup. Hands lane 4 a 4-line reproducer.
+| # | directive |
+|---|---|
+| 1 | Generator banner `duo token-tables emit` -> `idol token-tables emit` (src/grammar_role_gen.zig); `idol token-tables emit` regenerated the tracked projection (114, current format). Stale 110 artifact and the spent tools/ emitter deleted (foreign.md's ledger already recorded the latter as spent). `tools/parity/grammar`: **all projections agree**. The remaining H7 decisions (old-dialect emission face, tree-sitter convergence) stay with lane 1-2. |
+| 2 | F4 `missing: view` minimized 29 -> 4 lines (tools/reduce/fixtures/view/minimal.id). Renaming the relation moves the missing-fact name with it; renaming the param does not. The fact is the relation SHAPE (pack param + if/else over a pack field), reported by name — not a name-keyed lookup. Hands lane 4 a 4-line reproducer. |
 
-## Vocabulary ruling (user, 2026-08-17): `baseline` is a word
+| section |
+|---|---|
+| Vocabulary ruling (user, 2026-08-17): `baseline` is a word |
 
 | # | directive |
 |---|---|
 | 1 | `baseline` is not a compound — added to the `words` authority in both law copies (gate/path.id and gate/idiom.id). |
 | 2 | The compound census parses the list at runtime and honors it with no code change. |
 
-## Update 4 — compile concurrency measured; cache publish hardened in-tree
+| section |
+|---|---|
+| Update 4 — compile concurrency measured; cache publish hardened in-tree |
 
 | # | directive |
 |---|---|
@@ -242,7 +237,9 @@
 | 3 | The patch sits in the working tree beside that WIP for the owning session to wire and commit — committing their untracked file under my name would repeat the ace5f7d5 sweep mistake. |
 | 4 | Build green; unit-test parity identical (1663 pass / 3 pre-existing failures, reproduced with the patch reverted). |
 
-## Update 5 — F5 closed to a 2-line theorem: self-recursion
+| section |
+|---|---|
+| Update 5 — F5 closed to a 2-line theorem: self-recursion |
 
 | # | directive |
 |---|---|
@@ -253,35 +250,28 @@
 |---|---|
 | 1 | Also recorded: a second parallel-sweep attempt (xargs -P) degraded to a 15-minute CPU-idle timeout — shell-level candidate parallelism has now failed twice on this workload with different mechanisms; serial plus the guarded inert pre-pass (3m54s for the full 1792-line reduction) is the standing configuration. |
 
-## Update 6 — H4 fixed; H5 minimized with a corrected diagnosis
+| section |
+|---|---|
+| Update 6 — H4 fixed; H5 minimized with a corrected diagnosis |
 
-- H4 FIXED (commit 44bb7b5b): main wraps mainInner; internal errors print
-  one classified line; the error-return trace only dumps under
-  IDOL_TRACE=1. Classified diagnostics unchanged; unit parity 1663/3.
-- H5 minimized 38 -> 3 lines (tools/reduce/fixtures/link/probe.id) and
-  the diagnosis CORRECTED: the undefined symbol is not about the stride
-  relation — a cross-module application reached from an exe entry does
-  not pull the callee's object into the link. host.id's "ambient
-  reference" comment was the workaround attempt. Owner: lane 4.
-  Reducer note: predicate exit 0 means failure PRESENT (no negation).
+| # | directive |
+|---|---|
+| 1 | H4 FIXED (commit 44bb7b5b): main wraps mainInner; internal errors print one classified line; the error-return trace only dumps under IDOL_TRACE=1. Classified diagnostics unchanged; unit parity 1663/3. |
+| 2 | H5 minimized 38 -> 3 lines (tools/reduce/fixtures/link/probe.id) and the diagnosis CORRECTED: the undefined symbol is not about the stride relation — a cross-module application reached from an exe entry does not pull the callee's object into the link. host.id's "ambient reference" comment was the workaround attempt. Owner: lane 4. Reducer note: predicate exit 0 means failure PRESENT (no negation). |
 
-## Update 7 — Mission B verdict; matrix remeasured
+| section |
+|---|---|
+| Update 7 — Mission B verdict; matrix remeasured |
 
-- Metamorphic generator (Pickle B) is BLOCKED ON AUTHORITY, correctly:
-  the only ruled equivalence pairs live in idol-native's gate/subject.id,
-  which is already self-executing there ("the agreement count IS the exit
-  code"). A generator beside it would duplicate the authority the
-  operating model forbids duplicating. Unblocked when the main repo
-  gains its own pair authority (e.g. the graph-backed canonicalizer's
-  equivalence table).
-- Self-host matrix remeasured at 98e643cd per the no-carry-forward
-  discipline: all 19 units, exit statuses byte-identical (10 clean,
-  9 blocked, same families). evidence/mop/matrix.tsv stamped.
-- Codex landed 'Retire duplicate language server authority' on the
-  parallel ref reconcile/idol-canonical-all-work-20260817; not in this
-  branch's history.
+| # | directive |
+|---|---|
+| 1 | Metamorphic generator (Pickle B) is BLOCKED ON AUTHORITY, correctly: the only ruled equivalence pairs live in idol-native's gate/subject.id, which is already self-executing there ("the agreement count IS the exit code"). A generator beside it would duplicate the authority the operating model forbids duplicating. Unblocked when the main repo gains its own pair authority (e.g. the graph-backed canonicalizer's equivalence table). |
+| 2 | Self-host matrix remeasured at 98e643cd per the no-carry-forward discipline: all 19 units, exit statuses byte-identical (10 clean, 9 blocked, same families). evidence/mop/matrix.tsv stamped. |
+| 3 | Codex landed 'Retire duplicate language server authority' on the parallel ref reconcile/idol-canonical-all-work-20260817; not in this branch's history. |
 
-## H8 (corrected) — module-table REPRESENTATION gates wasm + LSP admission
+| section |
+|---|---|
+| H8 (corrected) — module-table REPRESENTATION gates wasm + LSP admission |
 
 | # | directive |
 |---|---|
@@ -299,7 +289,9 @@
 | 4 | WASIX has zero source support (the wasix bench is oracle corpus only) |
 | 5 | WASI p1 is real but partial. |
 
-## Update 8 — one-command theorem suite
+| section |
+|---|---|
+| Update 8 — one-command theorem suite |
 
 | # | directive |
 |---|---|
@@ -307,7 +299,9 @@
 | 2 | The crash control asserts CLEAN DIAGNOSIS — never an internal InvalidAggregateFact — so the suite is the post-merge regression guard: after the reconcile merge lands (self-recursion fixed to classified refusal on that line), this command must stay green with `missing: parse_expr` and never revert to the crash. |
 | 3 | Post-merge pass order: merge -> tools/reduce/verify -> census/compound --record -> parity (adopt fail-closed) -> ABI rename window -> bridge census re-run. |
 
-## H10 — arg-form face-equivalence (causal test now load-bearing)
+| section |
+|---|---|
+| H10 — arg-form face-equivalence (causal test now load-bearing) |
 
 | # | directive |
 |---|---|

@@ -1,4 +1,6 @@
-# Benchmark results — v6 (current main)
+| field | value |
+|---|---|
+| title | Benchmark results — v6 (current main) |
 
 | # | directive |
 |---|---|
@@ -17,7 +19,9 @@
 | 2 | 21 interleaved timed rounds |
 | 3 | Welch t-test; compile time is median-of-5 source-to-executable; object size is `.o` bytes. `bench/programs/*.id` sources withheld per the vocabulary gate (same as v5). |
 
-## Runtime: v5 → v6 deltas (Idol median vs clang median)
+| section |
+|---|---|
+| Runtime: v5 → v6 deltas (Idol median vs clang median) |
 
 | program | v5 idol | v5 clang | v5 margin | v6 idol | v6 clang | v6 margin | delta |
 |---|---|---|---|---|---|---|---|
@@ -43,38 +47,38 @@
 | 1 | Scoreboard: v5 was 0 wins / 3 ties / 7 losses. v6 is 0 wins / 5 ties / 5 losses. |
 | 2 | Compile time 10/10 wins and object size 10/10 wins are retained (see below). |
 
-## Fixed since v5
+| section |
+|---|---|
+| Fixed since v5 |
 
-- **sum** (−1138.88% → −0.05%, p=0.5835 ns): fix1 repaired compile-time
-  loop evaluation; the 100M-iteration loop now folds to a constant.
-  Idol median 0.027992s → 0.001866s.
-- **bigconst** (−1041.19% → −0.30%, p=0.3353 ns): same fix; `x+5000−4000`
-  per-iteration chain now folds. Idol median 0.028132s → 0.001979s.
-- **arith** (−30.64% → −0.85%, p=0.8875 ns): fix2's same-variable
-  constant-chain accumulator handles the `x*3+7−2` chain.
-  Idol median 0.054334s → 0.042078s.
+| # | directive |
+|---|---|
+| 1 | **sum** (−1138.88% → −0.05%, p=0.5835 ns): fix1 repaired compile-time loop evaluation; the 100M-iteration loop now folds to a constant. Idol median 0.027992s → 0.001866s. |
+| 2 | **bigconst** (−1041.19% → −0.30%, p=0.3353 ns): same fix; `x+5000−4000` per-iteration chain now folds. Idol median 0.028132s → 0.001979s. |
+| 3 | **arith** (−30.64% → −0.85%, p=0.8875 ns): fix2's same-variable constant-chain accumulator handles the `x*3+7−2` chain. Idol median 0.054334s → 0.042078s. |
 
-## REGRESSION: mul13
+| section |
+|---|---|
+| REGRESSION: mul13 |
 
-- **mul13** (+0.45% tie, p=0.3346 → −7.10% loss, p=0.0002): Idol's own
-  median rose 0.054247s → 0.061525s (+13.4%) while clang held ~0.055s.
-  Confirmed by an independent second run (idol 0.061031 vs clang
-  0.055090, −10.78%, p=0.0000). Verdict flipped from tie to significant
-  loss. Per the honesty policy this is a compiler bug report: something
-  between `85886ee3` and `ae5532b2` slowed the `x*13+1` loop — suspect
-  fix2's chain accumulator or the egraph/canon pass interacting with the
-  multiply chain. Needs a bisection.
+| # | directive |
+|---|---|
+| 1 | **mul13** (+0.45% tie, p=0.3346 → −7.10% loss, p=0.0002): Idol's own median rose 0.054247s → 0.061525s (+13.4%) while clang held ~0.055s. Confirmed by an independent second run (idol 0.061031 vs clang 0.055090, −10.78%, p=0.0000). Verdict flipped from tie to significant loss. Per the honesty policy this is a compiler bug report: something between `85886ee3` and `ae5532b2` slowed the `x*13+1` loop — suspect fix2's chain accumulator or the egraph/canon pass interacting with the multiply chain. Needs a bisection. |
 
-## Persistent losses (unchanged verdict, still bug reports)
+| section |
+|---|---|
+| Persistent losses (unchanged verdict, still bug reports) |
 
-- **nest** −44.04%: nested-loop bound handling still far behind.
-- **div** −32.57%: `sdiv` loop; no strength reduction on divide-by-3.
-- **zerotrip** −110.68%: 10M-iteration outer loop with dead inner loop;
-  clang deletes it, Idol does not.
-- **upbranch** −24.09% (was −18.89%): margin widened 5.2pp; verdict
-  unchanged (significant loss). Watch item, not a verdict flip.
+| # | directive |
+|---|---|
+| 1 | **nest** −44.04%: nested-loop bound handling still far behind. |
+| 2 | **div** −32.57%: `sdiv` loop; no strength reduction on divide-by-3. |
+| 3 | **zerotrip** −110.68%: 10M-iteration outer loop with dead inner loop; clang deletes it, Idol does not. |
+| 4 | **upbranch** −24.09% (was −18.89%): margin widened 5.2pp; verdict unchanged (significant loss). Watch item, not a verdict flip. |
 
-## Compile time, source → executable (median of 5, seconds)
+| section |
+|---|---|
+| Compile time, source → executable (median of 5, seconds) |
 
 | # | directive |
 |---|---|
@@ -97,7 +101,9 @@
 |---|---|
 | 1 | Absolute compile times rose run-to-run for all three compilers on most programs (machine state), so the cross-run idol delta is environmental; the within-run idol-vs-clang win is the controlled comparison. |
 
-## Object size (`.o` bytes)
+| section |
+|---|---|
+| Object size (`.o` bytes) |
 
 | # | directive |
 |---|---|
@@ -116,12 +122,12 @@
 | upbranch | 355 | 355 | 608 |
 | startup | 243 | 247 | 512 |
 
-## Notes
+| section |
+|---|---|
+| Notes |
 
-- Host: arm64-Darwin (Apple M4 Mac mini), same machine as v5.
-- gcc -O3 also ran (harness default); all margins above are vs clang,
-  matching the v5 report. Full three-compiler tables are in
-  `bench/RESULTS.md`.
-- The 504-case differential verify suite (`bench/verify`) was not re-run
-  here; the run.sh correctness gate (exit-code agreement Idol/clang/gcc
-  on all 10 programs) passed.
+| # | directive |
+|---|---|
+| 1 | Host: arm64-Darwin (Apple M4 Mac mini), same machine as v5. |
+| 2 | gcc -O3 also ran (harness default); all margins above are vs clang, matching the v5 report. Full three-compiler tables are in `bench/RESULTS.md`. |
+| 3 | The 504-case differential verify suite (`bench/verify`) was not re-run here; the run.sh correctness gate (exit-code agreement Idol/clang/gcc on all 10 programs) passed. |

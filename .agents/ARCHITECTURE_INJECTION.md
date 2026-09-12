@@ -1,10 +1,11 @@
-# Idol architecture injection — agent orientation
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | **Status:** durable agent orientation only. **Not language law.** If this file conflicts with `docs/spec/law.md` or `docs/spec/constitution.md`, stop and repair this projection. |
+| title | Idol architecture injection — agent orientation |
+| status | durable agent orientation only. **Not language law.** If this file conflicts with  or , stop and repair this projection. |
 
-## Preserve the strongest fact already known
+| section |
+|---|---|
+| Preserve the strongest fact already known |
 
 | # | directive |
 |---|---|
@@ -48,7 +49,9 @@
 | # | directive |
 |---|---|
 
-## Mental model shift
+| section |
+|---|---|
+| Mental model shift |
 
 | # | directive |
 |---|---|
@@ -67,7 +70,9 @@ observations → identities + facts → demand → lawful realization space → 
 | 1 | Stages exist only as **realization choices** over the same semantic graph. |
 | 2 | A new stage is admissible only when irreducibility is proved; otherwise the capability belongs as relations, facts, observations, demands, laws, witnesses, transformations, worlds, or realizations in the one graph. |
 
-## Universal optimization state
+| section |
+|---|---|
+| Universal optimization state |
 
 | # | directive |
 |---|---|
@@ -92,25 +97,31 @@ observations → identities + facts → demand → lawful realization space → 
 |---|---|
 | 1 | **Directionality is not a second relation identity.** Solving mode (forward/inverse/partial) is a fact over the same semantic relation. |
 
-## Interoperable algebras (the moat)
+| section |
+|---|---|
+| Interoperable algebras (the moat) |
 
 | # | directive |
 |---|---|
 | 1 | Make these **interoperable algebras over the same identities**: |
 
-- relational composition
-- observation projection
-- world injection
-- demand propagation
-- change propagation
-- equivalence
-- realization selection
+| # | directive |
+|---|---|
+| 1 | relational composition |
+| 2 | observation projection |
+| 3 | world injection |
+| 4 | demand propagation |
+| 5 | change propagation |
+| 6 | equivalence |
+| 7 | realization selection |
 
 | # | directive |
 |---|---|
 | 1 | Then compiler optimization, query planning, partial evaluation, incremental computation, automatic differentiation, program synthesis, hardware synthesis, distributed placement, and foreign adaptation become **different queries over the same graph**, not separate semantic kingdoms. |
 
-## Diagnostic and refusal shape (target)
+| section |
+|---|---|
+| Diagnostic and refusal shape (target) |
 
 | # | directive |
 |---|---|
@@ -118,27 +129,23 @@ observations → identities + facts → demand → lawful realization space → 
 | 2 | Optimization refusals likewise: the smallest fact blocking realization R (`alias(x,y) unknown`, not forty downstream reasons). |
 | 3 | Negative knowledge, exclusion sets, and contradiction as unreachable region are first-class graph facts (see census § XXXV). |
 
-## Hard rules for agents
+| section |
+|---|---|
+| Hard rules for agents |
 
-1. **Do not filter semantic facts at DNIR.** DNIR is a realization artifact;
-   facts lost there must be justified by demand, not backend convenience.
-2. **Do not choose relations by hard-coded names in Sema.** Names are subjects;
-   meaning is relation identity + facts.
-3. **Do not alter canonical source for immature backends.** Fix realization or
-   add facts; do not weaken law-facing source to silence a backend.
-4. **Plugins may propose realization; they may not define meaning.** External
-   providers supply candidates, laws, witnesses, costs, and applicability — not
-   identities or relation semantics.
-5. **Trusted core stays small.** Expensive or learned machinery sits outside;
-   certificates refine into a small checker (eBPF/Kops/Jitterbug pattern).
-6. **Boundary contraction is generic.** When an intermediate representation is
-   unobserved, optimize `g ∘ f` as one semantic unit; cancellation and adjoint
-   pairs are relation-algebra laws, not ad hoc peephole rules.
-7. **Observation-relative equivalence is first-class.** Two states may differ in
-   full value but coincide for the demanded observation (`x ≡_demand y`); this
-   extends recurrence quotient and supercompilation generalization.
+| # | directive |
+|---|---|
+| 1 | **Do not filter semantic facts at DNIR.** DNIR is a realization artifact; facts lost there must be justified by demand, not backend convenience. |
+| 2 | **Do not choose relations by hard-coded names in Sema.** Names are subjects; meaning is relation identity + facts. |
+| 3 | **Do not alter canonical source for immature backends.** Fix realization or add facts; do not weaken law-facing source to silence a backend. |
+| 4 | **Plugins may propose realization; they may not define meaning.** External providers supply candidates, laws, witnesses, costs, and applicability — not identities or relation semantics. |
+| 5 | **Trusted core stays small.** Expensive or learned machinery sits outside; certificates refine into a small checker (eBPF/Kops/Jitterbug pattern). |
+| 6 | **Boundary contraction is generic.** When an intermediate representation is unobserved, optimize `g ∘ f` as one semantic unit; cancellation and adjoint pairs are relation-algebra laws, not ad hoc peephole rules. |
+| 7 | **Observation-relative equivalence is first-class.** Two states may differ in full value but coincide for the demanded observation (`x ≡_demand y`); this extends recurrence quotient and supercompilation generalization. |
 
-## Supercompilation-shaped engine (target shape)
+| section |
+|---|---|
+| Supercompilation-shaped engine (target shape) |
 
 | # | directive |
 |---|---|
@@ -163,19 +170,25 @@ observe region
 | 1 | The same engine admits a **generalize ↔ specialize** axis (anti-unification upward, specialization downward) and **semantic factoring** — store `common skeleton + varying facts` instead of N expanded copies. |
 | 2 | Re-generalization is a first-class response to specialization explosion and code-size FTCFTW, not an afterthought. |
 
-## Relational solving (target shape)
+| section |
+|---|---|
+| Relational solving (target shape) |
 
 | # | directive |
 |---|---|
 | 1 | Same relation, multiple solving modes as facts: |
 
-- known inputs → outputs
-- known output → possible inputs
-- partial input + constraint → complete value
-- relation + desired property → synthesize witness
-- “what fact is missing to make this application legal?”
+| # | directive |
+|---|---|
+| 1 | known inputs → outputs |
+| 2 | known output → possible inputs |
+| 3 | partial input + constraint → complete value |
+| 4 | relation + desired property → synthesize witness |
+| 5 | “what fact is missing to make this application legal?” |
 
-## Realization below the binary
+| section |
+|---|---|
+| Realization below the binary |
 
 | # | directive |
 |---|---|
@@ -190,7 +203,9 @@ process · unikernel · WASI component · eBPF · firmware · bare-metal · kern
 | 1 | Same semantics; different deployment realization. |
 | 2 | Syscall elimination/fusion, storage topology, network protocol choice, and NUMA/device placement are ordinary physical domains — not new source APIs. |
 
-## Tonight's priority injection (supersedes fixture-chasing)
+| section |
+|---|---|
+| Tonight's priority injection (supersedes fixture-chasing) |
 
 | # | directive |
 |---|---|
@@ -242,11 +257,15 @@ process · unikernel · WASI component · eBPF · firmware · bare-metal · kern
 |---|---|
 | 1 | See `docs/architecture-negative-controls.md` for the full systemic-misunderstanding catalog and companion gate IDs. |
 
-## Where to look next
+| section |
+|---|---|
+| Where to look next |
 
-- **Negative controls:** `docs/architecture-negative-controls.md` · `gate/architecture-negative.sh` · `gate/architecture-companion.sh`
-- **Canonical source debt:** `docs/projections/canonical-source-debt.md`
-- **Capability map:** `docs/history/optimization-frontier-census.md`
-- **Priority compass:** `docs/AGENT_ALIGNMENT.md`
-- **Open obligations:** exact current `gaps/GAP-*.md` files
-- **Supreme law:** `docs/spec/law.md` then `docs/spec/constitution.md`
+| # | directive |
+|---|---|
+| 1 | **Negative controls:** `docs/architecture-negative-controls.md` · `gate/architecture-negative.sh` · `gate/architecture-companion.sh` |
+| 2 | **Canonical source debt:** `docs/projections/canonical-source-debt.md` |
+| 3 | **Capability map:** `docs/history/optimization-frontier-census.md` |
+| 4 | **Priority compass:** `docs/AGENT_ALIGNMENT.md` |
+| 5 | **Open obligations:** exact current `gaps/GAP-*.md` files |
+| 6 | **Supreme law:** `docs/spec/law.md` then `docs/spec/constitution.md` |

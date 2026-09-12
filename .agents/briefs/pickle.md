@@ -1,4 +1,6 @@
-# Brief — OpenCode Big Pickle: reduction + evidence tooling
+| field | value |
+|---|---|
+| title | Brief — OpenCode Big Pickle: reduction + evidence tooling |
 
 | # | directive |
 |---|---|
@@ -16,20 +18,26 @@
 | 12 | Never rewrite a grammar role automatically. |
 | 13 | VALIDATION focused selftests one positive control one negative control one deliberate damage control repo hygiene no compiler semantic files modified Final report must explicitly state: semantic vocabulary delta = 0 semantic compiler behavior delta = 0 |
 
-## Reduction phases (Mission A)
+| section |
+|---|---|
+| Reduction phases (Mission A) |
 
 | # | directive |
 |---|---|
 | 1 | remove files/homes, remove declarations, remove statements, remove branches, simplify expressions, simplify structured packs, reduce descriptors, reduce world facts, reduce inputs. |
 | 2 | Every candidate must be parsed/validated before predicate testing. |
 
-## Metamorphic pair families (Mission B — already-ruled only)
+| section |
+|---|---|
+| Metamorphic pair families (Mission B — already-ruled only) |
 
 | # | directive |
 |---|---|
 | 1 | operand-first ↔ subject-first; canonical ↔ compatibility face; explicit default ↔ omitted default; structured result ↔ demanded scalar projection; file spelling / home spelling variants; familiar control ↔ canonical control; direct ↔ Wasm where admitted; interpreter ↔ JIT. |
 
-## Grammar projection surfaces (Mission E)
+| section |
+|---|---|
+| Grammar projection surfaces (Mission E) |
 
 | # | directive |
 |---|---|

@@ -1,4 +1,6 @@
-# t_db31f084 evidence — direct-backend acceptance measured
+| field | value |
+|---|---|
+| title | t_db31f084 evidence — direct-backend acceptance measured |
 
 | # | directive |
 |---|---|
@@ -7,12 +9,15 @@
 | 3 | Host: mm.local, Zig `0.17.0-dev.1567+f0354179a`. |
 | 4 | Re-measured at the wrap commit `08654042` with the precedence-fix binary rebuilt from `f35beace` (HEAD +1 minute), and at the diagnostic extension `08654042` (the previous build cycle was `8fe0ba84`): |
 
-- `./zig-out/bin/idol run examples/demand/swap.id` exit 0
-- `./zig-out/bin/idol run examples/hash/agreement.id` exit 0 (6/6 PASS)
-- `./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null`
-  exit 1 (DNB003 register pressure — fenced; diagnostic below)
+| # | directive |
+|---|---|
+| 1 | `./zig-out/bin/idol run examples/demand/swap.id` exit 0 |
+| 2 | `./zig-out/bin/idol run examples/hash/agreement.id` exit 0 (6/6 PASS) |
+| 3 | `./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null` exit 1 (DNB003 register pressure — fenced; diagnostic below) |
 
-### Diagnostic at 08654042
+| section |
+|---|---|
+| Diagnostic at 08654042 |
 
 ```
 probe fail: RegisterExhausted home_budget=10 stack_bytes=16 gp_used=1 fp_used=0 pressure=1132
@@ -32,12 +37,14 @@ probe fail: RegisterExhausted home_budget=0  stack_bytes=16 gp_used=1 fp_used=0 
 |---|---|
 | 1 | Successor fences (out of this run's scope): |
 
-- **t_4293535f** — register-pressure relief + 13 stale run-path control
-  rotation.
-- **t_daed572a** — `allocHomeReg` bank full + spill cascade, on a
-  dedicated worktree `idol/t_daed572a-architecture.id-dnb003-allochomereg-bank`.
+| # | directive |
+|---|---|
+| 1 | **t_4293535f** — register-pressure relief + 13 stale run-path control rotation. |
+| 2 | **t_daed572a** — `allocHomeReg` bank full + spill cascade, on a dedicated worktree `idol/t_daed572a-architecture.id-dnb003-allochomereg-bank`. |
 
-## Final measurements on this run
+| section |
+|---|---|
+| Final measurements on this run |
 
 ```
 swap         ./zig-out/bin/idol run examples/demand/swap.id               exit 0   PASS
@@ -45,43 +52,39 @@ agreement    ./zig-out/bin/idol run examples/hash/agreement.id            exit 0
 architecture ./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null  exit 1   DNB003 register pressure (successor t_4293535f)
 ```
 
-## What landed in this run
+| section |
+|---|---|
+| What landed in this run |
 
-### Run 12 (commits `bf6c596a`, `967a3cc7`)
+| section |
+|---|---|
+| Run 12 (commits `bf6c596a`, `967a3cc7`) |
 
 | # | directive |
 |---|---|
 | 1 | First direct-backend acceptance run. |
 
-- `s:rep(n)` direct-backend lowering end-to-end (added in `967a3cc7`).
-- `examples/demand/swap.id` exit 0 on direct backend.
-- `agreement.id` advance: `box: any` and `string_methods` arms admitted
-  in `exprIsStr`; `:rep` relation lowers to `duo_str_rep`.
+| # | directive |
+|---|---|
+| 1 | `s:rep(n)` direct-backend lowering end-to-end (added in `967a3cc7`). |
+| 2 | `examples/demand/swap.id` exit 0 on direct backend. |
+| 3 | `agreement.id` advance: `box: any` and `string_methods` arms admitted in `exprIsStr`; `:rep` relation lowers to `duo_str_rep`. |
 
-### Run 13 commits
+| section |
+|---|---|
+| Run 13 commits |
 
-- `db7d30cd` — agreement.id 4/6 on direct backend:
-  - `duo_hash_new` / `duo_hash_store` / `duo_hash_load` runtime in
-    `src/idol_str_runtime.zig` (FNV-1a on first 32 bytes + exact memcmp).
-  - `lowerRecordLiteralAssign` detects empty `{}` and emits the call;
-    `lowerIndexAssignTarget` and `lowerDynamicIndex` route string-keyed
-    store/load through the new externs.
-  - `isAnyType` predicate; `box: any = (x: any) x` admission; `string_methods`
-    arm in `exprIsStr` for the `:rep(n)` / `:sub(i, j)` / `:match(p)` /
-    `:at(i)` / `:char(n)` str-returning methods.
-  - The `string_methods` arm conflates str-returning and integral-returning
-    members; the integral members (`len`, `byte`, `find`) were initially
-    admitted here too.
-- `9dbf410c` — `exprIsStr` method roster split:
-  - The run's `.method_call` arm admitted the full string_methods roster
-    as str-returning, including `len` and `byte`, which lowered
-    `print(s:len())` through `puts` on a raw integer — measured
-    `KERN_INVALID_ADDRESS at 0x3` inside `_platform_strlen`.
-  - Fix: the roster now enumerates only the str-result methods
-    (`sub`, `match`, `char`, `at`, `rep`); integral members take the
-    `%lld` path through `exprIsIntegral`.
-- **Run 13 wrap (this commit)** — `examples/hash/agreement.id`
-  precedence fix on line 28:
+| # | directive |
+|---|---|
+| 1 | `db7d30cd` — agreement.id 4/6 on direct backend: |
+| 2 | ↳ `duo_hash_new` / `duo_hash_store` / `duo_hash_load` runtime in `src/idol_str_runtime.zig` (FNV-1a on first 32 bytes + exact memcmp). |
+| 3 | ↳ `lowerRecordLiteralAssign` detects empty `{}` and emits the call; `lowerIndexAssignTarget` and `lowerDynamicIndex` route string-keyed store/load through the new externs. |
+| 4 | ↳ `isAnyType` predicate; `box: any = (x: any) x` admission; `string_methods` arm in `exprIsStr` for the `:rep(n)` / `:sub(i, j)` / `:match(p)` / `:at(i)` / `:char(n)` str-returning methods. |
+| 5 | ↳ The `string_methods` arm conflates str-returning and integral-returning members; the integral members (`len`, `byte`, `find`) were initially admitted here too. |
+| 6 | `9dbf410c` — `exprIsStr` method roster split: |
+| 7 | ↳ The run's `.method_call` arm admitted the full string_methods roster as str-returning, including `len` and `byte`, which lowered `print(s:len())` through `puts` on a raw integer — measured `KERN_INVALID_ADDRESS at 0x3` inside `_platform_strlen`. |
+| 8 | ↳ Fix: the roster now enumerates only the str-result methods (`sub`, `match`, `char`, `at`, `rep`); integral members take the `%lld` path through `exprIsIntegral`. |
+| 9 | **Run 13 wrap (this commit)** — `examples/hash/agreement.id` precedence fix on line 28: |
 
   ```diff
   -longbuilt = box("a very long table key that is definitely more than thirty-two bytes long" .. "!" :sub(1, 72))
@@ -99,7 +102,9 @@ architecture ./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/
 | 1 | This was previously misdiagnosed as a `..`-semantics change request (the prior evidence claimed the test was "strictly unpassable" because `..` always allocates). |
 | 2 | The diagnostic was wrong: the precedence made the test compute the wrong string in the first place. |
 
-## Verification after precedence fix
+| section |
+|---|---|
+| Verification after precedence fix |
 
 ```
 $ ./zig-out/bin/idol run examples/hash/agreement.id
@@ -114,36 +119,40 @@ EXIT=0
 |---|---|
 | 1 | All six rows green: |
 
-- `shortlit == shortbuilt` (8-char content equality after content-equal sub)
-- `longlit == longbuilt` (72-char content equality after precedence fix)
-- `t[shortlit] == 11` (hash lookup of short key by literal — short-key
-  bucket walked correctly)
-- `t[longlit] == 22` (hash lookup of long key by literal — long-key
-  bucket walked correctly with same first-32 bytes)
-- `200 distinct long keys` (each `"x":rep(500) .. i:to(str)` hashes to a
-  unique bucket because the `i:to(str)` tail varies)
-- control: a long key never inserted answers nil
+| # | directive |
+|---|---|
+| 1 | `shortlit == shortbuilt` (8-char content equality after content-equal sub) |
+| 2 | `longlit == longbuilt` (72-char content equality after precedence fix) |
+| 3 | `t[shortlit] == 11` (hash lookup of short key by literal — short-key bucket walked correctly) |
+| 4 | `t[longlit] == 22` (hash lookup of long key by literal — long-key bucket walked correctly with same first-32 bytes) |
+| 5 | `200 distinct long keys` (each `"x":rep(500) .. i:to(str)` hashes to a unique bucket because the `i:to(str)` tail varies) |
+| 6 | control: a long key never inserted answers nil |
 
-## Verified invariants preserved
+| section |
+|---|---|
+| Verified invariants preserved |
 
-- `scripts/run_compile_fail_tests.id` exits 0.
-- `scripts/assert_no_ansi_reports.id` exits 0.
-- `examples/demand/swap.id` exits 0.
-- `examples/hash/agreement.id` exits 0 (was 4/6 before precedence fix).
-- `scripts/proof/gatecap.id` exits 0.
-- The `print(s:len())` SEGSEGV introduced and fixed in `9dbf410c` does
-  not regress — verified at `n = "abc":len(); print(n)` → `3`, exit 3.
+| # | directive |
+|---|---|
+| 1 | `scripts/run_compile_fail_tests.id` exits 0. |
+| 2 | `scripts/assert_no_ansi_reports.id` exits 0. |
+| 3 | `examples/demand/swap.id` exits 0. |
+| 4 | `examples/hash/agreement.id` exits 0 (was 4/6 before precedence fix). |
+| 5 | `scripts/proof/gatecap.id` exits 0. |
+| 6 | The `print(s:len())` SEGSEGV introduced and fixed in `9dbf410c` does not regress — verified at `n = "abc":len(); print(n)` → `3`, exit 3. |
 
-## Successor fences (out of this run's scope)
+| section |
+|---|---|
+| Successor fences (out of this run's scope) |
 
-- `gate/architecture.id` still fails with DNB003 register pressure at
-  the native_backend.zig refuse site. Continuation:
-  **t_4293535f** / **t_daed572a** (architecture-register-pressure).
-- The agreement.id precedence fix itself is a one-line change to the
-  test fixture (one pair of parens on line 28). No semantic divergence;
-  the test now exercises what its author wrote it to exercise.
+| # | directive |
+|---|---|
+| 1 | `gate/architecture.id` still fails with DNB003 register pressure at the native_backend.zig refuse site. Continuation: **t_4293535f** / **t_daed572a** (architecture-register-pressure). |
+| 2 | The agreement.id precedence fix itself is a one-line change to the test fixture (one pair of parens on line 28). No semantic divergence; the test now exercises what its author wrote it to exercise. |
 
-## Diagnostic correction
+| section |
+|---|---|
+| Diagnostic correction |
 
 | # | directive |
 |---|---|

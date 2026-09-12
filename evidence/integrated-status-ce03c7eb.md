@@ -1,10 +1,14 @@
-# Integrated status at ce03c7eb — measured, not asserted
+| field | value |
+|---|---|
+| title | Integrated status at ce03c7eb — measured, not asserted |
 
 | # | directive |
 |---|---|
 | 1 | Revision: `ce03c7ebb6dc7469662096dd0f91cf09d903d77f` Worktree: `/Volumes/d 1/lanes/integrated` (branch `lane/integrated-20260823`) Host: Darwin-arm64, zig 0.17.0-dev.1770+5d7cf3f34 Compiler under test: `zig-out/bin/idol`, ReleaseFast (derived by `tools/node/dev/build-mode`), sha256 `11c1898ce90cab161b7c36d225c0ff10bfe2acd3d6be7ec9e862d037ef1d8b8a` Date measured: 2026-08-23 |
 
-## 1. Builds
+| section |
+|---|---|
+| 1. Builds |
 
 | command | exit | result |
 |---|---|---|
@@ -17,7 +21,9 @@
 | 1 | Build wiring is GREEN. |
 | 2 | Nothing below is a build-wiring failure. |
 
-## 2. The integrated aggregate — `zig build test`
+| section |
+|---|---|
+| 2. The integrated aggregate — `zig build test` |
 
 | # | directive |
 |---|---|
@@ -52,7 +58,9 @@
 | 1 | Rows 1–6 are genuine capability failures (direct-native subset holes). |
 | 2 | Row 7 is environment: `tools/node/dev/mcp.manifest.json` declares a `"sibling": "idol-native"` server; a lane worktree has no `../idol-native`. |
 
-## 3. Shell gates — `gate/*.sh`, each run individually
+| section |
+|---|---|
+| 3. Shell gates — `gate/*.sh`, each run individually |
 
 | # | directive |
 |---|---|
@@ -79,7 +87,9 @@
 |---|---|
 | 1 | i.e. it passes without comparing two compilers. |
 
-## 4. Gates that cannot fail as invoked
+| section |
+|---|---|
+| 4. Gates that cannot fail as invoked |
 
 | gate | evidence |
 |---|---|
@@ -100,7 +110,9 @@
 |---|---|
 | 1 | 117 of 949 corpus `.id` files compile AND run. |
 
-## 5. Slow gates (wall clock, measured)
+| section |
+|---|---|
+| 5. Slow gates (wall clock, measured) |
 
 | # | directive |
 |---|---|
@@ -110,7 +122,9 @@
 |---|---|
 | 1 | `sh gate/all.sh` runs all 34 serially; attribution alone is ~3 minutes of it. |
 
-## 6. Crashes
+| section |
+|---|---|
+| 6. Crashes |
 
 | # | directive |
 |---|---|
@@ -118,7 +132,9 @@
 | 2 | Every failure above is a clean diagnostic refusal (`DNB001` / `DNB011`) with exit 1. |
 | 3 | Nonzero exits in the corpus sweep are program answers (`examples/boring/fib.id` exits 109), not faults. |
 
-## 7. Where CI is
+| section |
+|---|---|
+| 7. Where CI is |
 
 | # | directive |
 |---|---|

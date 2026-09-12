@@ -1,11 +1,15 @@
-# Wasm closure matrix — measured, not claimed (GLM-E mission)
+| field | value |
+|---|---|
+| title | Wasm closure matrix — measured, not claimed (GLM-E mission) |
 
 | # | directive |
 |---|---|
 | 1 | Base: idol @ aa37b771 + codex in-flight worktree. |
 | 2 | Every row below is either executed or source-counted; nothing is taken from README prose (the tree's own law: capability is only ever read off `zig build wasm-test`). |
 
-## Admission path: BLOCKED (fail-closed, by design)
+| section |
+|---|---|
+| Admission path: BLOCKED (fail-closed, by design) |
 
 | # | directive |
 |---|---|
@@ -19,7 +23,9 @@
 | 3 | The reconcile branch is landing `src/table_apply.zig` (+49 lines) — table semantics are being built there. |
 | 4 | The lsp server shares the gate, not a quick fix. |
 
-## Proposal matrix (source-class evidence)
+| section |
+|---|---|
+| Proposal matrix (source-class evidence) |
 
 | Proposal | State | Evidence |
 |---|---|---|
@@ -33,7 +39,9 @@
 | WASI preview1 | REAL, partial | 73 fd_write/proc_exit/wasi sites; wasi_abi.id live; documented conformance history (9/18 wasi_rt, printf-buffer fixes) |
 | WASIX | none | zero source sites; `wart_wasix_extended.wasm` is ORACLE CORPUS ONLY — a fixture to test against, not support |
 
-## Performance: oracle baselines fixed; engine unverifiable
+| section |
+|---|---|
+| Performance: oracle baselines fixed; engine unverifiable |
 
 | Bench | Value | wasmtime (this machine) |
 |---|---|---|
@@ -50,17 +58,16 @@
 | 1 | `engine.out` (Aug 14 artifact) no longer speaks the current CLI — zero output, instant exit. |
 | 2 | No honest idol-engine number exists until the admission path unblocks. wart checkout present at /Volumes/d 1/x/wart (frozen oracle ca2b0b9c per OPCODE_PLAN); no in-repo wart binary. |
 
-## The honest path to "faster than wasmtime and wart"
+| section |
+|---|---|
+| The honest path to "faster than wasmtime and wart" |
 
-1. **H8**: publish the keyed-table-export fact family (one fix unblocks
-   wasm admission AND the LSP server admission).
-2. Engine compile unblocks -> `wasm-test` runs fail-closed conformance ->
-   fresh JIT-vs-interpreter-vs-wasmtime-vs-wart table on the existing
-   bench corpus (the measurement harness already exists; the corpus
-   already has wasmtime references).
-3. SOURCE-ZERO convergence of engine.id into the shared graph (codex
-   lane; the README's own target architecture).
-4. Then the perf ladder is steerable by measurement, per HPLS.
+| # | directive |
+|---|---|
+| 1 | **H8**: publish the keyed-table-export fact family (one fix unblocks wasm admission AND the LSP server admission). |
+| 2 | Engine compile unblocks -> `wasm-test` runs fail-closed conformance -> fresh JIT-vs-interpreter-vs-wasmtime-vs-wart table on the existing bench corpus (the measurement harness already exists; the corpus already has wasmtime references). |
+| 3 | SOURCE-ZERO convergence of engine.id into the shared graph (codex lane; the README's own target architecture). |
+| 4 | Then the perf ladder is steerable by measurement, per HPLS. |
 
 | # | directive |
 |---|---|

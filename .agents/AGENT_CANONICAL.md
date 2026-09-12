@@ -1,11 +1,15 @@
-# Idol agent router
+| field | value |
+|---|---|
+| title | Idol agent router |
 
 | # | directive |
 |---|---|
 | 1 | `AGENTS.md` is the repository entry point — including **Idol harness orientation** (harness routing, not C0). |
 | 2 | This file is its stable path router; it contains no language law and no volatile project status. |
 
-## One law
+| section |
+|---|---|
+| One law |
 
 | Purpose | Path |
 |---|---|
@@ -40,26 +44,19 @@
 | 2 | Canonical implementation uses `.id`. |
 | 3 | No pass document or historical corpus file is an authority. |
 
-## Session start
+| section |
+|---|---|
+| Session start |
 
-1. Read `AGENTS.md` (orientation + mechanical preflight), the constitution,
-   `CLAUDE.md`, `.agents/ARCHITECTURE_INJECTION.md`, `docs/AGENT_ALIGNMENT.md`,
-   `docs/bootstrap.md`, and the scope-specific authority. Consult
-   `docs/history/optimization-frontier-census.md` before proposing new optimizer
-   subsystems or IRs.
-2. Run `tools/node/dev/orient` and inspect its exact authority/frontier output.
-3. Inspect `git status --short --branch`, current HEAD, recent commits,
-   `tools/node/dev/claim list`, every current `gaps/GAP-*.md`, and `git stash list`.
-   Verify the executed frontier in `docs/bootstrap.md` against production.
-4. Treat `tools/node/dev/orient` as a derived census only; route work from the
-   exact gap files and live claim result. Reserve new numbers with
-   `tools/node/dev/gap reserve`.
-5. Claim exact paths with `tools/node/dev/claim acquire` before editing.
-6. Run heavy gates through the repository lock and record the inner outcome.
-   The MCP health gate is
-   `repo="$(git rev-parse --show-toplevel)" && "$repo/tools/node/dev/idol-lock" -- zig build mcp-gate`.
-   The lock wrapper is coordination transport, not semantic authority.
-7. Commit only explicit owned paths and release only your own claims.
+| # | directive |
+|---|---|
+| 1 | Read `AGENTS.md` (orientation + mechanical preflight), the constitution, `CLAUDE.md`, `.agents/ARCHITECTURE_INJECTION.md`, `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the scope-specific authority. Consult `docs/history/optimization-frontier-census.md` before proposing new optimizer subsystems or IRs. |
+| 2 | Run `tools/node/dev/orient` and inspect its exact authority/frontier output. |
+| 3 | Inspect `git status --short --branch`, current HEAD, recent commits, `tools/node/dev/claim list`, every current `gaps/GAP-*.md`, and `git stash list`. Verify the executed frontier in `docs/bootstrap.md` against production. |
+| 4 | Treat `tools/node/dev/orient` as a derived census only; route work from the exact gap files and live claim result. Reserve new numbers with `tools/node/dev/gap reserve`. |
+| 5 | Claim exact paths with `tools/node/dev/claim acquire` before editing. |
+| 6 | Run heavy gates through the repository lock and record the inner outcome. The MCP health gate is `repo="$(git rev-parse --show-toplevel)" && "$repo/tools/node/dev/idol-lock" -- zig build mcp-gate`. The lock wrapper is coordination transport, not semantic authority. |
+| 7 | Commit only explicit owned paths and release only your own claims. |
 
 | # | directive |
 |---|---|
@@ -83,7 +80,9 @@
 | 1 | PREDICATE-ZERO is also fail-closed: subject-first spelling does not admit a boolean helper when a semantic fact, case, transition, world, descriptor, demand, or realization fact owns the meaning. |
 | 2 | Preserve unknown and absence; missing vocabulary blocks rather than producing a helper predicate. |
 
-## Fail closed
+| section |
+|---|---|
+| Fail closed |
 
 | # | directive |
 |---|---|

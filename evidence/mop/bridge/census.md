@@ -1,4 +1,6 @@
-# Bridge census — measured 2026-08-17 (GLM-C)
+| field | value |
+|---|---|
+| title | Bridge census — measured 2026-08-17 (GLM-C) |
 
 | # | directive |
 |---|---|
@@ -6,27 +8,30 @@
 | 2 | Those two root documents were deleted on 2026-08-24 — analysis prose at the repository root with `law.path.name`-violating names, whose rulings had already been absorbed into `law.bridge.death` and `docs/spec/host.md`. |
 | 3 | Their text is in git history; the inventory they baselined is re-measured below and still holds, so nothing here depends on reading them. |
 
-## Verdict: records current; no drift found
+| section |
+|---|---|
+| Verdict: records current; no drift found |
 
-- All 6 documented .zig bridges exist with live consumers:
-  foreign_adapter (5), host_run (7), keyword_bridge (8), lexer_bridge (16),
-  shell_host (3), shell_session (2).
-- Zero zero-consumer bridges (no silent deaths).
-- Zero undocumented bridge-named files in src/.
-- Section-4 .id debt targets all present: lib/os/process.id, lib/fs.id,
-  lib/script.id, lib/env.id.
-- Today's deletions (MCP trio, gate.id, generators) were NOT bridge
-  records and do not appear in the census — the 2026-08-14 records
-  survive the purge unchanged.
+| # | directive |
+|---|---|
+| 1 | All 6 documented .zig bridges exist with live consumers: foreign_adapter (5), host_run (7), keyword_bridge (8), lexer_bridge (16), shell_host (3), shell_session (2). |
+| 2 | Zero zero-consumer bridges (no silent deaths). |
+| 3 | Zero undocumented bridge-named files in src/. |
+| 4 | Section-4 .id debt targets all present: lib/os/process.id, lib/fs.id, lib/script.id, lib/env.id. |
+| 5 | Today's deletions (MCP trio, gate.id, generators) were NOT bridge records and do not appear in the census — the 2026-08-14 records survive the purge unchanged. |
 
-## Deletion conditions
+| section |
+|---|---|
+| Deletion conditions |
 
 | # | directive |
 |---|---|
 | 1 | Per the archived `bridge_census.md`; none measured as satisfied today (all consumers live). |
 | 2 | Re-run this census (method above) after the reconcile merge — the 21-commit line deletes orphaned bootstrap transports and may satisfy conditions. |
 
-## Re-measured 2026-08-24 (reconcile)
+| section |
+|---|---|
+| Re-measured 2026-08-24 (reconcile) |
 
 | # | directive |
 |---|---|

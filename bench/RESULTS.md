@@ -1,4 +1,6 @@
-# Benchmark results
+| field | value |
+|---|---|
+| title | Benchmark results |
 
 | # | directive |
 |---|---|
@@ -10,7 +12,9 @@
 | 2 | Losses are reported, not hidden. |
 | 3 | A loss is a bug report against the compiler. |
 
-## sum
+| section |
+|---|---|
+| sum |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -30,7 +34,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 275, clang 512, gcc 512. |
 
-## arith
+| section |
+|---|---|
+| arith |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -50,7 +56,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 275, clang 544, gcc 544. |
 
-## fib
+| section |
+|---|---|
+| fib |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -70,7 +78,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 303, clang 512, gcc 512. |
 
-## nest
+| section |
+|---|---|
+| nest |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -90,7 +100,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 283, clang 512, gcc 512. |
 
-## div
+| section |
+|---|---|
+| div |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -110,7 +122,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 283, clang 560, gcc 560. |
 
-## mul13
+| section |
+|---|---|
+| mul13 |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -130,7 +144,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 279, clang 544, gcc 544. |
 
-## bigconst
+| section |
+|---|---|
+| bigconst |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -150,7 +166,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 271, clang 512, gcc 512. |
 
-## zerotrip
+| section |
+|---|---|
+| zerotrip |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -170,7 +188,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 295, clang 512, gcc 512. |
 
-## upbranch
+| section |
+|---|---|
+| upbranch |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
@@ -190,7 +210,9 @@
 |---|---|
 | 1 | Object size (bytes): idol 355, clang 608, gcc 608. |
 
-## startup
+| section |
+|---|---|
+| startup |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|

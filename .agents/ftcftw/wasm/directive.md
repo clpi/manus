@@ -1,11 +1,15 @@
-# FTCFTW / Wasm / foreign-world master directive (user, 2026-08-17)
+| field | value |
+|---|---|
+| title | FTCFTW / Wasm / foreign-world master directive (user, 2026-08-17) |
 
 | # | directive |
 |---|---|
 | 1 | Preserved verbatim-in-substance from the issued directive. |
 | 2 | This file is the durable projection; conflicts defer to the issuing authority and C0. |
 
-## Mission
+| section |
+|---|---|
+| Mission |
 
 | # | directive |
 |---|---|
@@ -14,39 +18,30 @@
 | 3 | Wasmtime is the principal industrial competitor; beat it across separate dimensions (decode, validation, compilation, instantiation, startup, steady execution, memory, footprint, WASI/component overhead, incremental execution). |
 | 4 | Never claim global dominance from a small-module benchmark. |
 
-## Architecture rulings
+| section |
+|---|---|
+| Architecture rulings |
 
-- Wasm bytes → law wasm → validate exact semantics → publish graph
-  facts → demand → realize. No permanent Wasm semantic IR. The operand
-  stack is source provenance; blocks are control provenance; locals are
-  semantic bindings; linear memory is ONE observable address space, not
-  the representation of internal values; tables are semantic aggregates;
-  imports/exports are boundary facts.
-- Component Model: WIT contributes descriptor/pack/ownership/resource/
-  world/effect/future/stream/provenance facts. Canonical ABI is a
-  boundary realization to ERASE when a sealed composition makes it
-  unobservable (component → adapter → ABI → adapter → component becomes
-  direct graph application).
-- WASI projects onto ordinary Idol worlds/effects. No permanent
-  WasiCtx kingdom. Sealed world targets: world object 0, capability
-  dispatch 0, import lookup 0, permission lookup 0.
-- WASI 0.3 native async (async func, future<T>, stream<T>) maps onto
-  ONE dependency/concurrency graph — never regress to universal
-  polling. No-overlap async collapses to synchronous direct code.
-- WASIX is compatibility law, not native ontology: thread_spawn →
-  concurrency edge, fd_pipe → stream relation, proc_spawn → process
-  relation (realizable in-process when identity is unobserved).
-  Preserve POSIX observations exactly; do not assume POSIX is the
-  cheapest realization.
+| # | directive |
+|---|---|
+| 1 | Wasm bytes → law wasm → validate exact semantics → publish graph facts → demand → realize. No permanent Wasm semantic IR. The operand stack is source provenance; blocks are control provenance; locals are semantic bindings; linear memory is ONE observable address space, not the representation of internal values; tables are semantic aggregates; imports/exports are boundary facts. |
+| 2 | Component Model: WIT contributes descriptor/pack/ownership/resource/ world/effect/future/stream/provenance facts. Canonical ABI is a boundary realization to ERASE when a sealed composition makes it unobservable (component → adapter → ABI → adapter → component becomes direct graph application). |
+| 3 | WASI projects onto ordinary Idol worlds/effects. No permanent WasiCtx kingdom. Sealed world targets: world object 0, capability dispatch 0, import lookup 0, permission lookup 0. |
+| 4 | WASI 0.3 native async (async func, future<T>, stream<T>) maps onto ONE dependency/concurrency graph — never regress to universal polling. No-overlap async collapses to synchronous direct code. |
+| 5 | WASIX is compatibility law, not native ontology: thread_spawn → concurrency edge, fd_pipe → stream relation, proc_spawn → process relation (realizable in-process when identity is unobserved). Preserve POSIX observations exactly; do not assume POSIX is the cheapest realization. |
 
-## Execution regimes (not compiler tiers)
+| section |
+|---|---|
+| Execution regimes (not compiler tiers) |
 
 | # | directive |
 |---|---|
 | 1 | zero / direct / guarded / optimized / persistent — one graph, cost decides realization depth. |
 | 2 | Search effort is itself a cost. |
 
-## FTCFTW search order (1–25)
+| section |
+|---|---|
+| FTCFTW search order (1–25) |
 
 | # | directive |
 |---|---|
@@ -55,13 +50,17 @@
 | 3 | Idol's strongest wins live at rungs 1–15 |
 | 4 | Wasmtime competes from ~10–25. |
 
-## Parallel lanes (fact ownership disjoint)
+| section |
+|---|---|
+| Parallel lanes (fact ownership disjoint) |
 
 | # | directive |
 |---|---|
 | 1 | 1 source/lex (close host ingress + GAP-145) · 2 grammar/parser · 3 wasm ingest (decoder/validator → graph facts; no realization) · 4 component/WIT · 5 demand/representation · 6 native realization · 7 WASI/WASIX (wart as oracle) · 8 performance matrices. |
 
-## First runtime verticals (in order)
+| section |
+|---|---|
+| First runtime verticals (in order) |
 
 | # | directive |
 |---|---|
@@ -72,7 +71,9 @@
 | 5 | Then WASIX process/pipe (in-process when identity unobserved). |
 | 6 | Only then broad opcode/WASI breadth. |
 
-## Where effort goes NOW (per the directive)
+| section |
+|---|---|
+| Where effort goes NOW (per the directive) |
 
 | # | directive |
 |---|---|
@@ -80,36 +81,28 @@
 | 2 | In parallel: one isolated Wasm research lane defines Wasm validation facts → existing semantic graph vocabulary (no production runtime); one runtime lane mines wart's JIT emitter for the minimum physical emitter basis. |
 | 3 | Convergence from both sides, not a second compiler architecture. |
 
-## Release-claim law
+| section |
+|---|---|
+| Release-claim law |
 
 | # | directive |
 |---|---|
 | 1 | Never say "faster than Wasmtime" globally until the matrix proves every demanded dimension or names the remaining loss. |
 
-## Lane status (first pass, 2026-08-17)
+| section |
+|---|---|
+| Lane status (first pass, 2026-08-17) |
 
-- Lane 3 (wasm ingest research): evidence/mop/wasm/validation.facts.md —
-  every core validation family mapped onto existing graph vocabulary
-  (applications/cards, places, regions, packs, worlds). The two headline
-  dissolutions stated in facts: operand stack = provenance order (edges,
-  no place); canonical ABI = result-pack demand cards (payload 0 /
-  status 1), sealed composition narrows the witness.
-- Lane 6 (emitter mining): evidence/mop/wasm/emitter.mining.md — wart's
-  JIT measured at 40,986 LOC fused; the minimum physical basis
-  extracted (encoding tables, register-slot model, region-edge branch
-  helpers, application call helpers, icache coherence) with fact-driven
-  selection shared across Idol and Wasm origins.
-- Lane 3 EXECUTES: tools/wasm/factsprobe decodes real Wasm bytes into
-  fact-shaped JSON (wasm-facts-probe-v1). On bench/fib.wasm (wasi-libc,
-  203 functions): f192 -> 71 applications with exact shapes — constants
-  carry determinacy exact, local.get is a read application, binops
-  carry width 32 + overflow wrap + origin wasm, block/loop/if map to
-  refinement/recurrence/alternative regions. The operand stack exists
-  nowhere in the output; it is the edge order. Snapshot:
-  evidence/mop/wasm/probe.fib.json.
-- Lanes 1-2 (source-law ingress, GRAMMAR-ONE): compiler lane, untouched.
+| # | directive |
+|---|---|
+| 1 | Lane 3 (wasm ingest research): evidence/mop/wasm/validation.facts.md — every core validation family mapped onto existing graph vocabulary (applications/cards, places, regions, packs, worlds). The two headline dissolutions stated in facts: operand stack = provenance order (edges, no place); canonical ABI = result-pack demand cards (payload 0 / status 1), sealed composition narrows the witness. |
+| 2 | Lane 6 (emitter mining): evidence/mop/wasm/emitter.mining.md — wart's JIT measured at 40,986 LOC fused; the minimum physical basis extracted (encoding tables, register-slot model, region-edge branch helpers, application call helpers, icache coherence) with fact-driven selection shared across Idol and Wasm origins. |
+| 3 | Lane 3 EXECUTES: tools/wasm/factsprobe decodes real Wasm bytes into fact-shaped JSON (wasm-facts-probe-v1). On bench/fib.wasm (wasi-libc, 203 functions): f192 -> 71 applications with exact shapes — constants carry determinacy exact, local.get is a read application, binops carry width 32 + overflow wrap + origin wasm, block/loop/if map to refinement/recurrence/alternative regions. The operand stack exists nowhere in the output; it is the edge order. Snapshot: evidence/mop/wasm/probe.fib.json. |
+| 4 | Lanes 1-2 (source-law ingress, GRAMMAR-ONE): compiler lane, untouched. |
 
-## Lane 3 idol-native research status + H9 (measured)
+| section |
+|---|---|
+| Lane 3 idol-native research status + H9 (measured) |
 
 | # | directive |
 |---|---|
@@ -152,14 +145,18 @@
 | 2 | The canonical ingest is therefore blocked on the bytes-vs-text contract (the architecture memo's 'text and bytes need a true semantic contract' item): a bytes face on path:read, or a world-authorized binary ingress relation. |
 | 3 | No shell piping workaround was wired in — that would be a silent fallback. |
 
-## Style ruling (user, 2026-08-17): `.` only for static members
+| section |
+|---|---|
+| Style ruling (user, 2026-08-17): `.` only for static members |
 
 | # | directive |
 |---|---|
 | 1 | Field access via `.` is for STATIC members (world/home fields like `os.args`); dynamic values relate through subject-first `:` edges (`s:byte(i)`, `path:read()`). |
 | 2 | Recorded; ingest.id audited compliant (no `.` on dynamic values — all access is `:` edges or plain locals). |
 
-## Lane 3: records are graph-shaped evidence, not graph publication
+| section |
+|---|---|
+| Lane 3: records are graph-shaped evidence, not graph publication |
 
 | # | directive |
 |---|---|
@@ -168,7 +165,9 @@
 | 3 | Explicit unknown cards prove schema coverage only. |
 | 4 | Closure requires the Wasm-law producer to publish exact occurrence, caller, relation, subject, operand, result, demand, effect, world, and witness facts into the same graph used by Idol source. |
 
-## Lane 3 corpus classification census; semantic closure remains open
+| section |
+|---|---|
+| Lane 3 corpus classification census; semantic closure remains open |
 
 | # | directive |
 |---|---|
@@ -177,12 +176,14 @@
 | 3 | That establishes byte-decoding and classification coverage for those fixtures, not exact relation resolution. |
 | 4 | Current status is: |
 
-- byte decoding: complete for the measured corpus;
-- opcode family classification: complete for the measured corpus;
-- section/body census: complete for the measured corpus;
-- semantic relation resolution: partial;
-- Wasm validation: partial;
-- shared semantic graph identity publication: not implemented.
+| # | directive |
+|---|---|
+| 1 | byte decoding: complete for the measured corpus; |
+| 2 | opcode family classification: complete for the measured corpus; |
+| 3 | section/body census: complete for the measured corpus; |
+| 4 | semantic relation resolution: partial; |
+| 5 | Wasm validation: partial; |
+| 6 | shared semantic graph identity publication: not implemented. |
 
 | # | directive |
 |---|---|

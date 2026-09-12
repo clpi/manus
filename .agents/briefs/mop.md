@@ -1,4 +1,6 @@
-# Brief — Z.ai MOP: compiler-B blocker laboratory
+| field | value |
+|---|---|
+| title | Brief — Z.ai MOP: compiler-B blocker laboratory |
 
 | # | directive |
 |---|---|
@@ -17,7 +19,9 @@
 | 13 | Produce an exact work order only when: guard still exists implementation exists documented positive answers reproduce damaged implementation produces the documented wrong answer deleting only the guard is the sole required semantic change STOP CONDITIONS Stop and report rather than edit when: semantic law is unsettled graph fact is missing multiple lawful repairs exist protected files are required expected current failure does not reproduce current compiler differs from the recorded compiler hash another live claim owns the path OUTPUT current-head self-host matrix blocker families minimized fixtures mask analysis exact fact handoffs bounded work orders all commands/hashes unresolved contradictions Semantic vocabulary delta must be zero. |
 | 14 | Production compiler file delta must be zero. |
 
-## Allowed paths
+| section |
+|---|---|
+| Allowed paths |
 
 | # | directive |
 |---|---|

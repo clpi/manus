@@ -1,10 +1,14 @@
-# Compiler defect: application faces lack one relation-role authority
+| field | value |
+|---|---|
+| title | Compiler defect: application faces lack one relation-role authority |
 
 | # | directive |
 |---|---|
 | 1 | Measured on exact `80fbdb85` (2026-08-18) with isolated programs, semantic-graph dumps, emitted AArch64, and process results. |
 
-## The earlier wrong-answer claim was wrong
+| section |
+|---|---|
+| The earlier wrong-answer claim was wrong |
 
 | # | directive |
 |---|---|
@@ -46,7 +50,9 @@ x:hex(b)
 | 3 | Returning 0 is not evidence that the backend lost `b`: the emitted call passes `x` in `x0` and `b` in `x1`, and the declared subject slot reads `x0`. |
 | 4 | The compiler defect is accepting the excess operand rather than refusing the invalid relation application. |
 
-## The real graph-ownership defect
+| section |
+|---|---|
+| The real graph-ownership defect |
 
 | # | directive |
 |---|---|
@@ -62,7 +68,9 @@ x:hex(b)
 | 1 | That means source syntax still decides subject/operand roles. |
 | 2 | The first semantic divergence occurs before realization; register allocation and machine argument passing are downstream witnesses, not the producer. |
 
-## Required closure
+| section |
+|---|---|
+| Required closure |
 
 | # | directive |
 |---|---|
@@ -80,20 +88,21 @@ result demand = single
 |---|---|
 | 1 | Required controls: |
 
-1. `hex(b)` and `b:hex()` publish identical relation, subject, operand,
-   result, and demand ids and execute identically.
-2. `x:hex(b)` fails closed as an excess-operand application.
-3. Poisoning source face, parameter spelling, or AST provenance after
-   graph closure does not change realization.
-4. Deleting or corrupting the relation-role fact makes the graph refuse;
-   no consumer reconstructs roles from argument order or spelling.
+| # | directive |
+|---|---|
+| 1 | `hex(b)` and `b:hex()` publish identical relation, subject, operand, result, and demand ids and execute identically. |
+| 2 | `x:hex(b)` fails closed as an excess-operand application. |
+| 3 | Poisoning source face, parameter spelling, or AST provenance after graph closure does not change realization. |
+| 4 | Deleting or corrupting the relation-role fact makes the graph refuse; no consumer reconstructs roles from argument order or spelling. |
 
 | # | directive |
 |---|---|
 | 1 | Owner: resolver/Sema relation-role publication and the shared semantic graph. |
 | 2 | DNIR/native lowering consumes the normalized graph application; it must not repair source-form ambiguity. |
 
-## Ingest consequence
+| section |
+|---|---|
+| Ingest consequence |
 
 | # | directive |
 |---|---|

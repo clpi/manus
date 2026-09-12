@@ -1,6 +1,10 @@
-# gated
+| field | value |
+|---|---|
+| title | gated |
 
-## categories
+| section |
+|---|---|
+| categories |
 
 | program | stresses | gated on |
 |---|---|---|
@@ -11,14 +15,18 @@
 | cache_seq | stride-1 walk 64mb | memory array indexing |
 | cache_stride | stride-64 walk 64mb | memory array indexing |
 
-## files
+| section |
+|---|---|
+| files |
 
 | suffix | content |
 |---|---|
 | .c | c oracle runnable semantics frozen |
 | .id.future | intended idol proposed syntax not compiling |
 
-## adopt
+| section |
+|---|---|
+| adopt |
 
 | step | act |
 |---|---|

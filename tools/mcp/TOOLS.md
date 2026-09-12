@@ -1,4 +1,6 @@
-# Idol MCP Tool Discovery
+| field | value |
+|---|---|
+| title | Idol MCP Tool Discovery |
 
 | # | directive |
 |---|---|

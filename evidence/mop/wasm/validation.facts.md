@@ -1,4 +1,6 @@
-# Wasm validation facts — mapped onto the existing graph vocabulary
+| field | value |
+|---|---|
+| title | Wasm validation facts — mapped onto the existing graph vocabulary |
 
 | # | directive |
 |---|---|
@@ -6,18 +8,22 @@
 | 2 | No runtime, no new ontology — every row uses facts the graph already publishes for Idol source. |
 | 3 | This is a specification-to-vocabulary mapping, not an implementation claim. |
 
-## Fact vocabulary used (all existing)
+| section |
+|---|---|
+| Fact vocabulary used (all existing) |
 
-- application {relation, subject, operands, results, demand, cards:
-  applied/effect/authority/witness/target/realization}
-- place {shape, region, determinacy, mutation, escape, lifetime,
-  residency, accesses{bind/read, mult, const_index}}
-- region {shape: refinement|alternative|recurrence, carried}
-- pack {members, roles}
-- world {home, reach, members} + draws {application → world card}
-- law witness + provenance (origin: wasm)
+| # | directive |
+|---|---|
+| 1 | application {relation, subject, operands, results, demand, cards: applied/effect/authority/witness/target/realization} |
+| 2 | place {shape, region, determinacy, mutation, escape, lifetime, residency, accesses{bind/read, mult, const_index}} |
+| 3 | region {shape: refinement\|alternative\|recurrence, carried} |
+| 4 | pack {members, roles} |
+| 5 | world {home, reach, members} + draws {application → world card} |
+| 6 | law witness + provenance (origin: wasm) |
 
-## Validation → facts
+| section |
+|---|---|
+| Validation → facts |
 
 | Wasm validation family | Graph expression |
 |---|---|
@@ -38,19 +44,18 @@
 | threads/atomics | shared places + ordering facts on edges (effect cards carry ordering) |
 | GC refs | reference places with lifetime/escape facts — GC proposal semantics ≠ GC runtime (register/stack/region/static selection) |
 
-## The two headline dissolutions, stated in facts
+| section |
+|---|---|
+| The two headline dissolutions, stated in facts |
 
-1. **Operand stack**: an instruction sequence is a chain of applications
-   where each result pack feeds the next operand pack — the stack is the
-   provenance ORDER, which the graph already records as edges. No place,
-   no runtime object.
-2. **Canonical ABI**: a component boundary is an application whose
-   result-pack members carry demand cards (payload 0 / status 1 /
-   metadata 0). Sealed composition = the boundary application's witness
-   narrows; undemanded slots never realize. This is the existing demand
-   machinery, one boundary further out.
+| # | directive |
+|---|---|
+| 1 | **Operand stack**: an instruction sequence is a chain of applications where each result pack feeds the next operand pack — the stack is the provenance ORDER, which the graph already records as edges. No place, no runtime object. |
+| 2 | **Canonical ABI**: a component boundary is an application whose result-pack members carry demand cards (payload 0 / status 1 / metadata 0). Sealed composition = the boundary application's witness narrows; undemanded slots never realize. This is the existing demand machinery, one boundary further out. |
 
-## Why this is the right lane now
+| section |
+|---|---|
+| Why this is the right lane now |
 
 | # | directive |
 |---|---|
@@ -58,23 +63,18 @@
 | 2 | Ingesting Wasm as facts inherits the existing demand, specialization, and realization machinery instead of forking a second compiler. |
 | 3 | Lane 3 delivers this mapping plus prototypes as fixtures; the production decoder waits on lanes 1–2 closing ingress and grammar. |
 
-## Fact-separation ruling (parallel review, 2026-08-17)
+| section |
+|---|---|
+| Fact-separation ruling (parallel review, 2026-08-17) |
 
 | # | directive |
 |---|---|
 | 1 | Two architecture regressions the review prevented apply directly here: |
 
-1. **Semantic runtime need is NEVER inferred from opcodes** — neither
-   Wasm opcodes nor DNIR opcodes. Instructions are source-law
-   provenance; runtime need comes only from demanded occurrences on the
-   graph. The probe's per-instruction applications are provenance
-   records; any realization decision reads demand facts, not these.
-2. **No bundled boundary records.** law, provider, ABI, ownership, and
-   realization are SEPARATE fact families. An application record carries
-   provenance (origin: wasm) and operand/result descriptors — never a
-   boundary bundle. Component/WIT ingestion must publish each family
-   independently (descriptor / pack / ownership / world / effect), and
-   consumers demand per family.
+| # | directive |
+|---|---|
+| 1 | **Semantic runtime need is NEVER inferred from opcodes** — neither Wasm opcodes nor DNIR opcodes. Instructions are source-law provenance; runtime need comes only from demanded occurrences on the graph. The probe's per-instruction applications are provenance records; any realization decision reads demand facts, not these. |
+| 2 | **No bundled boundary records.** law, provider, ABI, ownership, and realization are SEPARATE fact families. An application record carries provenance (origin: wasm) and operand/result descriptors — never a boundary bundle. Component/WIT ingestion must publish each family independently (descriptor / pack / ownership / world / effect), and consumers demand per family. |
 
 | # | directive |
 |---|---|

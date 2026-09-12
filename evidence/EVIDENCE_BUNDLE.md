@@ -130,38 +130,46 @@
 |---|---|
 | 1 | C comparison: INVALID |
 
-  - No executable evidence chain
-  - C backend emits broken C for closures (ret-type:any)
+| # | directive |
+|---|---|
+| 1 | No executable evidence chain |
+| 2 | C backend emits broken C for closures (ret-type:any) |
 
 | # | directive |
 |---|---|
 | 1 | WASM comparison: INVALID |
 
-  - No correctness-locked comparison against pinned Wasmtime
-  - perf ledger reports 19 missing contracts
+| # | directive |
+|---|---|
+| 1 | No correctness-locked comparison against pinned Wasmtime |
+| 2 | perf ledger reports 19 missing contracts |
 
 | # | directive |
 |---|---|
 | 1 | Startup/runtime/compile/memory/size: UNKNOWN |
 
-  - Direct backend blocks all I/O programs
-  - No valid measurement harness
+| # | directive |
+|---|---|
+| 1 | Direct backend blocks all I/O programs |
+| 2 | No valid measurement harness |
 
 | # | directive |
 |---|---|
 | 1 | Uncertainty ledger (exact counts from source inspection): |
 
-  1. Boxing (lua_Value): ~1,271 emissions — VERY HIGH
-  2. Heap allocation: ~82 lua_table_new, ~120 malloc — VERY HIGH
-  3. Indirect calls (lua_invoke): ~97 emissions — HIGH
-  4. Guards: 6 kinds, 3 unwired — MEDIUM-HIGH
-  5. Tagging: ~174 tag, ~20 number_kind — MEDIUM
-  6. Runtime descriptors: hundreds of tables — MEDIUM
-  7. Materialized packs: dozens of sites — MEDIUM
-  8. Hashing: ~84 calc_lua_hash — LOW-MEDIUM
-  9. Copies: ~134 memcpy — LOW-MEDIUM
-  10. World objects: ~74 matches — LOW
-  11. Synchronization: ~63 matches — LOW
+| # | directive |
+|---|---|
+| 1 | Boxing (lua_Value): ~1,271 emissions — VERY HIGH |
+| 2 | Heap allocation: ~82 lua_table_new, ~120 malloc — VERY HIGH |
+| 3 | Indirect calls (lua_invoke): ~97 emissions — HIGH |
+| 4 | Guards: 6 kinds, 3 unwired — MEDIUM-HIGH |
+| 5 | Tagging: ~174 tag, ~20 number_kind — MEDIUM |
+| 6 | Runtime descriptors: hundreds of tables — MEDIUM |
+| 7 | Materialized packs: dozens of sites — MEDIUM |
+| 8 | Hashing: ~84 calc_lua_hash — LOW-MEDIUM |
+| 9 | Copies: ~134 memcpy — LOW-MEDIUM |
+| 10 | World objects: ~74 matches — LOW |
+| 11 | Synchronization: ~63 matches — LOW |
 
 | # | directive |
 |---|---|
@@ -175,11 +183,13 @@
 |---|---|
 | 1 | Measured violations NOT caught by current gates: |
 
-  1. callable = true in table constructors: 12 violations
-  2. world["method"]() dispatch: 11 violations
-  3. String-indexed dispatch tables: 15+ violations
-  4. Mediator roles (registry, factory, broker): 16 violations
-  5. std.* semantic hops: 20 violations
+| # | directive |
+|---|---|
+| 1 | callable = true in table constructors: 12 violations |
+| 2 | world["method"]() dispatch: 11 violations |
+| 3 | String-indexed dispatch tables: 15+ violations |
+| 4 | Mediator roles (registry, factory, broker): 16 violations |
+| 5 | std.* semantic hops: 20 violations |
 
 | # | directive |
 |---|---|
@@ -257,21 +267,25 @@
 |---|---|
 | 1 | HIGH for: |
 
-  - SHC frontier characterization (source code inspection, exact lines)
-  - DNB011 failure boundary (minimal reproductions, exact error messages)
-  - FTCFTW uncertainty ledger (exact file/line references, frequency counts)
-  - Gate coverage gaps (exact violations, exact gate line references)
-  - Corpus audit findings (exact file/line references)
-  - Pre-commit hook operability (verified with test commit)
-  - Ledger execution results (actual program output captured)
+| # | directive |
+|---|---|
+| 1 | SHC frontier characterization (source code inspection, exact lines) |
+| 2 | DNB011 failure boundary (minimal reproductions, exact error messages) |
+| 3 | FTCFTW uncertainty ledger (exact file/line references, frequency counts) |
+| 4 | Gate coverage gaps (exact violations, exact gate line references) |
+| 5 | Corpus audit findings (exact file/line references) |
+| 6 | Pre-commit hook operability (verified with test commit) |
+| 7 | Ledger execution results (actual program output captured) |
 
 | # | directive |
 |---|---|
 | 1 | LOW for: |
 
-  - FTCFTW C/WASM performance claims (no valid comparison)
-  - Positive damage control verification (harness cannot execute I/O programs)
-  - Any claim of "100% SHC" or "FTCFTW proven"
+| # | directive |
+|---|---|
+| 1 | FTCFTW C/WASM performance claims (no valid comparison) |
+| 2 | Positive damage control verification (harness cannot execute I/O programs) |
+| 3 | Any claim of "100% SHC" or "FTCFTW proven" |
 
 | # | directive |
 |---|---|

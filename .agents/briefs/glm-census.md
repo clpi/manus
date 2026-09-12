@@ -1,4 +1,6 @@
-# Brief — Ollama GLM-5.2: exhaustive authority census (READ-ONLY)
+| field | value |
+|---|---|
+| title | Brief — Ollama GLM-5.2: exhaustive authority census (READ-ONLY) |
 
 | # | directive |
 |---|---|
@@ -14,13 +16,17 @@
 | 10 | No syntax proposals. |
 | 11 | No new relation/world names. |
 
-## Priority surfaces (Mission 1)
+| section |
+|---|---|
+| Priority surfaces (Mission 1) |
 
 | # | directive |
 |---|---|
 | 1 | dnir_lower, native_backend, graph_query, demand, comptime, recurrence, collection_relation, world resolution, Wasm engine, LSP/MCP. |
 
-## Candidate categories (Mission 4)
+| section |
+|---|---|
+| Candidate categories (Mission 4) |
 
 | # | directive |
 |---|---|

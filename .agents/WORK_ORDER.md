@@ -1,4 +1,6 @@
-# Universal low-agent work order
+| field | value |
+|---|---|
+| title | Universal low-agent work order |
 
 | # | directive |
 |---|---|
@@ -63,13 +65,15 @@ deliverable:
   - unresolved fact handoff
 ```
 
-## Tier definitions
+| section |
+|---|---|
+| Tier definitions |
 
-- **observer** — read-only; reports and manifests only.
-- **mechanic** — generated output, fixture promotion, verbatim-text
-  replacement; no semantic interpretation.
-- **bounded-implementer** — one pre-decided physical realization behind
-  exact graph facts; deletion-only guard removals with routed instructions.
+| # | directive |
+|---|---|
+| 1 | **observer** — read-only; reports and manifests only. |
+| 2 | **mechanic** — generated output, fixture promotion, verbatim-text replacement; no semantic interpretation. |
+| 3 | **bounded-implementer** — one pre-decided physical realization behind exact graph facts; deletion-only guard removals with routed instructions. |
 
 | # | directive |
 |---|---|

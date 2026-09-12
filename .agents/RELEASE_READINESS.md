@@ -1,11 +1,15 @@
-# Idol release readiness ledger
+| field | value |
+|---|---|
+| title | Idol release readiness ledger |
 
 | # | directive |
 |---|---|
 | 1 | This is a release-gating checklist, not semantic law and not live project status. |
 | 2 | Active development stays in **`clpi/idol`**. **`idollang/idol`** remains untouched until every blocker below is closed and explicit release authorization is recorded. |
 
-## Repository separation
+| section |
+|---|---|
+| Repository separation |
 
 | Requirement | Status |
 |---|---|
@@ -14,7 +18,9 @@
 | Release migration runbook exists as a dedicated future operation | **open** |
 | `tools/node/dev/doctor` admits only a checkout with the configured development repository | **met** — release identity cannot satisfy the development check |
 
-## Authority and orientation
+| section |
+|---|---|
+| Authority and orientation |
 
 | Requirement | Status |
 |---|---|
@@ -24,7 +30,9 @@
 | Cursor rules remain routers under C0; no client-specific constitution | **met** — 9 scoped rules |
 | Language identity projects as Idol / `.id` without implying release-repo migration | **in progress** — reconcile projections |
 
-## Canonicality and gates
+| section |
+|---|---|
+| Canonicality and gates |
 
 | Requirement | Status |
 |---|---|
@@ -34,7 +42,9 @@
 | Canonicality split enforced: new debt = 0 vs existing corpus debt tracked separately | **in progress** — see `docs/METRICS.md` |
 | No second idiom/canonicality authority in clients | **met** — derive from repository gates |
 
-## Semantic and SHC closure
+| section |
+|---|---|
+| Semantic and SHC closure |
 
 | Requirement | Status |
 |---|---|
@@ -43,7 +53,9 @@
 | Production graph facts consumed without source-text reconstruction | **open** — Codex/Poolside lanes |
 | FTCFTW evidence bundle for release candidate | **open** |
 
-## Client node dev health
+| section |
+|---|---|
+| Client node dev health |
 
 | Requirement | Status |
 |---|---|
@@ -51,35 +63,38 @@
 | Codex/Cursor MCP initialize probes pass on release candidate | **open** |
 | Devin projection routes through `AGENTS.md` and node dev only | **met** at `HEAD` |
 
-## Authorization
+| section |
+|---|---|
+| Authorization |
 
 | # | directive |
 |---|---|
 | 1 | Release migration to `idollang/idol` requires an explicit authorization record (named release operator, candidate commit, aggregate gate evidence, and signed acceptance that this ledger is complete). |
 | 2 | Until then, treat any `idollang/idol` push as out of policy. |
 
-## SHC frontend dependency (implementation lane — not Cursor)
+| section |
+|---|---|
+| SHC frontend dependency (implementation lane — not Cursor) |
 
 | # | directive |
 |---|---|
 | 1 | Parser authority transfer (`GAP-134`) is **blocked upstream** until the lexical → grammar-role prerequisite closes. |
 | 2 | Order is fixed: |
 
-1. `gaps/GAP-145.md` — distinct lexical token identities (text, bytes, compat
-   literals/comments, shebang, reserved backtick) without delimiter-text
-   inference.
-2. Generated grammar-role projection — `lib/token/grammarrole.id` from
-   `src/grammar_roles.zig` / `idol token-tables emit`; no parser-local spelling
-   tables.
-3. Immutable token-pack view — `lib/compiler/token_view.id` and host
-   `src/token_view.zig` for observation/lookahead.
-4. `gaps/GAP-134.md` — first bounded production parser recognition slice.
+| # | directive |
+|---|---|
+| 1 | `gaps/GAP-145.md` — distinct lexical token identities (text, bytes, compat literals/comments, shebang, reserved backtick) without delimiter-text inference. |
+| 2 | Generated grammar-role projection — `lib/token/grammarrole.id` from `src/grammar_roles.zig` / `idol token-tables emit`; no parser-local spelling tables. |
+| 3 | Immutable token-pack view — `lib/compiler/token_view.id` and host `src/token_view.zig` for observation/lookahead. |
+| 4 | `gaps/GAP-134.md` — first bounded production parser recognition slice. |
 
 | # | directive |
 |---|---|
 | 1 | **Owner:** Devin / SHC frontend lane. **Cursor does not implement this chain.** Status and closure evidence live in the gaps and bootstrap ledger, not here. |
 
-## Agent lanes (disjoint write ownership)
+| section |
+|---|---|
+| Agent lanes (disjoint write ownership) |
 
 | Lane | Scope |
 |---|---|
@@ -95,7 +110,9 @@
 | 2 | No broad cleanup. |
 | 3 | No release migration. |
 
-## Current node dev admission notes (2026-08-11)
+| section |
+|---|---|
+| Current node dev admission notes (2026-08-11) |
 
 | Check | Status |
 |---|---|

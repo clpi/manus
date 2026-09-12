@@ -1,4 +1,6 @@
-# Compile benchmark report: `idol check` across `lib/`
+| field | value |
+|---|---|
+| title | Compile benchmark report: `idol check` across `lib/` |
 
 | # | directive |
 |---|---|
@@ -9,18 +11,24 @@
 | 1 | This note records the final findings from the `lib/*.id` compile-check benchmark and follow-up profiling pass. |
 | 2 | It is intended to let another developer reproduce the run, read the slow-file results without opening the raw artifacts, and decide where to investigate next. |
 
-## Scope
+| section |
+|---|---|
+| Scope |
 
-- Repository benchmarked: `/Users/clp/work/idol`
-- Development worktree reported by `tools/node/dev/orient`: `/Users/clp/work/idol`
-- Requested report path: `~/x/idol/research/compile-benchmarks.md`
-- Benchmark source set: every file matched by `sorted(Path(repo / "lib").rglob("*.id"))`
-- Files checked: 270
-- Repeats: 3 runs per file, one fresh `idol` process per run
-- Total process runs: 810
-- Slow-set definition: slowest 10% by per-file median elapsed time, rounded up to 27 files
+| # | directive |
+|---|---|
+| 1 | Repository benchmarked: `/Users/clp/work/idol` |
+| 2 | Development worktree reported by `tools/node/dev/orient`: `/Users/clp/work/idol` |
+| 3 | Requested report path: `~/x/idol/research/compile-benchmarks.md` |
+| 4 | Benchmark source set: every file matched by `sorted(Path(repo / "lib").rglob("*.id"))` |
+| 5 | Files checked: 270 |
+| 6 | Repeats: 3 runs per file, one fresh `idol` process per run |
+| 7 | Total process runs: 810 |
+| 8 | Slow-set definition: slowest 10% by per-file median elapsed time, rounded up to 27 files |
 
-## Commands used
+| section |
+|---|---|
+| Commands used |
 
 | # | directive |
 |---|---|
@@ -64,22 +72,30 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 |---|---|
 | 1 | Additional observations came from: |
 
-- 8 randomized round-robin phase repeats over the 27 slow files (216 process runs).
-- 3 home-alias probe repeats over the 27 slow files (81 process runs).
-- Built-in `--trace` samples for representative files (`parser`, `token_view`, `shader`, `arm64check`).
+| # | directive |
+|---|---|
+| 1 | 8 randomized round-robin phase repeats over the 27 slow files (216 process runs). |
+| 2 | 3 home-alias probe repeats over the 27 slow files (81 process runs). |
+| 3 | Built-in `--trace` samples for representative files (`parser`, `token_view`, `shader`, `arm64check`). |
 
-## Date and environment notes
+| section |
+|---|---|
+| Date and environment notes |
 
-- Benchmark date: 2026-09-04 PDT.
-- Machine: `mm.local`, Darwin `25.5.0`, `arm64`.
-- Parent benchmark repository HEAD at benchmark start: `a94d71262211ca0bf5992449c9056557f43ce334` (`a94d7126`).
-- `tools/node/dev/orient` at report-write time reported HEAD `b1e9e4e1`, branch `main`, dirty entries `0`.
-- Parent benchmark binary: `/Users/clp/work/idol/zig-out/bin/idol`.
-- Parent benchmark binary sha256: `419646c051a9e4ab65aaf75c071ff66d749c668a132152363d06b0913594a7ee`.
-- Phase probe binary sha256: `43f71975f0b29e98615b6933add7b43752cb6dec6e4eaaec2926c9bfd33ffe1a`.
-- Upstream caveat from the benchmark handoff: after the benchmark, the main repo advanced to `b1e9e4e1`, changing only `src/lexer_tokenize.c`; the checked `lib/*.id` set remained 270 files and the live `zig-out/bin/idol` hash still matched the benchmark binary.
+| # | directive |
+|---|---|
+| 1 | Benchmark date: 2026-09-04 PDT. |
+| 2 | Machine: `mm.local`, Darwin `25.5.0`, `arm64`. |
+| 3 | Parent benchmark repository HEAD at benchmark start: `a94d71262211ca0bf5992449c9056557f43ce334` (`a94d7126`). |
+| 4 | `tools/node/dev/orient` at report-write time reported HEAD `b1e9e4e1`, branch `main`, dirty entries `0`. |
+| 5 | Parent benchmark binary: `/Users/clp/work/idol/zig-out/bin/idol`. |
+| 6 | Parent benchmark binary sha256: `419646c051a9e4ab65aaf75c071ff66d749c668a132152363d06b0913594a7ee`. |
+| 7 | Phase probe binary sha256: `43f71975f0b29e98615b6933add7b43752cb6dec6e4eaaec2926c9bfd33ffe1a`. |
+| 8 | Upstream caveat from the benchmark handoff: after the benchmark, the main repo advanced to `b1e9e4e1`, changing only `src/lexer_tokenize.c`; the checked `lib/*.id` set remained 270 files and the live `zig-out/bin/idol` hash still matched the benchmark binary. |
 
-## Timing method
+| section |
+|---|---|
+| Timing method |
 
 | # | directive |
 |---|---|
@@ -92,7 +108,9 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 | 1 | For each file, the aggregate reports median, best, mean, max, stable exit status, and final stderr-derived error/warning counts. |
 | 2 | Failures were retained rather than filtered out. |
 
-## Timing summary
+| section |
+|---|---|
+| Timing summary |
 
 | Metric | Value |
 | --- | ---: |
@@ -123,7 +141,9 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 | 2 | In the 8-run phase probe, `parser.id` had one high outlier at 122.49 ms, but its median stayed near 100.16 ms. |
 | 3 | No broad cold-start pattern appeared in the randomized round-robin probe. |
 
-## Slowest 10% table
+| section |
+|---|---|
+| Slowest 10% table |
 
 | # | directive |
 |---|---|
@@ -160,9 +180,13 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 | 26 | `lib/argparse.id` | 31.60 | 0, 0e/14w | 28.25 | 1.22 | 1.04 | 0.00 | 1.04 | parser/tokenization of local source | no homes; threshold-near with warnings |
 | 27 | `lib/crypto/signature.id` | 31.49 | 0, 0e/6w | 31.30 | 1.55 | 3.60 | 2.24 | 1.35 | process/startup floor plus small home fanout | `crypto` 1.87 ms, `crypto.rand` 0.38 ms |
 
-## Profiling observations
+| section |
+|---|---|
+| Profiling observations |
 
-### 1. Process/CLI floor is material
+| section |
+|---|---|
+| 1. Process/CLI floor is material |
 
 | # | directive |
 |---|---|
@@ -175,23 +199,29 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 | 1 | This benchmark intentionally timed one fresh process per file. |
 | 2 | That is useful for user-facing `idol check <file>` latency, but it overstates the marginal compiler cost of checking another file inside an already-running compiler. |
 
-### 2. Foreign-home loading dominates tiny compiler adapter files
+| section |
+|---|---|
+| 2. Foreign-home loading dominates tiny compiler adapter files |
 
 | # | directive |
 |---|---|
 | 1 | `token_view.id`, `graph.id`, and `bind.id` are small local files, but they load compiler homes inside sema. |
 | 2 | The repeated home loads explain their rank: |
 
-- `token_view.id`: 36 lines, local sema about 0.59 ms, but home load about 26.57 ms.
-- `graph.id`: local sema about 0.98 ms, home load about 22.11 ms.
-- `bind.id`: local sema about 1.90 ms, home load about 22.22 ms.
+| # | directive |
+|---|---|
+| 1 | `token_view.id`: 36 lines, local sema about 0.59 ms, but home load about 26.57 ms. |
+| 2 | `graph.id`: local sema about 0.98 ms, home load about 22.11 ms. |
+| 3 | `bind.id`: local sema about 1.90 ms, home load about 22.22 ms. |
 
 | # | directive |
 |---|---|
 | 1 | The recurring homes are `token`, `lexer`, and `token.grammarrole`. |
 | 2 | Because the benchmark starts a new process for every checked file, no cross-file cache can amortize those loads. |
 
-### 3. `parser.id` is a real local outlier
+| section |
+|---|---|
+| 3. `parser.id` is a real local outlier |
 
 | # | directive |
 |---|---|
@@ -205,7 +235,9 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 |---|---|
 | 1 | That makes `parser.id` the strongest candidate for deeper sema instrumentation once home caching and process floor are isolated. |
 
-### 4. Shader parsing and diagnostic recovery are a separate shape
+| section |
+|---|---|
+| 4. Shader parsing and diagnostic recovery are a separate shape |
 
 | # | directive |
 |---|---|
@@ -218,7 +250,9 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 | 1 | Likely cause: WGSL-like brace-heavy shader payloads in interpolating strings trigger interpolation-hole scanning and parser diagnostic recovery. |
 | 2 | This should be investigated separately from normal successful-source check latency. |
 
-### 5. Failure-path files mix sema, home loading, and diagnostics
+| section |
+|---|---|
+| 5. Failure-path files mix sema, home loading, and diagnostics |
 
 | # | directive |
 |---|---|
@@ -226,30 +260,38 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 | 2 | Their timings include work done before diagnostics plus the diagnostic path itself. |
 | 3 | Each has broad home fanout and sizable sema time before failure: |
 
-- `arm64check.id`: sema about 19.44 ms, home load about 17.24 ms.
-- `audio.id`: sema about 17.16 ms, home load about 14.98 ms.
-- `deploy.id`: sema about 18.76 ms, home load about 17.80 ms.
+| # | directive |
+|---|---|
+| 1 | `arm64check.id`: sema about 19.44 ms, home load about 17.24 ms. |
+| 2 | `audio.id`: sema about 17.16 ms, home load about 14.98 ms. |
+| 3 | `deploy.id`: sema about 18.76 ms, home load about 17.80 ms. |
 
 | # | directive |
 |---|---|
 | 1 | These are not apples-to-apples with clean success files. |
 | 2 | They should be tracked as a failure/diagnostic cluster. |
 
-### 6. ML files share `ml.tensor` home cost
+| section |
+|---|---|
+| 6. ML files share `ml.tensor` home cost |
 
 | # | directive |
 |---|---|
 | 1 | `rnn.id`, `attention.id`, `norm.id`, and `conv.id` all load `ml.tensor`, costing about 4.4-4.6 ms. |
 | 2 | Their total wall time is mostly the 25 ms process floor plus that shared tensor home and a few milliseconds of local parse/sema. `tensor.id` itself has no observed home loads and is mostly local source size. |
 
-### 7. Conversion law and contract scan are not current bottlenecks
+| section |
+|---|---|
+| 7. Conversion law and contract scan are not current bottlenecks |
 
 | # | directive |
 |---|---|
 | 1 | The instrumentation found `conversion_law` generally in the single-digit microsecond range across the slow set. `contract_scan` is sub-millisecond except for `parser.id`, where it is still only about 0.30 ms. |
 | 2 | Neither should be prioritized from this benchmark. |
 
-## Bottleneck categories
+| section |
+|---|---|
+| Bottleneck categories |
 
 | Category | Count | Files |
 | --- | ---: | --- |
@@ -259,54 +301,70 @@ IDOL_PHASE_PROFILE=1 <instrumented-debug-idol> check <lib-relative-file>
 | Failure path: cross-home sema + diagnostics | 3 | `lib/compiler/arm64check.id`, `lib/graphics/audio.id`, `lib/ml/deploy.id` |
 | Mixed parser + home + local sema | 2 | `lib/compiler/parser.id`, `lib/compiler/lexer.id` |
 
-## Caveats
+| section |
+|---|---|
+| Caveats |
 
-- The parent benchmark timed whole-process invocations. It should be read as current `idol check <file>` latency, not a pure compiler-phase profile.
-- The phase probe compiler was intentionally instrumented in a scratch worktree and was not a production compiler change. It was built Debug-class to match the parent benchmark class, but its binary hash differs because it emits phase rows.
-- Home-load time is included in sema-check time. Tables report both sema inclusive and home-load time; local sema is computed by subtracting home-load time.
-- Failure rows exit before the normal parse-and-check-total emission. Their phase rows remain useful, but the process-rest column includes early-exit and diagnostic effects.
-- The run covered the `lib/*.id` files present at the benchmark HEAD. The handoff revalidated that the `lib/*.id` set remained 270 after the repo advanced to `b1e9e4e1`.
-- Some successful rows still report warnings or parser diagnostics. For performance triage, those should not be mixed blindly with warning-free success files.
+| # | directive |
+|---|---|
+| 1 | The parent benchmark timed whole-process invocations. It should be read as current `idol check <file>` latency, not a pure compiler-phase profile. |
+| 2 | The phase probe compiler was intentionally instrumented in a scratch worktree and was not a production compiler change. It was built Debug-class to match the parent benchmark class, but its binary hash differs because it emits phase rows. |
+| 3 | Home-load time is included in sema-check time. Tables report both sema inclusive and home-load time; local sema is computed by subtracting home-load time. |
+| 4 | Failure rows exit before the normal parse-and-check-total emission. Their phase rows remain useful, but the process-rest column includes early-exit and diagnostic effects. |
+| 5 | The run covered the `lib/*.id` files present at the benchmark HEAD. The handoff revalidated that the `lib/*.id` set remained 270 after the repo advanced to `b1e9e4e1`. |
+| 6 | Some successful rows still report warnings or parser diagnostics. For performance triage, those should not be mixed blindly with warning-free success files. |
 
-## Suggested next investigations and optimizations
+| section |
+|---|---|
+| Suggested next investigations and optimizations |
 
-1. Prototype an in-process `lib` batch-check command or daemonized checker, then rerun the same 27 files. This isolates the roughly 25 ms process/CLI floor from true compiler work.
-2. Cache parsed/checked foreign homes within a process. Expected biggest wins are `token_view.id`, `graph.id`, `bind.id`, `parser.id`, ML files, and meta adapter files.
-3. If `parser.id` remains slow after home caching and batch execution, split `sem.check_module` timing around `check_block`, `check_expr`, relation/application handling, and foreign-home boundary registration. Current evidence says `parser.id` still has about 26 ms of local sema after excluding homes, but not which sema arm owns it.
-4. Treat diagnostic-heavy and failure-path files separately from normal check performance. `shader.id` is parse/diagnostic-recovery dominated, while `arm64check.id`, `audio.id`, and `deploy.id` fail after loading many homes.
-5. Add a cache-effect benchmark matrix: cold fresh-process, warm fresh-process, in-process batch with no home cache, and in-process batch with home cache. That would distinguish OS cache effects, compiler cache effects, and CLI/process overhead.
-6. Keep the benchmark driver and aggregate schema as the reproducible baseline for future optimizer claims. Any claim should name the binary hash, repo HEAD, source-file census, and command line.
+| # | directive |
+|---|---|
+| 1 | Prototype an in-process `lib` batch-check command or daemonized checker, then rerun the same 27 files. This isolates the roughly 25 ms process/CLI floor from true compiler work. |
+| 2 | Cache parsed/checked foreign homes within a process. Expected biggest wins are `token_view.id`, `graph.id`, `bind.id`, `parser.id`, ML files, and meta adapter files. |
+| 3 | If `parser.id` remains slow after home caching and batch execution, split `sem.check_module` timing around `check_block`, `check_expr`, relation/application handling, and foreign-home boundary registration. Current evidence says `parser.id` still has about 26 ms of local sema after excluding homes, but not which sema arm owns it. |
+| 4 | Treat diagnostic-heavy and failure-path files separately from normal check performance. `shader.id` is parse/diagnostic-recovery dominated, while `arm64check.id`, `audio.id`, and `deploy.id` fail after loading many homes. |
+| 5 | Add a cache-effect benchmark matrix: cold fresh-process, warm fresh-process, in-process batch with no home cache, and in-process batch with home cache. That would distinguish OS cache effects, compiler cache effects, and CLI/process overhead. |
+| 6 | Keep the benchmark driver and aggregate schema as the reproducible baseline for future optimizer claims. Any claim should name the binary hash, repo HEAD, source-file census, and command line. |
 
-## Kept intermediate result files
+| section |
+|---|---|
+| Kept intermediate result files |
 
 | # | directive |
 |---|---|
 | 1 | Durable Kanban attachments from task `t_05cb584e`: |
 
-- `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-aggregate.json`
-- `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-runs.jsonl`
-- `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-methodology.json`
-- `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-slowest-10pct.csv`
-- `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-summary.md`
-- `/Users/clp/.hermes/kanban/attachments/t_05cb584e/bench_idol_check_lib.py`
+| # | directive |
+|---|---|
+| 1 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-aggregate.json` |
+| 2 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-runs.jsonl` |
+| 3 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-methodology.json` |
+| 4 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-slowest-10pct.csv` |
+| 5 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/idol-check-lib-summary.md` |
+| 6 | `/Users/clp/.hermes/kanban/attachments/t_05cb584e/bench_idol_check_lib.py` |
 
 | # | directive |
 |---|---|
 | 1 | Durable Kanban attachments from task `t_44c380b5`: |
 
-- `/Users/clp/.hermes/kanban/attachments/t_44c380b5/slowest-lib-bottleneck-profile.md`
-- `/Users/clp/.hermes/kanban/attachments/t_44c380b5/slowest-lib-bottleneck-classification.json`
-- `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-summary.json`
-- `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-summary.csv`
-- `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-runs.jsonl`
-- `/Users/clp/.hermes/kanban/attachments/t_44c380b5/home-alias-summary.json`
-- `/Users/clp/.hermes/kanban/attachments/t_44c380b5/home-alias-runs.jsonl`
-- `/Users/clp/.hermes/kanban/attachments/t_44c380b5/builtin-trace-samples.txt`
+| # | directive |
+|---|---|
+| 1 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/slowest-lib-bottleneck-profile.md` |
+| 2 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/slowest-lib-bottleneck-classification.json` |
+| 3 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-summary.json` |
+| 4 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-summary.csv` |
+| 5 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/phase-profile-runs.jsonl` |
+| 6 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/home-alias-summary.json` |
+| 7 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/home-alias-runs.jsonl` |
+| 8 | `/Users/clp/.hermes/kanban/attachments/t_44c380b5/builtin-trace-samples.txt` |
 
 | # | directive |
 |---|---|
 | 1 | Original scratch-workspace paths recorded in the handoffs, if still present: |
 
-- `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/benchmark-results/full/`
-- `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/phase-profile-results-debug/`
-- `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/phase-profile-results-alias/`
+| # | directive |
+|---|---|
+| 1 | `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/benchmark-results/full/` |
+| 2 | `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/phase-profile-results-debug/` |
+| 3 | `/Users/clp/.hermes/kanban/workspaces/t_f6bca87379cc/phase-profile-results-alias/` |

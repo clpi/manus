@@ -1,4 +1,7 @@
-# Idol Agent Scope
+| field | value |
+|---|---|
+| title | Idol Agent Scope |
+| gate scan law | diff/path boundaries are curried symbols — , never  or . |
 
 | # | directive |
 |---|---|
@@ -22,7 +25,6 @@
 
 | # | directive |
 |---|---|
-| 1 | **Gate scan law:** diff/path boundaries are curried symbols — `scan(diff)(body)`, never `scandiff` or `scan("diff")`. |
 | 2 | See root `AGENTS.md` § Gate scan boundaries and `gate/idiom.id` header. |
 
 | # | directive |

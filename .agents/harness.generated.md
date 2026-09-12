@@ -1,9 +1,7 @@
-# Deprecated projection path
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | Read **`.agents/HARNESS.md`** — the sole revision-bound harness boot payload. |
+| title | Deprecated projection path |
 
-| # | directive |
-|---|---|
-| 1 | Regenerate: `tools/node/dev/generate-harness` |
+Read **`.agents/HARNESS.md`** — the sole revision-bound harness boot payload.
+
+Regenerate: `tools/node/dev/generate-harness`
