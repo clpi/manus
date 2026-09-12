@@ -1213,8 +1213,20 @@ cttry: str = (src: str, k: i64, lc: i64, ind: i64, lhs: str, rhs: str)
         vi = vi + 1
     return out
 
+hasidx: i64 = (src: str)
+    i = 1
+    while i <= src:len()
+        b = src:byte(i)
+        if b == 91 or b == 93 or b == 123 or b == 125
+            return 1
+        i = i + 1
+    0
+
 main: i64 = ()
     src = stdin:read()
+    if hasidx(src) == 1
+        print("native: indexed array memory unsupported")
+        return 1
     src = compiler.opt.zerotrip.zerotrip(src)
     src = compiler.opt.licm.licm(src)
     src = compiler.opt.poly.poly(src)
