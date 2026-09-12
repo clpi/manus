@@ -1,0 +1,1526 @@
+isdig: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+parsenum: i64 = (s: str)
+    v = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    v
+
+parsesgn: i64 = (s: str)
+    if s:len() > 0 and s:byte(1) == 45
+        return 0 - parsenum(s:sub(2, s:len()))
+    parsenum(s)
+
+decnum: str = (v: i64)
+    if v == 0
+        return "0"
+    neg = 0
+    x = v
+    if x < 0
+        neg = 1
+        x = 0 - x
+    out = ""
+    while x > 0
+        d = x - (x // 10) * 10
+        out = "0123456789":sub(d + 1, d + 1) .. out
+        x = x // 10
+    if neg == 1
+        return "-" .. out
+    out
+
+oknamechar: i64 = (c: i64)
+    if c >= 65 and c <= 90
+        return 1
+    if c >= 97 and c <= 122
+        return 1
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+okname: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    c = s:byte(1)
+    if c < 65 or c > 122
+        return 0
+    if c > 90 and c < 97
+        return 0
+    i = 2
+    while i <= n
+        if oknamechar(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+oknum: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    i = 1
+    while i <= n
+        if isdig(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+unpad: str = (s: str)
+    a = 1
+    n = s:len()
+    while a <= n and s:byte(a) == 32
+        a = a + 1
+    b = n
+    while b >= a and s:byte(b) == 32
+        b = b - 1
+    if b < a
+        return ""
+    s:sub(a, b)
+
+nospace: str = (s: str)
+    out = ""
+    i = 1
+    while i <= s:len()
+        if s:byte(i) != 32
+            out = out .. s:sub(i, i)
+        i = i + 1
+    out
+
+ssub: str = (s: str, a: i64, b: i64)
+    if a > b
+        return ""
+    if a < 1
+        a = 1
+    if b > s:len()
+        b = s:len()
+    if a > b
+        return ""
+    s:sub(a, b)
+
+indof: i64 = (s: str)
+    n = s:len()
+    i = 1
+    while i <= n and s:byte(i) == 32
+        i = i + 1
+    i - 1
+
+spaces: str = (n: i64)
+    out = ""
+    i = 0
+    while i < n
+        out = out .. " "
+        i = i + 1
+    out
+
+linecount: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            n = n + 1
+        i = i + 1
+    if s:len() > 0 and s:byte(s:len()) != 10
+        n = n + 1
+    n
+
+lineat: str = (s: str, k: i64)
+    n = s:len()
+    i = 1
+    cur = 0
+    a = 1
+    while i <= n + 1
+        if i > n or s:byte(i) == 10
+            if cur == k
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+wordhit: i64 = (hay: str, key: str, i: i64)
+    n = hay:len()
+    m = key:len()
+    if i + m - 1 > n
+        return 0
+    if hay:sub(i, i + m - 1) != key
+        return 0
+    if i > 1 and oknamechar(hay:byte(i - 1)) == 1
+        return 0
+    if i + m - 1 < n and oknamechar(hay:byte(i + m)) == 1
+        return 0
+    1
+
+wordfind: i64 = (s: str, key: str)
+    i = 1
+    while i <= s:len()
+        if wordhit(s, key, i) == 1
+            return i
+        i = i + 1
+    0
+
+hasvar: i64 = (vars: str, name: str)
+    key = "|" .. name .. "|"
+    i = 1
+    while i + key:len() - 1 <= vars:len()
+        if vars:sub(i, i + key:len() - 1) == key
+            return 1
+        i = i + 1
+    0
+
+pfields: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 124
+            n = n + 1
+        i = i + 1
+    n
+
+pfield: str = (s: str, idx: i64)
+    cur = 0
+    i = 1
+    a = 1
+    n = s:len()
+    while i <= n + 1
+        if i > n or s:byte(i) == 124
+            if cur == idx
+                return ssub(s, a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+nlvls: i64 = (ns: str)
+    n = 0
+    i = 1
+    while i <= ns:len()
+        if ns:byte(i) == 59
+            n = n + 1
+        i = i + 1
+    n
+
+nlvl: str = (ns: str, idx: i64)
+    cur = 0
+    i = 1
+    a = 1
+    n = ns:len()
+    while i <= n + 1
+        if i > n or ns:byte(i) == 59
+            if cur == idx
+                return ssub(ns, a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+findnl: i64 = (s: str)
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            return i
+        i = i + 1
+    s:len() + 1
+
+cutlines: str = (src: str, a: i64, b: i64)
+    out = ""
+    j = a
+    while j <= b
+        out = out .. lineat(src, j) .. "\n"
+        j = j + 1
+    out
+
+reindentskip: str = (src: str, a: i64, b: i64, skip: i64, delta: i64)
+    out = ""
+    j = a
+    while j <= b
+        if j != skip
+            r = lineat(src, j)
+            t = unpad(r)
+            if t:len() == 0
+                out = out .. "\n"
+            else
+                out = out .. spaces(indof(r) + delta) .. t .. "\n"
+        j = j + 1
+    out
+iswhile: i64 = (t: str)
+    if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
+        return 1
+    0
+
+isif: i64 = (t: str)
+    if t == "if"
+        return 1
+    if t:len() > 3 and t:sub(1, 3) == "if "
+        return 1
+    0
+
+loopend: i64 = (src: str, k: i64, lc: i64, ind: i64)
+    e = k
+    j = k + 1
+    while j < lc
+        r = lineat(src, j)
+        if unpad(r):len() > 0 and indof(r) <= ind
+            return e
+        e = j
+        j = j + 1
+    e
+
+bindent: i64 = (src: str, k: i64, e: i64, ind: i64)
+    j = k + 1
+    while j <= e
+        r = lineat(src, j)
+        if unpad(r):len() > 0
+            return indof(r)
+        j = j + 1
+    ind + 1
+
+eqpos: i64 = (t: str)
+    i = 1
+    while i <= t:len()
+        if t:byte(i) == 61
+            return i
+        i = i + 1
+    0
+
+asgtgt: str = (t: str)
+    p = eqpos(t)
+    if p == 0
+        return ""
+    unpad(ssub(t, 1, p - 1))
+
+asgrhs: str = (t: str)
+    p = eqpos(t)
+    if p == 0
+        return ""
+    unpad(ssub(t, p + 1, t:len()))
+
+whparts: str = (t: str)
+    rest = unpad(ssub(t, 6, t:len()))
+    opos = 0
+    op = 0
+    i = 1
+    while i <= rest:len()
+        c = rest:byte(i)
+        if c == 60 or c == 62
+            opos = i
+            if i < rest:len() and rest:byte(i + 1) == 61
+                op = 2
+            else
+                op = 1
+            i = rest:len()
+        i = i + 1
+    if opos == 0
+        return ""
+    v = unpad(ssub(rest, 1, opos - 1))
+    if okname(v) == 0
+        return ""
+    e = unpad(ssub(rest, opos + op, rest:len()))
+    if e:len() == 0
+        return ""
+    v .. "|" .. ssub(rest, opos, opos + op - 1) .. "|" .. e
+
+findinit: i64 = (src: str, k: i64, ind: i64, var: str)
+    j = k - 1
+    while j >= 0
+        r = lineat(src, j)
+        if unpad(r):len() > 0
+            if indof(r) != ind
+                return -1
+            if asgtgt(unpad(r)) == var
+                return j
+            return -1
+        j = j - 1
+    -1
+
+countassign: i64 = (src: str, a: i64, b: i64, var: str)
+    n = 0
+    j = a + 1
+    while j <= b
+        if asgtgt(unpad(lineat(src, j))) == var
+            n = n + 1
+        j = j + 1
+    n
+
+findassign: i64 = (src: str, a: i64, b: i64, var: str)
+    j = a + 1
+    while j <= b
+        if asgtgt(unpad(lineat(src, j))) == var
+            return j
+        j = j + 1
+    -1
+
+updform: i64 = (t: str, var: str)
+    u = nospace(t)
+    if u == var .. "=" .. var .. "+1"
+        return 1
+    if u == var .. "+=1"
+        return 1
+    if u == var .. "=" .. var .. "-1"
+        return -1
+    if u == var .. "-=1"
+        return -1
+    0
+
+affterm: i64 = (t: str)
+    u = unpad(t)
+    if u:len() == 0
+        return 0
+    if oknum(u) == 1
+        return 1
+    if okname(u) == 1
+        return 1
+    i = 1
+    while i <= u:len()
+        if u:byte(i) == 42
+            l = unpad(ssub(u, 1, i - 1))
+            r = unpad(ssub(u, i + 1, u:len()))
+            if oknum(l) == 1 and okname(r) == 1
+                return 1
+            if oknum(r) == 1 and okname(l) == 1
+                return 1
+            return 0
+        i = i + 1
+    0
+
+isaffine: i64 = (e: str)
+    i = 1
+    a = 1
+    n = e:len()
+    while i <= n + 1
+        c = 0
+        if i <= n
+            c = e:byte(i)
+        if c == 40 or c == 41
+            return 0
+        if i > n or c == 43 or c == 45
+            term = unpad(ssub(e, a, i - 1))
+            if term:len() > 0 and affterm(term) == 0
+                return 0
+            a = i + 1
+        i = i + 1
+    1
+
+termcoeff: str = (t: str, x: str, y: str)
+    u = unpad(t)
+    if oknum(u) == 1
+        return "c|" .. u
+    if u == x
+        return "x|1"
+    if u == y
+        return "y|1"
+    i = 1
+    while i <= u:len()
+        if u:byte(i) == 42
+            l = unpad(ssub(u, 1, i - 1))
+            r = unpad(ssub(u, i + 1, u:len()))
+            if oknum(l) == 1 and r == x
+                return "x|" .. l
+            if oknum(l) == 1 and r == y
+                return "y|" .. l
+            if oknum(r) == 1 and l == x
+                return "x|" .. r
+            if oknum(r) == 1 and l == y
+                return "y|" .. r
+            return ""
+        i = i + 1
+    ""
+
+affcoeff: str = (e: str, x: str, y: str)
+    if isaffine(e) == 0
+        return ""
+    cx = 0
+    cy = 0
+    c0 = 0
+    sgn = 1
+    i = 1
+    a = 1
+    n = e:len()
+    while i <= n + 1
+        c = 0
+        if i <= n
+            c = e:byte(i)
+        if i > n or c == 43 or c == 45
+            term = unpad(ssub(e, a, i - 1))
+            if term:len() > 0
+                tc = termcoeff(term, x, y)
+                if tc == ""
+                    return ""
+                kind = pfield(tc, 0)
+                v = parsenum(pfield(tc, 1))
+                if kind == "x"
+                    cx = cx + sgn * v
+                else
+                    if kind == "y"
+                        cy = cy + sgn * v
+                    else
+                        c0 = c0 + sgn * v
+            if c == 45
+                sgn = 0 - sgn
+            a = i + 1
+        i = i + 1
+    decnum(cx) .. "|" .. decnum(cy) .. "|" .. decnum(c0)
+
+injective2: i64 = (cx: i64, cy: i64, rx: i64, ry: i64)
+    ax = cx
+    if ax < 0
+        ax = 0 - ax
+    ay = cy
+    if ay < 0
+        ay = 0 - ay
+    if ax == 0 and ay == 0
+        return 0
+    if rx <= 1 and ry <= 1
+        return 1
+    if rx <= 1
+        if ay > 0
+            return 1
+        return 0
+    if ry <= 1
+        if ax > 0
+            return 1
+        return 0
+    if ax > ay * (ry - 1)
+        return 1
+    if ay > ax * (rx - 1)
+        return 1
+    0
+
+parsenest: str = (src: str, k: i64, lc: i64)
+    r = lineat(src, k)
+    ind = indof(r)
+    hp = whparts(unpad(r))
+    if hp == ""
+        return ""
+    var = pfield(hp, 0)
+    cmp = pfield(hp, 1)
+    bound = pfield(hp, 2)
+    if cmp != "<" and cmp != "<="
+        return ""
+    initj = findinit(src, k, ind, var)
+    if initj < 0
+        return ""
+    e = loopend(src, k, lc, ind)
+    bi = bindent(src, k, e, ind)
+    if countassign(src, k, e, var) != 1
+        return ""
+    uj = findassign(src, k, e, var)
+    if updform(unpad(lineat(src, uj)), var) != 1
+        return ""
+    if isaffine(bound) == 0
+        return ""
+    nkids = 0
+    kidk = -1
+    j = k + 1
+    while j <= e
+        rj = lineat(src, j)
+        tj = unpad(rj)
+        if tj:len() > 0 and indof(rj) == bi
+            if iswhile(tj) == 1
+                nkids = nkids + 1
+                kidk = j
+            else
+                if isif(tj) == 1
+                    return ""
+        j = j + 1
+    if nkids > 1
+        return ""
+    seg = var .. "|" .. asgrhs(unpad(lineat(src, initj))) .. "|" .. cmp .. "|" .. bound .. "|" .. decnum(initj) .. "|" .. decnum(k) .. "|" .. decnum(e) .. "|" .. decnum(bi) .. ";"
+    if nkids == 0
+        return seg
+    sub = parsenest(src, kidk, lc)
+    if sub == ""
+        return ""
+    seg .. sub
+
+notloopvar: i64 = (ns: str, v: str)
+    i = 0
+    d = nlvls(ns)
+    while i < d
+        if pfield(nlvl(ns, i), 0) == v
+            return 0
+        i = i + 1
+    1
+hasif: i64 = (src: str, a: i64, b: i64)
+    j = a
+    while j <= b
+        if isif(unpad(lineat(src, j))) == 1
+            return 1
+        j = j + 1
+    0
+
+haswhile: i64 = (src: str, a: i64, b: i64)
+    j = a
+    while j <= b
+        if iswhile(unpad(lineat(src, j))) == 1
+            return 1
+        j = j + 1
+    0
+
+redform: str = (t: str, var: str)
+    u = nospace(t)
+    p = var .. "=" .. var .. "+"
+    if ssub(u, 1, p:len()) == p
+        c = ssub(u, p:len() + 1, u:len())
+        if oknum(c) == 1
+            return "+|" .. c
+        return ""
+    p = var .. "=" .. var .. "-"
+    if ssub(u, 1, p:len()) == p
+        c = ssub(u, p:len() + 1, u:len())
+        if oknum(c) == 1
+            return "-|" .. c
+        return ""
+    p = var .. "="
+    if ssub(u, 1, p:len()) == p
+        rest = ssub(u, p:len() + 1, u:len())
+        q = rest:len()
+        if q > var:len() + 1 and ssub(rest, q - var:len(), q) == "+" .. var
+            c = ssub(rest, 1, q - var:len() - 1)
+            if oknum(c) == 1
+                return "+|" .. c
+        return ""
+    p = var .. "+="
+    if ssub(u, 1, p:len()) == p
+        c = ssub(u, p:len() + 1, u:len())
+        if oknum(c) == 1
+            return "+|" .. c
+        return ""
+    p = var .. "-="
+    if ssub(u, 1, p:len()) == p
+        c = ssub(u, p:len() + 1, u:len())
+        if oknum(c) == 1
+            return "-|" .. c
+        return ""
+    ""
+
+iscommred: i64 = (t: str, var: str)
+    u = nospace(t)
+    if ssub(u, 1, (var .. "=" .. var .. "+"):len()) == var .. "=" .. var .. "+"
+        rest = ssub(u, (var .. "=" .. var .. "+"):len() + 1, u:len())
+        if wordfind(rest, var) == 0 and rest:len() > 0
+            return 1
+        return 0
+    if ssub(u, 1, (var .. "=" .. var .. "*"):len()) == var .. "=" .. var .. "*"
+        rest = ssub(u, (var .. "=" .. var .. "*"):len() + 1, u:len())
+        if wordfind(rest, var) == 0 and rest:len() > 0
+            return 1
+        return 0
+    if ssub(u, 1, (var .. "+="):len()) == var .. "+="
+        rest = ssub(u, (var .. "+="):len() + 1, u:len())
+        if wordfind(rest, var) == 0 and rest:len() > 0
+            return 1
+        return 0
+    if ssub(u, 1, (var .. "*="):len()) == var .. "*="
+        rest = ssub(u, (var .. "*="):len() + 1, u:len())
+        if wordfind(rest, var) == 0 and rest:len() > 0
+            return 1
+        return 0
+    0
+
+firstwrite: i64 = (src: str, a: i64, b: i64, var: str)
+    j = a + 1
+    while j <= b
+        t = unpad(lineat(src, j))
+        if wordfind(t, var) > 0
+            if asgtgt(t) == var and wordfind(asgrhs(t), var) == 0
+                return 1
+            return 0
+        j = j + 1
+    1
+
+allcommred: i64 = (src: str, a: i64, b: i64, var: str)
+    seen = 0
+    j = a + 1
+    while j <= b
+        t = unpad(lineat(src, j))
+        if wordfind(t, var) > 0
+            seen = 1
+            if iscommred(t, var) == 0
+                return 0
+        j = j + 1
+    seen
+
+scalarok: i64 = (src: str, a: i64, b: i64, excl: str)
+    j = a + 1
+    while j <= b
+        t = unpad(lineat(src, j))
+        v = asgtgt(t)
+        if v != "" and hasvar(excl, v) == 0
+            if firstwrite(src, a, b, v) == 0 and allcommred(src, a, b, v) == 0
+                return 0
+        j = j + 1
+    1
+
+accs: str = (line: str)
+    out = ""
+    i = 1
+    n = line:len()
+    while i <= n
+        if line:byte(i) == 91
+            e = i - 1
+            s = e
+            while s >= 1 and oknamechar(line:byte(s)) == 1
+                s = s - 1
+            name = ssub(line, s + 1, e)
+            if okname(name) == 0
+                return "?"
+            d = 1
+            j = i + 1
+            while j <= n and d > 0
+                c = line:byte(j)
+                if c == 91
+                    d = d + 1
+                if c == 93
+                    d = d - 1
+                j = j + 1
+            if d != 0
+                return "?"
+            sub = unpad(ssub(line, i + 1, j - 2))
+            if sub:len() == 0
+                return "?"
+            kk = 1
+            bad = 0
+            while kk <= sub:len()
+                cc = sub:byte(kk)
+                if cc == 91 or cc == 93
+                    bad = 1
+                kk = kk + 1
+            if bad == 1
+                return "?"
+            out = out .. name .. "|" .. sub .. ";"
+            i = j
+        else
+            i = i + 1
+    out
+
+arrnames: str = (src: str, a: i64, b: i64, skip: i64)
+    out = ""
+    seen = "|"
+    j = a + 1
+    while j <= b
+        if j != skip
+            ac = accs(unpad(lineat(src, j)))
+            if ac == "?"
+                return "?"
+            i = 0
+            n = nlvls(ac)
+            while i < n
+                nm = pfield(nlvl(ac, i), 0)
+                if hasvar(seen, nm) == 0
+                    seen = seen .. nm .. "|"
+                    out = out .. nm .. ";"
+                i = i + 1
+        j = j + 1
+    out
+
+arrwritesubs: str = (src: str, a: i64, b: i64, skip: i64, arr: str)
+    out = ""
+    j = a + 1
+    while j <= b
+        if j != skip
+            t = unpad(lineat(src, j))
+            p = eqpos(t)
+            if p > 0
+                ac = accs(ssub(t, 1, p - 1))
+                if ac == "?"
+                    return "?"
+                q = 0
+                nq = nlvls(ac)
+                while q < nq
+                    if pfield(nlvl(ac, q), 0) == arr
+                        out = out .. pfield(nlvl(ac, q), 1) .. ";"
+                    q = q + 1
+        j = j + 1
+    out
+
+arrreadsubs: str = (src: str, a: i64, b: i64, skip: i64, arr: str)
+    out = ""
+    j = a + 1
+    while j <= b
+        if j != skip
+            t = unpad(lineat(src, j))
+            p = eqpos(t)
+            rt = t
+            if p > 0
+                rt = ssub(t, p + 1, t:len())
+            ac = accs(rt)
+            if ac == "?"
+                return "?"
+            q = 0
+            nq = nlvls(ac)
+            while q < nq
+                if pfield(nlvl(ac, q), 0) == arr
+                    out = out .. pfield(nlvl(ac, q), 1) .. ";"
+                q = q + 1
+        j = j + 1
+    out
+
+arrallsubs: str = (src: str, a: i64, b: i64, arr: str)
+    out = ""
+    j = a + 1
+    while j <= b
+        ac = accs(unpad(lineat(src, j)))
+        if ac == "?"
+            return "?"
+        i = 0
+        n = nlvls(ac)
+        while i < n
+            if pfield(nlvl(ac, i), 0) == arr
+                out = out .. pfield(nlvl(ac, i), 1) .. ";"
+            i = i + 1
+        j = j + 1
+    out
+tilearraok: i64 = (src: str, a: i64, b: i64, x: str, y: str, rx: i64, ry: i64)
+    names = arrnames(src, a, b, -1)
+    if names == "?"
+        return 0
+    i = 0
+    nn = nlvls(names)
+    while i < nn
+        arr = nlvl(names, i)
+        ws = arrwritesubs(src, a, b, -1, arr)
+        if ws == "?"
+            return 0
+        if nlvls(ws) > 0
+            subs = arrallsubs(src, a, b, arr)
+            if subs == "?"
+                return 0
+            s0 = nlvl(subs, 0)
+            same = 1
+            q = 1
+            nq = nlvls(subs)
+            while q < nq
+                if nlvl(subs, q) != s0
+                    same = 0
+                q = q + 1
+            if same == 0
+                return 0
+            if wordfind(s0, x) == 0 and wordfind(s0, y) == 0
+                return 0
+            cf = affcoeff(s0, x, y)
+            if cf == ""
+                return 0
+            cx = parsesgn(pfield(cf, 0))
+            cy = parsesgn(pfield(cf, 1))
+            if injective2(cx, cy, rx, ry) == 0
+                return 0
+        i = i + 1
+    1
+
+tileprofit: i64 = (src: str, a: i64, b: i64, x: str, y: str)
+    j = a + 1
+    while j <= b
+        ac = accs(unpad(lineat(src, j)))
+        if ac == "?"
+            return 0
+        i = 0
+        n = nlvls(ac)
+        while i < n
+            sub = pfield(nlvl(ac, i), 1)
+            if wordfind(sub, x) > 0 or wordfind(sub, y) > 0
+                return 1
+            i = i + 1
+        j = j + 1
+    0
+
+interprofit: i64 = (src: str, a: i64, b: i64, x: str, y: str)
+    j = a + 1
+    while j <= b
+        ac = accs(unpad(lineat(src, j)))
+        if ac == "?"
+            return 0
+        i = 0
+        n = nlvls(ac)
+        while i < n
+            sub = pfield(nlvl(ac, i), 1)
+            cf = affcoeff(sub, x, y)
+            if cf != ""
+                cx = parsesgn(pfield(cf, 0))
+                cy = parsesgn(pfield(cf, 1))
+                if cx < 0
+                    cx = 0 - cx
+                if cy < 0
+                    cy = 0 - cy
+                if cy > cx
+                    return 1
+            i = i + 1
+        j = j + 1
+    0
+
+arrpairdepok: i64 = (s1: str, s2: str, v: str)
+    n1 = nlvls(s1)
+    n2 = nlvls(s2)
+    if n1 == 0 or n2 == 0
+        return 1
+    s0 = nlvl(s1, 0)
+    i = 0
+    while i < n1
+        if nlvl(s1, i) != s0
+            return 0
+        i = i + 1
+    i = 0
+    while i < n2
+        if nlvl(s2, i) != s0
+            return 0
+        i = i + 1
+    cf = affcoeff(s0, v, "zzq")
+    if cf == ""
+        return 0
+    cx = parsesgn(pfield(cf, 0))
+    cy = parsesgn(pfield(cf, 1))
+    if cx == 0 or cy != 0
+        return 0
+    1
+
+isreadin: i64 = (src: str, a: i64, b: i64, skip: i64, w: str)
+    j = a + 1
+    while j <= b
+        if j != skip
+            t = unpad(lineat(src, j))
+            if asgtgt(t) == w
+                if wordfind(asgrhs(t), w) > 0
+                    return 1
+            else
+                if wordfind(t, w) > 0
+                    return 1
+        j = j + 1
+    0
+
+iswrittenin: i64 = (src: str, a: i64, b: i64, skip: i64, w: str)
+    j = a + 1
+    while j <= b
+        if j != skip and asgtgt(unpad(lineat(src, j))) == w
+            return 1
+        j = j + 1
+    0
+
+fusescalarok: i64 = (src: str, a1: i64, b1: i64, u1: i64, a2: i64, b2: i64, u2: i64, v: str)
+    j = a1 + 1
+    while j <= b1
+        if j != u1
+            t = unpad(lineat(src, j))
+            w = asgtgt(t)
+            if w != "" and w != v and okname(w) == 1
+                if isreadin(src, a2, b2, u2, w) == 1
+                    return 0
+        j = j + 1
+    j = a2 + 1
+    while j <= b2
+        if j != u2
+            t = unpad(lineat(src, j))
+            w = asgtgt(t)
+            if w != "" and w != v and okname(w) == 1
+                if isreadin(src, a1, b1, u1, w) == 1
+                    return 0
+                if iswrittenin(src, a1, b1, u1, w) == 1
+                    return 0
+        j = j + 1
+    1
+
+fusearrok: i64 = (src: str, a1: i64, b1: i64, u1: i64, a2: i64, b2: i64, u2: i64, v: str)
+    names = arrnames(src, a1, b1, u1)
+    if names == "?"
+        return 0
+    n2 = arrnames(src, a2, b2, u2)
+    if n2 == "?"
+        return 0
+    i = 0
+    nn = nlvls(n2)
+    while i < nn
+        nm = nlvl(n2, i)
+        if hasvar("|" .. ssub(names, 1, names:len()) .. "|", nm) == 0
+            names = names .. nm .. ";"
+        i = i + 1
+    i = 0
+    nn = nlvls(names)
+    while i < nn
+        arr = nlvl(names, i)
+        w1 = arrwritesubs(src, a1, b1, u1, arr)
+        r1 = arrreadsubs(src, a1, b1, u1, arr)
+        w2 = arrwritesubs(src, a2, b2, u2, arr)
+        r2 = arrreadsubs(src, a2, b2, u2, arr)
+        if w1 == "?" or r1 == "?" or w2 == "?" or r2 == "?"
+            return 0
+        if nlvls(r1) > 0 and nlvls(w2) > 0
+            if arrpairdepok(r1, w2, v) == 0
+                return 0
+        if nlvls(w2) > 0 and nlvls(r1) > 0
+            if arrpairdepok(w2, r1, v) == 0
+                return 0
+        i = i + 1
+    1
+
+bodyclass: str = (src: str, a: i64, b: i64, lvar: str)
+    hasarrw = 0
+    hasarrr = 0
+    hassc = 0
+    hasred = 0
+    other = 0
+    uj = findassign(src, a, b, lvar)
+    j = a + 1
+    while j <= b
+        if j != uj
+            t = unpad(lineat(src, j))
+            if t:len() > 0 and iswhile(t) == 0
+                ac = accs(t)
+                if ac == "?"
+                    other = 1
+                else
+                    if nlvls(ac) > 0
+                        p = eqpos(t)
+                        w = 0
+                        if p > 0
+                            lac = accs(ssub(t, 1, p - 1))
+                            if nlvls(lac) > 0
+                                w = 1
+                        if w == 1
+                            hasarrw = 1
+                        else
+                            hasarrr = 1
+                v = asgtgt(t)
+                if v != "" and v != lvar and okname(v) == 1
+                    if iscommred(t, v) == 1 or redform(t, v) != ""
+                        hasred = 1
+                    else
+                        hassc = 1
+        j = j + 1
+    if other == 1
+        return "other"
+    if hasarrw == 1
+        return "array-rw"
+    if hasarrr == 1
+        return "array-ro"
+    if hassc == 1
+        return "scalar"
+    if hasred == 1
+        return "reduce"
+    "empty"
+
+depclass: str = (src: str, a: i64, b: i64, ns: str)
+    sc = ""
+    j = a + 1
+    while j <= b
+        t = unpad(lineat(src, j))
+        v = asgtgt(t)
+        if v != "" and okname(v) == 1 and notloopvar(ns, v) == 1
+            if hasvar("|" .. ssub(sc, 1, sc:len()) .. "|", v) == 0
+                sc = sc .. v .. "|"
+        j = j + 1
+    sout = ""
+    i = 0
+    while ssub(sc, i + 1, i + 1) != ""
+        v = ""
+        e = i + 1
+        while e <= sc:len() and sc:byte(e) != 124
+            e = e + 1
+        v = ssub(sc, i + 1, e - 1)
+        if v != ""
+            if firstwrite(src, a, b, v) == 1
+                sout = sout .. v .. ":priv,"
+            else
+                if allcommred(src, a, b, v) == 1
+                    sout = sout .. v .. ":reduce,"
+                else
+                    sout = sout .. v .. ":carried,"
+        i = e
+    aout = ""
+    names = arrnames(src, a, b, -1)
+    if names != "?"
+        i = 0
+        nn = nlvls(names)
+        while i < nn
+            arr = nlvl(names, i)
+            ws = arrwritesubs(src, a, b, -1, arr)
+            if nlvls(ws) == 0
+                aout = aout .. arr .. ":ro,"
+            else
+                subs = arrallsubs(src, a, b, arr)
+                s0 = nlvl(subs, 0)
+                same = 1
+                q = 1
+                while q < nlvls(subs)
+                    if nlvl(subs, q) != s0
+                        same = 0
+                    q = q + 1
+                if same == 0
+                    aout = aout .. arr .. ":multi,"
+                else
+                    aout = aout .. arr .. ":same,"
+            i = i + 1
+    "scalars[" .. sout .. "]arrays[" .. aout .. "]"
+
+nestreport: str = (src: str, ns: str)
+    d = nlvls(ns)
+    vars = ""
+    bounds = ""
+    i = 0
+    while i < d
+        seg = nlvl(ns, i)
+        if i > 0
+            vars = vars .. ","
+            bounds = bounds .. ","
+        vars = vars .. pfield(seg, 0)
+        bounds = bounds .. pfield(seg, 3)
+        i = i + 1
+    seg = nlvl(ns, d - 1)
+    kk = parsesgn(pfield(seg, 5))
+    ee = parsesgn(pfield(seg, 6))
+    body = bodyclass(src, kk, ee, pfield(seg, 0))
+    deps = depclass(src, kk, ee, ns)
+    "nest|depth" .. decnum(d) .. "|vars" .. vars .. "|bounds" .. bounds .. "|body" .. body .. "|deps" .. deps
+
+classify: str = (src: str)
+    out = ""
+    lc = linecount(src)
+    k = 0
+    while k < lc
+        t = unpad(lineat(src, k))
+        if iswhile(t) == 1
+            ind = indof(lineat(src, k))
+            e = loopend(src, k, lc, ind)
+            ns = parsenest(src, k, lc)
+            if ns == ""
+                out = out .. "nest|line" .. decnum(k) .. "|nonperfect\n"
+                k = k + 1
+            else
+                out = out .. nestreport(src, ns) .. "\n"
+                k = e + 1
+        else
+            k = k + 1
+    out
+lvlcount: str = (init: str, cmp: str, bound: str)
+    i = parsenum(init)
+    b = parsenum(bound)
+    if cmp == "<"
+        if i >= b
+            return "0"
+    else
+        if i > b
+            return "0"
+    n = b - i
+    if cmp == "<="
+        n = n + 1
+    if n < 0
+        return ""
+    decnum(n)
+
+tricount: str = (ns: str)
+    d = nlvls(ns)
+    if d == 1
+        seg = nlvl(ns, 0)
+        return lvlcount(pfield(seg, 1), pfield(seg, 2), pfield(seg, 3))
+    if d == 2
+        s0 = nlvl(ns, 0)
+        s1 = nlvl(ns, 1)
+        b1 = pfield(s1, 3)
+        if oknum(b1) == 1
+            n0 = lvlcount(pfield(s0, 1), pfield(s0, 2), pfield(s0, 3))
+            n1 = lvlcount(pfield(s1, 1), pfield(s1, 2), b1)
+            if n0 == "" or n1 == ""
+                return ""
+            return decnum(parsenum(n0) * parsenum(n1))
+        i0 = parsesgn(pfield(s0, 1))
+        c0 = pfield(s0, 2)
+        b0 = parsesgn(pfield(s0, 3))
+        i1 = parsesgn(pfield(s1, 1))
+        c1 = pfield(s1, 2)
+        total = 0
+        v = i0
+        iters = 0
+        cont = 1
+        while cont == 1
+            stop = 0
+            if c0 == "<" and v >= b0
+                stop = 1
+            if c0 == "<=" and v > b0
+                stop = 1
+            if stop == 1
+                cont = 0
+            else
+                iters = iters + 1
+                if iters > 2000000
+                    return ""
+                t = v - i1
+                if c1 == "<="
+                    t = t + 1
+                if t < 0
+                    t = 0
+                total = total + t
+                v = v + 1
+        return decnum(total)
+    total = 1
+    i = 0
+    while i < d
+        seg = nlvl(ns, i)
+        if oknum(pfield(seg, 3)) == 0
+            return ""
+        n = lvlcount(pfield(seg, 1), pfield(seg, 2), pfield(seg, 3))
+        if n == ""
+            return ""
+        total = total * parsenum(n)
+        i = i + 1
+    decnum(total)
+
+accadd: str = (acc: str, v: str, delta: i64)
+    out = ""
+    found = 0
+    i = 0
+    n = nlvls(acc)
+    while i < n
+        seg = nlvl(acc, i)
+        if pfield(seg, 0) == v
+            found = 1
+            out = out .. v .. "|" .. decnum(parsesgn(pfield(seg, 1)) + delta) .. ";"
+        else
+            out = out .. seg .. ";"
+        i = i + 1
+    if found == 0
+        out = out .. v .. "|" .. decnum(delta) .. ";"
+    out
+
+varsusedafter: i64 = (src: str, e0: i64, lc: i64, ns: str)
+    d = nlvls(ns)
+    j = e0 + 1
+    while j < lc
+        t = lineat(src, j)
+        i = 0
+        while i < d
+            if wordfind(t, pfield(nlvl(ns, i), 0)) > 0
+                return 1
+            i = i + 1
+        j = j + 1
+    0
+
+xbodyextras: i64 = (src: str, k0: i64, e0: i64, s0: str, s1: str)
+    bi0 = parsesgn(pfield(s0, 7))
+    initj1 = parsesgn(pfield(s1, 4))
+    k1 = parsesgn(pfield(s1, 5))
+    ux = findassign(src, k0, e0, pfield(s0, 0))
+    j = k0 + 1
+    while j <= e0
+        if j != initj1 and j != k1 and j != ux
+            r = lineat(src, j)
+            if unpad(r):len() > 0 and indof(r) == bi0
+                return 1
+        j = j + 1
+    0
+
+varused: i64 = (src: str, a: i64, b: i64, v: str)
+    j = a
+    while j <= b
+        if wordfind(lineat(src, j), v) > 0
+            return 1
+        j = j + 1
+    0
+
+freshvar: str = (src: str, a: i64, b: i64, base: str)
+    v = base
+    while varused(src, a, b, v) == 1
+        v = v .. "z"
+    v
+
+trycollapse: str = (src: str, k: i64, lc: i64)
+    ns = parsenest(src, k, lc)
+    if ns == ""
+        return ""
+    d = nlvls(ns)
+    i = 0
+    while i < d
+        seg = nlvl(ns, i)
+        if oknum(pfield(seg, 1)) == 0
+            return ""
+        cmp = pfield(seg, 2)
+        if cmp != "<" and cmp != "<="
+            return ""
+        bound = pfield(seg, 3)
+        if oknum(bound) == 0
+            if i == 0
+                return ""
+            if d != 2 or i != 1
+                return ""
+            if bound != pfield(nlvl(ns, 0), 0)
+                return ""
+        i = i + 1
+    n = tricount(ns)
+    if n == ""
+        return ""
+    N = parsesgn(n)
+    seg = nlvl(ns, d - 1)
+    kk = parsesgn(pfield(seg, 5))
+    ee = parsesgn(pfield(seg, 6))
+    uj = findassign(src, kk, ee, pfield(seg, 0))
+    acc = ""
+    j = kk + 1
+    while j <= ee
+        if j != uj
+            t = unpad(lineat(src, j))
+            if t:len() > 0
+                v = asgtgt(t)
+                if v == "" or okname(v) == 0
+                    return ""
+                if notloopvar(ns, v) == 0
+                    return ""
+                rf = redform(t, v)
+                if rf == ""
+                    return ""
+                delta = parsenum(pfield(rf, 1))
+                if pfield(rf, 0) == "-"
+                    delta = 0 - delta
+                acc = accadd(acc, v, delta)
+        j = j + 1
+    if varsusedafter(src, parsesgn(pfield(nlvl(ns, 0), 6)), lc, ns) == 1
+        return ""
+    seg0 = nlvl(ns, 0)
+    e0 = parsesgn(pfield(seg0, 6))
+    ind = indof(lineat(src, parsesgn(pfield(seg0, 4))))
+    rep = ""
+    i = 0
+    na = nlvls(acc)
+    while i < na
+        v = pfield(nlvl(acc, i), 0)
+        C = parsesgn(pfield(nlvl(acc, i), 1))
+        P = C * N
+        if P != 0
+            if P == 0 - P
+                return ""
+            if P > 0
+                rep = rep .. spaces(ind) .. v .. " = " .. v .. " + " .. decnum(P) .. "\n"
+            else
+                rep = rep .. spaces(ind) .. v .. " = " .. v .. " - " .. decnum(0 - P) .. "\n"
+        i = i + 1
+    "@@end:" .. decnum(e0) .. "\n" .. rep
+trytile: str = (src: str, k: i64, lc: i64)
+    ns = parsenest(src, k, lc)
+    if ns == ""
+        return ""
+    if nlvls(ns) < 2
+        return ""
+    s0 = nlvl(ns, 0)
+    s1 = nlvl(ns, 1)
+    x = pfield(s0, 0)
+    ix = pfield(s0, 1)
+    bx = pfield(s0, 3)
+    k0 = parsesgn(pfield(s0, 5))
+    e0 = parsesgn(pfield(s0, 6))
+    y = pfield(s1, 0)
+    iy = pfield(s1, 1)
+    yb = pfield(s1, 3)
+    k1 = parsesgn(pfield(s1, 5))
+    e1 = parsesgn(pfield(s1, 6))
+    bi1 = parsesgn(pfield(s1, 7))
+    ind = indof(lineat(src, k0))
+    if oknum(ix) == 0 or oknum(iy) == 0
+        return ""
+    if oknum(bx) == 0
+        return ""
+    if pfield(s0, 2) != "<" or pfield(s1, 2) != "<"
+        return ""
+    if oknum(yb) == 0 and yb != x
+        return ""
+    if hasif(src, k0, e0) == 1
+        return ""
+    if xbodyextras(src, k0, e0, s0, s1) == 1
+        return ""
+    if tileprofit(src, k1, e1, x, y) == 0
+        return ""
+    rx = parsenum(bx) - parsenum(ix)
+    if yb == x
+        ry = rx
+    else
+        ry = parsenum(yb) - parsenum(iy)
+    if rx <= 0 or ry <= 0
+        return ""
+    if scalarok(src, k1, e1, "|" .. x .. "|" .. y .. "|") == 0
+        return ""
+    if tilearraok(src, k1, e1, x, y, rx, ry) == 0
+        return ""
+    tx = freshvar(src, k0, e0, "ptx")
+    ty = freshvar(src, k0, e0, "pty")
+    ts = "32"
+    tyb = yb
+    if yb == x
+        tyb = bx
+    uj = findassign(src, k1, e1, y)
+    out = ""
+    out = out .. spaces(ind) .. tx .. " = " .. ix .. "\n"
+    out = out .. spaces(ind) .. "while " .. tx .. " < " .. bx .. "\n"
+    out = out .. spaces(ind + 2) .. ty .. " = " .. iy .. "\n"
+    out = out .. spaces(ind + 2) .. "while " .. ty .. " < " .. tyb .. "\n"
+    out = out .. spaces(ind + 4) .. x .. " = " .. tx .. "\n"
+    out = out .. spaces(ind + 4) .. "while " .. x .. " < " .. bx .. " and " .. x .. " < " .. tx .. " + " .. ts .. "\n"
+    out = out .. spaces(ind + 6) .. y .. " = " .. ty .. "\n"
+    out = out .. spaces(ind + 6) .. "while " .. y .. " < " .. yb .. " and " .. y .. " < " .. ty .. " + " .. ts .. "\n"
+    out = out .. reindentskip(src, k1 + 1, e1, uj, ind + 8 - bi1)
+    out = out .. spaces(ind + 8) .. y .. " = " .. y .. " + 1\n"
+    out = out .. spaces(ind + 6) .. x .. " = " .. x .. " + 1\n"
+    out = out .. spaces(ind + 4) .. ty .. " = " .. ty .. " + " .. ts .. "\n"
+    out = out .. spaces(ind + 2) .. tx .. " = " .. tx .. " + " .. ts .. "\n"
+    "@@end:" .. decnum(e0) .. "\n" .. out
+
+tryinterchange: str = (src: str, k: i64, lc: i64)
+    ns = parsenest(src, k, lc)
+    if ns == ""
+        return ""
+    if nlvls(ns) < 2
+        return ""
+    s0 = nlvl(ns, 0)
+    s1 = nlvl(ns, 1)
+    x = pfield(s0, 0)
+    ix = pfield(s0, 1)
+    bx = pfield(s0, 3)
+    k0 = parsesgn(pfield(s0, 5))
+    e0 = parsesgn(pfield(s0, 6))
+    bi0 = parsesgn(pfield(s0, 7))
+    y = pfield(s1, 0)
+    iy = pfield(s1, 1)
+    yb = pfield(s1, 3)
+    k1 = parsesgn(pfield(s1, 5))
+    e1 = parsesgn(pfield(s1, 6))
+    bi1 = parsesgn(pfield(s1, 7))
+    ind = indof(lineat(src, k0))
+    if oknum(ix) == 0 or oknum(iy) == 0
+        return ""
+    if oknum(bx) == 0 or oknum(yb) == 0
+        return ""
+    if pfield(s0, 2) != "<" or pfield(s1, 2) != "<"
+        return ""
+    if hasif(src, k0, e0) == 1
+        return ""
+    if xbodyextras(src, k0, e0, s0, s1) == 1
+        return ""
+    if interprofit(src, k1, e1, x, y) == 0
+        return ""
+    rx = parsenum(bx) - parsenum(ix)
+    ry = parsenum(yb) - parsenum(iy)
+    if rx <= 0 or ry <= 0
+        return ""
+    if scalarok(src, k1, e1, "|" .. x .. "|" .. y .. "|") == 0
+        return ""
+    if tilearraok(src, k1, e1, x, y, rx, ry) == 0
+        return ""
+    uj = findassign(src, k1, e1, y)
+    out = ""
+    out = out .. spaces(ind) .. y .. " = " .. iy .. "\n"
+    out = out .. spaces(ind) .. "while " .. y .. " < " .. yb .. "\n"
+    out = out .. spaces(bi0) .. x .. " = " .. ix .. "\n"
+    out = out .. spaces(bi0) .. "while " .. x .. " < " .. bx .. "\n"
+    out = out .. reindentskip(src, k1 + 1, e1, uj, 0)
+    out = out .. spaces(bi1) .. x .. " = " .. x .. " + 1\n"
+    out = out .. spaces(bi0) .. y .. " = " .. y .. " + 1\n"
+    "@@end:" .. decnum(e0) .. "\n" .. out
+tryfuse: str = (src: str, k: i64, lc: i64)
+    r = lineat(src, k)
+    ind = indof(r)
+    if iswhile(unpad(r)) == 0
+        return ""
+    e1 = loopend(src, k, lc, ind)
+    h1 = whparts(unpad(r))
+    if h1 == ""
+        return ""
+    v = pfield(h1, 0)
+    k2 = e1 + 1
+    while k2 < lc and unpad(lineat(src, k2)):len() == 0
+        k2 = k2 + 1
+    if k2 >= lc
+        return ""
+    ij2 = -1
+    if asgtgt(unpad(lineat(src, k2))) == v and indof(lineat(src, k2)) == ind
+        ij2 = k2
+        k2 = k2 + 1
+        while k2 < lc and unpad(lineat(src, k2)):len() == 0
+            k2 = k2 + 1
+        if k2 >= lc
+            return ""
+    r2 = lineat(src, k2)
+    if indof(r2) != ind or iswhile(unpad(r2)) == 0
+        return ""
+    e2 = loopend(src, k2, lc, ind)
+    h2 = whparts(unpad(r2))
+    if h2 == ""
+        return ""
+    if pfield(h2, 0) != v
+        return ""
+    if pfield(h1, 1) != pfield(h2, 1)
+        return ""
+    if pfield(h1, 2) != pfield(h2, 2)
+        return ""
+    ij1 = findinit(src, k, ind, v)
+    if ij1 < 0 or ij2 < 0
+        return ""
+    rhs = asgrhs(unpad(lineat(src, ij1)))
+    if asgrhs(unpad(lineat(src, ij2))) != rhs
+        return ""
+    if wordfind(rhs, v) > 0
+        return ""
+    j = e1 + 1
+    while j < k2
+        if unpad(lineat(src, j)):len() > 0 and j != ij2
+            return ""
+        j = j + 1
+    if haswhile(src, k + 1, e1) == 1
+        return ""
+    if haswhile(src, k2 + 1, e2) == 1
+        return ""
+    if hasif(src, k, e2) == 1
+        return ""
+    if countassign(src, k, e1, v) != 1
+        return ""
+    if countassign(src, k2, e2, v) != 1
+        return ""
+    u1 = findassign(src, k, e1, v)
+    u2 = findassign(src, k2, e2, v)
+    if updform(unpad(lineat(src, u1)), v) != 1
+        return ""
+    if updform(unpad(lineat(src, u2)), v) != 1
+        return ""
+    if fusescalarok(src, k, e1, u1, k2, e2, u2, v) == 0
+        return ""
+    if fusearrok(src, k, e1, u1, k2, e2, u2, v) == 0
+        return ""
+    bi1 = bindent(src, k, e1, ind)
+    bi2 = bindent(src, k2, e2, ind)
+    out = ""
+    out = out .. r .. "\n"
+    out = out .. reindentskip(src, k + 1, e1, u1, 0)
+    out = out .. reindentskip(src, k2 + 1, e2, u2, bi1 - bi2)
+    out = out .. spaces(bi1) .. v .. " = " .. v .. " + 1\n"
+    "@@end:" .. decnum(e2) .. "\n" .. out
+
+sweep: str = (src: str)
+    out = ""
+    lc = linecount(src)
+    k = 0
+    while k < lc
+        r = lineat(src, k)
+        t = unpad(r)
+        if iswhile(t) == 1
+            ind = indof(r)
+            e = loopend(src, k, lc, ind)
+            rep = trycollapse(src, k, lc)
+            if rep == ""
+                rep = tryinterchange(src, k, lc)
+            if rep == ""
+                rep = trytile(src, k, lc)
+            if rep == ""
+                rep = tryfuse(src, k, lc)
+            if rep == ""
+                out = out .. r .. "\n" .. sweep(cutlines(src, k + 1, e))
+                k = e + 1
+            else
+                nl = findnl(rep)
+                ne = parsesgn(ssub(rep, 7, nl - 1))
+                out = out .. ssub(rep, nl + 1, rep:len())
+                k = ne + 1
+        else
+            out = out .. r .. "\n"
+            k = k + 1
+    out
+
+poly: str = (src: str)
+    fix6 = "target=poly layer=stream nest=perfect-only affine=bounds-steps dep=scalar-chain,array-injectivereuse sched=collapse,interchange,tile,fuse order=collapse-first runs=after-licm"
+    sweep(src)
