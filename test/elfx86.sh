@@ -3,7 +3,7 @@
 # and lib/compiler/elfx86.id (x86_64 + ELF64/Linux direct backend).
 #
 # Part 1: idol check on both files.
-# Part 2: differential test of the 43 encoder vectors in x86.id's main
+# Part 2: differential test of the 44 encoder vectors in x86.id's main
 # against the system assembler (clang -arch x86_64 -mavx2 -mbmi2); every vector must
 # match byte-for-byte (same oracle strategy as lib/compiler/arm64check.id).
 # Part 3: build the elfx86 emitter (--backend native) and compile four
@@ -44,7 +44,7 @@ echo "== build backends =="
 [ -x "$WORK/elfx86bin" ] || fail "elfx86bin not executable"
 pass "compile --backend native"
 
-echo "== differential: 43 encoder vectors vs clang =="
+echo "== differential: 44 encoder vectors vs clang =="
 "$WORK/x86vec" > "$WORK/vec.txt" || fail "run x86vec"
 n=0
 bad=0
@@ -65,19 +65,20 @@ while IFS= read -r line; do
     echo "MISMATCH [$n]: $asm (want $want got $got)"; bad=$((bad + 1))
   fi
 done < "$WORK/vec.txt"
-[ "$n" = "43" ] || fail "expected 43 vectors, got $n"
+[ "$n" = "44" ] || fail "expected 44 vectors, got $n"
 [ "$bad" = "0" ] || fail "$bad/$n vector mismatches"
-pass "43/43 encoder vectors match clang byte-for-byte"
+pass "44/44 encoder vectors match clang byte-for-byte"
 
 echo "== emit ELF64 demos =="
 printf 'x = 40 + 2\nx\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p1.elf" || fail "emit p1"
 printf 'a = 20\nb = 6\nc = a / b\nc\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p2.elf" || fail "emit p2"
 printf 'i = 0\nwhile i < 3\n    i = i + 1\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p3.elf" || fail "emit p3"
 printf 'i = 0\nwhile i < 3\n    i = i + 1\nx = 9\nx\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p4.elf" || fail "emit p4"
-pass "emit (4 programs)"
+printf 'a = 0 - 20\nb = a / 3\nc = a / 7\nd = a / 8\ne = b / 10\ne\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p5.elf" || fail "emit p5"
+pass "emit (5 programs)"
 
 echo "== structural validation + clang oracle =="
-python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" <<'PYEOF' || fail "structural validation"
+python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" "$WORK/p5.elf" <<'PYEOF' || fail "structural validation"
 import struct, sys, subprocess
 
 def ck(c, m):
@@ -148,6 +149,16 @@ ck('41b803000000' in t3, "p3 loop counter init r8=3")
 ck('4983e801' in t3, "p3 loop decrement sub r8,1")
 ck('75fa' in t3, "p3 loop back-edge jne")
 ck(t3.endswith('4889c7b83c0000000f05'), "p3 exit epilogue")
+t5 = parse_elf(sys.argv[5]).hex()
+ck('5655555555555555' in t5, "p5 hoisted magic /3")
+ck('2549922449922449' in t5, "p5 hoisted magic /7")
+ck('6766666666666666' in t5, "p5 hoisted magic /10")
+ck('49f7ec' in t5, "p5 magic imul /3")
+ck('49f7ed' in t5, "p5 magic imul /7")
+ck('49f7ee' in t5, "p5 magic imul /10")
+ck('48c1ea3d' in t5, "p5 pow2 /8 bias shr 61")
+ck('f7f' not in t5, "p5 no idivq")
+ck('4898' not in t5, "p5 no cqo")
 
 t4 = parse_elf(sys.argv[4]).hex()
 ck('4983e801' in t4 and '75fa' in t4, "p4 loop closed before trailing code")
