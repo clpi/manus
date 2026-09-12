@@ -4,7 +4,7 @@ compile time by foldop(). Division is deliberately never folded.
 What must hold: folded result == runtime 64-bit result, observed through
 the exit code (low 8 bits) and, with full=True, through all 8 byte slices.
 
-Known limitation (bench/README.md): host-side compile-time arithmetic
+Known limitation: host-side compile-time arithmetic
 wraps at 32 bits, so folded values whose true result needs bits 32..63
 are truncated. Those cases are directed, labelled, and run with full=True
 because exit-code comparison is BLIND to them (mod 2^32 preserves the
@@ -45,8 +45,7 @@ def directed():
     ]):
         cases.append(_mk(f"wrap{i}", a, op, b, full=True,
                          note="known-32bit-limitation: compile-time "
-                              "arithmetic wraps at 32 bits (see "
-                              "bench/README.md Known limitations)"))
+                              "arithmetic wraps at 32 bits (host compile-time wrap)"))
     # negative folds via `0 - N`: imm() emits movz+movk(hw=1) with no sign
     # extension, so e.g. 0-37 becomes 4294967259 instead of 2^64-37.
     for i, (a, op, b) in enumerate([(0, "-", 1), (0, "-", 37), (5, "-", 10)]):
