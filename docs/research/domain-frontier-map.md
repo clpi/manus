@@ -1,16 +1,23 @@
 # Idol Domain-Frontier Capability and Performance Map
 
-**Status:** research disposition, not language law and not an implementation claim.
-**Repository subject:** `clpi/idol` at `1ae3e38282d8d5ac8071cdcdf948a5fbb1afec69`.
-**Purpose:** replace C-centric aspiration with a measurable map of the strongest known implementation in every relevant capability and performance domain.
+| # | directive |
+|---|---|
+| 1 | **Status:** research disposition, not language law and not an implementation claim. **Repository subject:** `clpi/idol` at `1ae3e38282d8d5ac8071cdcdf948a5fbb1afec69`. **Purpose:** replace C-centric aspiration with a measurable map of the strongest known implementation in every relevant capability and performance domain. |
 
 ## 1. The governing correction
 
-C is an important control, not a universal oracle.
+| # | directive |
+|---|---|
+| 1 | C is an important control, not a universal oracle. |
 
-For any fixed workload and observable contract, the comparison target is the **domain-frontier envelope**: the strongest known semantically equivalent implementation, configuration, runtime, library, compiler, schedule, and target available for that domain. A claim is never admitted because Idol beats a weak C spelling, a default compiler flag, an interpreter, or a baseline tier.
+| # | directive |
+|---|---|
+| 1 | For any fixed workload and observable contract, the comparison target is the **domain-frontier envelope**: the strongest known semantically equivalent implementation, configuration, runtime, library, compiler, schedule, and target available for that domain. |
+| 2 | A claim is never admitted because Idol beats a weak C spelling, a default compiler flag, an interpreter, or a baseline tier. |
 
-The envelope is a set, not one language:
+| # | directive |
+|---|---|
+| 1 | The envelope is a set, not one language: |
 
 ```text
 oracle(workload, observations, target)
@@ -19,16 +26,21 @@ oracle(workload, observations, target)
 
 ### 1.1 Project boundary: Wart is external
 
-Wart is an independent Wasm runtime/compiler, not an Idol target, platform,
-backend, runtime tier, dependency, or design substrate. It may enter an Idol
-comparison set only as an external oracle whose own evidence remains Wart's
-claim. A future Wart-in-Idol rewrite is a separate experiment after Wart itself
-has established the reference frontier and compactness subject; the rewrite must
-preserve that subject's semantics and earn independent evidence for every gain.
+| # | directive |
+|---|---|
+| 1 | Wart is an independent Wasm runtime/compiler, not an Idol target, platform, backend, runtime tier, dependency, or design substrate. |
+| 2 | It may enter an Idol comparison set only as an external oracle whose own evidence remains Wart's claim. |
+| 3 | A future Wart-in-Idol rewrite is a separate experiment after Wart itself has established the reference frontier and compactness subject; the rewrite must preserve that subject's semantics and earn independent evidence for every gain. |
 
-The frontier includes hand-written and generated implementations, vendor libraries, domain-specific languages, runtimes, optimizing compilers, and physical lower bounds. Idol may win through information the comparator lacks, work its human author did not perform, runtime facts unavailable ahead of time, or a better algorithm selected under proven conditions. Each class is reported separately.
+| # | directive |
+|---|---|
+| 1 | The frontier includes hand-written and generated implementations, vendor libraries, domain-specific languages, runtimes, optimizing compilers, and physical lower bounds. |
+| 2 | Idol may win through information the comparator lacks, work its human author did not perform, runtime facts unavailable ahead of time, or a better algorithm selected under proven conditions. |
+| 3 | Each class is reported separately. |
 
-A result remains one of:
+| # | directive |
+|---|---|
+| 1 | A result remains one of: |
 
 ```text
 UNMEASURED
@@ -38,11 +50,16 @@ ADMITTED
 SUPERSEDED
 ```
 
-Only `ADMITTED` evidence may feed public capability or performance claims.
+| # | directive |
+|---|---|
+| 1 | Only `ADMITTED` evidence may feed public capability or performance claims. |
 
 ## 2. Performance is a vector
 
-No scalar score is sufficient. Every benchmark contract records at least:
+| # | directive |
+|---|---|
+| 1 | No scalar score is sufficient. |
+| 2 | Every benchmark contract records at least: |
 
 - steady-state latency and throughput;
 - startup, warmup, and tail latency;
@@ -57,7 +74,9 @@ No scalar score is sufficient. Every benchmark contract records at least:
 - implementation effort and source information supplied;
 - the exact strongest comparator and physical lower bound.
 
-A win on one axis does not conceal a loss on another.
+| # | directive |
+|---|---|
+| 1 | A win on one axis does not conceal a loss on another. |
 
 ## 3. Domain-frontier matrix
 
@@ -80,42 +99,60 @@ A win on one axis does not conceal a loss on another.
 | Agent legibility and coordination | mainstream languages with mature model training; constrained decoding; merge queues; semantic-development research | training corpus, local diagnostics, executable specs, stable identities, explicit task/claim protocols | small familiar surface, generated grammar, executable corpus, missing-fact diagnostics, Live context leases and admission | held-out matched tasks against Python/TypeScript/Rust; tokens and wall time per accepted change; conflict and failure rates |
 | Hardware/RTL realization | expert RTL, Bluespec/Clash/Spade, Calyx/CIRCT, vendor HLS | cycle structure, explicit pipelines, resources, timing and placement | future target projection only after semantic graph proves useful structure survives; no Edition-1 claim | standard HLS suites and actual area/timing/power versus expert RTL/HLS; deprioritize on failure |
 
-The table is intentionally open. A new language, library, runtime, compiler, or hardware system becomes an oracle whenever it establishes a stronger point in any domain.
+| # | directive |
+|---|---|
+| 1 | The table is intentionally open. |
+| 2 | A new language, library, runtime, compiler, or hardware system becomes an oracle whenever it establishes a stronger point in any domain. |
 
 ## 4. The language design that falls out
 
-The performance program does **not** justify constraining the language to the current preferred implementation strategy. The source and semantic model preserve choices; evidence chooses realizations.
+| # | directive |
+|---|---|
+| 1 | The performance program does **not** justify constraining the language to the current preferred implementation strategy. |
+| 2 | The source and semantic model preserve choices; evidence chooses realizations. |
 
 ### 4.1 Familiar semantic floor
 
-Idol keeps Lua’s recognizable foundation:
+| # | directive |
+|---|---|
+| 1 | Idol keeps Lua’s recognizable foundation: |
 
 - dynamic values and ordinary Lua-correct fallback;
 - tables, closures, metatables, multiple results, coroutines, and ordinary bindings;
 - concise application and subject-oriented relation faces;
 - no mandatory ownership syntax, layout annotations, monomorphization ceremony, or backend-specific types.
 
-Static knowledge strengthens this floor rather than replacing it.
+| # | directive |
+|---|---|
+| 1 | Static knowledge strengthens this floor rather than replacing it. |
 
 ### 4.2 Orthogonal information channels
 
-The programmer, compiler, runtime, profiler, target, and environment may contribute exact facts about:
+| # | directive |
+|---|---|
+| 1 | The programmer, compiler, runtime, profiler, target, and environment may contribute exact facts about: |
 
 ```text
 identity · descriptor · shape · range · aliasing · uniqueness · purity
 world · authority · effects · stage · demand · target · profile · hardware
 ```
 
-Facts qualify meaning. They do not create parallel type, effect, optimizer, hardware, or agent kingdoms.
+| # | directive |
+|---|---|
+| 1 | Facts qualify meaning. |
+| 2 | They do not create parallel type, effect, optimizer, hardware, or agent kingdoms. |
 
-Each non-axiomatic fact carries producer, provenance, trust, scope, dependencies,
-invalidation, and any guard/witness. Evidence and assumptions remain distinct
-from truth. Acquisition cost and expected realization value guide whether a fact
-is worth learning; they never strengthen its trust class.
+| # | directive |
+|---|---|
+| 1 | Each non-axiomatic fact carries producer, provenance, trust, scope, dependencies, invalidation, and any guard/witness. |
+| 2 | Evidence and assumptions remain distinct from truth. |
+| 3 | Acquisition cost and expected realization value guide whether a fact is worth learning; they never strengthen its trust class. |
 
 ### 4.3 Maximum realization freedom
 
-Unless semantically observed or explicitly pinned, source does not force:
+| # | directive |
+|---|---|
+| 1 | Unless semantically observed or explicitly pinned, source does not force: |
 
 - integer width beyond its semantic law;
 - boxing or unboxing;
@@ -128,13 +165,21 @@ Unless semantically observed or explicitly pinned, source does not force:
 - a universal concurrency or determinism profile;
 - one physical compiler IR at every optimization level.
 
-Users may constrain any of these when it is itself an observation or operational requirement. Otherwise they remain choices.
+| # | directive |
+|---|---|
+| 1 | Users may constrain any of these when it is itself an observation or operational requirement. |
+| 2 | Otherwise they remain choices. |
 
 ### 4.4 One semantic authority, multiple physical views
 
-The semantic graph is the source of resolved meaning and provenance. That does not require every optimization and backend to mutate one universal node representation.
+| # | directive |
+|---|---|
+| 1 | The semantic graph is the source of resolved meaning and provenance. |
+| 2 | That does not require every optimization and backend to mutate one universal node representation. |
 
-Typed lowering views are lawful when each:
+| # | directive |
+|---|---|
+| 1 | Typed lowering views are lawful when each: |
 
 1. is derived from exact graph identities and facts;
 2. states which information it preserves, refines, or intentionally forgets;
@@ -142,21 +187,34 @@ Typed lowering views are lawful when each:
 4. cannot create language meaning or optimization eligibility independently;
 5. has an exact consumer, validation oracle, and invalidation rule.
 
-This permits CFG, SSA, vector/tensor, GPU, machine, object, and other target-oriented encodings without creating competing semantic authorities.
+| # | directive |
+|---|---|
+| 1 | This permits CFG, SSA, vector/tensor, GPU, machine, object, and other target-oriented encodings without creating competing semantic authorities. |
 
 ### 4.5 Plural memory and runtime strategy
 
-Mutable-value semantics, no-alias facts, regions, and Perceus-style reuse are valuable **sealed regimes**, not the universal Lua semantic floor. Cyclic Lua tables and escaped dynamic graphs require an admitted cycle strategy. Idol must remain free to select among region, arena, RC/reuse, tracing, explicit placement, or hybrids according to proven shape, lifetime, cycles, effects, and latency requirements.
+| # | directive |
+|---|---|
+| 1 | Mutable-value semantics, no-alias facts, regions, and Perceus-style reuse are valuable **sealed regimes**, not the universal Lua semantic floor. |
+| 2 | Cyclic Lua tables and escaped dynamic graphs require an admitted cycle strategy. |
+| 3 | Idol must remain free to select among region, arena, RC/reuse, tracing, explicit placement, or hybrids according to proven shape, lifetime, cycles, effects, and latency requirements. |
 
-Likewise, method specialization with deoptimization is a strong default runtime direction, but tracing, copy-and-patch, interpretation, AOT, and profile-guided variants remain admissible realizations if exact evidence wins for a workload.
+| # | directive |
+|---|---|
+| 1 | Likewise, method specialization with deoptimization is a strong default runtime direction, but tracing, copy-and-patch, interpretation, AOT, and profile-guided variants remain admissible realizations if exact evidence wins for a workload. |
 
 ### 4.6 Concurrency without a performance ceiling
 
-Compiler-inserted parallelism over proven-pure relations is valuable, but cannot be the language’s only concurrency mechanism without excluding I/O concurrency, supervision, distributed systems, low-level atomics, and latency-oriented task control. The surface should provide the smallest structured and capability-accountable explicit mechanisms needed for those domains while preserving automatic parallel realization as a separate optimization.
+| # | directive |
+|---|---|
+| 1 | Compiler-inserted parallelism over proven-pure relations is valuable, but cannot be the language’s only concurrency mechanism without excluding I/O concurrency, supervision, distributed systems, low-level atomics, and latency-oriented task control. |
+| 2 | The surface should provide the smallest structured and capability-accountable explicit mechanisms needed for those domains while preserving automatic parallel realization as a separate optimization. |
 
 ## 5. Benchmark architecture
 
-Every wins-corpus entry contains:
+| # | directive |
+|---|---|
+| 1 | Every wins-corpus entry contains: |
 
 ```text
 subject and exact observations
@@ -173,12 +231,15 @@ algorithmic-vs-codegen attribution
 status and kill criterion
 ```
 
-Every reported frontier adjective is additionally scoped by exact axes,
-semantics, corpus/input, hardware/world/target, implementations,
-versions/configurations, and uncertainty. Unqualified “fastest” and
-“best-in-class” are refused.
+| # | directive |
+|---|---|
+| 1 | Every reported frontier adjective is additionally scoped by exact axes, semantics, corpus/input, hardware/world/target, implementations, versions/configurations, and uncertainty. |
+| 2 | Unqualified “fastest” and “best-in-class” are refused. |
 
-The benchmark harness searches the comparator set rather than preselecting a convenient loser. For CPU controls it normally includes tuned GCC, Clang, ICX and AOCC where available, but that set is expanded or replaced whenever another implementation owns the domain frontier.
+| # | directive |
+|---|---|
+| 1 | The benchmark harness searches the comparator set rather than preselecting a convenient loser. |
+| 2 | For CPU controls it normally includes tuned GCC, Clang, ICX and AOCC where available, but that set is expanded or replaced whenever another implementation owns the domain frontier. |
 
 ## 6. Immediate research order
 
@@ -192,9 +253,15 @@ The benchmark harness searches the comparator set rather than preselecting a con
 
 ## 7. Public claim rule
 
-The website, Docs, API descriptions, MCP descriptions, and release copy are downstream projections of admitted evidence. They do not author claims.
+| # | directive |
+|---|---|
+| 1 | The website, Docs, API descriptions, MCP descriptions, and release copy are downstream projections of admitted evidence. |
+| 2 | They do not author claims. |
 
-A public sentence about capability or performance must point to an exact admitted record containing the subject, revision, oracle, observations, raw evidence, and status. In the absence of such a record, the only lawful public state is:
+| # | directive |
+|---|---|
+| 1 | A public sentence about capability or performance must point to an exact admitted record containing the subject, revision, oracle, observations, raw evidence, and status. |
+| 2 | In the absence of such a record, the only lawful public state is: |
 
 ```text
 UNMEASURED
@@ -203,4 +270,6 @@ NOT ADMITTED
 RESEARCH HYPOTHESIS
 ```
 
-This project currently benefits more from a truthful empty surface than from a rich speculative one.
+| # | directive |
+|---|---|
+| 1 | This project currently benefits more from a truthful empty surface than from a rich speculative one. |

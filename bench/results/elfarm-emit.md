@@ -1,7 +1,9 @@
 # elfarm emit benchmark
 
-ARM64 + ELF/Linux backend (`lib/compiler/elfarm.id`): cost of building
-the emitter and emitting a static AArch64 ELF executable. 2026-09-12.
+| # | directive |
+|---|---|
+| 1 | ARM64 + ELF/Linux backend (`lib/compiler/elfarm.id`): cost of building the emitter and emitting a static AArch64 ELF executable. |
+| 2 | 2026-09-12. |
 
 ## Environment
 
@@ -35,10 +37,10 @@ the emitter and emitting a static AArch64 ELF executable. 2026-09-12.
 | `idol check lib/compiler/elfarm.id` | clean, no errors |
 | `test/elfarmtest.id` | 15/15 pass, exit 0 |
 
-The emitter binary itself is ~68 KB. Emission is string concatenation of
-1184 hex chars; there is no optimization to measure yet — the backend
-wraps the `.text` extracted from native.id's Mach-O object in a fixed
-ELF64 container with a 3-instruction `_start` stub.
+| # | directive |
+|---|---|
+| 1 | The emitter binary itself is ~68 KB. |
+| 2 | Emission is string concatenation of 1184 hex chars; there is no optimization to measure yet — the backend wraps the `.text` extracted from native.id's Mach-O object in a fixed ELF64 container with a 3-instruction `_start` stub. |
 
 ## What the emitter produces
 

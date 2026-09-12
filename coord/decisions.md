@@ -1,125 +1,149 @@
 # Idol kernel decisions (Idol-0 freeze candidate)
 
-Date: 2026-08-29
-Authority: derived from the foundational audit of 2026-08-29. Each
-decision must be ratified by the human before it is applied to the
-corpus. Decisions are versioned corpus changes, not silent
-reinterpretations.
+| # | directive |
+|---|---|
+| 1 | Date: 2026-08-29 Authority: derived from the foundational audit of 2026-08-29. |
+| 2 | Each decision must be ratified by the human before it is applied to the corpus. |
+| 3 | Decisions are versioned corpus changes, not silent reinterpretations. |
 
-The fifteen decisions below cover the hazards in §2.3 of the audit.
-Each decision is a one-sentence rule. A positive fixture and a
-negative fixture make the rule testable.
+| # | directive |
+|---|---|
+| 1 | The fifteen decisions below cover the hazards in §2.3 of the audit. |
+| 2 | Each decision is a one-sentence rule. |
+| 3 | A positive fixture and a negative fixture make the rule testable. |
 
 ## Delimiter disambiguation (1-3)
 
-D1. `x : point = { ... }` means **subject declaration** of `x` as a
-    `point`. Descriptor annotations on bindings are dropped from the
-    Idol-0 kernel. Positive: `a : i64 = 5`. Negative: `a : i64 = 5`
-    treats the `i64` as anything other than the subject.
+| # | directive |
+|---|---|
+| 1 | D1. `x : point = { ... }` means **subject declaration** of `x` as a `point`. |
+| 2 | Descriptor annotations on bindings are dropped from the Idol-0 kernel. |
+| 3 | Positive: `a : i64 = 5`. |
+| 4 | Negative: `a : i64 = 5` treats the `i64` as anything other than the subject. |
 
-D2. Line-leading infix continuation: a deeper-indented line that
-    begins with an infix operator (any of `+ - * / % ^ # & | < > = ~ ; :
-    , .`), `.`, `:`, `(`, or `[` continues the previous expression.
-    Unary prefix at continuation position is parsed as binary.
-    Positive: `x = 1\n+ 2` parses as `x = 1 + 2`. Negative: a
-    leading `-` at continuation is unary minus on a fresh expression.
+| # | directive |
+|---|---|
+| 1 | Line-leading infix continuation: a deeper-indented line that begins with an infix operator (any of `+ - * / % ^ # & \| < > = ~ ; : , .`), `.`, `:`, `(`, or `[` continues the previous expression. |
+| 2 | Unary prefix at continuation position is parsed as binary. |
+| 3 | Positive: `x = 1\n+ 2` parses as `x = 1 + 2`. |
+| 4 | Negative: a leading `-` at continuation is unary minus on a fresh expression. |
 
-D3. Application requires no whitespace between callee and `(`.
-    Space before `(` after a control head begins the parameter pack.
-    Positive: `f(x)` is a call. Negative: `f (x)` after `for(...)`
-    begins the pack, not a call.
+| # | directive |
+|---|---|
+| 1 | Application requires no whitespace between callee and `(`. |
+| 2 | Space before `(` after a control head begins the parameter pack. |
+| 3 | Positive: `f(x)` is a call. |
+| 4 | Negative: `f (x)` after `for(...)` begins the pack, not a call. |
 
 ## Declaration head (4)
 
-D4. `codec.encode = ...` as a declaration head is **forbidden** in
-    Idol-0 with a diagnostic. Members are declared inside `{}`.
-    Positive: `codec { encode = ... }` is valid. Negative:
-    `codec.encode = ...` outside `{}` is rejected.
+| # | directive |
+|---|---|
+| 1 | D4. `codec.encode = ...` as a declaration head is **forbidden** in Idol-0 with a diagnostic. |
+| 2 | Members are declared inside `{}`. |
+| 3 | Positive: `codec { encode = ... }` is valid. |
+| 4 | Negative: `codec.encode = ...` outside `{}` is rejected. |
 
 ## Result packs and error idiom (5)
 
-D5. Functions return a single value; multi-return is a `(value, error)`
-    pack. No try/catch, no exceptions. `return (x, nil)` for success,
-    `return (nil, e)` for failure. The error is checked with pattern
-    match, never with `pcall`. Positive: `v, e = read(p); if e ...`.
-    Negative: `pcall(read, p)` is rejected.
+| # | directive |
+|---|---|
+| 1 | Functions return a single value; multi-return is a `(value, error)` pack. |
+| 2 | No try/catch, no exceptions. `return (x, nil)` for success, `return (nil, e)` for failure. |
+| 3 | The error is checked with pattern match, never with `pcall`. |
+| 4 | Positive: `v, e = read(p); if e ...`. |
+| 5 | Negative: `pcall(read, p)` is rejected. |
 
 ## Forbidden tokens (6)
 
-D6. `match`, `try`, `catch`, `defer`, `async`, `await`, `FFI syntax`
-    are deleted from Idol-0. `if/else` chains only. Positive:
-    `if cond ... else ...`. Negative: `match v { ... }` is rejected
-    with a diagnostic.
+| # | directive |
+|---|---|
+| 1 | D6. `match`, `try`, `catch`, `defer`, `async`, `await`, `FFI syntax` are deleted from Idol-0. `if/else` chains only. |
+| 2 | Positive: `if cond ... else ...`. |
+| 3 | Negative: `match v { ... }` is rejected with a diagnostic. |
 
 ## Typing (7)
 
-D7. Idol-0 and Idol-1 use one uniform tagged representation:
-    `i64`, `f64`, `text`, `table`, `callable`, `nil`. Descriptor
-    annotations are parsed and minimally checked. Static inference
-    is Idol-1. Positive: `x : i64 = 5`. Negative: `x : {i64, f64}`
-    is rejected (record types are Idol-1).
+| # | directive |
+|---|---|
+| 1 | Idol-0 and Idol-1 use one uniform tagged representation: `i64`, `f64`, `text`, `table`, `callable`, `nil`. |
+| 2 | Descriptor annotations are parsed and minimally checked. |
+| 3 | Static inference is Idol-1. |
+| 4 | Positive: `x : i64 = 5`. |
+| 5 | Negative: `x : {i64, f64}` is rejected (record types are Idol-1). |
 
 ## Memory (8)
 
-D8. Arena per compilation, never free, for Idol-0 and Idol-1. A
-    compiler is a batch process. Real ownership or GC is a
-    post-fixed-point decision. If Idol-0 emits C, Boehm GC is an
-    acceptable stopgap. Positive: `arena:alloc()`. Negative:
-    `free(arena:alloc())` is rejected.
+| # | directive |
+|---|---|
+| 1 | Arena per compilation, never free, for Idol-0 and Idol-1. |
+| 2 | A compiler is a batch process. |
+| 3 | Real ownership or GC is a post-fixed-point decision. |
+| 4 | If Idol-0 emits C, Boehm GC is an acceptable stopgap. |
+| 5 | Positive: `arena:alloc()`. |
+| 6 | Negative: `free(arena:alloc())` is rejected. |
 
 ## Table iteration (9)
 
-D9. Insertion-ordered tables. Non-negotiable for self-host
-    verification (byte-identical stage 2 and stage 3 outputs).
-    Positive: `t = {1, 2, 3}; t:each()` yields `[1, 2, 3]`.
-    Negative: `t` with hash-keyed iteration is rejected.
+| # | directive |
+|---|---|
+| 1 | Insertion-ordered tables. |
+| 2 | Non-negotiable for self-host verification (byte-identical stage 2 and stage 3 outputs). |
+| 3 | Positive: `t = {1, 2, 3}; t:each()` yields `[1, 2, 3]`. |
+| 4 | Negative: `t` with hash-keyed iteration is rejected. |
 
 ## Modules and reach (10)
 
-D10. Idol-0: all `.id` files in one directory form one home. A
-    subdirectory `x/` is reachable as `x.name`. Duplicate names
-    across files in one home are an error. Positive: `a.id` with
-    `a.foo = 5` reachable as `a.foo`. Negative: two `.id` files in
-    one directory both defining `foo` is an error.
+| # | directive |
+|---|---|
+| 1 | Idol-0: all `.id` files in one directory form one home. |
+| 2 | A subdirectory `x/` is reachable as `x.name`. |
+| 3 | Duplicate names across files in one home are an error. |
+| 4 | Positive: `a.id` with `a.foo = 5` reachable as `a.foo`. |
+| 5 | Negative: two `.id` files in one directory both defining `foo` is an error. |
 
 ## Worlds (11)
 
-D11. Idol-0 has one implicit root world. Builtins `read`, `write`,
-    `args`, `exit`, `env`. The `@` grammar is Idol-1. Positive:
-    `stdout:write("hi")`. Negative: `@io` is rejected.
+| # | directive |
+|---|---|
+| 1 | Idol-0 has one implicit root world. |
+| 2 | Builtins `read`, `write`, `args`, `exit`, `env`. |
+| 3 | The `@` grammar is Idol-1. |
+| 4 | Positive: `stdout:write("hi")`. |
+| 5 | Negative: `@io` is rejected. |
 
 ## Specialization (12)
 
-D12. Idol-0 keeps `subject:relation = (params)` and ambient
-    `:relation()` because they are the method mechanism. The
-    `relation(levels) =` and `.field` section syntax are Idol-1.
-    Positive: `p:from(mode)(...)` is valid. Negative:
-    `r(2) = ...` is rejected.
+| # | directive |
+|---|---|
+| 1 | Idol-0 keeps `subject:relation = (params)` and ambient `:relation()` because they are the method mechanism. |
+| 2 | The `relation(levels) =` and `.field` section syntax are Idol-1. |
+| 3 | Positive: `p:from(mode)(...)` is valid. |
+| 4 | Negative: `r(2) = ...` is rejected. |
 
 ## Numerics (13)
 
-D13. i64 wrapping arithmetic. f64 IEEE-754. `text` is UTF-8 and the
-    only string type. Table equality is identity. Positive:
-    `9223372036854775807 + 1` wraps. Negative: arbitrary-precision
-    integers are Idol-1.
+| # | directive |
+|---|---|
+| 1 | D13. i64 wrapping arithmetic. f64 IEEE-754. `text` is UTF-8 and the only string type. |
+| 2 | Table equality is identity. |
+| 3 | Positive: `9223372036854775807 + 1` wraps. |
+| 4 | Negative: arbitrary-precision integers are Idol-1. |
 
 ## Idioms still in force
 
-The remaining spec rules (one lowercase word, no mashed compounds,
-no underscores, native uppercase zero, no second IR, no boolean
-mirrors, no bridges/adapters/registries) continue to apply. The
-Idol-0 freeze ratifies the kernel decisions above; the migration of
-the existing `lib/compiler/token.id` to one-word names is a
-multi-ticket workstream tracked separately.
-
+| # | directive |
+|---|---|
+| 1 | The remaining spec rules (one lowercase word, no mashed compounds, no underscores, native uppercase zero, no second IR, no boolean mirrors, no bridges/adapters/registries) continue to apply. |
+| 2 | The Idol-0 freeze ratifies the kernel decisions above; the migration of the existing `lib/compiler/token.id` to one-word names is a multi-ticket workstream tracked separately. |
 
 ## Pre-freeze debt inventory
 
-The repo as of `237b25b5` carries the following spec debt. Each
-entry names the file, the mashed word, and the proposed
-decomposition. The migration is **not** a single PR — it is
-versioned corpus changes per the foundational audit, not silent
-reinterpretation.
+| # | directive |
+|---|---|
+| 1 | The repo as of `237b25b5` carries the following spec debt. |
+| 2 | Each entry names the file, the mashed word, and the proposed decomposition. |
+| 3 | The migration is **not** a single PR — it is versioned corpus changes per the foundational audit, not silent reinterpretation. |
 
 | File | Word | Decomposition |
 |---|---|---|
@@ -159,16 +183,15 @@ reinterpretation.
 | `scripts/ingress/*` (pre-fix) | `endpointwrite`, `endpointread` | decomposed to `say`, `fetch` (commit `1080cbd9`) |
 | `tools/wasm/ingest.id` | `emit` | conformant single word |
 
-The migration is large. Per the foundational audit, the approach is
-"expect two or three amendments to the freeze and treat each as a
-versioned corpus change with a reason, not a silent reinterpretation."
+| # | directive |
+|---|---|
+| 1 | The migration is large. |
+| 2 | Per the foundational audit, the approach is "expect two or three amendments to the freeze and treat each as a versioned corpus change with a reason, not a silent reinterpretation." |
 
-The first migration ticket is `coord/tasks.jsonl` `migrate-token-id-body-2026-08-29`
-(decomposing `idbody` and `zigbody` in `lib/compiler/token.id` while
-preserving the byte-identical grammar projection gate via the C
-backend). It is a self-contained one-week workstream that exercises
-the full freeze/fix/ratify loop with a real downstream consumer.
-
+| # | directive |
+|---|---|
+| 1 | The first migration ticket is `coord/tasks.jsonl` `migrate-token-id-body-2026-08-29` (decomposing `idbody` and `zigbody` in `lib/compiler/token.id` while preserving the byte-identical grammar projection gate via the C backend). |
+| 2 | It is a self-contained one-week workstream that exercises the full freeze/fix/ratify loop with a real downstream consumer. |
 
 ## Ratification log
 
@@ -177,7 +200,9 @@ the full freeze/fix/ratify loop with a real downstream consumer.
 
 ## Hardware constraints (2026-08-29)
 
-These are FACTS about this host, not decisions awaiting ratification:
+| # | directive |
+|---|---|
+| 1 | These are FACTS about this host, not decisions awaiting ratification: |
 
 * **Host arch: aarch64** (Linux kernel per `uname -m`).
 * **Codex binary: x86_64 ELF** at `~/.local/bin/codex` — cannot execute on this host without `qemu-user-static` or remote runner.
@@ -210,22 +235,32 @@ These are FACTS about this host, not decisions awaiting ratification:
 
 ## IDOL_NATIVE_ROOT binding (2026-09-05, host mm)
 
-Resolved t_c9c07b0e dependency: the manifest pins an exact clean idol-native checkout (revision `9fa95a3e826a37e95e0de1498203ef8818029d0a`, tree `64682fc0ffba89c923854abc087de46444f4a2ab`; entry `tools/mcp/server.id` sha256 `fdeb4d63…`; artifact `bin/idol` sha256 `0f76a51d…`; authority projection `docs/spec/AUTHORITY.json` sha256 `a67c48eb…`; authority revision `c9480b77189c8ce308403bd377b6c509046796e4`). The existing `/Users/clp/work/idol-native` checkout is at a more recent HEAD (`f4dec46`, "Project committed upstream law into native authority") and does NOT match the manifest pin. Host fact recorded:
+| # | directive |
+|---|---|
+| 1 | Resolved t_c9c07b0e dependency: the manifest pins an exact clean idol-native checkout (revision `9fa95a3e826a37e95e0de1498203ef8818029d0a`, tree `64682fc0ffba89c923854abc087de46444f4a2ab`; entry `tools/mcp/server.id` sha256 `fdeb4d63…`; artifact `bin/idol` sha256 `0f76a51d…`; authority projection `docs/spec/AUTHORITY.json` sha256 `a67c48eb…`; authority revision `c9480b77189c8ce308403bd377b6c509046796e4`). |
+| 2 | The existing `/Users/clp/work/idol-native` checkout is at a more recent HEAD (`f4dec46`, "Project committed upstream law into native authority") and does NOT match the manifest pin. |
+| 3 | Host fact recorded: |
 
 * `IDOL_NATIVE_ROOT=/Users/clp/work/idol-native-pinned`
 * Created via `git -C /Volumes/d\ 1/hermes-mm/work/idol-native worktree add --detach /Users/clp/work/idol-native-pinned 9fa95a3e826a37e95e0de1498203ef8818029d0a` (2026-09-05).
 * `mcp-pair validate tools/node/dev/mcp.manifest.json idol-native` exits 0 with all five identity checks passing (revision, tree, entry_sha256, artifact_sha256, authority_revision).
 
-The `/Users/clp/work/idol-native` checkout is preserved at HEAD `f4dec46` for any work that needs the post-pin tree; it is NOT used by the mcp-gate.
+| # | directive |
+|---|---|
+| 1 | The `/Users/clp/work/idol-native` checkout is preserved at HEAD `f4dec46` for any work that needs the post-pin tree; it is NOT used by the mcp-gate. |
 
 ## Why mcp-gate does NOT pass yet (2026-09-05)
 
-After the IDOL_NATIVE_ROOT binding and the local `tools/mcp/native.id` rewrite to direct-backend `"{}"` interpolation (commit `4fad9595`), `mcp-gate` still fails at `probe-mcp`:
+| # | directive |
+|---|---|
+| 1 | After the IDOL_NATIVE_ROOT binding and the local `tools/mcp/native.id` rewrite to direct-backend `"{}"` interpolation (commit `4fad9595`), `mcp-gate` still fails at `probe-mcp`: |
 
 * **idol (local) server**: passes when bound to the current ca68ab56 compiler — `native.id` compiles and serves a valid initialize response.
 * **idol-native (paired) server**: the pinned `tools/mcp/server.id` at revision `9fa95a3e` uses raw `'…' .. var .. '…'` concat (`..`) in 10+ sites. The current ca68ab56 compiler's `dnir_lower.zig` rejects literal-text concat via `concatOperandClass` returning `.other` and surfacing `binop-not-lowered:concat` direct-backend refusal. The pinned binary `bin/idol` at the same revision CAN compile the entry (its cache layer predates the refusal), but its compile output reports `(cached)` which the gate's `grep -Fq '(cached)'` check treats as an infrastructure failure.
 
-Three honest paths forward — none of which are in scope of this card and would each need a separate spec decision:
+| # | directive |
+|---|---|
+| 1 | Three honest paths forward — none of which are in scope of this card and would each need a separate spec decision: |
 
 1. **Repin to a post-pin revision** that already uses `"{}"` syntax. `clpi/idol-native` has no revision (current `f4dec46` or older `c5ba11b`/`6a50953`) where `tools/mcp/server.id` is `..`-free. The `..`-to-`"{}"` migration is unblocked in upstream idol main (commit range after bf6c596a, e.g. mcp/native.id at ca68ab56 here uses `"{}"`) but has not been backported to idol-native's mcp/server.id. The next idol-native authority re-pin must include the server.id migration, or the mcp-gate cannot pass for `idol-native`.
 2. **Loosen probe-mcp to tolerate `(cached)`** when the binary is current and runnable. This weakens a check the charter explicitly lists as "lower ceiling to make red go green" and is denied by `CHARTER.md` ("Never lower a ceiling, weaken a gate, delete a test, or edit a `gate/*.sh` threshold").
@@ -233,7 +268,10 @@ Three honest paths forward — none of which are in scope of this card and would
 
 ## Why agent-smoke does NOT pass yet (2026-09-05)
 
-The same dnir_lower changes that broke `..` literal-text concat also broke direct-backend lowering for the 6 sub-scripts agent-smoke chains. Verified at HEAD `ca68ab56`:
+| # | directive |
+|---|---|
+| 1 | The same dnir_lower changes that broke `..` literal-text concat also broke direct-backend lowering for the 6 sub-scripts agent-smoke chains. |
+| 2 | Verified at HEAD `ca68ab56`: |
 
 * `public_safety_scan` — PASS after skip-pattern extension (research/, evidence/kanban/) in commit `4fad9595`.
 * `luahost` — FAIL with `unresolved-application-facts` (DNB011) at `native_backend.zig:11390`.
@@ -242,30 +280,48 @@ The same dnir_lower changes that broke `..` literal-text concat also broke direc
 * `sim` — FAIL at compile with `binop-not-lowered:concat` (literal `'…' .. '…'` in b64-decoded shell payload around line 181).
 * `transform` — FAIL at compile with the same DNB011 class.
 
-These scripts are not affected by IDOL_NATIVE_ROOT; they are blocked by direct-backend lowering debt that pre-dates this card.
+| # | directive |
+|---|---|
+| 1 | These scripts are not affected by IDOL_NATIVE_ROOT; they are blocked by direct-backend lowering debt that pre-dates this card. |
 
 ## Scope verdict (2026-09-05)
 
-IDOL_NATIVE_ROOT binding is complete and recorded. mcp-gate and agent-smoke are not made green by this card — they are owned by spec-level decisions (server.id migration, dnir_lower lowering debt) that need human ratification per the charter.
-
+| # | directive |
+|---|---|
+| 1 | IDOL_NATIVE_ROOT binding is complete and recorded. mcp-gate and agent-smoke are not made green by this card — they are owned by spec-level decisions (server.id migration, dnir_lower lowering debt) that need human ratification per the charter. |
 
 ## Decision: Path 1 executed (2026-09-10)
 
-**Chosen**: Path 1 — repin idol-native after backporting the MCP server's text-literal migration.
+| # | directive |
+|---|---|
+| 1 | **Chosen**: Path 1 — repin idol-native after backporting the MCP server's text-literal migration. |
 
-**Rationale**: Preserves the exact revision/tree/artifact/evidence checks while fixing the incompatible source. Path 2 weakens probe-mcp by accepting cached output (denied by CHARTER.md). Path 3 requires a new per-server compiler schema and still encounters cache behavior.
+| # | directive |
+|---|---|
+| 1 | **Rationale**: Preserves the exact revision/tree/artifact/evidence checks while fixing the incompatible source. |
+| 2 | Path 2 weakens probe-mcp by accepting cached output (denied by CHARTER.md). |
+| 3 | Path 3 requires a new per-server compiler schema and still encounters cache behavior. |
 
-**Executed**:
+| # | directive |
+|---|---|
+| 1 | **Executed**: |
+
 - Created branch `idol/mcp-server-textconst-migration` in idol-native, commit `ecc5dbbc4d8c3710df400867534bf169a0603812`.
 - New pin: revision `ecc5dbbc4d8c3710df400867534bf169a0603812`, tree `1127f61077c93766de837486304d003ce562fcf1`.
 - Updated `tools/node/dev/mcp.manifest.json` and `tools/node/dev/mcp-gate` (damage-control mutation).
 - **mcp-gate: PASS (13/13)** — verified 2026-09-10.
 
-**Compiler fix (same chain)**:
+| # | directive |
+|---|---|
+| 1 | **Compiler fix (same chain)**: |
+
 - Fixed `graphHasForeignDefaultApplication` subject-first arity false positive in `src/main.zig`. The check compared `arguments.len` (excluding subject) against param count (including subject slot), causing ALL subject-first foreign calls to skip their reached partitions. Fix: add `subject_slots` to the count.
 - This also explains the `gate/crosspartition.sh` N3 failure.
 
-**agent-smoke status (2026-09-10)**:
+| # | directive |
+|---|---|
+| 1 | **agent-smoke status (2026-09-10)**: |
+
 - Harness repaired for GAP-204 (nested `--backend=direct`).
 - `public_safety_scan`: PASS.
 - `luahost`, `explain`, `contract`, `sim`, `transform`: BLOCKED on library gaps — `io.popen`, `os.execute` have no direct-backend realization. These are not compiler bugs; the relations do not exist. Requires standard-library design decision.

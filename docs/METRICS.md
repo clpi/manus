@@ -1,9 +1,13 @@
 # Idol progress metrics
 
-This file is a **human audit projection** of how progress is measured. It is not
-semantic law and not a substitute for executed gate output.
+| # | directive |
+|---|---|
+| 1 | This file is a **human audit projection** of how progress is measured. |
+| 2 | It is not semantic law and not a substitute for executed gate output. |
 
-Two kinds of statement live here and they are never interchangeable:
+| # | directive |
+|---|---|
+| 1 | Two kinds of statement live here and they are never interchangeable: |
 
 - **Measurements.** Every one names the COMMAND that recomputes it. No count,
   exit code, or census total is written as a literal in this file's prose
@@ -14,15 +18,16 @@ Two kinds of statement live here and they are never interchangeable:
   They are labelled as judgments and dated. A judgment is never a counter, and a
   dated judgment does not become a measurement by being repeated.
 
-Repository truth lives in `docs/spec/law.md` (supreme) and
-`docs/spec/constitution.md`; executed authority in `docs/bootstrap.md`; and
-machine-measurable counts in the ledgers and gates cited below, run against a
-clean HEAD.
+| # | directive |
+|---|---|
+| 1 | Repository truth lives in `docs/spec/law.md` (supreme) and `docs/spec/constitution.md`; executed authority in `docs/bootstrap.md`; and machine-measurable counts in the ledgers and gates cited below, run against a clean HEAD. |
 
 ## The three questions this file must not conflate
 
-The single largest error this document has made is collapsing these into one
-"grammar" score. They have different answers.
+| # | directive |
+|---|---|
+| 1 | The single largest error this document has made is collapsing these into one "grammar" score. |
+| 2 | They have different answers. |
 
 | Question | Answer | Proof command |
 |---|---|---|
@@ -30,59 +35,56 @@ The single largest error this document has made is collapsing these into one
 | Is **grammar consumer closure** reached? | **No.** Twenty-five bounded production decisions consume owner facts, but the wider structural parser and editor grammar remain host-authored and `docs/spec/grammar.md` does not generate the parser. | `sh gate/token/read.sh`; `docs/bootstrap.md` owns the exact remaining authority. |
 | Is the **parser** Idol-owned? | **Partly.** Twenty-five production decisions execute from `lib/compiler/parser.id`; `src/parser.zig` still owns most recognition, AST materialization, bindings, and source structure. | `IDOL=./zig-out/bin/idol sh tools/node/dev/parser/artifact`; `sh gate/token/read.sh` |
 
-An owner existing is not consumer closure, and consumer closure would still not
-be parser ownership. Progress on the first two does **not** move the bootstrap
-stage.
+| # | directive |
+|---|---|
+| 1 | An owner existing is not consumer closure, and consumer closure would still not be parser ownership. |
+| 2 | Progress on the first two does **not** move the bootstrap stage. |
 
 ## Top-line dashboard (dominant)
 
-All other metrics — file counts, Zig counts, `.id` percentage, keyword counts —
-are **subordinate diagnostics**. Report these three first.
+| # | directive |
+|---|---|
+| 1 | All other metrics — file counts, Zig counts, `.id` percentage, keyword counts — are **subordinate diagnostics**. |
+| 2 | Report these three first. |
 
 ### 1. Executed authority frontier
 
-Earliest → latest **production stage actually owned by Idol** on the path:
+| # | directive |
+|---|---|
+| 1 | Earliest → latest **production stage actually owned by Idol** on the path: |
 
 ```text
 source ingress → lexer → lexical identity → grammar → parser → binding →
 semantics → resolution → demand → realization → machine → object → runtime/link
 ```
 
-**Current honest state: S0. No compiler B exists. No compiler C exists.**
-Executed parser ownership is twenty-five bounded production decisions; the host still
-owns parser staging and AST construction. Graph-proven `event` produces one complete
-fact word for every immutable token in one capacity-checked pack call, and graph-proven
-`boundary` consumes its edge/layout face. Bits 0..61 now carry every owner-derived
-per-coordinate static face, including Pratt and relation ordinals; only non-sign bit 62
-remains unused. A second contiguous lane carries match (0..1), return (2..3),
-callable-header variants (4..5), contextual `type` alias head (6), and bare
-declaration head (7). All host-facing per-decision parser ABIs are deleted; only
-whole-pack `event` and complete `boundary` remain. The current aggregate is 1845
-pass / 62 skip / 0 fail, the positive-controlled GAP-145 gate passes 359 checks,
-and admission proves exactly those two graph relations.
-Paired internal evidence in `static-event-consolidation.json` validates with five
-damaged controls. The candidate is an `open` +11,704-byte artifact loss versus
-the exact opening baseline. All latency cells are `unknown` because Raspberry Pi
-throttle history was already `0xe0000`; the raw boundary, clause, statement, and
-member paired intervals point toward losses and are not promoted to claims.
-`event-lane-consolidation.json` compares the current two-lane artifact with the
-exact static-lane baseline. Correctness is `bound`; artifact bytes are a measured
-4,032-byte `win`. All latency cells remain `unknown` from nonzero Pi throttle
-history; raw boundary/clause/statement/member paired intervals point toward
-losses and startup is inconclusive. The contextual-type slice then removed five
-host text decisions and one direct lookahead without widening either ABI or event
-storage; its exact debug artifact was 1,360 bytes larger than the two-lane
-baseline. Bare declaration-path transfer subsequently recovered 608 bytes, so
-the current artifact remains an `open` +752-byte loss from that baseline. Runtime,
-compile, startup, and memory are unmeasured and remain `unknown`.
+| # | directive |
+|---|---|
+| 1 | **Current honest state: S0. |
+| 2 | No compiler B exists. |
+| 3 | No compiler C exists.** Executed parser ownership is twenty-five bounded production decisions; the host still owns parser staging and AST construction. |
+| 4 | Graph-proven `event` produces one complete fact word for every immutable token in one capacity-checked pack call, and graph-proven `boundary` consumes its edge/layout face. |
+| 5 | Bits 0..61 now carry every owner-derived per-coordinate static face, including Pratt and relation ordinals; only non-sign bit 62 remains unused. |
+| 6 | A second contiguous lane carries match (0..1), return (2..3), callable-header variants (4..5), contextual `type` alias head (6), and bare declaration head (7). |
+| 7 | All host-facing per-decision parser ABIs are deleted; only whole-pack `event` and complete `boundary` remain. |
+| 8 | The current aggregate is 1845 pass / 62 skip / 0 fail, the positive-controlled GAP-145 gate passes 359 checks, and admission proves exactly those two graph relations. |
+| 9 | Paired internal evidence in `static-event-consolidation.json` validates with five damaged controls. |
+| 10 | The candidate is an `open` +11,704-byte artifact loss versus the exact opening baseline. |
+| 11 | All latency cells are `unknown` because Raspberry Pi throttle history was already `0xe0000`; the raw boundary, clause, statement, and member paired intervals point toward losses and are not promoted to claims. `event-lane-consolidation.json` compares the current two-lane artifact with the exact static-lane baseline. |
+| 12 | Correctness is `bound`; artifact bytes are a measured 4,032-byte `win`. |
+| 13 | All latency cells remain `unknown` from nonzero Pi throttle history; raw boundary/clause/statement/member paired intervals point toward losses and startup is inconclusive. |
+| 14 | The contextual-type slice then removed five host text decisions and one direct lookahead without widening either ABI or event storage; its exact debug artifact was 1,360 bytes larger than the two-lane baseline. |
+| 15 | Bare declaration-path transfer subsequently recovered 608 bytes, so the current artifact remains an `open` +752-byte loss from that baseline. |
+| 16 | Runtime, compile, startup, and memory are unmeasured and remain `unknown`. |
 
-What has crossed the frontier is real and larger than one boundary: source
-ingress classification, the production lexer and token/span production, and the
-grammar-fact ontology are executed Idol authority. What has *not* crossed is
-the parser stage as a whole and everything rightward. `docs/bootstrap.md` owns the
-per-boundary contract and is the authority when this table and that one differ.
+| # | directive |
+|---|---|
+| 1 | What has crossed the frontier is real and larger than one boundary: source ingress classification, the production lexer and token/span production, and the grammar-fact ontology are executed Idol authority. |
+| 2 | What has *not* crossed is the parser stage as a whole and everything rightward. `docs/bootstrap.md` owns the per-boundary contract and is the authority when this table and that one differ. |
 
-**Score executed SHC authority:** milestone table (S0), not a percentage headline.
+| # | directive |
+|---|---|
+| 1 | **Score executed SHC authority:** milestone table (S0), not a percentage headline. |
 
 | Milestone | State |
 |-----------|-------|
@@ -94,53 +96,56 @@ per-boundary contract and is the authority when this table and that one differ.
 | B0 compiler B executable | open — B does not exist |
 | C0 B compiles C | open — C does not exist |
 
-B-G0a being met is an ownership fact about grammar *facts*. It is not a stage
-advance. S0 remains the honest stage until parser recognition crosses.
+| # | directive |
+|---|---|
+| 1 | B-G0a being met is an ownership fact about grammar *facts*. |
+| 2 | It is not a stage advance. |
+| 3 | S0 remains the honest stage until parser recognition crosses. |
 
-**Four-axis commit test:** CAPABILITY, OWNERSHIP, CONVERGENCE, FTCFTW —
-capability-only is not SHC progress. `gate/taint.sh` supplies the executable
-counterfactual for the transferred lexer boundary; `gate/grammar-projection.sh`
-supplies it for the grammar owner; `docs/bootstrap.md` owns the stage contract.
+| # | directive |
+|---|---|
+| 1 | **Four-axis commit test:** CAPABILITY, OWNERSHIP, CONVERGENCE, FTCFTW — capability-only is not SHC progress. `gate/taint.sh` supplies the executable counterfactual for the transferred lexer boundary; `gate/grammar-projection.sh` supplies it for the grammar owner; `docs/bootstrap.md` owns the stage contract. |
 
-**Do not conflate with DIRECT-COVERAGE.** The sibling native surface
-(`clpi/idol-native`) tracks a separate **LOWERABLE** ledger
-(`../idol-native/gate/selfhost.sh`: how many `lib/compiler/*.id` modules lower
-on `--backend=direct`). That count is backend-capability coverage only.
-**CANONICAL-COMPILER** and **EXECUTED-OWNER** are orthogonal; see
-`../idol-native/docs/shc-ownership-ledgers.md` and
-`../idol-native/docs/compiler-b-manifest.md`. Many green compiler modules are
-capability probes, not compiler B. HOST-DEPENDENCY closes only through a live
-former-host death control, never through a prose or source-string ledger.
+| # | directive |
+|---|---|
+| 1 | **Do not conflate with DIRECT-COVERAGE.** The sibling native surface (`clpi/idol-native`) tracks a separate **LOWERABLE** ledger (`../idol-native/gate/selfhost.sh`: how many `lib/compiler/*.id` modules lower on `--backend=direct`). |
+| 2 | That count is backend-capability coverage only. **CANONICAL-COMPILER** and **EXECUTED-OWNER** are orthogonal; see `../idol-native/docs/shc-ownership-ledgers.md` and `../idol-native/docs/compiler-b-manifest.md`. |
+| 3 | Many green compiler modules are capability probes, not compiler B. |
+| 4 | HOST-DEPENDENCY closes only through a live former-host death control, never through a prose or source-string ledger. |
 
-The `../idol-native/` prefix on those three paths is deliberate and must not be
-"repaired" to a bare `gate/…` spelling: `gate/all.sh`'s citation census counts a
-qualified sibling citation as its own class, names this file as the example of
-the correct form, and would score a bare spelling as an unresolved citation.
+| # | directive |
+|---|---|
+| 1 | The `../idol-native/` prefix on those three paths is deliberate and must not be "repaired" to a bare `gate/…` spelling: `gate/all.sh`'s citation census counts a qualified sibling citation as its own class, names this file as the example of the correct form, and would score a bare spelling as an unresolved citation. |
 
 ### 2. Semantic reconstruction debt
 
-Count of **production downstream decisions that still derive known meaning**
-from source text, AST shape, callee name, opcode family, host module pattern,
-or hash/fingerprint after resolution.
+| # | directive |
+|---|---|
+| 1 | Count of **production downstream decisions that still derive known meaning** from source text, AST shape, callee name, opcode family, host module pattern, or hash/fingerprint after resolution. |
 
-**Trend:** major islands deleted — AST-machine reconstruction, evidence identity
-shadows, target-spelling realization selection, and now the parser's second
-operator ontology (see "Recomputing every count" below). Not zero.
+| # | directive |
+|---|---|
+| 1 | **Trend:** major islands deleted — AST-machine reconstruction, evidence identity shadows, target-spelling realization selection, and now the parser's second operator ontology (see "Recomputing every count" below). |
+| 2 | Not zero. |
 
 ### 3. FTCFTW evidence matrix coverage
 
-Supported workloads × {direct native, C-equivalent, Wasm} × {correctness,
-runtime, startup, compile, memory, artifact size}. Cells remain **explicitly
-empty** until revision-bound aggregate proof fills them.
+| # | directive |
+|---|---|
+| 1 | Supported workloads × {direct native, C-equivalent, Wasm} × {correctness, runtime, startup, compile, memory, artifact size}. |
+| 2 | Cells remain **explicitly empty** until revision-bound aggregate proof fills them. |
 
-**Complete FTCFTW claim is not proven.** `scripts/ledger/ftcftw.id` passing
-means indexed contracts exist — not that the bound is proven. Stale proof
-bundles do not certify current HEAD. `docs/bootstrap.md` records FTCFTW as
-**invalid** as a performance claim at this stage.
+| # | directive |
+|---|---|
+| 1 | **Complete FTCFTW claim is not proven.** `scripts/ledger/ftcftw.id` passing means indexed contracts exist — not that the bound is proven. |
+| 2 | Stale proof bundles do not certify current HEAD. `docs/bootstrap.md` records FTCFTW as **invalid** as a performance claim at this stage. |
 
 ## Recomputing every count on this page
 
-No count below is written out here. Each row names what to run.
+| # | directive |
+|---|---|
+| 1 | No count below is written out here. |
+| 2 | Each row names what to run. |
 
 | Claim | Command that recomputes it |
 |---|---|
@@ -158,14 +163,15 @@ No count below is written out here. Each row names what to run.
 | Graph sovereignty audits | `./zig-out/bin/idol run scripts/ledger/graph.id`; `./zig-out/bin/idol run gate/graph.id` |
 | Application consumer audit | `./zig-out/bin/idol run scripts/ledger/application.id` |
 
-All of the above require a built compiler: `zig build` (produces
-`./zig-out/bin/idol`). A gate run against a stale binary measures the stale
-binary.
+| # | directive |
+|---|---|
+| 1 | All of the above require a built compiler: `zig build` (produces `./zig-out/bin/idol`). |
+| 2 | A gate run against a stale binary measures the stale binary. |
 
-**Do not** copy an output of any of these into this file. If a number matters
-enough to assert, it belongs in the runner that checks it — which is where the
-`demandsOperand` membership size already lives, and why that one has not gone
-stale.
+| # | directive |
+|---|---|
+| 1 | **Do not** copy an output of any of these into this file. |
+| 2 | If a number matters enough to assert, it belongs in the runner that checks it — which is where the `demandsOperand` membership size already lives, and why that one has not gone stale. |
 
 ## Permanent metric splits
 
@@ -176,33 +182,37 @@ stale.
 | **New debt introduced** | Must be **0** on added/changed canonical lines (idiomgate, host/path gates, semanticgate ratchets) |
 | **Existing canonical-surface debt** | Historical ledgers and corpus (`scripts/ledger/debt.id`, `scripts/ledger/ftcftw.id`, etc.) — substantial, preexisting; not conflated with gate pass on a migration diff |
 
-A staged migration diff passing idiomgate/semanticgate proves **no new debt in
-that diff**, not that the entire historical `.id` corpus satisfies present law.
+| # | directive |
+|---|---|
+| 1 | A staged migration diff passing idiomgate/semanticgate proves **no new debt in that diff**, not that the entire historical `.id` corpus satisfies present law. |
 
 ### Architecture vs embodiment
 
-Recurring pattern: **specification closure high; executable closure lower.**
+| # | directive |
+|---|---|
+| 1 | Recurring pattern: **specification closure high; executable closure lower.** |
 
-For grammar specifically, that split is now three-valued rather than two, and
-the middle value is the one that moved — see "The three questions this file must
-not conflate" above. Design closure being high has never implied consumer
-closure, and consumer closure does not imply parser ownership.
+| # | directive |
+|---|---|
+| 1 | For grammar specifically, that split is now three-valued rather than two, and the middle value is the one that moved — see "The three questions this file must not conflate" above. |
+| 2 | Design closure being high has never implied consumer closure, and consumer closure does not imply parser ownership. |
 
 ### Ownership is not coverage
 
-An Idol file existing on a production path is ownership. An Idol file compiling
-under a backend is coverage. A generated artifact is only evidence of ownership
-when a gate proves it regenerates byte-identically from its owner — otherwise it
-is a tracked file that may drift, and "the grammar is Idol owned" becomes a
-claim with no counterfactual. That reasoning is written into
-`gate/grammar-projection.sh` itself.
+| # | directive |
+|---|---|
+| 1 | An Idol file existing on a production path is ownership. |
+| 2 | An Idol file compiling under a backend is coverage. |
+| 3 | A generated artifact is only evidence of ownership when a gate proves it regenerates byte-identically from its owner — otherwise it is a tracked file that may drift, and "the grammar is Idol owned" becomes a claim with no counterfactual. |
+| 4 | That reasoning is written into `gate/grammar-projection.sh` itself. |
 
 ## Dated architectural judgments (2026-08-23)
 
-**These are opinions, not counters.** They carry a date because they are
-assessments of a frontier that moves. Do not cite one as a measurement, do not
-diff two of them as if that were a trend line, and do not report one without its
-date. Where a judgment and a gate disagree, the gate is right.
+| # | directive |
+|---|---|
+| 1 | **These are opinions, not counters.** They carry a date because they are assessments of a frontier that moves. |
+| 2 | Do not cite one as a measurement, do not diff two of them as if that were a trend line, and do not report one without its date. |
+| 3 | Where a judgment and a gate disagree, the gate is right. |
 
 | Dimension | Judgment (2026-08-23) |
 |---|---|
@@ -229,48 +239,50 @@ date. Where a judgment and a gate disagree, the gate is right.
 | Agent-orientation durability | green |
 | Trajectory | positive |
 
-**This table is load-bearing, and one row is checked by a runner.**
-`scripts/ledger/ftcftw.id` reads this file and FAILS unless the
-"FTCFTW complete experimental proof" row still carries the literal anti-claim
-`near 0%`. That is the one percentage on this page that is not merely a
-judgment: it is a refusal, pinned in the runner that checks it, so that no
-future edit can quietly upgrade the FTCFTW claim by rewording a table cell. Do
-not delete or soften that row without changing the ledger in the same diff.
-Verify with `./zig-out/bin/idol run scripts/ledger/ftcftw.id`.
+| # | directive |
+|---|---|
+| 1 | **This table is load-bearing, and one row is checked by a runner.** `scripts/ledger/ftcftw.id` reads this file and FAILS unless the "FTCFTW complete experimental proof" row still carries the literal anti-claim `near 0%`. |
+| 2 | That is the one percentage on this page that is not merely a judgment: it is a refusal, pinned in the runner that checks it, so that no future edit can quietly upgrade the FTCFTW claim by rewording a table cell. |
+| 3 | Do not delete or soften that row without changing the ledger in the same diff. |
+| 4 | Verify with `./zig-out/bin/idol run scripts/ledger/ftcftw.id`. |
 
-**Headline:** the grammar *owner* question is answered and executable; grammar
-*consumer* closure and parser ownership are not. Architecture is green; SHC is
-red at S0; FTCFTW proof is red. Metrics are harder to fake than in earlier eras
-— that is the progress, and it is why this table no longer carries percentages
-that could be mistaken for counters.
+| # | directive |
+|---|---|
+| 1 | **Headline:** the grammar *owner* question is answered and executable; grammar *consumer* closure and parser ownership are not. |
+| 2 | Architecture is green |
+| 3 | SHC is red at S0 |
+| 4 | FTCFTW proof is red. |
+| 5 | Metrics are harder to fake than in earlier eras — that is the progress, and it is why this table no longer carries percentages that could be mistaken for counters. |
 
 ## Identity (current)
 
-Project identity: **Idol** (`idol`, `.id`). Constitution §67 is sole semantic
-algebra authority. Git owns historical archive.
+| # | directive |
+|---|---|
+| 1 | Project identity: **Idol** (`idol`, `.id`). |
+| 2 | Constitution §67 is sole semantic algebra authority. |
+| 3 | Git owns historical archive. |
 
-Repository identity is a dev/release split, not a contradiction:
-`docs/spec/AUTHORITY.md` names `clpi/idol` as the living development
-authority, and `docs/spec/constitution.md`'s `idollang/idol` is the release
-identity the project SHIPS as (`tools/node/dev/orient` projects both:
-`devrepository: clpi/idol`, `releaserepository: idollang/idol`, the latter
-untouched until RELEASE_READINESS authorization). Cite the orient
-projection, not this paragraph.
+| # | directive |
+|---|---|
+| 1 | Repository identity is a dev/release split, not a contradiction: `docs/spec/AUTHORITY.md` names `clpi/idol` as the living development authority, and `docs/spec/constitution.md`'s `idollang/idol` is the release identity the project SHIPS as (`tools/node/dev/orient` projects both: `devrepository: clpi/idol`, `releaserepository: idollang/idol`, the latter untouched until RELEASE_READINESS authorization). |
+| 2 | Cite the orient projection, not this paragraph. |
 
 ## Ledgers and fresh evidence
 
-Machine-measurable values must come from running the current ledgers against one
-clean HEAD — see "Recomputing every count on this page" above for the exact
-commands.
+| # | directive |
+|---|---|
+| 1 | Machine-measurable values must come from running the current ledgers against one clean HEAD — see "Recomputing every count on this page" above for the exact commands. |
 
-Inspect committed evidence artifacts for revision, dirty state, and aggregate
-outcome. A proof bundle at an older revision does not certify current HEAD; the
-live tree is not automatically the measured program (`law.evidence.subject`,
-`docs/bootstrap.md`).
+| # | directive |
+|---|---|
+| 1 | Inspect committed evidence artifacts for revision, dirty state, and aggregate outcome. |
+| 2 | A proof bundle at an older revision does not certify current HEAD; the live tree is not automatically the measured program (`law.evidence.subject`, `docs/bootstrap.md`). |
 
 ## Prohibited headline metrics
 
-Do not report as primary progress:
+| # | directive |
+|---|---|
+| 1 | Do not report as primary progress: |
 
 - `.id` file count or "percent in language"
 - keyword removal counts alone
@@ -283,53 +295,55 @@ Do not report as primary progress:
 
 ## Superseded observations
 
-Everything below described an earlier frontier. It is kept for trend reading
-only. Where it conflicts with the sections above, the sections above are
-current; where it conflicts with `docs/bootstrap.md`, that document is current.
+| # | directive |
+|---|---|
+| 1 | Everything below described an earlier frontier. |
+| 2 | It is kept for trend reading only. |
+| 3 | Where it conflicts with the sections above, the sections above are current; where it conflicts with `docs/bootstrap.md`, that document is current. |
 
 ### Superseded: frontier statement (pre-2026-08-23)
 
-The dashboard formerly read: *"no compiler B exists. One substantive executed
-transfer: production lexer/token-span boundary. Lexical identity, generated
-grammar roles, and parser recognition remain blocked or host-owned."*
+| # | directive |
+|---|---|
+| 1 | The dashboard formerly read: *"no compiler B exists. |
+| 2 | One substantive executed transfer: production lexer/token-span boundary. |
+| 3 | Lexical identity, generated grammar roles, and parser recognition remain blocked or host-owned."* |
 
-Superseded in part. "No compiler B exists" remains true and is restated above.
-The rest understated the frontier: source ingress classification executes in
-Idol, lexical identity is Idol-owned with `GAP-145` consumers remaining, and
-generated grammar roles are Idol-owned with `GAP-134` consumer closure
-remaining. Parser recognition remains host-owned — that clause was correct.
+| # | directive |
+|---|---|
+| 1 | Superseded in part. |
+| 2 | "No compiler B exists" remains true and is restated above. |
+| 3 | The rest understated the frontier: source ingress classification executes in Idol, lexical identity is Idol-owned with `GAP-145` consumers remaining, and generated grammar roles are Idol-owned with `GAP-134` consumer closure remaining. |
+| 4 | Parser recognition remains host-owned — that clause was correct. |
 
-The milestone table formerly listed `B-G0 grammar Idol owner` as a single `open`
-row. It is split above, because the owner exists and the consumers do not.
+| # | directive |
+|---|---|
+| 1 | The milestone table formerly listed `B-G0 grammar Idol owner` as a single `open` row. |
+| 2 | It is split above, because the owner exists and the consumers do not. |
 
 ### Superseded: normalized dimension percentages
 
-These were normalized judgments against an older frontier and are replaced by
-the dated judgment table above. They are listed here so that a reader who
-remembers a number can see it retired rather than silently changed.
+| # | directive |
+|---|---|
+| 1 | These were normalized judgments against an older frontier and are replaced by the dated judgment table above. |
+| 2 | They are listed here so that a reader who remembers a number can see it retired rather than silently changed. |
 
-Retired rows included: conceptual architecture convergence, language/semantic-law
-closure, mechanical anti-drift enforcement, naming/vocabulary architecture,
-**grammar single-authority implementation**, source/corpus canonical migration,
-graph/application semantic authority, end-to-end semantic identity preservation,
-DNIR semantic unification, transformation lineage, machine/object lineage,
-world/std/host semantic migration, executed self-host ownership, compiler B/C
-closure, FTCFTW architecture, FTCFTW complete experimental proof, and
-agent-orientation durability.
+| # | directive |
+|---|---|
+| 1 | Retired rows included: conceptual architecture convergence, language/semantic-law closure, mechanical anti-drift enforcement, naming/vocabulary architecture, **grammar single-authority implementation**, source/corpus canonical migration, graph/application semantic authority, end-to-end semantic identity preservation, DNIR semantic unification, transformation lineage, machine/object lineage, world/std/host semantic migration, executed self-host ownership, compiler B/C closure, FTCFTW architecture, FTCFTW complete experimental proof, and agent-orientation durability. |
 
-The grammar row is the reason this section exists. A single
-"grammar single-authority implementation" percentage could not distinguish an
-owner that does not exist from an owner whose consumers have not closed, so it
-kept reporting a middling fraction across a period in which the owner was built,
-the parser's operator ontology was deleted, and two parser membership sets moved
-to the owner. A number that cannot move when the architecture moves is not a
-measurement.
+| # | directive |
+|---|---|
+| 1 | The grammar row is the reason this section exists. |
+| 2 | A single "grammar single-authority implementation" percentage could not distinguish an owner that does not exist from an owner whose consumers have not closed, so it kept reporting a middling fraction across a period in which the owner was built, the parser's operator ontology was deleted, and two parser membership sets moved to the owner. |
+| 3 | A number that cannot move when the architecture moves is not a measurement. |
 
 ### Superseded: longitudinal scorecard
 
-Normalized assessment against an older frontier — not repository counters. The
-grammar and self-hosting rows are the ones most affected; read the current
-sections above instead.
+| # | directive |
+|---|---|
+| 1 | Normalized assessment against an older frontier — not repository counters. |
+| 2 | The grammar and self-hosting rows are the ones most affected; read the current sections above instead. |
 
 | Metric | Earlier meaning | Current correct meaning | Trend |
 |---|---|---|---|

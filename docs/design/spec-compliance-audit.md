@@ -1,10 +1,9 @@
 # Spec-Compliance Audit — Definitive 20-Point Specification
 
-**Repo:** `/Users/clp/work/idol-main`, branch `main`
-**Audit commit:** `fedef9e0` (HEAD at audit start; repo was mid-push — commits at 22:21–22:38 PDT)
-**Date:** 2026-09-11
-**Mode:** read-only analysis. No source files modified. `native.id` and the 7 performance fixes are owned by the sibling fixes workstream; this audit sequences *after* their work ships.
-**Method:** static inventory over tracked files + empirical probes with the built compiler (`zig-out/bin/idol`, built 2026-09-09) on throwaway files in `/tmp` (never in the repo).
+| # | directive |
+|---|---|
+| 1 | **Repo:** `/Users/clp/work/idol-main`, branch `main` **Audit commit:** `fedef9e0` (HEAD at audit start; repo was mid-push — commits at 22:21–22:38 PDT) **Date:** 2026-09-11 **Mode:** read-only analysis. |
+| 2 | No source files modified. `native.id` and the 7 performance fixes are owned by the sibling fixes workstream; this audit sequences *after* their work ships. **Method:** static inventory over tracked files + empirical probes with the built compiler (`zig-out/bin/idol`, built 2026-09-09) on throwaway files in `/tmp` (never in the repo). |
 
 ## Verdict summary
 
@@ -31,7 +30,10 @@
 | 19 | Files are table scope; `M = ; M` inventory; dirs imply table; root `table/`+`table.id` layout | VIOLATED | 10 `lib/` dirs lack root `table.id` (`compiler`, `compress`, `database`, `encoding`, `index`, `ml`, `target`, `testing`, `text`, `token`); `lib/live/` has no `live.id`; 38 files end with bare `M` (inventory below); no literal `M = ; M` with semicolon found (semicolon correctly denied) |
 | 20 | Maximally performant, proven | VIOLATED | same evidence as #6; owned by fixes workstream |
 
-No spec point is fully compliant. Points #6/#20 are owned by the fixes workstream (do not touch); everything else is sequenced below.
+| # | directive |
+|---|---|
+| 1 | No spec point is fully compliant. |
+| 2 | Points #6/#20 are owned by the fixes workstream (do not touch); everything else is sequenced below. |
 
 ## Per-point violation inventory
 
@@ -162,11 +164,18 @@ No spec point is fully compliant. Points #6/#20 are owned by the fixes workstrea
 
 ## Critical analysis A — the #15 bootstrapping question
 
-**Question:** does the current v5 subset even support chained/functional constructs? If not, is implementing them a prerequisite?
+| # | directive |
+|---|---|
+| 1 | **Question:** does the current v5 subset even support chained/functional constructs? |
+| 2 | If not, is implementing them a prerequisite? |
 
-**Answer: No — and the prerequisite is subtler than "extend v5".**
+| # | directive |
+|---|---|
+| 1 | **Answer: No — and the prerequisite is subtler than "extend v5".** |
 
-There are three distinct languages in play; conflating them is the trap:
+| # | directive |
+|---|---|
+| 1 | There are three distinct languages in play; conflating them is the trap: |
 
 1. **v5-subset** (what `native.id` *compiles*): integers, assignments, `+ - * /`, `while`, `return`. Evidence: `bench/programs/arith.id` (flat assignments + one `while` + trailing expression); `native.id`'s parser only recognizes `<`, `=`, `+ - * /`, `while`, identifiers, integer literals. **No strings, no tables, no first-class functions, no method calls, no chained calls.** A chained/functional construct *cannot be expressed* in v5 — there is nothing to chain on.
 
@@ -174,22 +183,38 @@ There are three distinct languages in play; conflating them is the trap:
 
 3. **Duo** (the Lua-facing dialect several `lib/` files are written for — `lib/json.id`, `lib/mcp.id`, `lib/pipeline.id`, `lib/sqlite.id` headers say "for Duo"): its relationship to the 20-point spec is itself un-audited; several Duo-isms (`for k, _ in t`, `else(cond)`, `!=`, `!`) leak into what is supposed to be Idol family code.
 
-**Therefore the #15 refactor of `native.id` does NOT require extending the v5 subset.** `native.id` is written in full Idol, and full Idol already has the *spelling* of chained/functional code. What is missing is the **primitive**: either
+| # | directive |
+|---|---|
+| 1 | **Therefore the #15 refactor of `native.id` does NOT require extending the v5 subset.** `native.id` is written in full Idol, and full Idol already has the *spelling* of chained/functional code. |
+| 2 | What is missing is the **primitive**: either |
 
 - **(a) a compiler-desugared chain construct** in the Zig full-Idol compiler (e.g. a pipeline operator or blessed `map`/`filter`/`fold` that lowers without `while`/`if`), or
 - **(b) recursion + guaranteed tail-call optimization** as the canonical looping form, so every `while` becomes a self-call the compiler proves equivalent.
 
-Without (a) or (b), rewriting `native.id`'s 20+ `while` loops "functionally" just pushes the `while` into `lib/fn.id` — which is exactly the current state and still violates #15/#18. **Decision (a)-vs-(b) is the prerequisite; it must land in the Zig compiler before any #15 refactor of `native.id` or `lib/` is possible.** The sibling workstream owns `native.id` — hand them this decision, do not preempt it.
+| # | directive |
+|---|---|
+| 1 | Without (a) or (b), rewriting `native.id`'s 20+ `while` loops "functionally" just pushes the `while` into `lib/fn.id` — which is exactly the current state and still violates #15/#18. **Decision (a)-vs-(b) is the prerequisite; it must land in the Zig compiler before any #15 refactor of `native.id` or `lib/` is possible.** The sibling workstream owns `native.id` — hand them this decision, do not preempt it. |
 
-One more trap: `native.id` must *keep compiling user `while`* (#18 user-interop half). The #15 rewrite changes only the compiler's *implementation language*, never the accepted *source language*.
+| # | directive |
+|---|---|
+| 1 | One more trap: `native.id` must *keep compiling user `while`* (#18 user-interop half). |
+| 2 | The #15 rewrite changes only the compiler's *implementation language*, never the accepted *source language*. |
 
 ## Critical analysis B — L6/L7 Python bridges: Idol reimplementation feasibility
 
-Targets: `/Users/clp/.hermes/scripts/idol_live_adaptive_routing.py` (168 lines, L6) and `idol_live_semantic_cache.py` (183 lines, L7).
+| # | directive |
+|---|---|
+| 1 | Targets: `/Users/clp/.hermes/scripts/idol_live_adaptive_routing.py` (168 lines, L6) and `idol_live_semantic_cache.py` (183 lines, L7). |
 
-**What the scripts need:** SQLite (read + write), JSON (policy/state files), SHA-256, regex substitution, wall-clock time, filesystem paths, argv parsing, seeded RNG, stdout printing, floats (score = success/p50), sets/dicts/lists, sorting.
+| # | directive |
+|---|---|
+| 1 | **What the scripts need:** SQLite (read + write), JSON (policy/state files), SHA-256, regex substitution, wall-clock time, filesystem paths, argv parsing, seeded RNG, stdout printing, floats (score = success/p50), sets/dicts/lists, sorting. |
 
-**Can the v5 subset express this? No.** Exact language gaps in v5:
+| # | directive |
+|---|---|
+| 1 | **Can the v5 subset express this? |
+| 2 | No.** Exact language gaps in v5: |
+
 - **G1 — no strings.** SQL text, JSON text, file paths, fingerprints, and task text cannot be represented. v5 programs have no string literals or string values.
 - **G2 — no floats.** L6's `score = success_rate / p50_latency` and L7's Jaccard `|∩|/|∪|` need fractions. (Workaround exists: `lib/live/route.id` already does fixed-point — `done * 1000000 // total // p` — so G2 is bridgeable by convention, not by language.)
 - **G3 — no tables/lists/dicts/sets.** Provider-stat maps, task lists, cert sets, word sets have no representation.
@@ -197,7 +222,11 @@ Targets: `/Users/clp/.hermes/scripts/idol_live_adaptive_routing.py` (168 lines, 
 - **G5 — no modules.** The bridge cannot be structured or imported.
 - **G6 — single flat `main`.** v5 programs are assignment sequences; the scripts' ~10 functions each have no v5 analogue.
 
-**Can full Idol express this? Yes — the lib surface already exists,** but every dependency is itself spec-violating today:
+| # | directive |
+|---|---|
+| 1 | **Can full Idol express this? |
+| 2 | Yes — the lib surface already exists,** but every dependency is itself spec-violating today: |
+
 | Need | Idol lib | Status |
 |---|---|---|
 | SQLite | `lib/sqlite.id` | exists, but `@ffi("sqlite3_open")` → **C ABI** (see #14 tension below) |
@@ -209,9 +238,16 @@ Targets: `/Users/clp/.hermes/scripts/idol_live_adaptive_routing.py` (168 lines, 
 | fs/time | `lib/fs.id`, `lib/os.id`, `lib/time.id` | exist, `fs.id` uses `io.popen` (#8) |
 | HTTP (if needed) | `lib/http.id` → `lib/net.id` | exists, `net.id` uses `io.popen` (#8) |
 
-**Notable:** the pure scoring kernels are *already* reimplemented in v5-style Idol: `lib/live/route.id` (`score`, `pick`, `lcg`, `explore`, `routeopen` — fixed-point, integer-only) and `lib/live/cache.id` (`fpeq`, `near`, `wasted`, `popcount`). These two files are the correct nucleus — but they too use `if`/`while` (#15) and `lib/live/` lacks `live.id` (#19).
+| # | directive |
+|---|---|
+| 1 | **Notable:** the pure scoring kernels are *already* reimplemented in v5-style Idol: `lib/live/route.id` (`score`, `pick`, `lcg`, `explore`, `routeopen` — fixed-point, integer-only) and `lib/live/cache.id` (`fpeq`, `near`, `wasted`, `popcount`). |
+| 2 | These two files are the correct nucleus — but they too use `if`/`while` (#15) and `lib/live/` lacks `live.id` (#19). |
 
-**Feasibility verdict:** feasible in **full Idol only**, not in v5. Prerequisites, in order:
+| # | directive |
+|---|---|
+| 1 | **Feasibility verdict:** feasible in **full Idol only**, not in v5. |
+| 2 | Prerequisites, in order: |
+
 1. #15 decision (analysis A) — the bridge's loops must be expressible functionally.
 2. Refactor `lib/sqlite.id`, `lib/json.id`, `lib/regex.id`, `lib/crypto/sha.id`, `lib/random.id`, `lib/argparse.id`, `lib/fs.id` to spec (#1, #4, #15).
 3. Resolve the **#14 tension**: `lib/sqlite.id` binds `libsqlite3` via C FFI. Either the spec blesses a pure-Idol SQLite (large work) or it admits FFI as a non-"final path" boundary with an explicit policy. Until decided, the Idol bridge still routes through C.
@@ -219,24 +255,44 @@ Targets: `/Users/clp/.hermes/scripts/idol_live_adaptive_routing.py` (168 lines, 
 
 ## Recommended refactor order (after the 7 performance fixes ship)
 
-**Phase 0 — unblock, do not disturb.**
+| # | directive |
+|---|---|
+| 1 | **Phase 0 — unblock, do not disturb.** |
+
 - 0a. Fixes workstream ships; `bench/RESULTS.md` shows wins. Re-run `bench/run.sh` before and after every phase below.
 - 0b. **Decide the #15 primitive** (analysis A, option (a) vs (b)) and implement it in the Zig full-Idol compiler. Nothing in #15 can start without this.
 - 0c. Triage GAP-124 (edge authority for #9), GAP-149 (numerics for #7), GAP-157 (STD-ZERO for #12) — they gate later phases.
 
-**Phase 1 — checker (#3).** Make `idol check` reject (non-zero, no artifact): `#` comments, `_`/uppercase identifiers, mashed compounds. This is the enforcement prerequisite for #1, #4, #5, #9.
+| # | directive |
+|---|---|
+| 1 | **Phase 1 — checker (#3).** Make `idol check` reject (non-zero, no artifact): `#` comments, `_`/uppercase identifiers, mashed compounds. |
+| 2 | This is the enforcement prerequisite for #1, #4, #5, #9. |
 
-**Phase 2 — mechanical deletions/renames.**
+| # | directive |
+|---|---|
+| 1 | **Phase 2 — mechanical deletions/renames.** |
+
 - #1: strip `#` comments from all `.id` (verifiable by Phase-1 checker).
 - #19: add the 11 missing root `table.id` files (`lib/compiler/`, `lib/compress/`, `lib/database/`, `lib/encoding/`, `lib/index/`, `lib/ml/`, `lib/target/`, `lib/testing/`, `lib/text/`, `lib/token/`, `lib/live/`).
 - #4/#5/#9: identifier + filename renames to `subject:edge` canonical form (needs GAP-124 edge authority for #9).
 
-**Phase 3 — family-code rewrite (#15/#18, with #16/#17 riding along).** Rewrite `while`/`if`/`for` out of `lib/` and `native.id` using the Phase-0b primitive; `!` → `not`; sentinels → option/error returns (needs the v5 error-channel decision for `native.id`). Coordinate with the sibling workstream: they own `native.id`; sequence their perf fixes first, then the #15 rewrite, then re-bench.
+| # | directive |
+|---|---|
+| 1 | **Phase 3 — family-code rewrite (#15/#18, with #16/#17 riding along).** Rewrite `while`/`if`/`for` out of `lib/` and `native.id` using the Phase-0b primitive; `!` → `not`; sentinels → option/error returns (needs the v5 error-channel decision for `native.id`). |
+| 2 | Coordinate with the sibling workstream: they own `native.id`; sequence their perf fixes first, then the #15 rewrite, then re-bench. |
 
-**Phase 4 — backend purity (#14) and proof unity (#13).** Demote `emit_c` to explicit bootstrap-differential; remove `@c.emit` from `pipeline.id`/`mem.id`; de-C `jit.id`; replace `proof.sh`'s `dump-c`+`cc` path with the direct backend; implement the `docs/design/proofunity.md` kernel in Idol.
+| # | directive |
+|---|---|
+| 1 | **Phase 4 — backend purity (#14) and proof unity (#13).** Demote `emit_c` to explicit bootstrap-differential; remove `@c.emit` from `pipeline.id`/`mem.id`; de-C `jit.id`; replace `proof.sh`'s `dump-c`+`cc` path with the direct backend; implement the `docs/design/proofunity.md` kernel in Idol. |
 
-**Phase 5 — surface consolidation (#2, #8, #10, #12).** Reimplement the 37 `~/.hermes/scripts` behaviors + `coord/cron` + `scripts/live` as Idol behind the single canonical surface; full L6/L7 Idol bridges per analysis B; folder→table meta graph; stdlib slimming per GAP-157/STD-ZERO. **Delete the 158 `.sh`/`.py` files only after their Idol replacements are proven** — `bench/run.sh`, `bench/timing.py`, `tools/wasm/proof.sh` last.
+| # | directive |
+|---|---|
+| 1 | **Phase 5 — surface consolidation (#2, #8, #10, #12).** Reimplement the 37 `~/.hermes/scripts` behaviors + `coord/cron` + `scripts/live` as Idol behind the single canonical surface; full L6/L7 Idol bridges per analysis B; folder→table meta graph; stdlib slimming per GAP-157/STD-ZERO. **Delete the 158 `.sh`/`.py` files only after their Idol replacements are proven** — `bench/run.sh`, `bench/timing.py`, `tools/wasm/proof.sh` last. |
 
-**Phase 6 — numerics (#7) and blockers (#11).** Decimal-literal design (v5 inclusion vs documented exclusion; full-path f64 realization fix); close the remaining GAPs.
+| # | directive |
+|---|---|
+| 1 | **Phase 6 — numerics (#7) and blockers (#11).** Decimal-literal design (v5 inclusion vs documented exclusion; full-path f64 realization fix); close the remaining GAPs. |
 
-**Continuous:** #6/#20 — every phase re-runs `bench/run.sh`; any regression is a stop-ship for that phase.
+| # | directive |
+|---|---|
+| 1 | **Continuous:** #6/#20 — every phase re-runs `bench/run.sh`; any regression is a stop-ship for that phase. |

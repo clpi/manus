@@ -1,9 +1,9 @@
 # L6/L7 Hermes bridges: Idol reimplementation roadmap
 
-Status: 2026-09-11 — full reimplementation NOT yet feasible. Maximal
-Idol-expressible decision core is implemented in `lib/live/` (see below);
-this doc specifies the exact language gaps and the dependency-ordered
-feature list required to complete the port.
+| # | directive |
+|---|---|
+| 1 | Status: 2026-09-11 — full reimplementation NOT yet feasible. |
+| 2 | Maximal Idol-expressible decision core is implemented in `lib/live/` (see below); this doc specifies the exact language gaps and the dependency-ordered feature list required to complete the port. |
 
 ## 1. What the Python bridges do
 
@@ -20,8 +20,9 @@ feature list required to complete the port.
 
 ## 2. What is implemented in Idol now
 
-`lib/live/route.id` — L6 pure decision kernel (canonical Idol, integer
-I/O, `idol check` clean):
+| # | directive |
+|---|---|
+| 1 | `lib/live/route.id` — L6 pure decision kernel (canonical Idol, integer I/O, `idol check` clean): |
 
 | function | contract |
 |---|---|
@@ -31,7 +32,9 @@ I/O, `idol check` clean):
 | `explore(seed)` | 1 when the draw falls in the 5% exploration band, else 0. Mirrors `rng.random() < 0.05`. |
 | `routeopen(n)` | 1 when `n > 0` else 0 — the fail-closed gate: zero certified routes means refuse to route. |
 
-`lib/live/cache.id` — L7 pure decision kernel:
+| # | directive |
+|---|---|
+| 1 | `lib/live/cache.id` — L7 pure decision kernel: |
 
 | function | contract |
 |---|---|
@@ -40,24 +43,25 @@ I/O, `idol check` clean):
 | `wasted(n)` | `n - 1` for duplicate groups larger than 1, else 0. Mirrors the wasted-runs estimate. |
 | `popcount(w)` | bit count of a non-negative integer word-set mask; the integer primitive a future string layer feeds into `near`. |
 
-Fixed-point convention: scores are scaled by 1,000,000; callers compare
-scaled values directly, never floats. RNG parity with CPython's Mersenne
-Twister is intentionally NOT required — only the 5% rate contract.
+| # | directive |
+|---|---|
+| 1 | Fixed-point convention: scores are scaled by 1,000,000; callers compare scaled values directly, never floats. |
+| 2 | RNG parity with CPython's Mersenne Twister is intentionally NOT required — only the 5% rate contract. |
 
-Verified: `idol check lib/live/route.id`, `idol check lib/live/cache.id`
-both pass; behavior asserted via `idol run` on a temp harness (see §5).
+| # | directive |
+|---|---|
+| 1 | Verified: `idol check lib/live/route.id`, `idol check lib/live/cache.id` both pass; behavior asserted via `idol run` on a temp harness (see §5). |
 
 ## 3. Exact language gaps (why the full port is blocked)
 
-The only Idol-to-machine path today is `lib/compiler/native.id`, whose
-v5 input language is: assignments, integer literals, `+ - * /`,
-`while x < y` loops, single-operator expressions, no function
-definitions or calls, no `if`, no string type, no input, and exit-code
-as the sole output. Verified by reading the compiler's statement parser
-(`native.id` main loop: `while` detection scans for byte 60 `<`;
-assignment handling splits on a single `=`).
+| # | directive |
+|---|---|
+| 1 | The only Idol-to-machine path today is `lib/compiler/native.id`, whose v5 input language is: assignments, integer literals, `+ - * /`, `while x < y` loops, single-operator expressions, no function definitions or calls, no `if`, no string type, no input, and exit-code as the sole output. |
+| 2 | Verified by reading the compiler's statement parser (`native.id` main loop: `while` detection scans for byte 60 `<`; assignment handling splits on a single `=`). |
 
-Neither bridge can be expressed in v5 because both require, at minimum:
+| # | directive |
+|---|---|
+| 1 | Neither bridge can be expressed in v5 because both require, at minimum: |
 
 1. **Strings** — provider/model names, task titles, SQL text, JSON text.
    No string type exists in v5; canonical Idol has a string type but no
@@ -120,7 +124,8 @@ Neither bridge can be expressed in v5 because both require, at minimum:
 
 ## 6. Sibling audit coordination
 
-A sibling agent is auditing spec compliance including L6/L7-in-Idol
-feasibility. No findings were on `main` at implementation time; this
-roadmap is written to be cross-checked against theirs. If their audit
-lands first, reconcile §3 against it before starting §4.
+| # | directive |
+|---|---|
+| 1 | A sibling agent is auditing spec compliance including L6/L7-in-Idol feasibility. |
+| 2 | No findings were on `main` at implementation time; this roadmap is written to be cross-checked against theirs. |
+| 3 | If their audit lands first, reconcile §3 against it before starting §4. |
