@@ -3,15 +3,16 @@
 # and lib/compiler/elfx86.id (x86_64 + ELF64/Linux direct backend).
 #
 # Part 1: idol check on both files.
-# Part 2: differential test of the 23 encoder vectors in x86.id's main
-# against the system assembler (clang -arch x86_64); every vector must
+# Part 2: differential test of the 44 encoder vectors in x86.id's main
+# against the system assembler (clang -arch x86_64 -mavx2 -mbmi2); every vector must
 # match byte-for-byte (same oracle strategy as lib/compiler/arm64check.id).
-# Part 3: build the elfx86 emitter (--backend native) and compile four
+# Part 3: build the elfx86 emitter (--backend native) and compile eight
 # demo programs to ELF64; python3 validates ELF structure (magic, class,
 # type, machine, entry, PT_LOAD, 5 section headers, .text vaddr == entry,
 # _start symbol) and checks .text bytes against clang-assembled
 # equivalents for the arithmetic and division programs, plus loop-shape
-# patterns for the countdown-while programs.
+# patterns for the countdown-while programs and the nested-loop
+# bound-register regression programs.
 #
 # Usage: ./test/elfx86.sh   (run from repo root)
 set -u
@@ -44,7 +45,7 @@ echo "== build backends =="
 [ -x "$WORK/elfx86bin" ] || fail "elfx86bin not executable"
 pass "compile --backend native"
 
-echo "== differential: 23 encoder vectors vs clang =="
+echo "== differential: 44 encoder vectors vs clang =="
 "$WORK/x86vec" > "$WORK/vec.txt" || fail "run x86vec"
 n=0
 bad=0
@@ -55,7 +56,7 @@ while IFS= read -r line; do
   asm=$(printf '%s' "$asm" | sed 's/^ *//;s/ *$//')
   want=$(printf '%s' "$want" | sed 's/^ *//;s/ *$//' | tr 'A-F' 'a-f')
   printf '.text\n.globl _f\n_f:\n%s\n' "$asm" > "$WORK/v.s"
-  if ! clang -arch x86_64 -c "$WORK/v.s" -o "$WORK/v.o" 2>/dev/null; then
+  if ! clang -arch x86_64 -mavx2 -mbmi2 -c "$WORK/v.s" -o "$WORK/v.o" 2>/dev/null; then
     echo "ASM-FAIL [$n]: $asm"; bad=$((bad + 1)); continue
   fi
   got=$(otool -t "$WORK/v.o" | awk 'NR>2{for(i=2;i<=NF;i++) printf "%s",$i}')
@@ -65,19 +66,25 @@ while IFS= read -r line; do
     echo "MISMATCH [$n]: $asm (want $want got $got)"; bad=$((bad + 1))
   fi
 done < "$WORK/vec.txt"
-[ "$n" = "23" ] || fail "expected 23 vectors, got $n"
+[ "$n" = "44" ] || fail "expected 44 vectors, got $n"
 [ "$bad" = "0" ] || fail "$bad/$n vector mismatches"
-pass "23/23 encoder vectors match clang byte-for-byte"
+pass "44/44 encoder vectors match clang byte-for-byte"
 
 echo "== emit ELF64 demos =="
 printf 'x = 40 + 2\nx\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p1.elf" || fail "emit p1"
 printf 'a = 20\nb = 6\nc = a / b\nc\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p2.elf" || fail "emit p2"
 printf 'i = 0\nwhile i < 3\n    i = i + 1\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p3.elf" || fail "emit p3"
 printf 'i = 0\nwhile i < 3\n    i = i + 1\nx = 9\nx\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p4.elf" || fail "emit p4"
-pass "emit (4 programs)"
+printf 'a = 0 - 20\nb = a / 3\nc = a / 7\nd = a / 8\ne = b / 10\ne\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p5.elf" || fail "emit p5"
+printf 't = 0\na = 0\nwhile a < 2\n    a = a + 1\n    t = t + a\n    b = 0\n    while b < 2\n        b = b + 1\n        t = t + b\n        c = 0\n        while c < 2\n            c = c + 1\n            t = t + c\nt\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p6.elf" || fail "emit p6"
+printf 't = 0\na = 0\nwhile a < 2\n    a = a + 1\n    t = t + a\n    b = 0\n    while b < 2\n        b = b + 1\n        t = t + b\n        c = 0\n        while c < 2\n            c = c + 1\n            t = t + c\n            d = 0\n            while d < 2\n                d = d + 1\n                t = t + d\nt\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p7.elf" || fail "emit p7"
+printf 'a = 6\nb = a * 3\nc = a * 5\nd = a * 7\ne = a * 9\ne\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p8.elf" || fail "emit p8"
+printf 'a = 2\nb = 3\nc = 4\nd = a + b * c\nd\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p9.elf" || fail "emit p9"
+printf 'i = 0\nn = 5\nwhile i < n\n    i = i + 1\ni\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p10.elf" || fail "emit p10"
+pass "emit (10 programs)"
 
 echo "== structural validation + clang oracle =="
-python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" <<'PYEOF' || fail "structural validation"
+python3 - "$WORK/p1.elf" "$WORK/p2.elf" "$WORK/p3.elf" "$WORK/p4.elf" "$WORK/p5.elf" "$WORK/p6.elf" "$WORK/p7.elf" "$WORK/p8.elf" "$WORK/p9.elf" "$WORK/p10.elf" <<'PYEOF' || fail "structural validation"
 import struct, sys, subprocess
 
 def ck(c, m):
@@ -148,10 +155,52 @@ ck('41b803000000' in t3, "p3 loop counter init r8=3")
 ck('4983e801' in t3, "p3 loop decrement sub r8,1")
 ck('75fa' in t3, "p3 loop back-edge jne")
 ck(t3.endswith('4889c7b83c0000000f05'), "p3 exit epilogue")
+ck('41bc03000000' in t3, "p3 countdown write-back mov r12d,3")
+t5 = parse_elf(sys.argv[5]).hex()
+ck('5655555555555555' in t5, "p5 hoisted magic /3")
+ck('2549922449922449' in t5, "p5 hoisted magic /7")
+ck('6766666666666666' in t5, "p5 hoisted magic /10")
+ck('49f7ec' in t5, "p5 magic imul /3")
+ck('49f7ed' in t5, "p5 magic imul /7")
+ck('49f7ee' in t5, "p5 magic imul /10")
+ck('48c1ea3d' in t5, "p5 pow2 /8 bias shr 61")
+ck('f7f' not in t5, "p5 no idivq")
+ck('4898' not in t5, "p5 no cqo")
 
 t4 = parse_elf(sys.argv[4]).hex()
 ck('4983e801' in t4 and '75fa' in t4, "p4 loop closed before trailing code")
 ck(t4.endswith('4889c7b83c0000000f05'), "p4 exit epilogue")
+t6 = parse_elf(sys.argv[6]).hex()
+ck('4983fd02' in t6, "p6 a-loop cmpri r13,2")
+ck('4983fe02' in t6, "p6 b-loop cmpri r14,2")
+ck('4983ff02' in t6, "p6 c-loop cmpri r15,2")
+ck('b902000000' not in t6, "p6 no rcx bound-register init")
+ck(t6.endswith('4889c7b83c0000000f05'), "p6 exit epilogue")
+t7 = parse_elf(sys.argv[7]).hex()
+ck('4983fd02' in t7, "p7 a-loop cmpri r13,2")
+ck('4983fe02' in t7, "p7 b-loop cmpri r14,2")
+ck('4983ff02' in t7, "p7 c-loop cmpri r15,2")
+ck('4883fb02' in t7, "p7 d-loop cmpri rbx,2")
+ck('b902000000' not in t7, "p7 no rcx bound-register init (4-deep)")
+ck(t7.endswith('4889c7b83c0000000f05'), "p7 exit epilogue")
+t8 = parse_elf(sys.argv[8]).hex()
+ck('4f8d2c64' in t8, "p8 *3 single lea")
+ck('4f8d34a4' in t8, "p8 *5 single lea")
+ck('4f8d1464' in t8 and '4f8d3ca2' in t8, "p8 *7 two leas")
+ck('4b8d1ce4' in t8, "p8 *9 single lea")
+ck(t8.endswith('4889c7b83c0000000f05'), "p8 exit epilogue")
+t9 = parse_elf(sys.argv[9]).hex()
+ck('4152' in t9, "p9 push r10 spill")
+ck('415b' in t9, "p9 pop r11 restore")
+ck(t9.count('4152') == t9.count('415b'), "p9 push/pop balanced")
+ck('4d0fafd6' in t9, "p9 imul r10,r14 (b*c)")
+ck('4d01d7' in t9, "p9 add r15,r10 (a+b*c)")
+ck(t9.endswith('4889c7b83c0000000f05'), "p9 exit epilogue")
+t10 = parse_elf(sys.argv[10]).hex()
+ck('e904000000' in t10, "p10 entry jmp targets cmp")
+ck('7cf7' in t10, "p10 jl back-edge to body")
+ck('4d39ec' in t10, "p10 cmprr r13,r12 bound check")
+ck(t10.endswith('4889c7b83c0000000f05'), "p10 exit epilogue")
 print("structural + oracle checks passed")
 PYEOF
 pass "structural validation + clang oracle"
