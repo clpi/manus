@@ -1,41 +1,39 @@
 # RESEARCH-SPINE — C0 alignment of the research GAP set
 
-**Status:** OPEN · **Filed:** 2026-08-18
-**Kind:** research_gap projection · **Normative for:** nothing — this is a projection of C0
-**Enforced by:** `tools/node/dev/gapc0` (fails closed)
+| # | directive |
+|---|---|
+| 1 | **Status:** OPEN · **Filed:** 2026-08-18 **Kind:** research_gap projection · **Normative for:** nothing — this is a projection of C0 **Enforced by:** `tools/node/dev/gapc0` (fails closed) |
 
-`docs/spec/law.md` is the sole supreme compact law; C0
-(`docs/spec/constitution.md`) is its structured long-form expansion and the
-stable `law.*` identity owner. §14 closes the semantic
-kind set; §15 pins the mechanism delta to zeros; `law.injection.only` reserves
-`@{ … }` for world injection. A research GAP that needs a new kind, registry,
-syntax, keyword, or operator to mean what it says is not a GAP — it is a
-constitutional amendment request, and it must say so instead of drifting.
+| # | directive |
+|---|---|
+| 1 | `docs/spec/law.md` is the sole supreme compact law |
+| 2 | C0 (`docs/spec/constitution.md`) is its structured long-form expansion and the stable `law.*` identity owner. §14 closes the semantic kind set; §15 pins the mechanism delta to zeros; `law.injection.only` reserves `@{ … }` for world injection. |
+| 3 | A research GAP that needs a new kind, registry, syntax, keyword, or operator to mean what it says is not a GAP — it is a constitutional amendment request, and it must say so instead of drifting. |
 
-This file states, once, the admission test and the field semantics every
-research GAP carries inline. Each GAP's `## C0 alignment` block is a per-GAP
-instance of the schema defined here.
+| # | directive |
+|---|---|
+| 1 | This file states, once, the admission test and the field semantics every research GAP carries inline. |
+| 2 | Each GAP's `## C0 alignment` block is a per-GAP instance of the schema defined here. |
 
-**The subject is the declared kind, not a number range.** A GAP is in this
-census exactly when it declares `**Kind:** research_gap`. GAP numbering is
-shared with defect reports (`wrong_answer`, `crash`, `regression`,
-`evidence_gap`, ...), which carry no C0 admission obligation and must not be
-convicted of one; a GAP numbered >= 175 that declares no kind at all IS a
-violation, because then the census cannot select its subject.
+| # | directive |
+|---|---|
+| 1 | **The subject is the declared kind, not a number range.** A GAP is in this census exactly when it declares `**Kind:** research_gap`. |
+| 2 | GAP numbering is shared with defect reports (`wrong_answer`, `crash`, `regression`, `evidence_gap`, ...), which carry no C0 admission obligation and must not be convicted of one; a GAP numbered >= 175 that declares no kind at all IS a violation, because then the census cannot select its subject. |
 
 ## The admission test
 
-For every frontier idea, the question is never *"should Idol add a context /
-solver / rule / future / pattern / continuation subsystem?"* It is:
+| # | directive |
+|---|---|
+| 1 | For every frontier idea, the question is never *"should Idol add a context / solver / rule / future / pattern / continuation subsystem?"* It is: |
 
 > Which **existing** semantic identities and facts already express the
 > underlying meaning, and which **physical mechanism** realizes it?
 
 ## Structural mapping
 
-Research capability must not become a new subsystem; it becomes facts over
-existing semantic owners (converged from docs/research-gap-admission.md, which
-this spine replaces — one admission program, one census):
+| # | directive |
+|---|---|
+| 1 | Research capability must not become a new subsystem; it becomes facts over existing semantic owners (converged from docs/research-gap-admission.md, which this spine replaces — one admission program, one census): |
 
 | Research capability | Do not introduce | Idol-native semantic owner | Physical/optimization consequence |
 | --- | --- | --- | --- |
@@ -63,7 +61,9 @@ this spine replaces — one admission program, one census):
 | concurrency | Task/Actor/Future kingdoms | causality/effect/world relations | schedule/queue/network/direct call |
 | hardware target | target-specific language subsystem | world/capability/realization | CPU/GPU/FPGA/CHERI etc. |
 
-The canonical rewordings this test has already produced:
+| # | directive |
+|---|---|
+| 1 | The canonical rewordings this test has already produced: |
 
 | retired research wording | Idol-native wording |
 |---|---|
@@ -77,14 +77,23 @@ The canonical rewordings this test has already produced:
 | "foreign semantic fact format" | the same graph fact format as native semantics; origin/law qualifies it |
 | "cross-law optimizer" | the ordinary optimizer consuming witnessed equivalence across origins |
 
-Solver realization discharges an obligation. CHR saturation schedules ordinary
-relations over facts. Optimizer spaces are derived worlds. Futures are
-unresolved ids. Patterns are relations. Continuations are ids with resumption
-facts. Foreign interfaces are representation/equivalence proofs. JIT guards are
-runtime evidence. Stages are world/context facts. AD is change. Incremental
-compilation is change. Concurrency is causality. Hardware is realization.
-Complexity theory is evidence about the reachable floor. Agents are untrusted
-producers of candidate facts/witnesses — never authorities.
+| # | directive |
+|---|---|
+| 1 | Solver realization discharges an obligation. |
+| 2 | CHR saturation schedules ordinary relations over facts. |
+| 3 | Optimizer spaces are derived worlds. |
+| 4 | Futures are unresolved ids. |
+| 5 | Patterns are relations. |
+| 6 | Continuations are ids with resumption facts. |
+| 7 | Foreign interfaces are representation/equivalence proofs. |
+| 8 | JIT guards are runtime evidence. |
+| 9 | Stages are world/context facts. |
+| 10 | AD is change. |
+| 11 | Incremental compilation is change. |
+| 12 | Concurrency is causality. |
+| 13 | Hardware is realization. |
+| 14 | Complexity theory is evidence about the reachable floor. |
+| 15 | Agents are untrusted producers of candidate facts/witnesses — never authorities. |
 
 ## Schema fields (defined once; instantiated per GAP)
 
@@ -165,9 +174,10 @@ producers of candidate facts/witnesses — never authorities.
          unresolved-id synchronization
 ```
 
-GAP-179 (observer quotient) is the compilation-phase face of GAP-176 and sits
-beside it. No new research GAP is filed until its block exists and its place in
-this graph is stated.
+| # | directive |
+|---|---|
+| 1 | GAP-179 (observer quotient) is the compilation-phase face of GAP-176 and sits beside it. |
+| 2 | No new research GAP is filed until its block exists and its place in this graph is stated. |
 
 ## Horizons
 
@@ -181,8 +191,8 @@ this graph is stated.
 - **H3 — exploitation frontier.** GAP-179–200 + foreign fusion + complexity /
   lower bounds + hardware, solver, and search research.
 
-Research GAPs are meanings awaiting owners that already exist. The bootstrap
-frontier (S0: executed lexer boundary; parser and later stages host-owned) is
-the path that makes them real; 200 specified capabilities around a compiler
-that does not compile its own parser is the wrong success metric, and this spine
-exists so none of them forks the semantic universe while that path is walked.
+| # | directive |
+|---|---|
+| 1 | Research GAPs are meanings awaiting owners that already exist. |
+| 2 | The bootstrap frontier (S0: executed lexer boundary; parser and later stages host-owned) is the path that makes them real |
+| 3 | 200 specified capabilities around a compiler that does not compile its own parser is the wrong success metric, and this spine exists so none of them forks the semantic universe while that path is walked. |
