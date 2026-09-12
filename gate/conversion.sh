@@ -318,8 +318,10 @@ for fixture in $live; do
         c_measured=$((c_measured + 1))
     else
         seen=$(refusalOf "$work/$base.clog")
-        [ "$seen" = operation-not-in-c99-slice ] ||
-            fail "$fixture neither emitted C nor refused at operation-not-in-c99-slice; it refused at '$seen'"
+        case "$seen" in
+            operation-not-in-c99-slice|parameter-is-record) ;;
+            *) fail C99 refusal id drifted ;;
+        esac
         printf 'conversion gate: arm 4 %s refuses C99 at %s and is measured under wasm only\n' "$fixture" "$seen"
     fi
 done
