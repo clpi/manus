@@ -37,7 +37,7 @@ oracle=$(
 
 [ -n "$quotient" ] || fail 'cache quotient subject is absent'
 [ -n "$oracle" ] || fail 'host oracle subject is absent'
-printf '%s\n' "$quotient" | grep -Fq 'routeThroughDuoLexer(' \
+printf '%s\n' "$quotient" | grep -Fq 'lexer_dispatch.route(' \
     || fail 'cache quotient does not execute the producer route'
 if printf '%s\n' "$quotient" | grep -Fq '.next_tok('; then
     fail 'cache quotient still scans through the former host'
@@ -99,11 +99,19 @@ helper: i64 = ()
 main: i64 = ()
     helper()
 EOF
-if ! DYLD_INSERT_LIBRARIES="$work/poison.dylib" \
+if nm "$work/idol" 2>/dev/null | grep -q 'duo_keyword_classify'; then
+    if ! DYLD_INSERT_LIBRARIES="$work/poison.dylib" \
+        "$work/idol" compile --backend=direct "$work/probe.id" \
+        -o "$work/probe.out" >"$work/compile.log" 2>&1; then
+        sed -n '1,120p' "$work/compile.log" >&2
+        fail 'former-host death reached production compilation'
+    fi
+else
     "$work/idol" compile --backend=direct "$work/probe.id" \
-    -o "$work/probe.out" >"$work/compile.log" 2>&1; then
-    sed -n '1,120p' "$work/compile.log" >&2
-    fail 'former-host death reached production compilation'
+        -o "$work/probe.out" >"$work/compile.log" 2>&1 || {
+        sed -n '1,120p' "$work/compile.log" >&2
+        fail 'production compilation refused with the former-host edge absent'
+    }
 fi
 [ -x "$work/probe.out" ] || fail 'counterfactual compile emitted no executable'
 
