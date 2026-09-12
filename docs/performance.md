@@ -1,30 +1,30 @@
 # Idol performance contract
 
-This file is the stable performance protocol. It is not a volatile project
-status page or a historical optimization diary. Exact results belong to
-run-bound evidence artifacts and current gaps; Git preserves retired records.
+| # | directive |
+|---|---|
+| 1 | This file is the stable performance protocol. |
+| 2 | It is not a volatile project status page or a historical optimization diary. |
+| 3 | Exact results belong to run-bound evidence artifacts and current gaps |
+| 4 | Git preserves retired records. |
 
 ## FTCFTW
 
-The governing objective is maximum semantic knowledge with minimum physical
-state. Equivalent semantics retain at least a C-equivalent lawful realization.
-Idol may exceed that floor when graph facts justify stronger specialization,
-elimination, fusion, layout, algorithm, or target choices.
+| # | directive |
+|---|---|
+| 1 | The governing objective is maximum semantic knowledge with minimum physical state. |
+| 2 | Equivalent semantics retain at least a C-equivalent lawful realization. |
+| 3 | Idol may exceed that floor when graph facts justify stronger specialization, elimination, fusion, layout, algorithm, or target choices. |
 
-The target is **dominance, not parity**: verified Pareto dominance over the best
-known semantically equivalent implementation, reaching the physical lower bound
-wherever dominance is impossible, with three valid per-dimension outcomes — win,
-optimal-at-lower-bound, or loss with named optimization debt — and no vanity
-scalar or aggregate that hides a specific open loss. The optimization space is
-**open**: any verified, cost-improving transformation, algorithm, data
-structure, layout, ABI, schedule, or machine sequence is admissible regardless
-of its source (rewrite, search, superoptimization, autotuning, profile,
-hardware measurement, competitor mining, agent, or method not yet invented).
-Law: `docs/spec/law.md` §98–§101; C0 `law.ftcftw.dominance`,
-`law.optimization.open`, `law.cost.closure`, `law.algorithm.realization`,
-`law.optimization.validated`.
+| # | directive |
+|---|---|
+| 1 | The target is **dominance, not parity**: verified Pareto dominance over the best known semantically equivalent implementation, reaching the physical lower bound wherever dominance is impossible, with three valid per-dimension outcomes — win, optimal-at-lower-bound, or loss with named optimization debt — and no vanity scalar or aggregate that hides a specific open loss. |
+| 2 | The optimization space is **open**: any verified, cost-improving transformation, algorithm, data structure, layout, ABI, schedule, or machine sequence is admissible regardless of its source (rewrite, search, superoptimization, autotuning, profile, hardware measurement, competitor mining, agent, or method not yet invented). |
+| 3 | Law: `docs/spec/law.md` §98–§101 |
+| 4 | C0 `law.ftcftw.dominance`, `law.optimization.open`, `law.cost.closure`, `law.algorithm.realization`, `law.optimization.validated`. |
 
-Native evidence reports separately:
+| # | directive |
+|---|---|
+| 1 | Native evidence reports separately: |
 
 - runtime;
 - compile time and compiler work;
@@ -33,7 +33,9 @@ Native evidence reports separately:
 - artifact and runtime-support footprint;
 - incremental work.
 
-Wasm evidence additionally reports:
+| # | directive |
+|---|---|
+| 1 | Wasm evidence additionally reports: |
 
 - decode and import;
 - compilation;
@@ -44,12 +46,17 @@ Wasm evidence additionally reports:
 - artifact and runtime footprint;
 - end-to-end latency from bytes available to useful completion.
 
-A steady-state win is not an FTCFTW result. Generated-C evidence is not
-direct-native evidence. Direct-native evidence is not Wasm evidence.
+| # | directive |
+|---|---|
+| 1 | A steady-state win is not an FTCFTW result. |
+| 2 | Generated-C evidence is not direct-native evidence. |
+| 3 | Direct-native evidence is not Wasm evidence. |
 
 ## Admission
 
-Every performance change names:
+| # | directive |
+|---|---|
+| 1 | Every performance change names: |
 
 1. the semantic relation, facts, demand, and exact path exercised;
 2. the lawful realization family improved;
@@ -60,81 +67,79 @@ Every performance change names:
    evidence artifact;
 7. the aggregate gate outcome, including known red rows.
 
-Unexercised dimensions are reported as `NOT EXERCISED`, never inferred. A
-focused pass does not turn a red aggregate green. Transport completion is not
-the requested run's outcome.
+| # | directive |
+|---|---|
+| 1 | Unexercised dimensions are reported as `NOT EXERCISED`, never inferred. |
+| 2 | A focused pass does not turn a red aggregate green. |
+| 3 | Transport completion is not the requested run's outcome. |
 
-Progress headline metrics: `docs/METRICS.md` (executed frontier, reconstruction
-debt, FTCFTW matrix). Do not substitute file counts or keyword removal.
+| # | directive |
+|---|---|
+| 1 | Progress headline metrics: `docs/METRICS.md` (executed frontier, reconstruction debt, FTCFTW matrix). |
+| 2 | Do not substitute file counts or keyword removal. |
 
 ## Demand and representation
 
-Prefer never materializing work over materializing and deleting it later. Audit
-avoidable places, loads, stores, aggregates, packs, closures, iterators,
-temporary buffers, adapters, boxing, allocations, copies, dispatch, and runtime
-checks.
+| # | directive |
+|---|---|
+| 1 | Prefer never materializing work over materializing and deleting it later. |
+| 2 | Audit avoidable places, loads, stores, aggregates, packs, closures, iterators, temporary buffers, adapters, boxing, allocations, copies, dispatch, and runtime checks. |
 
-Source faces and semantic facts do not force stack, heap, record, register,
-boxed, table, or ABI form. Preserve constant, immediate, scalar, register,
-stack, aggregate, static-data, view, SIMD, GPU, dynamic, and absent realization
-choices until observation or law requires commitment.
+| # | directive |
+|---|---|
+| 1 | Source faces and semantic facts do not force stack, heap, record, register, boxed, table, or ABI form. |
+| 2 | Preserve constant, immediate, scalar, register, stack, aggregate, static-data, view, SIMD, GPU, dynamic, and absent realization choices until observation or law requires commitment. |
 
-Optimization follows cheap fact closure, opportunity estimation, demand, and
-expensive reasoning only where its expected value justifies the compiler work.
-Persistent facts should make incremental reuse cheaper than reconstruction.
+| # | directive |
+|---|---|
+| 1 | Optimization follows cheap fact closure, opportunity estimation, demand, and expensive reasoning only where its expected value justifies the compiler work. |
+| 2 | Persistent facts should make incremental reuse cheaper than reconstruction. |
 
 ## Evidence integrity
 
-Do not hard-code answers, benchmark inputs, seeds, iteration counts, filename
-recognizers, or literal-specific folds. Do not compare inequivalent semantics.
-Do not hide setup, decode, compilation, startup, allocation, support-runtime,
-or artifact costs outside the measured boundary.
+| # | directive |
+|---|---|
+| 1 | Do not hard-code answers, benchmark inputs, seeds, iteration counts, filename recognizers, or literal-specific folds. |
+| 2 | Do not compare inequivalent semantics. |
+| 3 | Do not hide setup, decode, compilation, startup, allocation, support-runtime, or artifact costs outside the measured boundary. |
 
-Heavy gates and benchmarks run under the repository lock. The live router and
-build projection supply exact current commands; this contract intentionally
-contains no static suite counts or claimed current scores.
+| # | directive |
+|---|---|
+| 1 | Heavy gates and benchmarks run under the repository lock. |
+| 2 | The live router and build projection supply exact current commands; this contract intentionally contains no static suite counts or claimed current scores. |
 
 ## Migration constraint
 
-The bootstrap host is a seed, not the final optimizer. Prefer deleting duplicate
-semantic authority, host authority, compiler state, and unnecessary work before
-adding host-only micro-optimization. New host semantic ownership and new
-project-owned `.id` performance fixtures are forbidden. New canonical evidence
-source uses `.id` and must execute in the production path.
+| # | directive |
+|---|---|
+| 1 | The bootstrap host is a seed, not the final optimizer. |
+| 2 | Prefer deleting duplicate semantic authority, host authority, compiler state, and unnecessary work before adding host-only micro-optimization. |
+| 3 | New host semantic ownership and new project-owned `.id` performance fixtures are forbidden. |
+| 4 | New canonical evidence source uses `.id` and must execute in the production path. |
 
-`std` is migration distribution, not a performance API namespace. Removing a
-namespace does not justify boxing, dynamic dispatch, allocation, copying, shell
-execution, or a slower abstraction. Packages contribute implementation
-candidates; sealed selection has zero runtime catalog cost.
+| # | directive |
+|---|---|
+| 1 | `std` is migration distribution, not a performance API namespace. |
+| 2 | Removing a namespace does not justify boxing, dynamic dispatch, allocation, copying, shell execution, or a slower abstraction. |
+| 3 | Packages contribute implementation candidates; sealed selection has zero runtime catalog cost. |
 
 ## Machine-code strategy
 
-The competitive thesis is not a better peephole optimizer than LLVM. It is to
-arrive at machine code with more exact semantic knowledge than a conventional
-lowered IR retains — demand, effects, alias/place provenance, shape, world,
-witness — and use it to avoid ever creating the allocations, memory objects,
-aliases, generic ABIs, temporaries, dynamic calls, and runtime abstractions a
-conventional backend must later struggle to remove. Law: `docs/spec/law.md` §41
-and the machine-realization closure in C0 (`law.realization.late`,
-`law.alias.provenance`, `law.buffer.demand`, `law.vector.one`,
-`law.realization.valid`, `law.lower.bound`, `law.link.semantic`), built on the
-existing `law.representation.one`, `law.abi.internal`, `law.guard.one`,
-`law.cost.explain`, `law.error.cold`, and `law.profile.evidence`.
+| # | directive |
+|---|---|
+| 1 | The competitive thesis is not a better peephole optimizer than LLVM. |
+| 2 | It is to arrive at machine code with more exact semantic knowledge than a conventional lowered IR retains — demand, effects, alias/place provenance, shape, world, witness — and use it to avoid ever creating the allocations, memory objects, aliases, generic ABIs, temporaries, dynamic calls, and runtime abstractions a conventional backend must later struggle to remove. |
+| 3 | Law: `docs/spec/law.md` §41 and the machine-realization closure in C0 (`law.realization.late`, `law.alias.provenance`, `law.buffer.demand`, `law.vector.one`, `law.realization.valid`, `law.lower.bound`, `law.link.semantic`), built on the existing `law.representation.one`, `law.abi.internal`, `law.guard.one`, `law.cost.explain`, `law.error.cold`, and `law.profile.evidence`. |
 
-These are opportunity classes, not measured wins. Under `law.lower.bound` an
-opportunity-class claim ("architected to preserve facts a conventional pipeline
-reconstructs") is admissible now; a beats-C/Fortran/LLVM claim requires a
-current-subject three-layer measurement.
+| # | directive |
+|---|---|
+| 1 | These are opportunity classes, not measured wins. |
+| 2 | Under `law.lower.bound` an opportunity-class claim ("architected to preserve facts a conventional pipeline reconstructs") is admissible now; a beats-C/Fortran/LLVM claim requires a current-subject three-layer measurement. |
 
-Everything in the catalogues below (this section, § Physical realization space,
-and § Square-zero foundational basis) is an **instance discovered inside the
-frontier** `R(S,W,T,E,P)` of `docs/spec/law.md` §107 OPTIMIZATION-SPACE-COMPLETE
-(C0 `law.optimization.space`), organized by its 12+1 axes (observation, knowledge,
-demand, algebra, algorithm, representation, placement, schedule, boundary, search,
-verify, cost, and change). None is a separate optimizer subsystem or a constitution
-addition; each is admitted only by the four-part rule — preserves demanded
-observations under the current world, satisfies authority/effect/resource
-constraints, is verifiable, and improves the chosen Pareto frontier.
+| # | directive |
+|---|---|
+| 1 | Everything in the catalogues below (this section, § Physical realization space, and § Square-zero foundational basis) is an **instance discovered inside the frontier** `R(S,W,T,E,P)` of `docs/spec/law.md` §107 OPTIMIZATION-SPACE-COMPLETE (C0 `law.optimization.space`), organized by its 12+1 axes (observation, knowledge, demand, algebra, algorithm, representation, placement, schedule, boundary, search, verify, cost, and change). |
+| 2 | None is a separate optimizer subsystem or a constitution addition; each is admitted only by the four-part rule — preserves demanded observations under the current world, satisfies authority/effect/resource constraints, is verifiable, and improves the chosen Pareto frontier. |
 
 ### Opportunity classes
 
@@ -184,18 +189,17 @@ constraints, is verifiable, and improves the chosen Pareto frontier.
 
 ### Prerequisite order
 
-Do not start by building an optimization-pass catalogue. The enabling order is:
-graph sovereignty → exact fact cardinality → application fact closure →
-occurrence-specific demand → place/lifetime/alias facts → representation-one →
-complete effects → machine provenance. Passes exist physically as fact
-producers, transformations, and derived indexes over one graph; the pipeline
-never determines meaning (`law.realization.late`, no pass pipeline as semantic
-architecture).
+| # | directive |
+|---|---|
+| 1 | Do not start by building an optimization-pass catalogue. |
+| 2 | The enabling order is: graph sovereignty → exact fact cardinality → application fact closure → occurrence-specific demand → place/lifetime/alias facts → representation-one → complete effects → machine provenance. |
+| 3 | Passes exist physically as fact producers, transformations, and derived indexes over one graph; the pipeline never determines meaning (`law.realization.late`, no pass pipeline as semantic architecture). |
 
 ### Vertical FTCFTW kernels
 
-Prove the architecture with vertical slices, not speculative optimizers
-(tracked in `gaps/GAP-169.md`):
+| # | directive |
+|---|---|
+| 1 | Prove the architecture with vertical slices, not speculative optimizers (tracked in `gaps/GAP-169.md`): |
 
 1. **Scalarized record call.** Known table/record → scalarize → application-
    specific call ABI → exact liveness → joint instruction/register decision →
@@ -210,17 +214,14 @@ Prove the architecture with vertical slices, not speculative optimizers
 
 ## Physical realization space
 
-`REALIZATION` is not code generation; it is any physically observable strategy
-that preserves the program's semantic observations. The optimizer is a
-semantic-to-physical realization optimizer whose space spans the whole
-machine/OS/hardware/workload stack, not just instructions, representations,
-algorithms, and calls. Law: `docs/spec/law.md` §102 PHYSICAL-SPACE-OPEN and §103
-OBSERVATION-MINIMUM; C0 `law.physical.open`, `law.observation.minimum`. Every
-class below is a search strategy admitted only when it preserves observations,
-satisfies authority/effect and target/world constraints, and improves the
-selected cost frontier (`law.optimization.open`, `law.optimization.validated`,
-`law.ftcftw.dominance`). These remain opportunity classes, not measured wins,
-until a current-subject three-layer measurement exists (`law.lower.bound`).
+| # | directive |
+|---|---|
+| 1 | `REALIZATION` is not code generation; it is any physically observable strategy that preserves the program's semantic observations. |
+| 2 | The optimizer is a semantic-to-physical realization optimizer whose space spans the whole machine/OS/hardware/workload stack, not just instructions, representations, algorithms, and calls. |
+| 3 | Law: `docs/spec/law.md` §102 PHYSICAL-SPACE-OPEN and §103 OBSERVATION-MINIMUM |
+| 4 | C0 `law.physical.open`, `law.observation.minimum`. |
+| 5 | Every class below is a search strategy admitted only when it preserves observations, satisfies authority/effect and target/world constraints, and improves the selected cost frontier (`law.optimization.open`, `law.optimization.validated`, `law.ftcftw.dominance`). |
+| 6 | These remain opportunity classes, not measured wins, until a current-subject three-layer measurement exists (`law.lower.bound`). |
 
 ### Representation and precision
 
@@ -386,7 +387,9 @@ until a current-subject three-layer measurement exists (`law.lower.bound`).
 
 ### Top unresolved design questions
 
-Highest-leverage remaining work, in priority order:
+| # | directive |
+|---|---|
+| 1 | Highest-leverage remaining work, in priority order: |
 
 1. **Exact observation model** — what behavior must realizations preserve?
    (`law.observation.minimum`; every accidental observable is a permanent barrier).
@@ -403,67 +406,47 @@ Highest-leverage remaining work, in priority order:
 10. **Full physical Pareto accounting** — energy, page faults, TLB, frontend/
     uop-cache, kernel transitions, sustained thermal.
 
-Final formulation: Idol optimizes everything that semantics do not make
-observable, across the entire physical stack — from algebra and algorithms
-through layouts, instructions, OS mechanisms, hardware placement and persistent
-adaptation — and a remaining loss is acceptable only when a verified lower bound
-proves no lawful physical realization can do better (`law.lower.bound`,
-`law.ftcftw.dominance`).
+| # | directive |
+|---|---|
+| 1 | Final formulation: Idol optimizes everything that semantics do not make observable, across the entire physical stack — from algebra and algorithms through layouts, instructions, OS mechanisms, hardware placement and persistent adaptation — and a remaining loss is acceptable only when a verified lower bound proves no lawful physical realization can do better (`law.lower.bound`, `law.ftcftw.dominance`). |
 
 ## Square-zero foundational basis
 
-FTCFTW is not layered on top of partially specified semantics; it *follows* from
-a complete contract for what a program is, what counts as the same program, what
-the machine may change, and what "better" means. Define the smallest observable
-semantics; everything not observable is realization space; continuously search
-that space for the least-cost verified realization. Law: `docs/spec/law.md` §104
-OBSERVATION-ONE, §105 BOUNDARY-ONE, §106 foundational algebras,
-§107 OPTIMIZATION-SPACE-COMPLETE; C0 `law.observation.one` (folds BOUNDARY-ONE and
-physical-nonexistence `none`), `law.equivalence.observation`,
-`law.demand.derivative`, `law.relation.property`, `law.change.delta`,
-`law.uncertainty.algebra`, `law.optimizer.economy`, `law.optimization.space`.
-Design program in `gaps/GAP-170.md` (observation model) and `gaps/GAP-171.md`
-(algebra foundation).
+| # | directive |
+|---|---|
+| 1 | FTCFTW is not layered on top of partially specified semantics; it *follows* from a complete contract for what a program is, what counts as the same program, what the machine may change, and what "better" means. |
+| 2 | Define the smallest observable semantics; everything not observable is realization space; continuously search that space for the least-cost verified realization. |
+| 3 | Law: `docs/spec/law.md` §104 OBSERVATION-ONE, §105 BOUNDARY-ONE, §106 foundational algebras, §107 OPTIMIZATION-SPACE-COMPLETE |
+| 4 | C0 `law.observation.one` (folds BOUNDARY-ONE and physical-nonexistence `none`), `law.equivalence.observation`, `law.demand.derivative`, `law.relation.property`, `law.change.delta`, `law.uncertainty.algebra`, `law.optimizer.economy`, `law.optimization.space`. |
+| 5 | Design program in `gaps/GAP-170.md` (observation model) and `gaps/GAP-171.md` (algebra foundation). |
 
 ### The complete frontier (OPTIMIZATION-SPACE-COMPLETE)
 
-FTCFTW is not a list of optimizations; it is the whole frontier — the Cartesian
-product of every degree of freedom between semantics and physical observation.
-For semantic program `S`, world `W`, target possibilities `T`, workload/evidence
-`E`, and policy `P`, the realization set `R(S,W,T,E,P)` is **every** physically
-lawful realization preserving the required observations. FTCFTW = search `R` →
-verified Pareto frontier → dominate every known competitor point → equal the
-proven lower bound where improvement is impossible. A candidate — current or
-future, from algebraic law, superoptimization, equality saturation, learned
-search, autotuning, competitor mining, or an agent — is admitted **iff** it
-(1) preserves demanded observations under the current world, (2) satisfies
-authority/effect/resource constraints, (3) is verifiable, and (4) improves the
-chosen frontier. No compiler phase, abstraction, target family, IR, or fixed pass
-order may permanently narrow `R` without a semantic observation requiring it
-(persistent equality-saturation alternatives, no privileged pass order, and
-jointly optimized layout+computation are consequences, not exceptions). Every
-optimization class below and in § Physical realization space is an **instance
-discovered inside `R`** on the frontier axes. Individual ideas are instances,
-never new constitutional mechanisms.
+| # | directive |
+|---|---|
+| 1 | FTCFTW is not a list of optimizations; it is the whole frontier — the Cartesian product of every degree of freedom between semantics and physical observation. |
+| 2 | For semantic program `S`, world `W`, target possibilities `T`, workload/evidence `E`, and policy `P`, the realization set `R(S,W,T,E,P)` is **every** physically lawful realization preserving the required observations. |
+| 3 | FTCFTW = search `R` → verified Pareto frontier → dominate every known competitor point → equal the proven lower bound where improvement is impossible. |
+| 4 | A candidate — current or future, from algebraic law, superoptimization, equality saturation, learned search, autotuning, competitor mining, or an agent — is admitted **iff** it (1) preserves demanded observations under the current world, (2) satisfies authority/effect/resource constraints, (3) is verifiable, and (4) improves the chosen frontier. |
+| 5 | No compiler phase, abstraction, target family, IR, or fixed pass order may permanently narrow `R` without a semantic observation requiring it (persistent equality-saturation alternatives, no privileged pass order, and jointly optimized layout+computation are consequences, not exceptions). |
+| 6 | Every optimization class below and in § Physical realization space is an **instance discovered inside `R`** on the frontier axes. |
+| 7 | Individual ideas are instances, never new constitutional mechanisms. |
 
 ### The realization contract (REALIZATION-CONTRACT)
 
-§107's `R(S,W,T,E,P)` still understated the frontier: it assumed a compiler
-choosing how to *execute a computation*. The square-zero premise is larger
-(`docs/spec/law.md` §108, C0 `law.realization.contract`): FTCFTW is **optimal
-verified realization under semantics, information, physics, economics, and
-uncertainty**. Given semantic identities/laws `S`, demanded observations `O`,
-world/authority `W`, downstream demand `D`, known facts `K`, uncertain evidence
-`E`, physical resources `H`, policy `P`, fault/security/precision model `F`, and
-compile/search budget `B`, find a realization
+| # | directive |
+|---|---|
+| 1 | §107's `R(S,W,T,E,P)` still understated the frontier: it assumed a compiler choosing how to *execute a computation*. |
+| 2 | The square-zero premise is larger (`docs/spec/law.md` §108, C0 `law.realization.contract`): FTCFTW is **optimal verified realization under semantics, information, physics, economics, and uncertainty**. |
+| 3 | Given semantic identities/laws `S`, demanded observations `O`, world/authority `W`, downstream demand `D`, known facts `K`, uncertain evidence `E`, physical resources `H`, policy `P`, fault/security/precision model `F`, and compile/search budget `B`, find a realization |
 
-    R(S, O, W, D, K, E, H, P, F, B)
+| # | directive |
+|---|---|
+| 1 | R(S, O, W, D, K, E, H, P, F, B) |
 
-ranging over computation, **noncomputation**, algorithm, data structure, encoding,
-precision, architecture, partition, placement, schedule, memory, persistence, OS
-mechanism, hardware, distribution, and adaptation, such that
-`observations(R) ∈ allowed(O,S,W,F)`, `R` is Pareto-optimal under `P`, correctness
-is verified, and the gap to known lower bounds is explicit.
+| # | directive |
+|---|---|
+| 1 | ranging over computation, **noncomputation**, algorithm, data structure, encoding, precision, architecture, partition, placement, schedule, memory, persistence, OS mechanism, hardware, distribution, and adaptation, such that `observations(R) ∈ allowed(O,S,W,F)`, `R` is Pareto-optimal under `P`, correctness is verified, and the gap to known lower bounds is explicit. |
 
 - **Lower bounds are physical, not instruction counts.** Track information
   required vs processed (entropy, distinguishing bits), communication complexity
@@ -486,12 +469,10 @@ is verified, and the gap to known lower bounds is explicit.
   and no dominance is claimed when confidence intervals overlap or a candidate
   loses under slight workload/adversarial variation.
 
-The ~24 foundational axes (extend, not replace, §107's twelve): IDENTITY,
-OBSERVATION, LAW, KNOWLEDGE, UNCERTAINTY, DEMAND, CHANGE, EQUIVALENCE,
-INFORMATION, WORK, COMMUNICATION, REPRESENTATION, ARCHITECTURE, PLACEMENT,
-SCHEDULE, BOUNDARY, FAILURE, RESOURCE, SEARCH, VERIFICATION, EVIDENCE, COST,
-ADAPTATION, META-COST. Observation sets, cost dimensions, semantic facts, and
-hardware targets remain extensible; no named ontology may permanently narrow `R`.
+| # | directive |
+|---|---|
+| 1 | The ~24 foundational axes (extend, not replace, §107's twelve): IDENTITY, OBSERVATION, LAW, KNOWLEDGE, UNCERTAINTY, DEMAND, CHANGE, EQUIVALENCE, INFORMATION, WORK, COMMUNICATION, REPRESENTATION, ARCHITECTURE, PLACEMENT, SCHEDULE, BOUNDARY, FAILURE, RESOURCE, SEARCH, VERIFICATION, EVIDENCE, COST, ADAPTATION, META-COST. |
+| 2 | Observation sets, cost dimensions, semantic facts, and hardware targets remain extensible; no named ontology may permanently narrow `R`. |
 
 ### The twelve algebras
 
@@ -557,98 +538,58 @@ hardware targets remain extensible; no named ontology may permanently narrow `R`
 
 ### FTCFTW measurement rigor
 
-Comparison is meaningless without a shared observation specification: validate
-both Idol and each competitor against the same permitted observations (overflow,
-error handling, allocation, initialization, I/O) before comparing cost. Evidence
-carries distribution, confidence interval, thermal/frequency state, noise, and
-sample size — "1% faster" without significance cannot close a benchmark.
-Distinguish proven semantic lower bound, architectural lower bound, measured
-best-known, and heuristic bound; never overstate optimality. Benchmarking is
-counterexample discovery: generate adversarial programs across shapes, alias
-patterns, branches, numeric ranges, world uncertainty, and table operations, and
-mine competitor binaries (instruction traces, memory events, branches, calls,
-cache events) to attribute exact excess physical operations. Metamorphic and
-fuzz-equivalence testing guard optimizer correctness; robust/adversarial/
-worst-case (p99, worst-case complexity), security (constant-time/oblivious),
-fault, and reliability dimensions join the Pareto frontier. "Best" is relative to
-the whole workload and whole-system interference (shared cache/bandwidth/
-registers/threads/power), across program phases and known/uncertain targets.
+| # | directive |
+|---|---|
+| 1 | Comparison is meaningless without a shared observation specification: validate both Idol and each competitor against the same permitted observations (overflow, error handling, allocation, initialization, I/O) before comparing cost. |
+| 2 | Evidence carries distribution, confidence interval, thermal/frequency state, noise, and sample size — "1% faster" without significance cannot close a benchmark. |
+| 3 | Distinguish proven semantic lower bound, architectural lower bound, measured best-known, and heuristic bound; never overstate optimality. |
+| 4 | Benchmarking is counterexample discovery: generate adversarial programs across shapes, alias patterns, branches, numeric ranges, world uncertainty, and table operations, and mine competitor binaries (instruction traces, memory events, branches, calls, cache events) to attribute exact excess physical operations. |
+| 5 | Metamorphic and fuzz-equivalence testing guard optimizer correctness; robust/adversarial/ worst-case (p99, worst-case complexity), security (constant-time/oblivious), fault, and reliability dimensions join the Pareto frontier. |
+| 6 | "Best" is relative to the whole workload and whole-system interference (shared cache/bandwidth/ registers/threads/power), across program phases and known/uncertain targets. |
 
 ### Deepest square-zero omissions (design order)
 
-Observation algebra · equivalence algebra · demand algebra · law algebra · change
-algebra · resource algebra · uncertainty algebra · physical-realization algebra ·
-verification algebra · search algebra · optimization-of-optimization ·
-self-improvement. The strongest statement: **semantic observations are the only
-invariants** — identity and facts define which observations are required, and
-everything else (control flow, algorithms, data structures, memory, code, OS
-interaction, hardware placement, and compiler strategy) is realization space that
-may disappear, transform, migrate, or be synthesized whenever verified equivalence
-permits a cheaper physical outcome.
+| # | directive |
+|---|---|
+| 1 | Observation algebra · equivalence algebra · demand algebra · law algebra · change algebra · resource algebra · uncertainty algebra · physical-realization algebra · verification algebra · search algebra · optimization-of-optimization · self-improvement. |
+| 2 | The strongest statement: **semantic observations are the only invariants** — identity and facts define which observations are required, and everything else (control flow, algorithms, data structures, memory, code, OS interaction, hardware placement, and compiler strategy) is realization space that may disappear, transform, migrate, or be synthesized whenever verified equivalence permits a cheaper physical outcome. |
 
 ## The complete frontier (corrected shape)
 
-FTCFTW is not compiler optimization; it is optimal realization of a semantic
-observation contract under semantics, information, physics, economics, and
-uncertainty (`docs/spec/law.md` §107 OPTIMIZATION-SPACE-COMPLETE, corrected shape;
-C0 `law.optimization.space`). The problem is: what transformations are possible
-between an intention and an observation, under physical law, information
-constraints, uncertainty, resource constraints, adversaries, and changing worlds?
-Execution, algorithm, architecture, storage, distribution, and even whether any
-computation happens are candidate strategies.
+| # | directive |
+|---|---|
+| 1 | FTCFTW is not compiler optimization; it is optimal realization of a semantic observation contract under semantics, information, physics, economics, and uncertainty (`docs/spec/law.md` §107 OPTIMIZATION-SPACE-COMPLETE, corrected shape |
+| 2 | C0 `law.optimization.space`). |
+| 3 | The problem is: what transformations are possible between an intention and an observation, under physical law, information constraints, uncertainty, resource constraints, adversaries, and changing worlds? |
+| 4 | Execution, algorithm, architecture, storage, distribution, and even whether any computation happens are candidate strategies. |
 
-    R(S, O, W, D, K, E, H, P, F, B)
-      S semantic identities/laws   O demanded observation set
-      W world/authority            D downstream demand
-      K known facts                E uncertain evidence
-      H physical resources         P policy
-      F fault/security/precision   B compile/search budget
-    find R with observations(R) ∈ allowed(O,S,W,F), Pareto-optimal under P,
-    correctness verified, and the gap to known lower bounds explicit.
+| # | directive |
+|---|---|
+| 1 | R(S, O, W, D, K, E, H, P, F, B) S semantic identities/laws O demanded observation set W world/authority D downstream demand K known facts E uncertain evidence H physical resources P policy F fault/security/precision B compile/search budget find R with observations(R) ∈ allowed(O,S,W,F), Pareto-optimal under P, correctness verified, and the gap to known lower bounds explicit. |
 
-**24 foundational axes.** identity · observation · law · knowledge · uncertainty ·
-demand · change · equivalence · information · work · communication · representation
-· architecture · placement · schedule · boundary · failure · resource · search ·
-verification · evidence · cost · adaptation · meta-cost. Every one of the ~200
-frontier classes below is a point in a combination of these axes — an instance
-inside `R`, never a constitution addition.
+| # | directive |
+|---|---|
+| 1 | **24 foundational axes.** identity · observation · law · knowledge · uncertainty · demand · change · equivalence · information · work · communication · representation · architecture · placement · schedule · boundary · failure · resource · search · verification · evidence · cost · adaptation · meta-cost. |
+| 2 | Every one of the ~200 frontier classes below is a point in a combination of these axes — an instance inside `R`, never a constitution addition. |
 
-**Observation + obligation; hyperproperties; nine-universe closure**
-(`docs/spec/law.md` §109 OBLIGATION-ONE, §110 NINE-UNIVERSE; C0
-`law.obligation.one`, `law.realization.universe`). `O` above is not just outputs:
-semantics is *allowed observations + required obligations* — positive (respond,
-commit, deadline, ordering, release, availability, authority), negative (no
-network / alloc / secret-timing / duplicate-effect / persistence / data-egress —
-the strongest enablers), temporal, safety-vs-liveness, progress, fairness,
-causality, noninterference. Equivalence is over **sets** of executions
-(determinism, noninterference, serializability, linearizability — hyperproperties),
-not one trace. The 24 axes factor over nine universes — meaning · observation ·
-knowledge · demand · equivalence · realization · resource · search+proof · change
-— and closure is **structural, not enumerative**: monotonic frontier (no knowing
-Pareto regression; archive best-ever and best-competitor), value-of-information
-(acquiring a fact is an optimization action), contract-weakening (an unobserved
-guarantee is measurable debt), and `optimality-gap = best-known −
-proven-lower-bound` are first-class.
+| # | directive |
+|---|---|
+| 1 | **Observation + obligation; hyperproperties; nine-universe closure** (`docs/spec/law.md` §109 OBLIGATION-ONE, §110 NINE-UNIVERSE |
+| 2 | C0 `law.obligation.one`, `law.realization.universe`). `O` above is not just outputs: semantics is *allowed observations + required obligations* — positive (respond, commit, deadline, ordering, release, availability, authority), negative (no network / alloc / secret-timing / duplicate-effect / persistence / data-egress — the strongest enablers), temporal, safety-vs-liveness, progress, fairness, causality, noninterference. |
+| 3 | Equivalence is over **sets** of executions (determinism, noninterference, serializability, linearizability — hyperproperties), not one trace. |
+| 4 | The 24 axes factor over nine universes — meaning · observation · knowledge · demand · equivalence · realization · resource · search+proof · change — and closure is **structural, not enumerative**: monotonic frontier (no knowing Pareto regression; archive best-ever and best-competitor), value-of-information (acquiring a fact is an optimization action), contract-weakening (an unobserved guarantee is measurable debt), and `optimality-gap = best-known − proven-lower-bound` are first-class. |
 
-**Frontier machinery, not a checklist** (`gaps/GAP-172.md`; C0
-`law.cost.closure`). The ~200 classes catalogued here are *instances*; the
-architecture is five graphs — **A** observation (use → required observations →
-producer → proof), **B** demand (use → demanded portion/quality → upstream
-transformer), **C** law (relation → semantic law → witness → implications), **D**
-frontier (region → candidate → preconditions → proof → cost vector →
-dependencies → status), **E** debt (region → lower bound → selected realization →
-delta → classified cause) — and a mechanical loop: measure → largest weighted
-debt → classify (`missing-{fact,demand,law,candidate,search,proof}` /
-`wrong-{cost-model,placement,algorithm,representation}`) → implement → validate →
-ratchet. Every case persists `subject world target workload observations
-competitor lowerbound idol delta cause producer consumer proof evidence status`
-with status ∈ `{win, bound, open, unknownbound}`; `averagewin`/`geomeanwin`/
-`goodenough` are never statuses, and a semantic opportunity with no candidate
-provider is debt *before* any benchmark regression. Workstreams FTC-001…FTC-020
-in `gaps/GAP-172.md`.
+| # | directive |
+|---|---|
+| 1 | **Frontier machinery, not a checklist** (`gaps/GAP-172.md` |
+| 2 | C0 `law.cost.closure`). |
+| 3 | The ~200 classes catalogued here are *instances*; the architecture is five graphs — **A** observation (use → required observations → producer → proof), **B** demand (use → demanded portion/quality → upstream transformer), **C** law (relation → semantic law → witness → implications), **D** frontier (region → candidate → preconditions → proof → cost vector → dependencies → status), **E** debt (region → lower bound → selected realization → delta → classified cause) — and a mechanical loop: measure → largest weighted debt → classify (`missing-{fact,demand,law,candidate,search,proof}` / `wrong-{cost-model,placement,algorithm,representation}`) → implement → validate → ratchet. |
+| 4 | Every case persists `subject world target workload observations competitor lowerbound idol delta cause producer consumer proof evidence status` with status ∈ `{win, bound, open, unknownbound}`; `averagewin`/`geomeanwin`/ `goodenough` are never statuses, and a semantic opportunity with no candidate provider is debt *before* any benchmark regression. |
+| 5 | Workstreams FTC-001…FTC-020 in `gaps/GAP-172.md`. |
 
-**Lower bounds are not instruction counts.** The relevant floor comes from the
-applicable family, and closure names which one was reached:
+| # | directive |
+|---|---|
+| 1 | **Lower bounds are not instruction counts.** The relevant floor comes from the applicable family, and closure names which one was reached: |
 
 - **Information-theoretic** — bits that must be learned/moved/distinguished/emitted
   (comparison-sort bounds, entropy bounds, distinguishing information). Reading a
@@ -664,66 +605,43 @@ applicable family, and closure names which one was reached:
 - **Physical law** — speed of light, memory latency, thermodynamic energy, device
   throughput. The target is the best physically achievable lawful implementation.
 
-**New cost/lower-bound classes to design** (families, not a checklist): info/
-communication/I-O/circuit/work-span floors; queueing & tail (p99, head-of-line,
-burstiness); roofline / operational intensity; port pressure, dependency depth,
-ILP; working set & cache residency; online/competitive ratio and regret for
-adaptive representation/JIT/cache; Bayesian/decision-theoretic specialization and
-value-of-information/active measurement; program & proof-directed synthesis;
-semantics-minimization (detect and drop unnecessary guarantees — ordered
-iteration, NaN payloads, observable identity — that no consumer needs) and
-specification-strength ROI ("guarantee X ⇒ 10× cheaper", surfaced not required);
-architecture synthesis with **boundary erasure** (co-deployed unobservable
-boundary: RPC→direct call, serialization→none) and **boundary introduction**
-(isolate/parallelize/distribute); lawful **nonexecution** (cached answer, theorem,
-preanswered from world facts), demand-elimination, and observer-elimination
-(unobservable effect ⇒ producer disappears); compression-compute and
-encrypted/constant-time co-design under security worlds; robust-Pareto under cost
-distributions (no dominance with overlapping confidence); and META-COST
-lifecycle-global amortization with explicit break-even execution counts and
-deployment-scale/fleet/cloud-cost policy. Human/agent time is a lifecycle cost:
-an optimization Idol infers that C needs 500 lines of expert tuning to express is
-a real dominance dimension, and the compiler should tell the agent "I could
-eliminate this cost if fact X were guaranteed" (interactive semantic refinement,
-not manual low-level tuning).
+| # | directive |
+|---|---|
+| 1 | **New cost/lower-bound classes to design** (families, not a checklist): info/ communication/I-O/circuit/work-span floors; queueing & tail (p99, head-of-line, burstiness); roofline / operational intensity; port pressure, dependency depth, ILP; working set & cache residency; online/competitive ratio and regret for adaptive representation/JIT/cache |
+| 2 | Bayesian/decision-theoretic specialization and value-of-information/active measurement; program & proof-directed synthesis; semantics-minimization (detect and drop unnecessary guarantees — ordered iteration, NaN payloads, observable identity — that no consumer needs) and specification-strength ROI ("guarantee X ⇒ 10× cheaper", surfaced not required); architecture synthesis with **boundary erasure** (co-deployed unobservable boundary: RPC→direct call, serialization→none) and **boundary introduction** (isolate/parallelize/distribute); lawful **nonexecution** (cached answer, theorem, preanswered from world facts), demand-elimination, and observer-elimination (unobservable effect ⇒ producer disappears); compression-compute and encrypted/constant-time co-design under security worlds; robust-Pareto under cost distributions (no dominance with overlapping confidence); and META-COST lifecycle-global amortization with explicit break-even execution counts and deployment-scale/fleet/cloud-cost policy. |
+| 3 | Human/agent time is a lifecycle cost: an optimization Idol infers that C needs 500 lines of expert tuning to express is a real dominance dimension, and the compiler should tell the agent "I could eliminate this cost if fact X were guaranteed" (interactive semantic refinement, not manual low-level tuning). |
 
-**Extensibility (unknown-unknowns).** Cost dimensions, observation sets,
-descriptor/relation/world facts, and target families are all extensible; today's
-illegal-looking transform may be the best on future hardware, so keep equivalence
-alternatives and never bake a target's cost model into transformation legality
-(separate correctness proof from target cost evidence). Realization ≠ instruction
-sequence on a classical CPU — GPU/NPU/DSP/FPGA/PIM/analog/neuromorphic/quantum and
-whatever comes next are admissible whenever semantics and target facts permit.
+| # | directive |
+|---|---|
+| 1 | **Extensibility (unknown-unknowns).** Cost dimensions, observation sets, descriptor/relation/world facts, and target families are all extensible; today's illegal-looking transform may be the best on future hardware, so keep equivalence alternatives and never bake a target's cost model into transformation legality (separate correctness proof from target cost evidence). |
+| 2 | Realization ≠ instruction sequence on a classical CPU — GPU/NPU/DSP/FPGA/PIM/analog/neuromorphic/quantum and whatever comes next are admissible whenever semantics and target facts permit. |
 
 ## Executed rows, and the frontier as measured
 
-Two FTCFTW rows now EXECUTE rather than being indexed, and each is a runner
-that recomputes its own numbers — nothing here restates them:
+| # | directive |
+|---|---|
+| 1 | Two FTCFTW rows now EXECUTE rather than being indexed, and each is a runner that recomputes its own numbers — nothing here restates them: |
 
-    sh gate/ftcftw/wrap.sh     defined i64 wraparound vs C signed overflow
-    sh gate/ftcftw/stage.sh    lawful nonexecution: the stage world vs runtime
-    sh gate/ftcftw/width.sh    declared-u32 width narrowing vs hand uint32_t
+| # | directive |
+|---|---|
+| 1 | sh gate/ftcftw/wrap.sh defined i64 wraparound vs C signed overflow sh gate/ftcftw/stage.sh lawful nonexecution: the stage world vs runtime sh gate/ftcftw/width.sh declared-u32 width narrowing vs hand uint32_t |
 
-`wrap` is the semantic-knowledge mechanism at parity's edge: Idol's i64 wraps
-by definition, C's signed overflow is undefined, so the emitted unsigned form
-can let the C compiler reassociate across a recurrence the idiomatic `int64_t`
-spelling blocks. Its third arm — the same algorithm handwritten with
-`uint64_t` — is the semantically equivalent control that prevents a fabricated
-win over a strawman. The runner publishes nine-run observed ranges and calls an
-overlap `unknownbound`; equality with an implementation is never `bound` or
-“optimal” without an independently proven physical lower bound. The signed-C
-arm remains an idiomatic undefined-behavior control, not an equivalence oracle.
+| # | directive |
+|---|---|
+| 1 | `wrap` is the semantic-knowledge mechanism at parity's edge: Idol's i64 wraps by definition, C's signed overflow is undefined, so the emitted unsigned form can let the C compiler reassociate across a recurrence the idiomatic `int64_t` spelling blocks. |
+| 2 | Its third arm — the same algorithm handwritten with `uint64_t` — is the semantically equivalent control that prevents a fabricated win over a strawman. |
+| 3 | The runner publishes nine-run observed ranges and calls an overlap `unknownbound`; equality with an implementation is never `bound` or “optimal” without an independently proven physical lower bound. |
+| 4 | The signed-C arm remains an idiomatic undefined-behavior control, not an equivalence oracle. |
 
-`stage` is the §108 REALIZATION-CONTRACT executed: work C must do at runtime,
-`@( … )` does at build, and the program carries the answer. Its controls pin
-structure (the idol arm carries no loop; the C arm still does, proving the C
-compiler could not fold it), full-64-bit re-derivation of the folded constant
-by an independent program, the backend's integer division law, and refusal of
-a duplicated spelling. Its outcome text carries its own bounds: a fuel-capped
-capability row, with the provenance asymmetry stated — a hand-pasted C
-constant is a human claim; this one is compiler-derived and gate-re-verified.
+| # | directive |
+|---|---|
+| 1 | `stage` is the §108 REALIZATION-CONTRACT executed: work C must do at runtime, `@( … )` does at build, and the program carries the answer. |
+| 2 | Its controls pin structure (the idol arm carries no loop; the C arm still does, proving the C compiler could not fold it), full-64-bit re-derivation of the folded constant by an independent program, the backend's integer division law, and refusal of a duplicated spelling. |
+| 3 | Its outcome text carries its own bounds: a fuel-capped capability row, with the provenance asymmetry stated — a hand-pasted C constant is a human claim; this one is compiler-derived and gate-re-verified. |
 
-The frontier that remains, each axis with its measured blocker:
+| # | directive |
+|---|---|
+| 1 | The frontier that remains, each axis with its measured blocker: |
 
 - **Nonexecution beyond one module** — the stage scope is single-name module
   relations; dotted homes, overload identity, and cross-run persistence are
@@ -750,7 +668,6 @@ The frontier that remains, each axis with its measured blocker:
   over the best C is structurally available rather than fuel-bounded,
   because it changes the algorithm, not the instruction selection.
 
-The honest gate on every future row is the same three: the work must survive
-the optimizer (a deleted loop times as process startup), the arms must agree
-at full width before anything is timed, and the comparison oracle must be the
-BEST known spelling, not the idiomatic one.
+| # | directive |
+|---|---|
+| 1 | The honest gate on every future row is the same three: the work must survive the optimizer (a deleted loop times as process startup), the arms must agree at full width before anything is timed, and the comparison oracle must be the BEST known spelling, not the idiomatic one. |

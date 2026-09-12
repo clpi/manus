@@ -1,10 +1,10 @@
 # Wasm validation facts — mapped onto the existing graph vocabulary
 
-Research lane 3 per the FTCFTW directive: decoder/validator facts in the
-CURRENT semantic vocabulary (sim-v0 as measured by `idol-native graph`).
-No runtime, no new ontology — every row uses facts the graph already
-publishes for Idol source. This is a specification-to-vocabulary
-mapping, not an implementation claim.
+| # | directive |
+|---|---|
+| 1 | Research lane 3 per the FTCFTW directive: decoder/validator facts in the CURRENT semantic vocabulary (sim-v0 as measured by `idol-native graph`). |
+| 2 | No runtime, no new ontology — every row uses facts the graph already publishes for Idol source. |
+| 3 | This is a specification-to-vocabulary mapping, not an implementation claim. |
 
 ## Fact vocabulary used (all existing)
 
@@ -52,18 +52,17 @@ mapping, not an implementation claim.
 
 ## Why this is the right lane now
 
-The graph already publishes every fact family this mapping needs — the
-measured blocker matrix (F1 unresolved applications, F3 module globals,
-F4 relation shapes) is the SAME admission surface Wasm facts will pass
-through. Ingesting Wasm as facts inherits the existing demand,
-specialization, and realization machinery instead of forking a second
-compiler. Lane 3 delivers this mapping plus prototypes as fixtures; the
-production decoder waits on lanes 1–2 closing ingress and grammar.
-
+| # | directive |
+|---|---|
+| 1 | The graph already publishes every fact family this mapping needs — the measured blocker matrix (F1 unresolved applications, F3 module globals, F4 relation shapes) is the SAME admission surface Wasm facts will pass through. |
+| 2 | Ingesting Wasm as facts inherits the existing demand, specialization, and realization machinery instead of forking a second compiler. |
+| 3 | Lane 3 delivers this mapping plus prototypes as fixtures; the production decoder waits on lanes 1–2 closing ingress and grammar. |
 
 ## Fact-separation ruling (parallel review, 2026-08-17)
 
-Two architecture regressions the review prevented apply directly here:
+| # | directive |
+|---|---|
+| 1 | Two architecture regressions the review prevented apply directly here: |
 
 1. **Semantic runtime need is NEVER inferred from opcodes** — neither
    Wasm opcodes nor DNIR opcodes. Instructions are source-law
@@ -77,5 +76,6 @@ Two architecture regressions the review prevented apply directly here:
    independently (descriptor / pack / ownership / world / effect), and
    consumers demand per family.
 
-Also noted: the WASI lane stripped an accidental 4,000-line formatter
-rewrite before history — ingest tooling generates nothing but facts.
+| # | directive |
+|---|---|
+| 1 | Also noted: the WASI lane stripped an accidental 4,000-line formatter rewrite before history — ingest tooling generates nothing but facts. |

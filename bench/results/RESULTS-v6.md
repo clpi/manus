@@ -1,21 +1,21 @@
 # Benchmark results — v6 (current main)
 
-Re-run of the skeptical benchmark suite (`bench/run.sh`) on current main
-at `ae5532b2`, 21 interleaved rounds, 3 warmup, median primary.
-Generated 2026-09-12. Raw tables: `bench/RESULTS.md` (rewritten by the run).
+| # | directive |
+|---|---|
+| 1 | Re-run of the skeptical benchmark suite (`bench/run.sh`) on current main at `ae5532b2`, 21 interleaved rounds, 3 warmup, median primary. |
+| 2 | Generated 2026-09-12. |
+| 3 | Raw tables: `bench/RESULTS.md` (rewritten by the run). |
 
-Baseline: v5 at `85886ee3` (2026-09-11). Since v5, fix1 (`edd80d38`,
-compile-time loop evaluation) and fix2 (`ae5532b2`, same-variable
-constant-chain accumulator) landed, plus egraph/canon/hooks (`dfc9534c`),
-size hooks (`04a2655f`), identical code folding (`cc0c9260`), and the
-machine outliner (`5a4e64c8`).
+| # | directive |
+|---|---|
+| 1 | Baseline: v5 at `85886ee3` (2026-09-11). |
+| 2 | Since v5, fix1 (`edd80d38`, compile-time loop evaluation) and fix2 (`ae5532b2`, same-variable constant-chain accumulator) landed, plus egraph/canon/hooks (`dfc9534c`), size hooks (`04a2655f`), identical code folding (`cc0c9260`), and the machine outliner (`5a4e64c8`). |
 
-Methodology (unchanged from v5): Idol native compiler rebuilt from
-`lib/compiler/native.id` at run start; each program built with Idol,
-clang -O3, gcc -O3; correctness gate (identical exit codes) passed on all
-10 programs; 21 interleaved timed rounds; Welch t-test; compile time is
-median-of-5 source-to-executable; object size is `.o` bytes.
-`bench/programs/*.id` sources withheld per the vocabulary gate (same as v5).
+| # | directive |
+|---|---|
+| 1 | Methodology (unchanged from v5): Idol native compiler rebuilt from `lib/compiler/native.id` at run start; each program built with Idol, clang -O3, gcc -O3; correctness gate (identical exit codes) passed on all 10 programs |
+| 2 | 21 interleaved timed rounds |
+| 3 | Welch t-test; compile time is median-of-5 source-to-executable; object size is `.o` bytes. `bench/programs/*.id` sources withheld per the vocabulary gate (same as v5). |
 
 ## Runtime: v5 → v6 deltas (Idol median vs clang median)
 
@@ -32,12 +32,16 @@ median-of-5 source-to-executable; object size is `.o` bytes.
 | upbranch | 0.010407 | 0.008753 | -18.89% loss* | 0.011236 | 0.009055 | -24.09% loss* | -5.2pp, loss persists |
 | mul13 | 0.054247 | 0.054490 | +0.45% tie | 0.061525 | 0.057448 | -7.10% loss* | **REGRESSION: tie → loss** |
 
-`*` = statistically significant (Welch p < 0.05); "tie" = not significant.
-Margin = (clang − idol) / clang; positive favors Idol.
+| # | directive |
+|---|---|
+| 1 | `*` = statistically significant (Welch p < 0.05) |
+| 2 | "tie" = not significant. |
+| 3 | Margin = (clang − idol) / clang; positive favors Idol. |
 
-Scoreboard: v5 was 0 wins / 3 ties / 7 losses. v6 is 0 wins / 5 ties /
-5 losses. Compile time 10/10 wins and object size 10/10 wins are retained
-(see below).
+| # | directive |
+|---|---|
+| 1 | Scoreboard: v5 was 0 wins / 3 ties / 7 losses. v6 is 0 wins / 5 ties / 5 losses. |
+| 2 | Compile time 10/10 wins and object size 10/10 wins are retained (see below). |
 
 ## Fixed since v5
 
@@ -72,7 +76,9 @@ Scoreboard: v5 was 0 wins / 3 ties / 7 losses. v6 is 0 wins / 5 ties /
 
 ## Compile time, source → executable (median of 5, seconds)
 
-Idol wins all 10 comparisons (v5: 10/10, v6: 10/10).
+| # | directive |
+|---|---|
+| 1 | Idol wins all 10 comparisons (v5: 10/10, v6: 10/10). |
 
 | program | v5 idol | v5 clang | v6 idol | v6 clang |
 |---|---|---|---|---|
@@ -87,13 +93,15 @@ Idol wins all 10 comparisons (v5: 10/10, v6: 10/10).
 | upbranch | 0.031 | 0.044 | 0.031 | 0.045 |
 | startup | 0.027 | 0.038 | 0.023 | 0.038 |
 
-Absolute compile times rose run-to-run for all three compilers on most
-programs (machine state), so the cross-run idol delta is environmental;
-the within-run idol-vs-clang win is the controlled comparison.
+| # | directive |
+|---|---|
+| 1 | Absolute compile times rose run-to-run for all three compilers on most programs (machine state), so the cross-run idol delta is environmental; the within-run idol-vs-clang win is the controlled comparison. |
 
 ## Object size (`.o` bytes)
 
-Idol wins all 10 comparisons (v5: 10/10, v6: 10/10).
+| # | directive |
+|---|---|
+| 1 | Idol wins all 10 comparisons (v5: 10/10, v6: 10/10). |
 
 | program | v5 idol | v6 idol | v6 clang |
 |---|---|---|---|

@@ -9,14 +9,15 @@
 > `lib/compiler/grammar.id` proposal below as parallel authority — migrate
 > ownership, do not add beside the Zig table.
 
-Analysis by the grammar-authority lane. **Not Idol authority.** This is a
-design + status report produced from reading AGENTS.md, C0, GAP-134, GAP-145,
-docs/spec/grammar.md, the current token/grammar projections, the Tree-sitter
-emitter, and the live claims. It is the deliverable the goal's "Stop / Report"
-section asks for. It does not implement the parser slice and does not edit any
-authority file (no claim acquired; upstream blockers open).
+| # | directive |
+|---|---|
+| 1 | Analysis by the grammar-authority lane. **Not Idol authority.** This is a design + status report produced from reading AGENTS.md, C0, GAP-134, GAP-145, docs/spec/grammar.md, the current token/grammar projections, the Tree-sitter emitter, and the live claims. |
+| 2 | It is the deliverable the goal's "Stop / Report" section asks for. |
+| 3 | It does not implement the parser slice and does not edit any authority file (no claim acquired; upstream blockers open). |
 
-Tree: `clpi/duo` @ HEAD `a44a088`, dirty (concurrent lanes active).
+| # | directive |
+|---|---|
+| 1 | Tree: `clpi/duo` @ HEAD `a44a088`, dirty (concurrent lanes active). |
 
 ## 0. Verified current state
 
@@ -48,11 +49,10 @@ Tree: `clpi/duo` @ HEAD `a44a088`, dirty (concurrent lanes active).
 
 ## 1. Canonical machine-readable grammar owner (where it must live)
 
-**One new canonical Idol source module** that states grammar-recognition facts
-as admitted structured values — the machine-readable form of the grammar law
-C0 already owns. It is the **first** machine-readable grammar authority, not a
-second ontology (recognition/provenance facts are explicitly "syntax provenance
-after resolution" per grammar.md, not semantic identity).
+| # | directive |
+|---|---|
+| 1 | **One new canonical Idol source module** that states grammar-recognition facts as admitted structured values — the machine-readable form of the grammar law C0 already owns. |
+| 2 | It is the **first** machine-readable grammar authority, not a second ontology (recognition/provenance facts are explicitly "syntax provenance after resolution" per grammar.md, not semantic identity). |
 
 - Owner path (proposed): `lib/compiler/grammar.id` — one concept per file
   (the grammar authority). Consumes token **identities** from
@@ -73,9 +73,9 @@ after resolution" per grammar.md, not semantic identity).
 - All consumers (parser, `scripts/treesitter_emit.id`, formatter,
   canonicalizer, LSP, MCP) read generated `roles.id` + token identities.
 
-This satisfies "do not create another handwritten Markdown grammar / parser-
-local role tables / a new Zig grammar registry / another legacy syntax list /
-a second semantic grammar ontology."
+| # | directive |
+|---|---|
+| 1 | This satisfies "do not create another handwritten Markdown grammar / parser- local role tables / a new Zig grammar registry / another legacy syntax list / a second semantic grammar ontology." |
 
 ## 2. Generated projections
 
@@ -93,9 +93,9 @@ C0 (law)  ──►  lib/compiler/grammar.id   (canonical machine-readable owner
         parser (SHC slice)   scripts/treesitter_emit    formatter / LSP / MCP
 ```
 
-Tree-sitter and the parser derive from the **same** generated `roles.id`, so
-control #6 holds by construction; the authored tree-sitter residue (GAP-049)
-is retired by generated productions from the same facts.
+| # | directive |
+|---|---|
+| 1 | Tree-sitter and the parser derive from the **same** generated `roles.id`, so control #6 holds by construction; the authored tree-sitter residue (GAP-049) is retired by generated productions from the same facts. |
 
 ## 3. Unresolved authority blockers (surface, do not silently select)
 
@@ -127,8 +127,10 @@ is retired by generated productions from the same facts.
 
 ## 4. Exact parser-facing role API (keyed by identity, no spelling)
 
-Input: an authoritative token identity `k` (kind id from Devin's immutable
-token view) — **never** `token.text`. All results are generated constants.
+| # | directive |
+|---|---|
+| 1 | Input: an authoritative token identity `k` (kind id from Devin's immutable token view) — **never** `token.text`. |
+| 2 | All results are generated constants. |
 
 | Query | Returns | Admitted vocabulary basis |
 | --- | --- | --- |
@@ -141,13 +143,15 @@ token view) — **never** `token.text`. All results are generated constants.
 | `grammar.body_start(k)` | declare-face body-start role | `call.face.declare` + `syntax.block` offside |
 | `grammar.delimiter_role(k)` | ordinary_application \| structured_pack \| computed_projection \| static_projection \| descriptor_subject_home \| anchor | closed delimiter law (grammar.md) |
 
-Precedence/associativity are **grammar provenance** (C0 :2999/:3037), carried
-here, not semantic identity and not a host table.
+| # | directive |
+|---|---|
+| 1 | Precedence/associativity are **grammar provenance** (C0 :2999/:3037), carried here, not semantic identity and not a host table. |
 
 ## 5. Performance representation (constant-time, no hot-path text search)
 
-Mirror the proven `classify.id` shape, extended from keyword categories to
-**roles**:
+| # | directive |
+|---|---|
+| 1 | Mirror the proven `classify.id` shape, extended from keyword categories to **roles**: |
 
 - Dense array `roles: [N]Role` indexed by token kind id (0..~109). Each `Role`
   is a packed record: `prefix_prec`, `prefix_assoc`, `postfix_prec`,
@@ -194,9 +198,10 @@ Mirror the proven `classify.id` shape, extended from keyword categories to
    `roles.id`; rewire `scripts/treesitter_emit.id` and the parser to consume
    them; land the six differentials above as positive/negative/fuzz controls.
 
-Until 1–3 land, the next parser slice is `IMPLEMENTATION-BLOCKED` (as GAP-134
-already records). The grammar-authority lane's correct move this session is
-this report + the owner design, **not** an authority edit.
+| # | directive |
+|---|---|
+| 1 | Until 1–3 land, the next parser slice is `IMPLEMENTATION-BLOCKED` (as GAP-134 already records). |
+| 2 | The grammar-authority lane's correct move this session is this report + the owner design, **not** an authority edit. |
 
 ## 8. What this session changed
 

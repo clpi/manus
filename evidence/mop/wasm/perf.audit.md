@@ -1,29 +1,32 @@
 # Performance audit of the ingest itself — graph facts, fold space, opt inventory
 
-Measured on the compiler's own graph of tools/wasm/ingest.id
-(117 candidates, 99 published, 17 bootstrap, 1 blocking).
+| # | directive |
+|---|---|
+| 1 | Measured on the compiler's own graph of tools/wasm/ingest.id (117 candidates, 99 published, 17 bootstrap, 1 blocking). |
 
 ## Where the work is
 
-main = 67 applications (the walk loops), appfact = 17, slebsign = 5.
-The LEB readers (ulebval/ulebafter/slebend/slebsign) dominate inner
-loops — consistent with the measured 2x read amplification.
+| # | directive |
+|---|---|
+| 1 | main = 67 applications (the walk loops), appfact = 17, slebsign = 5. |
+| 2 | The LEB readers (ulebval/ulebafter/slebend/slebsign) dominate inner loops — consistent with the measured 2x read amplification. |
 
 ## Fold space (exploit-4 in miniature — measured, not assumed)
 
-60 of 99 applications are PURE (effect: none) — fold candidates. Their
-relations: 19 (17x), 4 (14x), 1 (11x), 22 (6x). Every one currently
-executes at runtime. With whole-relation folding (pure + exact
-operands + closed + completing → exact result), the pure subset of the
-ingest collapses at compile time. That is the compiler-lane exploit,
-but the ingest's own graph DEMONSTRATES the input: exact fold
-candidates enumerated by the graph itself.
+| # | directive |
+|---|---|
+| 1 | 60 of 99 applications are PURE (effect: none) — fold candidates. |
+| 2 | Their relations: 19 (17x), 4 (14x), 1 (11x), 22 (6x). |
+| 3 | Every one currently executes at runtime. |
+| 4 | With whole-relation folding (pure + exact operands + closed + completing → exact result), the pure subset of the ingest collapses at compile time. |
+| 5 | That is the compiler-lane exploit, but the ingest's own graph DEMONSTRATES the input: exact fold candidates enumerated by the graph itself. |
 
 ## Witness cards: 99 of 99 unknown
 
-No application carries a proof witness. This is the single largest
-fact hole in the ingest's own graph — and the prerequisite for every
-higher rung (bounds checks, devirtualization, representation choice).
+| # | directive |
+|---|---|
+| 1 | No application carries a proof witness. |
+| 2 | This is the single largest fact hole in the ingest's own graph — and the prerequisite for every higher rung (bounds checks, devirtualization, representation choice). |
 
 ## Instruction-minimization inventory (the ingest, measured)
 

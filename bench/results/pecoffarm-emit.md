@@ -1,7 +1,9 @@
 # pecoffarm emit benchmark
 
-ARM64 + PE/COFF/Windows backend (`lib/compiler/pecoffarm.id`): cost of
-building the emitter and emitting a PE/COFF executable. 2026-09-11.
+| # | directive |
+|---|---|
+| 1 | ARM64 + PE/COFF/Windows backend (`lib/compiler/pecoffarm.id`): cost of building the emitter and emitting a PE/COFF executable. |
+| 2 | 2026-09-11. |
 
 ## Environment
 
@@ -32,13 +34,16 @@ building the emitter and emitting a PE/COFF executable. 2026-09-11.
 | emitted executable size | 1536 bytes |
 | `idol check lib/compiler/pecoffarm.id` | clean, no errors |
 
-The emitter binary itself is ~53 KB. Emission is string concatenation of
-3072 hex chars; there is no optimization to measure yet — the backend
-emits a fixed 5-instruction entry program.
+| # | directive |
+|---|---|
+| 1 | The emitter binary itself is ~53 KB. |
+| 2 | Emission is string concatenation of 3072 hex chars; there is no optimization to measure yet — the backend emits a fixed 5-instruction entry program. |
 
 ## What the emitter produces
 
-A 1536-byte PE/COFF for AArch64, laid out as:
+| # | directive |
+|---|---|
+| 1 | A 1536-byte PE/COFF for AArch64, laid out as: |
 
 - DOS header (64 B, `MZ`, `e_lfanew = 0x80`) + 64 B stub
 - PE signature, COFF header (`Machine = 0xaa64`, 2 sections)
@@ -50,7 +55,9 @@ A 1536-byte PE/COFF for AArch64, laid out as:
 - Import table: one descriptor importing `ExitProcess` by name (hint 0)
   from `KERNEL32.dll`, with ILT and IAT
 
-Entry program (20 bytes at RVA `0x1000`):
+| # | directive |
+|---|---|
+| 1 | Entry program (20 bytes at RVA `0x1000`): |
 
 ```
 sub sp, sp, #32      ; d10083ff — 32-byte shadow space (Windows ARM64 ABI)
@@ -74,23 +81,19 @@ blr x1             ; d63f0020 — call it; never returns
 
 ## Import choice: ExitProcess from kernel32
 
-`ExitProcess` (kernel32.dll) is the documented way for a raw PE entry
-point to terminate the process with a status code. Alternatives
-considered: `RtlExitUserProcess` (ntdll, lower-level, less documented for
-direct use) and returning from the entry point (undefined without CRT —
-the loader expects the entry not to return). ExitProcess is the minimal,
-documented, CRT-free termination path, so the import table carries
-exactly one function from exactly one DLL.
+| # | directive |
+|---|---|
+| 1 | `ExitProcess` (kernel32.dll) is the documented way for a raw PE entry point to terminate the process with a status code. |
+| 2 | Alternatives considered: `RtlExitUserProcess` (ntdll, lower-level, less documented for direct use) and returning from the entry point (undefined without CRT — the loader expects the entry not to return). |
+| 3 | ExitProcess is the minimal, documented, CRT-free termination path, so the import table carries exactly one function from exactly one DLL. |
 
 ## Backend quirk found (for the compiler workstream)
 
-While building this, `hlen = pe:len() / 2` — `:len()` on the ~944-char
-concatenated header string — hung the compiled emitter (killed under the
-C backend; silent empty output under `--backend native`). `:len()` on
-shorter strings in the same program works. The emitter now computes the
-header length from layout constants (`64 + 64 + 4 + 20 + 240 + 80`)
-instead. Root cause not diagnosed; flagging for the compiler fixes
-workstream, not worked around beyond the constant.
+| # | directive |
+|---|---|
+| 1 | While building this, `hlen = pe:len() / 2` — `:len()` on the ~944-char concatenated header string — hung the compiled emitter (killed under the C backend; silent empty output under `--backend native`). `:len()` on shorter strings in the same program works. |
+| 2 | The emitter now computes the header length from layout constants (`64 + 64 + 4 + 20 + 240 + 80`) instead. |
+| 3 | Root cause not diagnosed; flagging for the compiler fixes workstream, not worked around beyond the constant. |
 
 ## Gaps (stated plainly)
 

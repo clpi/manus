@@ -1,10 +1,16 @@
 # Duo Agent Coordination Buffer (redirect)
 
-**Canonical location:** [`.agents/AGENT_COORDINATION.md`](.agents/AGENT_COORDINATION.md)
+| # | directive |
+|---|---|
+| 1 | **Canonical location:** [`.agents/AGENT_COORDINATION.md`](.agents/AGENT_COORDINATION.md) |
 
-**Alignment compass (read first):** [`docs/AGENT_ALIGNMENT.md`](AGENT_ALIGNMENT.md)
+| # | directive |
+|---|---|
+| 1 | **Alignment compass (read first):** [`docs/AGENT_ALIGNMENT.md`](AGENT_ALIGNMENT.md) |
 
-This file redirects to the canonical location in `.agents/`.
+| # | directive |
+|---|---|
+| 1 | This file redirects to the canonical location in `.agents/`. |
 
 ## For agents:
 - Read via MCP `duo_coordination_read()` / `duo_coordination_buffer()`

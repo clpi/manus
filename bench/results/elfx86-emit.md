@@ -1,10 +1,11 @@
 # elfx86 emit benchmark
 
-Date: 2026-09-11. Host: Mac mini (arm64, Darwin) via `idol compile --backend native`.
-Scope: x86_64 encoder library (`lib/compiler/x86.id`) and x86_64+ELF64/Linux
-direct backend (`lib/compiler/elfx86.id`) only. The bench harness
-(`bench/run.sh`) is arm64-Darwin-only and was not modified; these are
-standalone measurements.
+| # | directive |
+|---|---|
+| 1 | Date: 2026-09-11. |
+| 2 | Host: Mac mini (arm64, Darwin) via `idol compile --backend native`. |
+| 3 | Scope: x86_64 encoder library (`lib/compiler/x86.id`) and x86_64+ELF64/Linux direct backend (`lib/compiler/elfx86.id`) only. |
+| 4 | The bench harness (`bench/run.sh`) is arm64-Darwin-only and was not modified; these are standalone measurements. |
 
 ## What is measured
 

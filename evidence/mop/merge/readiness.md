@@ -1,14 +1,14 @@
 # Merge-readiness — reconcile/idol-canonical-all-work-20260817 vs codex/next-semantic-slice
 
-Measured 2026-08-17 in a detached worktree at ae859638 (their tip), their
-compiler built clean (22s). Fork point: c6d039f5 (they lack the last six
-commits of this line: LAW-ONE renames/census, H4, H5/F5 finals, parity
-extension, remeasure).
+| # | directive |
+|---|---|
+| 1 | Measured 2026-08-17 in a detached worktree at ae859638 (their tip), their compiler built clean (22s). |
+| 2 | Fork point: c6d039f5 (they lack the last six commits of this line: LAW-ONE renames/census, H4, H5/F5 finals, parity extension, remeasure). |
 
 ## Their tip (21 commits): home resolution by actual file identity,
-lexical parent homes, source-law/world-authority separation, orphaned
-bootstrap transport deletion, grammar parity made FAIL-CLOSED, evidence
-subjects on clean trees.
+| # | directive |
+|---|---|
+| 1 | lexical parent homes, source-law/world-authority separation, orphaned bootstrap transport deletion, grammar parity made FAIL-CLOSED, evidence subjects on clean trees. |
 
 ## Compatibility verdicts (their binary, their tree)
 
@@ -39,8 +39,6 @@ subjects on clean trees.
 
 ## Post-merge window (added after checking overlap)
 
-Their line touches main.zig, native_backend.zig, home_resolve.zig,
-build.zig — the C-ABI duo-symbol rename (duo_lexer_*, duo_keyword_classify,
-duo_lexer_host_stride) is therefore DEFERRED to immediately after the
-merge: claims are empty and files clean on both sides, so the rename gets
-one conflict-free window right after their merge lands.
+| # | directive |
+|---|---|
+| 1 | Their line touches main.zig, native_backend.zig, home_resolve.zig, build.zig — the C-ABI duo-symbol rename (duo_lexer_*, duo_keyword_classify, duo_lexer_host_stride) is therefore DEFERRED to immediately after the merge: claims are empty and files clean on both sides, so the rename gets one conflict-free window right after their merge lands. |

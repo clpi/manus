@@ -1,8 +1,10 @@
 # t_9571b66e evidence — direct-backend acceptance for hash/agreement.id
 
-Measured subject: idollang/idol @ HEAD `edf72377` + commit `82e09616`.
-Backend: direct (aarch64-macos native).
-Host: mm.local, Zig `0.17.0-dev.1567+f0354179a`.
+| # | directive |
+|---|---|
+| 1 | Measured subject: idollang/idol @ HEAD `edf72377` + commit `82e09616`. |
+| 2 | Backend: direct (aarch64-macos native). |
+| 3 | Host: mm.local, Zig `0.17.0-dev.1567+f0354179a`. |
 
 ## Acceptance
 
@@ -15,7 +17,10 @@ hash agreement: PASS
 EXIT=0
 ```
 
-All six rows green:
+| # | directive |
+|---|---|
+| 1 | All six rows green: |
+
 - `shortlit == shortbuilt` (8-char content equality after content-equal sub)
 - `longlit == longbuilt` (72-char content equality after precedence fix)
 - `t[shortlit] == 11` (hash lookup of short key by literal — short-key
@@ -28,7 +33,10 @@ All six rows green:
 
 ## Triage finding
 
-At HEAD `edf72377`:
+| # | directive |
+|---|---|
+| 1 | At HEAD `edf72377`: |
+
 ```
 $ ./zig-out/bin/idol run examples/hash/agreement.id
 error: direct backend: DNB001 application: unknown missing: param-type:any
@@ -37,22 +45,16 @@ hint: bail site: native-scalar precheck — param-type:any
 EXIT=1
 ```
 
-The `param-type:any` refusal was introduced by commit `fb24b037` (Sept 5)
-with the documented goal of sealing the door while architecture-side
-register pressure work lands. The door sealed — but the
-`examples/hash/agreement.id` path regressed because the earlier
-Sept-4 commits (`db7d30cd`, `9dbf410c`) had added the runtime support
-the agreement fixture needs (FNV-1a hash via `duo_hash_store` /
-`duo_hash_load` in `src/idol_str_runtime.zig`, `lowerIndexAssignTarget`
-and `lowerDynamicIndex` routing in `dnir_lower.zig`, the `.call`-arm
-identity fallback in `exprIsStr`) WITHOUT the codegen-side admission
-the runtime now lets through.
+| # | directive |
+|---|---|
+| 1 | The `param-type:any` refusal was introduced by commit `fb24b037` (Sept 5) with the documented goal of sealing the door while architecture-side register pressure work lands. |
+| 2 | The door sealed — but the `examples/hash/agreement.id` path regressed because the earlier Sept-4 commits (`db7d30cd`, `9dbf410c`) had added the runtime support the agreement fixture needs (FNV-1a hash via `duo_hash_store` / `duo_hash_load` in `src/idol_str_runtime.zig`, `lowerIndexAssignTarget` and `lowerDynamicIndex` routing in `dnir_lower.zig`, the `.call`-arm identity fallback in `exprIsStr`) WITHOUT the codegen-side admission the runtime now lets through. |
 
 ## Fix shape
 
-The patch reopens the `param-type:any` bail ONLY for the closed
-identity-forwarder shape — a single-parameter, no-default-value,
-body-is-single-tail-expression-IS-the-parameter-name function:
+| # | directive |
+|---|---|
+| 1 | The patch reopens the `param-type:any` bail ONLY for the closed identity-forwarder shape — a single-parameter, no-default-value, body-is-single-tail-expression-IS-the-parameter-name function: |
 
 ```zig
 const is_pure_identity_forwarder = blk: {
@@ -71,13 +73,10 @@ if (!(measured_rt == .any and is_pure_identity_forwarder)) {
 }
 ```
 
-This is NOT the call-site inference that `31808eb9` measured and
-declined. The closed identity forwarder carries the boxing through the
-existing `lua_Value` path at the call site
-(`callArgUsesNativeLowering` returns false when `param_type == .any`),
-so admitting the function-level declaration does NOT widen what
-`lower.native` sees; it widens what may be refused, and only on shapes
-the body cannot prove native.
+| # | directive |
+|---|---|
+| 1 | This is NOT the call-site inference that `31808eb9` measured and declined. |
+| 2 | The closed identity forwarder carries the boxing through the existing `lua_Value` path at the call site (`callArgUsesNativeLowering` returns false when `param_type == .any`), so admitting the function-level declaration does NOT widen what `lower.native` sees; it widens what may be refused, and only on shapes the body cannot prove native. |
 
 ## Preserved refusals (re-measured)
 
@@ -86,11 +85,10 @@ the body cannot prove native.
   error: direct backend: DNB001 application: unknown missing: param-type:any
   hint: bail site: native-scalar precheck — param-type:any
   ```
-  `mix: any = (a: any, b: any) (a * 31 + b) % 1000003` has TWO `: any`
-  params and a binop body — fails the single-param and tail-shape tests.
-  The premise of `law.perf.dominance` (the weak half of the `cfloor.id`
-  pair) — that an `any` parameter makes `lower.native` an invalid
-  candidate for `mix` — is preserved exactly.
+| # | directive |
+|---|---|
+| 1 | `mix: any = (a: any, b: any) (a * 31 + b) % 1000003` has TWO `: any` params and a binop body — fails the single-param and tail-shape tests. |
+| 2 | The premise of `law.perf.dominance` (the weak half of the `cfloor.id` pair) — that an `any` parameter makes `lower.native` an invalid candidate for `mix` — is preserved exactly. |
 
 - `examples/cfloor/fact.id` (paired with weak.id): binop body, no
   identity — preserved.

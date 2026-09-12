@@ -1,13 +1,18 @@
 # Canonical source debt projection (lib/compiler)
 
-**Status:** CURRENT PROJECTION — not language law.
+| # | directive |
+|---|---|
+| 1 | **Status:** CURRENT PROJECTION — not language law. |
 
-**Do not treat a direct-build green row as architectural acceptance.** Each
-module may compile while still carrying bootstrap workaround source.
+| # | directive |
+|---|---|
+| 1 | **Do not treat a direct-build green row as architectural acceptance.** Each module may compile while still carrying bootstrap workaround source. |
 
 ## Construct states
 
-Every compiler-source construct should be tagged one of:
+| # | directive |
+|---|---|
+| 1 | Every compiler-source construct should be tagged one of: |
 
 | State | Meaning | Agent rule |
 |---|---|---|
@@ -17,7 +22,10 @@ Every compiler-source construct should be tagged one of:
 
 ## Module ledger (initial projection)
 
-Executable reach: `gate/selfhost.sh`. Authority quality: manual until graph-native audit exists.
+| # | directive |
+|---|---|
+| 1 | Executable reach: `gate/selfhost.sh`. |
+| 2 | Authority quality: manual until graph-native audit exists. |
 
 | Module | Physical (direct) | Authority | Notes |
 |---|---|---|---|
@@ -31,26 +39,35 @@ Executable reach: `gate/selfhost.sh`. Authority quality: manual until graph-nati
 | lowering (Zig) | host | debt | DNIR re-derives types (exprIsStr, recordFieldsPresent) |
 | `monolith.id` | probe | **debt by design** | Capability probe only — never compiler B |
 
-Update this table from `gate/selfhost.sh` output, not from static prose elsewhere.
+| # | directive |
+|---|---|
+| 1 | Update this table from `gate/selfhost.sh` output, not from static prose elsewhere. |
 
 ## Historical reports
 
-Any document with frozen counts must carry:
+| # | directive |
+|---|---|
+| 1 | Any document with frozen counts must carry: |
 
 ```text
 HISTORICAL — DO NOT USE FOR CURRENT COUNTS
 ```
 
-Live counts come only from executable projections.
+| # | directive |
+|---|---|
+| 1 | Live counts come only from executable projections. |
 
 ## Negative controls
 
-When editing `lib/compiler/**`, run:
+| # | directive |
+|---|---|
+| 1 | When editing `lib/compiler/**`, run: |
 
 ```sh
 sh gate/architecture-negative.sh
 sh gate/architecture-companion.sh
 ```
 
-If the fix required shaping source for an immature backend, tag the change as
-**debt** here and prefer graph/realization repair.
+| # | directive |
+|---|---|
+| 1 | If the fix required shaping source for an immature backend, tag the change as **debt** here and prefer graph/realization repair. |
