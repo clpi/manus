@@ -1,14 +1,15 @@
-# Compiler source debt projection (`lib/compiler/**`)
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | **Disposition:** research / audit projection — not semantic law. |
+| title | Compiler source debt projection (`lib/compiler/**`) |
+| disposition | research / audit projection — not semantic law. |
 
 | # | directive |
 |---|---|
 | 1 | Every construct in self-host compiler source must be classified before agents treat a green module as architectural progress. |
 
-## Classification legend
+| section |
+|---|---|
+| Classification legend |
 
 | Class | Meaning |
 |---|---|
@@ -22,7 +23,9 @@
 |---|---|
 | 1 | **Rule:** direct self-host green proves **physical reach**, not **authority quality**. |
 
-## Seed compiler modules (initial projection)
+| section |
+|---|---|
+| Seed compiler modules (initial projection) |
 
 | Module | Class | Notes |
 |---|---|---|
@@ -33,10 +36,13 @@
 | `monolith.id` | **probe** | Capability probe only — not B composition |
 | `_*.id`, `out/*` probes | probe | Scratch; never canonical surface |
 
-## Agent obligations
+| section |
+|---|---|
+| Agent obligations |
 
-1. Before changing `lib/compiler/**` for direct-backend limits, answer:
-   **source violates law** vs **backend lacks lawful capability**.
-2. Do not expand monolith to "get B" — B must use real homes/bindings/worlds.
-3. Do not treat bind.id green as graph-native resolution.
-4. Record new bootstrap debt in the owning `gaps/GAP-*.md` with deletion condition.
+| # | directive |
+|---|---|
+| 1 | Before changing `lib/compiler/**` for direct-backend limits, answer: **source violates law** vs **backend lacks lawful capability**. |
+| 2 | Do not expand monolith to "get B" — B must use real homes/bindings/worlds. |
+| 3 | Do not treat bind.id green as graph-native resolution. |
+| 4 | Record new bootstrap debt in the owning `gaps/GAP-*.md` with deletion condition. |

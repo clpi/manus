@@ -1,4 +1,6 @@
-# Application record (PROJECTION-ONE step 4)
+| field | value |
+|---|---|
+| title | Application record (PROJECTION-ONE step 4) |
 
 | # | directive |
 |---|---|
@@ -6,7 +8,9 @@
 | 2 | Not semantic law — the constitution owns verdicts. |
 | 3 | This document is the resolver→graph contract until GAP-124 ingests live graph queries. |
 
-## Purpose
+| section |
+|---|---|
+| Purpose |
 
 | # | directive |
 |---|---|
@@ -18,7 +22,9 @@
 | 1 | Source elision (omitted `to` → graph-inferred target) must **not** erase projection pack facts. |
 | 2 | Omitted syntax is provenance; the graph retains inferred projection with causal link to demand and binding context. `value:to()` is not a canonical rung — elision covers the general case where target is uniquely inferable from demand. |
 
-## Record shape
+| section |
+|---|---|
+| Record shape |
 
 | # | directive |
 |---|---|
@@ -45,7 +51,9 @@
 |---|---|
 | 1 | Packs (`operand`, `result`, `constraint`) are graph-owned structured values with slot correspondence — not host arrays, not flattened argument lists recovered from callee strings. |
 
-## Projection pack is not curry
+| section |
+|---|---|
+| Projection pack is not curry |
 
 | # | directive |
 |---|---|
@@ -106,7 +114,9 @@ sourceelided to
 provenance   result demand on binding + direct bridge witness
 ```
 
-## Tripartition in the record
+| section |
+|---|---|
+| Tripartition in the record |
 
 | phase | what the record carries | what it must not carry |
 |---|---|---|
@@ -118,40 +128,45 @@ provenance   result demand on binding + direct bridge witness
 |---|---|
 | 1 | Satisfaction is not “default type then convert.” `exact integer n i32 = 5` is descriptor specialization on the binding, not `i64` plus hidden `to(i32)`. |
 
-## Resolver obligations (step 4 acceptance)
+| section |
+|---|---|
+| Resolver obligations (step 4 acceptance) |
 
 | # | directive |
 |---|---|
 | 1 | Before GAP-124 graph gates own verdicts, the resolver must: |
 
-1. Mint one application record per resolved application occurrence.
-2. Split relation declaration parameters into **projection pack** vs **subject**
-   vs **operand pack** roles per grammar role, never per nested call shape.
-3. Record explicit vs inferred projection separately; inferred must cite demand
-   or constraint witness ids.
-4. Refuse to emit `methodcall`, `projectedcall`, `genericcall`, `protocolcall`,
-   `worldcall`, or `curriedcall` semantic kinds — only normalized application
-   records (`law.projection.one`).
-5. Hand records to graph ingestion without reconstructing meaning from home path,
-   `std`/`lib` prefix, or callee spelling.
+| # | directive |
+|---|---|
+| 1 | Mint one application record per resolved application occurrence. |
+| 2 | Split relation declaration parameters into **projection pack** vs **subject** vs **operand pack** roles per grammar role, never per nested call shape. |
+| 3 | Record explicit vs inferred projection separately; inferred must cite demand or constraint witness ids. |
+| 4 | Refuse to emit `methodcall`, `projectedcall`, `genericcall`, `protocolcall`, `worldcall`, or `curriedcall` semantic kinds — only normalized application records (`law.projection.one`). |
+| 5 | Hand records to graph ingestion without reconstructing meaning from home path, `std`/`lib` prefix, or callee spelling. |
 
-## DNIR and tooling consumption
+| section |
+|---|---|
+| DNIR and tooling consumption |
 
 | # | directive |
 |---|---|
 | 1 | DNIR lowering reads **graph ids and facts** from the application record. |
 | 2 | It must not recover projection from: |
 
-- nested call shape alone
-- literal `"to"` string compares in codegen (GAP-082 debt)
-- home path or module prefix
-- type name or method flag
+| # | directive |
+|---|---|
+| 1 | nested call shape alone |
+| 2 | literal `"to"` string compares in codegen (GAP-082 debt) |
+| 3 | home path or module prefix |
+| 4 | type name or method flag |
 
 | # | directive |
 |---|---|
 | 1 | Tooling (LSP, MCP, diagnostics) displays inferred projection when source elided, with provenance chain — same facts the graph retains (`law.infer.one`). |
 
-## No bootstrap catalog
+| section |
+|---|---|
+| No bootstrap catalog |
 
 | # | directive |
 |---|---|
@@ -159,23 +174,29 @@ provenance   result demand on binding + direct bridge witness
 | 2 | Application records are graph facts published by the resolver (GAP-124). |
 | 3 | Until that boundary executes, missing records are `IMPLEMENTATION-BLOCKED` — not permission to revive a hand-authored schema. |
 
-## Census linkage
+| section |
+|---|---|
+| Census linkage |
 
 | # | directive |
 |---|---|
 | 1 | `scripts/census/projection.id` reports source-level debt classes. |
 | 2 | When step 4 lands in the resolver, `law.projection.census` requires a parallel **graph census** counting: |
 
-- applications missing projection pack facts
-- explicit projections redundant with inferred facts
-- ambiguous inferred projections
-- DNIR/codegen reconstruction sites
+| # | directive |
+|---|---|
+| 1 | applications missing projection pack facts |
+| 2 | explicit projections redundant with inferred facts |
+| 3 | ambiguous inferred projections |
+| 4 | DNIR/codegen reconstruction sites |
 
 | # | directive |
 |---|---|
 | 1 | Text census classifies; graph census owns removal verdicts (GAP-165, GAP-124). |
 
-## Repair order context
+| section |
+|---|---|
+| Repair order context |
 
 | step | status |
 |---|---|
@@ -189,7 +210,9 @@ provenance   result demand on binding + direct bridge witness
 |---|---|
 | 1 | Do not bulk-rewrite `:to(` or `:from(` in source until per-site repair class proof (`law.repair.infer`, `law.repair.class`). |
 
-## Step 5 — demand inference (preview)
+| section |
+|---|---|
+| Step 5 — demand inference (preview) |
 
 | # | directive |
 |---|---|

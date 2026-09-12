@@ -1,4 +1,6 @@
-# Idol host boundary, home projection, capability and shell closure
+| field | value |
+|---|---|
+| title | Idol host boundary, home projection, capability and shell closure |
 
 | # | directive |
 |---|---|
@@ -16,7 +18,9 @@
 |---|---|
 | 1 | Repository historical host calls are migration provenance until classified and moved to ingress/egress boundaries. |
 
-## Absolute root law
+| section |
+|---|---|
+| Absolute root law |
 
 | # | directive |
 |---|---|
@@ -75,7 +79,9 @@ environment[k]   → os.env[k]    (environment is not a thing)
 | 1 | `path:read()` on an absent or unreadable path FAILS CLOSED: the runtime refuses with an identity-first diagnostic naming the cause and the path (`read-refused:absent:<path>` / `read-refused:io:<path>`) and a nonzero exit, because an absent file is not a value and NULL-as-`str` was measured undefined behaviour (`law.id.one`: downstream semantic use fails closed when the required facts are absent; refusal pinned by `gate/readpath.sh`). |
 | 2 | A structured absent\|present outcome family that lets source observe absence as a value remains open under `GAP-154`/`GAP-118` and is not admitted by this refusal. |
 
-## Canonical execution model
+| section |
+|---|---|
+| Canonical execution model |
 
 | # | directive |
 |---|---|
@@ -136,7 +142,9 @@ random
 |---|---|
 | 1 | It is not a runtime namespace object. |
 
-## Arguments (`os.args`)
+| section |
+|---|---|
+| Arguments (`os.args`) |
 
 | # | directive |
 |---|---|
@@ -171,7 +179,9 @@ host argv → foreign provenance → os.args table under os world
 |---|---|
 | 1 | After ingress, provenance (POSIX, WASI, MCP, test harness) is not visible in source. |
 
-## Environment (`os.env`)
+| section |
+|---|---|
+| Environment (`os.env`) |
 
 | # | directive |
 |---|---|
@@ -201,7 +211,9 @@ os.env[key] = value
 | 1 | Foreign `getenv` / `environ` / `GetEnvironmentVariable` are bootstrap ingress only. |
 | 2 | Build world != program world. |
 
-## Endpoints and `io` world I/O
+| section |
+|---|---|
+| Endpoints and `io` world I/O |
 
 | # | directive |
 |---|---|
@@ -244,7 +256,9 @@ out:write(result)
 |---|---|
 | 1 | MCP stdin/stdout pipes are realization choices for an invocation — not language architecture. |
 
-## Process execution
+| section |
+|---|---|
+| Process execution |
 
 | # | directive |
 |---|---|
@@ -290,7 +304,9 @@ text = result.output
 | 1 | Direct command and shell expression remain semantically distinct. |
 | 2 | Do not convert every command into `/bin/sh -c ...`. |
 
-## Shell interpretation and command reach
+| section |
+|---|---|
+| Shell interpretation and command reach |
 
 | # | directive |
 |---|---|
@@ -327,7 +343,9 @@ ordinary lexical binding
 | 3 | Execution additionally requires exact process authority. |
 | 4 | Failure to resolve never falls back to opaque shell text. |
 
-## Core vocabulary
+| section |
+|---|---|
+| Core vocabulary |
 
 | # | directive |
 |---|---|
@@ -354,7 +372,9 @@ core.process.run(cmd)
 canonical relation len / read / run reachable from root projection
 ```
 
-## Projection and home algebra
+| section |
+|---|---|
+| Projection and home algebra |
 
 | # | directive |
 |---|---|
@@ -364,14 +384,17 @@ canonical relation len / read / run reachable from root projection
 |---|---|
 | 1 | Summary invariants: |
 
-- No module system, import, use, using, inject, admit, open, include.
-- Selective visibility is scope/home construction at owner boundaries.
-- Cross projection preserves one semantic identity with distinct witnesses.
-- Union/intersection/subtraction/restriction are reachability descriptions —
-  not runtime merge tables unless demand requires materialization.
-- Worlds provide authority; homes provide reach; bindings provide names.
+| # | directive |
+|---|---|
+| 1 | No module system, import, use, using, inject, admit, open, include. |
+| 2 | Selective visibility is scope/home construction at owner boundaries. |
+| 3 | Cross projection preserves one semantic identity with distinct witnesses. |
+| 4 | Union/intersection/subtraction/restriction are reachability descriptions — not runtime merge tables unless demand requires materialization. |
+| 5 | Worlds provide authority; homes provide reach; bindings provide names. |
 
-## Backend selection
+| section |
+|---|---|
+| Backend selection |
 
 | # | directive |
 |---|---|
@@ -381,17 +404,21 @@ canonical relation len / read / run reachable from root projection
 |---|---|
 | 1 | C emission is migration/compatibility realization — not native semantic backend identity. |
 
-## Bootstrap adapter law
+| section |
+|---|---|
+| Bootstrap adapter law |
 
 | # | directive |
 |---|---|
 | 1 | At the outer foreign boundary a temporary adapter may still use host APIs if: |
 
-- classified bootstrap
-- foreign call isolated
-- semantic result established immediately
-- downstream never sees the host API
-- deletion gate recorded
+| # | directive |
+|---|---|
+| 1 | classified bootstrap |
+| 2 | foreign call isolated |
+| 3 | semantic result established immediately |
+| 4 | downstream never sees the host API |
+| 5 | deletion gate recorded |
 
 | # | directive |
 |---|---|
@@ -402,14 +429,18 @@ canonical relation len / read / run reachable from root projection
 |---|---|
 | 1 | Migration wrappers that still call host APIs underneath are forbidden unless they establish the semantic boundary and name a deletion gate. |
 
-## Durable enforcement
+| section |
+|---|---|
+| Durable enforcement |
 
 | # | directive |
 |---|---|
 | 1 | Lexical ratchets on **added lines** are temporary migration firewalls only: |
 
-- `gate/host.id` — blocks new host API spellings on staged additions
-- `scripts/ingress/` home — bootstrap foreign ingress boundary (`input.id`, `output.id`, `arg.id`)
+| # | directive |
+|---|---|
+| 1 | `gate/host.id` — blocks new host API spellings on staged additions |
+| 2 | `scripts/ingress/` home — bootstrap foreign ingress boundary (`input.id`, `output.id`, `arg.id`) |
 
 | # | directive |
 |---|---|
@@ -421,17 +452,21 @@ canonical relation len / read / run reachable from root projection
 |---|---|
 | 1 | Production authority: |
 
-- native graph must not contain host namespace authority
-- environment reads require environment facts + world
-- process execution requires structured command + process world
-- argument access resolves root-projected args value
-- structured command execution requires exact provider reach plus independent process authority
+| # | directive |
+|---|---|
+| 1 | native graph must not contain host namespace authority |
+| 2 | environment reads require environment facts + world |
+| 3 | process execution requires structured command + process world |
+| 4 | argument access resolves root-projected args value |
+| 5 | structured command execution requires exact provider reach plus independent process authority |
 
 | # | directive |
 |---|---|
 | 1 | Spelling mutation must not evade these invariants. |
 
-## Agent pre-write law
+| section |
+|---|---|
+| Agent pre-write law |
 
 | # | directive |
 |---|---|
@@ -455,7 +490,9 @@ possible zero-cost realization
 |---|---|
 | 1 | Do not reach for host APIs. |
 
-## Absolute closure
+| section |
+|---|---|
+| Absolute closure |
 
 ```text
 There is no native os.args()    — use os.args[n] under os world

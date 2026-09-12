@@ -1,4 +1,6 @@
-# Idol world and run projection
+| field | value |
+|---|---|
+| title | Idol world and run projection |
 
 | # | directive |
 |---|---|
@@ -10,7 +12,9 @@
 | 2 | It must pass SUBJECT-ONE and OPERATION-ONE (`law.doc.teaching`). |
 | 3 | If it conflicts with C0, C0 wins. |
 
-## One projection algebra
+| section |
+|---|---|
+| One projection algebra |
 
 | # | directive |
 |---|---|
@@ -25,7 +29,9 @@ relation · projection · subject · operands · result demand · descriptor · 
 |---|---|
 | 1 | Physical realization comes later. |
 
-## Projection, injection, interjection
+| section |
+|---|---|
+| Projection, injection, interjection |
 
 | # | directive |
 |---|---|
@@ -127,7 +133,9 @@ sale.quote@{
 |---|---|
 | 1 | runs `sale.quote(100)` under a derived world whose `tax` fact is replaced, then the caller's world is unchanged. |
 
-## World qualification and scope
+| section |
+|---|---|
+| World qualification and scope |
 
 | # | directive |
 |---|---|
@@ -149,7 +157,9 @@ sale.quote@{
 | 1 | Lexical binding wins for a bare lexical name; `@x` accesses the world member explicitly. |
 | 2 | There is no ambiguous search or fallback chain — the resolver sees one closed lexical + world fact set once and records exact ids. |
 
-## Ambient mutation versus interjection
+| section |
+|---|---|
+| Ambient mutation versus interjection |
 
 | # | directive |
 |---|---|
@@ -179,7 +189,9 @@ amount
 |---|---|
 | 1 | Here `prior` and `amount` both carry independent meaning — INTERMEDIATE-ZERO correctly keeps them, and no scope-helper identity is invented. |
 
-## Example world project
+| section |
+|---|---|
+| Example world project |
 
 | # | directive |
 |---|---|
@@ -237,19 +249,21 @@ gift = (pick@trial)()
 | 1 | Semantically: `retail` uses root tax 10% and root fee 5; `waiver` uses `trial` tax 0 with inherited fee 5; `coupon` uses root tax 10% with interjected fee 0; `gift` runs `pick` under `trial`, so tax 0 then interjected fee 0. |
 | 2 | Yet the machine program can collapse the whole chain to a known `tax` relation, a known `fee`, and direct arithmetic — no runtime world object. |
 
-## Projection and injection edge cases
+| section |
+|---|---|
+| Projection and injection edge cases |
 
-- Missing access (`@missing`) fails; there is no parent-directory, other-
-  world, global-registry, library, or default-namespace fallback.
-- A world cannot hold two incomparable static definitions for one member and
-  silently choose — explicit disambiguation is required.
-- `.` is never computed; a runtime aggregate key uses projection `table[key]`.
-- `able` is an inferred boundary constraint, not a world member — never inject it
-  as a fact.
-- Only a valid witness satisfies authority; a label, boolean, or string cannot
-  manufacture it.
+| # | directive |
+|---|---|
+| 1 | Missing access (`@missing`) fails; there is no parent-directory, other- world, global-registry, library, or default-namespace fallback. |
+| 2 | A world cannot hold two incomparable static definitions for one member and silently choose — explicit disambiguation is required. |
+| 3 | `.` is never computed; a runtime aggregate key uses projection `table[key]`. |
+| 4 | `able` is an inferred boundary constraint, not a world member — never inject it as a fact. |
+| 5 | Only a valid witness satisfies authority; a label, boolean, or string cannot manufacture it. |
 
-## Naming worlds and homes
+| section |
+|---|---|
+| Naming worlds and homes |
 
 | # | directive |
 |---|---|
@@ -258,7 +272,9 @@ gift = (pick@trial)()
 | 3 | A name survives only if it is an independently meaningful entity — world differences belong to world facts. |
 | 4 | Directories are static tables, not category buckets: prefer paths whose every segment is a real projected entity (`sale/quote.id`, `target/arm.id`). |
 
-## A world is a closed semantic table; authority is one fact class within it
+| section |
+|---|---|
+| A world is a closed semantic table; authority is one fact class within it |
 
 | # | directive |
 |---|---|
@@ -269,11 +285,13 @@ gift = (pick@trial)()
 |---|---|
 | 1 | Worlds are **not**: |
 
-- authority objects (authority is a fact within the world, not its identity)
-- namespace imports
-- module tables
-- organizational receivers (`os.foo`, `io.bar`)
-- method lookup targets
+| # | directive |
+|---|---|
+| 1 | authority objects (authority is a fact within the world, not its identity) |
+| 2 | namespace imports |
+| 3 | module tables |
+| 4 | organizational receivers (`os.foo`, `io.bar`) |
+| 5 | method lookup targets |
 
 | # | directive |
 |---|---|
@@ -289,7 +307,9 @@ filesystem · process · environment · clock · network · device
 | 1 | World availability **validates** authority after semantic intent is resolved. |
 | 2 | World availability must **never** choose conversion target, parser, relation, or descriptor. |
 
-## Ambient world injection
+| section |
+|---|---|
+| Ambient world injection |
 
 | # | directive |
 |---|---|
@@ -318,7 +338,9 @@ io.open(path)
 os.open(path)
 ```
 
-## Ambient context values
+| section |
+|---|---|
+| Ambient context values |
 
 | # | directive |
 |---|---|
@@ -352,7 +374,9 @@ io:write(text)
 |---|---|
 | 1 | Bootstrap ingress may still use `io:read()` in gate transport until root projection executes; that is not canonical teaching. |
 
-## Subject-first path and file relations
+| section |
+|---|---|
+| Subject-first path and file relations |
 
 | # | directive |
 |---|---|
@@ -389,7 +413,9 @@ process.exit(...)
 process = lib.process
 ```
 
-## Shell and process (SHELL-NOT-WORLD)
+| section |
+|---|---|
+| Shell and process (SHELL-NOT-WORLD) |
 
 | # | directive |
 |---|---|
@@ -418,7 +444,9 @@ stream:close()
 |---|---|
 | 1 | Not `io.popen`, not `process.capture`. |
 
-## Protocol constraints are projections
+| section |
+|---|---|
+| Protocol constraints are projections |
 
 | # | directive |
 |---|---|
@@ -435,7 +463,9 @@ consume = (source: read)
 | 2 | Protocol satisfaction does **not** grant world authority. |
 | 3 | Relation witness and world witness are separate. |
 
-## Gate transport (bootstrap only)
+| section |
+|---|---|
+| Gate transport (bootstrap only) |
 
 | # | directive |
 |---|---|
@@ -449,7 +479,9 @@ if path:len() > 0
     text = path:read()
 ```
 
-## STD-ZERO / LIB-ZERO
+| section |
+|---|---|
+| STD-ZERO / LIB-ZERO |
 
 | # | directive |
 |---|---|
@@ -457,14 +489,19 @@ if path:len() > 0
 | 2 | Repository `lib/` path is bootstrap provenance only. |
 | 3 | If tooling cannot reach a binding without `lib.*`: `SOURCE-PROJECTION-BLOCKED` — fix reachability, do not canonize the workaround. |
 
-## Enforcement
+| section |
+|---|---|
+| Enforcement |
 
-- `law.gate.projection` — REDUNDANT-PROJECTION-ZERO, FROM-ZERO, STD-ZERO,
-  LIB-ZERO, WORLD-NAMESPACE-ZERO, PROTOCOL-ADJECTIVE-ZERO
-- `gate/idiom.id`, `gate/host.id` — migration pressure on added lines
-- Graph verdicts when GAP-124 closes
+| # | directive |
+|---|---|
+| 1 | `law.gate.projection` — REDUNDANT-PROJECTION-ZERO, FROM-ZERO, STD-ZERO, LIB-ZERO, WORLD-NAMESPACE-ZERO, PROTOCOL-ADJECTIVE-ZERO |
+| 2 | `gate/idiom.id`, `gate/host.id` — migration pressure on added lines |
+| 3 | Graph verdicts when GAP-124 closes |
 
-## Deletion gate
+| section |
+|---|---|
+| Deletion gate |
 
 | # | directive |
 |---|---|

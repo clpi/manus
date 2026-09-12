@@ -1,4 +1,9 @@
-# Idol bootstrap contract
+| field | value |
+|---|---|
+| title | Idol bootstrap contract |
+| progress dashboard | three dominant metrics and normalized audit scores live in [](METRICS.md). |
+| evidence-subject () | live tree is not automatically the measured program.  is an evidence revision whose subject is . |
+| critical path to b | source-family → lexical identity (GAP-145) → grammar role (GAP-134) → parser → exact graph → demand → **one representation decision** → specialization (budgeted) → direct realization → object → evidence → B → C. |
 
 | # | directive |
 |---|---|
@@ -10,24 +15,23 @@
 
 | # | directive |
 |---|---|
-| 1 | **Progress dashboard:** three dominant metrics and normalized audit scores live in [`docs/METRICS.md`](METRICS.md). |
 | 2 | Subordinate diagnostics (file counts, Zig counts, keyword counts) must not headline status reports. |
 
 | # | directive |
 |---|---|
-| 1 | **Evidence-subject (`law.evidence.subject`):** live tree is not automatically the measured program. `59093d7b` is an evidence revision whose subject is `29f62035`. |
 | 2 | Do not report FTCFTW or unit aggregates “at HEAD” unless the measured subject equals the live tree. |
 | 3 | FTCFTW is **invalid** as a performance claim. |
 | 4 | No compiler B exists. |
 
 | # | directive |
 |---|---|
-| 1 | **Critical path to B:** source-family → lexical identity (GAP-145) → grammar role (GAP-134) → parser → exact graph → demand → **one representation decision** → specialization (budgeted) → direct realization → object → evidence → B → C. |
 | 2 | Eight production lanes live in `.agents/AGENT_COORDINATION.md`. |
 | 3 | Do not start a parser slice that reconstructs or outruns GAP-145; a bounded joint transfer must consume producer facts and delete the replaced host decision in the same diff. |
 | 4 | Do not let later passes re-decide boxing/stack/register/heap. |
 
-## Current stage: S0
+| field | value |
+|---|---|
+| current stage | S0 |
 
 | # | directive |
 |---|---|
@@ -80,7 +84,9 @@
 | 2 | Parser and resolver output retain cases, refinements, descriptor and world facts, unknowns, demands, and transitions directly. |
 | 3 | It must not reproduce host `has`, `is`, `can`, `exists`, sentinel, or query-then-mutate helpers as Idol semantic architecture. |
 
-## Production authority ledger
+| section |
+|---|---|
+| Production authority ledger |
 
 | Boundary | Current state | Exact remaining authority |
 | --- | --- | --- |
@@ -106,34 +112,11 @@
 |---|---|
 | 1 | For the fail-closed lexer transfer: |
 
-- **BEFORE:** a storage failure returned success without installing the Idol
-  token pack, so the next parser read silently resumed the host scanner.
-- **AFTER:** the same failure propagates, partial route storage is released, and
-  no host token stream is accepted by that route.
-- **NEXT:** Tree-sitter literal, numeric, keyword-literal, and comment identity
-  rules are owner-derived and mechanically pinned; the remaining `GAP-145`
-  boundary is the generated token enum plus host kind consumers and semantic
-  quote/source-law observers. Source-form and corpus-home admission execute in
-  Idol; filesystem normalization and host enum binding remain explicit bootstrap
-  bridges. `GAP-134` executes twenty-five parser decisions and Parser owns the sole
-  immutable pack cursor. Public `event` now settles the complete per-coordinate
-  word: statement/admission/member/boundary faces in bits 0..16; primitive,
-  literal, quoted, prefix, demand, and trivia-aware line-head facts in bits
-  17..22; Pratt relation/precedence/associativity in bits 23..46; and unary,
-  glued-update, and single-token update ordinals in bits 47..61. The standalone
-  `lead`, `prefix`, `demands_operand`, `infix_prec`, primitive/literal/quoted,
-  `_unary`, `_glue`, and `_update` relations and host-facing C ABIs are deleted.
-  A second contiguous event lane now carries match face in bits 0..1, return face
-  in bits 2..3, both callable-header variants in bits 4..5, contextual `type`
-  alias head in bit 6, and bare declaration head in bit 7. Previous visible
-  identity, line opener, return line, contextual word, nesting, and separators are
-  derived while the pack executes; Zig selects settled faces only. The direct
-  header, return, and match ABIs are deleted; all five contextual type text
-  decisions plus the four-call bare-path scanner are deleted, leaving exactly
-  `event` and `boundary` as parser externs. The handwritten maps, copied orders, runtime name
-  scan, and dead host relation facades are gone. Parser staging, statement/
-  expression structure, and AST construction remain host-executed; this is not
-  complete Parser SHC or Compiler B.
+| # | directive |
+|---|---|
+| 1 | **BEFORE:** a storage failure returned success without installing the Idol token pack, so the next parser read silently resumed the host scanner. |
+| 2 | **AFTER:** the same failure propagates, partial route storage is released, and no host token stream is accepted by that route. |
+| 3 | **NEXT:** Tree-sitter literal, numeric, keyword-literal, and comment identity rules are owner-derived and mechanically pinned; the remaining `GAP-145` boundary is the generated token enum plus host kind consumers and semantic quote/source-law observers. Source-form and corpus-home admission execute in Idol; filesystem normalization and host enum binding remain explicit bootstrap bridges. `GAP-134` executes twenty-five parser decisions and Parser owns the sole immutable pack cursor. Public `event` now settles the complete per-coordinate word: statement/admission/member/boundary faces in bits 0..16; primitive, literal, quoted, prefix, demand, and trivia-aware line-head facts in bits 17..22; Pratt relation/precedence/associativity in bits 23..46; and unary, glued-update, and single-token update ordinals in bits 47..61. The standalone `lead`, `prefix`, `demands_operand`, `infix_prec`, primitive/literal/quoted, `_unary`, `_glue`, and `_update` relations and host-facing C ABIs are deleted. A second contiguous event lane now carries match face in bits 0..1, return face in bits 2..3, both callable-header variants in bits 4..5, contextual `type` alias head in bit 6, and bare declaration head in bit 7. Previous visible identity, line opener, return line, contextual word, nesting, and separators are derived while the pack executes; Zig selects settled faces only. The direct header, return, and match ABIs are deleted; all five contextual type text decisions plus the four-call bare-path scanner are deleted, leaving exactly `event` and `boundary` as parser externs. The handwritten maps, copied orders, runtime name scan, and dead host relation facades are gone. Parser staging, statement/ expression structure, and AST construction remain host-executed; this is not complete Parser SHC or Compiler B. |
 
 | # | directive |
 |---|---|
@@ -195,7 +178,9 @@
 | 3 | Crash count is qualitatively above pass-count (`law.crash.first`). |
 | 4 | Every compiler refusal (parser, resolver, world, descriptor, realization, specialization) names application, missing fact, producer, and consumer — not only DNB backend bail. |
 
-## Target chain
+| section |
+|---|---|
+| Target chain |
 
 | Stage | Input | Output | Proof |
 | --- | --- | --- | --- |
@@ -204,26 +189,34 @@
 | **S2 / C** | B + identical source | Self-built compiler | Semantic, diagnostic, and behavioral parity with B |
 | **S3** | C + identical source | Fixed-point candidate | Artifact comparison and reproducibility bundle |
 
-## Trusted seed requirements
+| section |
+|---|---|
+| Trusted seed requirements |
 
 | # | directive |
 |---|---|
 | 1 | The seed must be: |
 
-- Pinned and checksummed
-- Archived and reproducibly obtainable
-- Minimal enough to audit
-- Clearly separated from canonical Idol compiler source
-- Used for bootstrap only — not semantic authority after S2
+| # | directive |
+|---|---|
+| 1 | Pinned and checksummed |
+| 2 | Archived and reproducibly obtainable |
+| 3 | Minimal enough to audit |
+| 4 | Clearly separated from canonical Idol compiler source |
+| 5 | Used for bootstrap only — not semantic authority after S2 |
 
-## Stage comparisons (always required)
+| section |
+|---|---|
+| Stage comparisons (always required) |
 
-- Exact graph identities, facts, and witnessed cross-incarnation correspondence
-- Public capability manifests
-- Graph-grounded realization facts and causal lineage
-- Object structure
-- Binary behavior (test matrix)
-- Diagnostics parity
+| # | directive |
+|---|---|
+| 1 | Exact graph identities, facts, and witnessed cross-incarnation correspondence |
+| 2 | Public capability manifests |
+| 3 | Graph-grounded realization facts and causal lineage |
+| 4 | Object structure |
+| 5 | Binary behavior (test matrix) |
+| 6 | Diagnostics parity |
 
 | # | directive |
 |---|---|
@@ -236,12 +229,18 @@
 | 2 | The public knowledge snapshot projects those exact references and no longer manufactures identity from a kind/name string or fingerprint. |
 | 3 | This is not B/C closure: no bootstrap driver yet persists two incarnations, supplies B and C producer witnesses, or compares their complete graph and diagnostic facts. |
 
-## Stage comparisons (when declared)
+| section |
+|---|---|
+| Stage comparisons (when declared) |
 
-- Compiler performance baselines
-- Binary identity (deterministic builds only)
+| # | directive |
+|---|---|
+| 1 | Compiler performance baselines |
+| 2 | Binary identity (deterministic builds only) |
 
-## Portability and deterministic-evidence admission
+| section |
+|---|---|
+| Portability and deterministic-evidence admission |
 
 | # | directive |
 |---|---|
@@ -255,7 +254,9 @@
 | 3 | No cross-target equality is claimed. |
 | 4 | Until those real reports exist, portable native calls and cross-host deterministic artifacts are **NOT ADMITTED**, and evidence-fleet measurements depending on either remain blocked. |
 
-## Bootstrap subset
+| section |
+|---|---|
+| Bootstrap subset |
 
 | # | directive |
 |---|---|
@@ -265,16 +266,18 @@
 |---|---|
 | 1 | The compiler-critical basis is required capabilities and facts, not named container kingdoms: |
 
-- element width and sequence shape
-- view lifetime and alias facts
-- table shape
-- arena realization option
-- vector realization option
-- intern correspondence
-- bit representation
-- source and span provenance
-- filesystem read as a subject / world / effect application
-- diagnostic output as a subject / world / effect application
+| # | directive |
+|---|---|
+| 1 | element width and sequence shape |
+| 2 | view lifetime and alias facts |
+| 3 | table shape |
+| 4 | arena realization option |
+| 5 | vector realization option |
+| 6 | intern correspondence |
+| 7 | bit representation |
+| 8 | source and span provenance |
+| 9 | filesystem read as a subject / world / effect application |
+| 10 | diagnostic output as a subject / world / effect application |
 
 | # | directive |
 |---|---|
@@ -283,7 +286,9 @@
 | 3 | Filesystem read and diagnostic output still need their subject, world, and effect facts, and production reachability must be observed rather than asserted. `GAP-139` owns that missing evidence boundary. |
 | 4 | Adding unrelated standard vocabulary does not advance this contract. |
 
-## FTCFTW constraint
+| section |
+|---|---|
+| FTCFTW constraint |
 
 | # | directive |
 |---|---|
@@ -311,7 +316,9 @@
 | 2 | No synthetic structural self-check substitutes for those observations. |
 | 3 | B and C may have different artifact content; binary identity is not required for B-to-C acceptance. |
 
-## Source-zero deletion gate
+| section |
+|---|---|
+| Source-zero deletion gate |
 
 | # | directive |
 |---|---|
@@ -319,13 +326,15 @@
 | 2 | The remaining tracked application inventory is migration evidence only; its demanded facts must move into executed `.id` with production perturbation and differential proof before that source is deleted. |
 | 3 | A future bootstrap projection derives its evidence from the executed Idol compiler graph rather than making a host build step authoritative. |
 
-## Prohibited claims
+| section |
+|---|---|
+| Prohibited claims |
 
-- "Self-hosted" when Idol code exists but is not on the production compile path
-- Silent fallback. A pinned trusted-seed C/native backend may remain only as
-  foreign physical realization with zero Idol semantic authority; it does not
-  prove backend sovereignty or authorize new host implementation.
-- Undocumented bootstrap binaries or unpinned dependencies
-- A B/C comparison built from different compiler source
-- File-count reduction presented as compiler authority transfer
-- Synthetic verifier controls presented as observed bootstrap evidence
+| # | directive |
+|---|---|
+| 1 | "Self-hosted" when Idol code exists but is not on the production compile path |
+| 2 | Silent fallback. A pinned trusted-seed C/native backend may remain only as foreign physical realization with zero Idol semantic authority; it does not prove backend sovereignty or authorize new host implementation. |
+| 3 | Undocumented bootstrap binaries or unpinned dependencies |
+| 4 | A B/C comparison built from different compiler source |
+| 5 | File-count reduction presented as compiler authority transfer |
+| 6 | Synthetic verifier controls presented as observed bootstrap evidence |

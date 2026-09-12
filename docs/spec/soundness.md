@@ -1,4 +1,6 @@
-# Idol soundness projection
+| field | value |
+|---|---|
+| title | Idol soundness projection |
 
 | # | directive |
 |---|---|
@@ -6,7 +8,9 @@
 | 2 | This page projects its obligation, witness, failure, and evidence rules. |
 | 3 | It is not a second specification, a fact registry, or an implementation pattern. |
 
-## Obligation handling
+| section |
+|---|---|
+| Obligation handling |
 
 | # | directive |
 |---|---|
@@ -14,14 +18,11 @@
 | 2 | The graph retains the obligation and the facts supporting its handling. |
 | 3 | Current lawful handling includes: |
 
-- a witness proves the required facts; the physical obligation may erase while
-  its fact, witness, application, and provenance remain inspectable;
-- when the relation, world, and contract admit it, realization selects an
-  explicit guard whose failure is a semantic case and whose causal evidence
-  remains inspectable;
-- when neither proof nor a lawful guarded realization is available, compilation
-  fails closed with a structured diagnostic naming the obligation, site, and
-  missing fact.
+| # | directive |
+|---|---|
+| 1 | a witness proves the required facts; the physical obligation may erase while its fact, witness, application, and provenance remain inspectable; |
+| 2 | when the relation, world, and contract admit it, realization selects an explicit guard whose failure is a semantic case and whose causal evidence remains inspectable; |
+| 3 | when neither proof nor a lawful guarded realization is available, compilation fails closed with a structured diagnostic naming the obligation, site, and missing fact. |
 
 | # | directive |
 |---|---|
@@ -35,7 +36,9 @@
 | 2 | Unknown, absent, false, unresolved, and not applicable remain distinct. |
 | 3 | A compiler budget may reduce proof precision and therefore select a guard or diagnostic; it may never change program meaning or turn unknown into success. |
 
-## Realization
+| section |
+|---|---|
+| Realization |
 
 | # | directive |
 |---|---|
@@ -48,7 +51,9 @@
 |---|---|
 | 1 | Every accepted choice retains the source, graph identity, demanded facts, witness or missing-fact evidence, transformation, realization, and machine or diagnostic provenance needed to answer why it occurred. |
 
-## Current implementation boundary
+| section |
+|---|---|
+| Current implementation boundary |
 
 | # | directive |
 |---|---|

@@ -1,4 +1,6 @@
-# SUBJECT-SECTION-ONE, and the control-exit correction
+| field | value |
+|---|---|
+| title | SUBJECT-SECTION-ONE, and the control-exit correction |
 
 | # | directive |
 |---|---|
@@ -8,10 +10,9 @@
 |---|---|
 | 1 | users:any((user) user.id == id) -> users:any(.id == id) |
 
-| # | directive |
+| section |
 |---|---|
-
-## §1 SUBJECT-SECTION-ONE
+| §1 SUBJECT-SECTION-ONE |
 
 > Where an expression is demanded as a relation with **exactly one uniquely
 > recoverable semantic subject**, a receiver-less `.member` projects that
@@ -29,7 +30,9 @@
 |---|---|
 | 1 | users:map((user) user.email) -> users:map(.email) users:filter((user) user.active) -> users:filter(.active) users:any((user) user.id == id) -> users:any(.id == id) users:find((user) user.id == id) -> users:find(.id == id) |
 
-### §1.1 Why this is STRONGER for FTCFTW, not merely shorter
+| section |
+|---|---|
+| §1.1 Why this is STRONGER for FTCFTW, not merely shorter |
 
 | # | directive |
 |---|---|
@@ -45,7 +48,9 @@
 | 1 | And the graph then knows something valuable: **the left side depends on the iterated subject; the right side is invariant across iteration.** That is loop-invariant hoisting, index probing and hash lookup exposed at the source face. `users:find(.id == id)` can become a **primary-key index probe with zero iteration** — which is exactly why keeping `find`/`any` semantically explicit matters. |
 | 2 | Physical closure representation stays **0** unless something genuinely escapes. |
 
-### §1.2 It must FAIL CLOSED — this is not ambient scope
+| section |
+|---|---|
+| §1.2 It must FAIL CLOSED — this is not ambient scope |
 
 | # | directive |
 |---|---|
@@ -59,7 +64,9 @@
 |---|---|
 | 1 | something:map((a, b) a.id == b.id) |
 
-### §1.3 Capture is unambiguous and carries information
+| section |
+|---|---|
+| §1.3 Capture is unambiguous and carries information |
 
 | # | directive |
 |---|---|
@@ -70,7 +77,9 @@
 | 1 | `.id` is a projection from the supplied subject; bare `id` is the ordinary lexical binding. |
 | 2 | No ambiguity, and the distinction is the fact that enables the index probe. |
 
-## §2 RELATION-SECTION-ONE — RESEARCH ONLY, NOT YET LAW
+| section |
+|---|---|
+| §2 RELATION-SECTION-ONE — RESEARCH ONLY, NOT YET LAW |
 
 | # | directive |
 |---|---|
@@ -86,7 +95,9 @@
 |---|---|
 | 1 | **Admit only after all four hold:** it is a GENERAL expression law and not collection-helper magic; subject demand is unique; relation identity is exact; and an explicit-lambda graph-equivalence gate passes. |
 
-## §3 WHAT MUST NOT BE INTRODUCED
+| section |
+|---|---|
+| §3 WHAT MUST NOT BE INTRODUCED |
 
 | # | directive |
 |---|---|
@@ -103,7 +114,9 @@
 |---|---|
 | 1 | **No placeholder variables, no implicit `it`, no ambient `self`, no automatic currying.** |
 
-## §4 QUESTION-DENSITY-ONE — removing a parameter is SUBORDINATE
+| section |
+|---|---|
+| §4 QUESTION-DENSITY-ONE — removing a parameter is SUBORDINATE |
 
 | # | directive |
 |---|---|
@@ -118,7 +131,9 @@
 |---|---|
 | 1 | **Therefore do NOT compress away the relation words.** `any` (existential), `all` (universal), `find` (witness), `filter` (subset), `map` (transformed iteration), `each` (effects), `fold` (reduction under explicit algebra) are different questions. `users(.id == id)` would lose all of it — filter? find? any? count? `users:any(.id == id)` is likely very close to the semantic source floor. |
 
-### §4.1 The reduction ladder
+| section |
+|---|---|
+| §4.1 The reduction ladder |
 
 | # | directive |
 |---|---|
@@ -137,16 +152,22 @@
 | 1 | `balance` is carried state, `transaction` is the iteration result. |
 | 2 | INTERMEDIATE-ZERO says eliminate *reconstructible* names — not all names. |
 
-## §5 PARAMETER-OMISSION GATE — all six, or retain the parameter
+| section |
+|---|---|
+| §5 PARAMETER-OMISSION GATE — all six, or retain the parameter |
 
-1. the demanded role is uniquely supplied by the consuming relation
-2. every use is expressible as projection/relation sections over that same role
-3. no ambiguity between multiple subjects or packs
-4. no meaningful distinction is lost for humans
-5. the normalized graph is IDENTICAL
-6. closure/capture representation cannot worsen
+| # | directive |
+|---|---|
+| 1 | the demanded role is uniquely supplied by the consuming relation |
+| 2 | every use is expressible as projection/relation sections over that same role |
+| 3 | no ambiguity between multiple subjects or packs |
+| 4 | no meaningful distinction is lost for humans |
+| 5 | the normalized graph is IDENTICAL |
+| 6 | closure/capture representation cannot worsen |
 
-## §6 THE CONTROL-EXIT CORRECTION — `break()` / `continue()` ARE REVERSED
+| section |
+|---|---|
+| §6 THE CONTROL-EXIT CORRECTION — `break()` / `continue()` ARE REVERSED |
 
 | # | directive |
 |---|---|
@@ -186,15 +207,19 @@
 |---|---|
 | 1 | **Canonical means semantic clarity, not "no control keywords."** |
 
-## §7 MANDATORY GATES
+| section |
+|---|---|
+| §7 MANDATORY GATES |
 
-1. explicit lambda vs `.field` section -> identical graph
-2. explicit lambda vs `.field == capture` -> identical graph
-3. `:relation(args)` section vs explicit subject lambda -> identical graph
-4. two-parameter demanded relation + `.field` shorthand -> **ambiguity/refusal**
-5. outer lexical `id` plus `.id` -> capture vs subject-projection distinction proven
-6. same answers, different relation/subject/capture graphs -> **gate RED**
-7. both forms benchmarked -> **no source-form performance divergence**
+| # | directive |
+|---|---|
+| 1 | explicit lambda vs `.field` section -> identical graph |
+| 2 | explicit lambda vs `.field == capture` -> identical graph |
+| 3 | `:relation(args)` section vs explicit subject lambda -> identical graph |
+| 4 | two-parameter demanded relation + `.field` shorthand -> **ambiguity/refusal** |
+| 5 | outer lexical `id` plus `.id` -> capture vs subject-projection distinction proven |
+| 6 | same answers, different relation/subject/capture graphs -> **gate RED** |
+| 7 | both forms benchmarked -> **no source-form performance divergence** |
 
 | # | directive |
 |---|---|
@@ -203,7 +228,9 @@
 | # | directive |
 |---|---|
 
-## §8 MEASURED BASELINE — 2026-08-16, idol `ee8e29c3`
+| section |
+|---|---|
+| §8 MEASURED BASELINE — 2026-08-16, idol `ee8e29c3` |
 
 | # | directive |
 |---|---|

@@ -1,6 +1,10 @@
-# Idol constitution projection
+| field | value |
+|---|---|
+| title | Idol constitution projection |
 
-## pins
+| section |
+|---|---|
+| pins |
 
 | pin | statement |
 |---|---|
@@ -19,7 +23,6 @@
 
 ```text
 # C0 structured law notation. NON-SOURCE.
-
 
 # ═══ §1 · the primary representation ═══════════════════════════════════════
 

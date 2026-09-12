@@ -1,4 +1,6 @@
-# Idol grammar projection
+| field | value |
+|---|---|
+| title | Idol grammar projection |
 
 | # | directive |
 |---|---|
@@ -11,48 +13,42 @@
 | 1 | The repository does not yet contain the complete machine-readable grammar that the production parser, formatter, canonicalizer, Tree-sitter, LSP, MCP, tests, and documentation must share. `GAP-134` owns that missing authority and its generated roles. `GAP-145` owns the distinct lexical identities and immutable token view required to consume it. |
 | 2 | Until they close, compiler acceptance is not proof that a spelling is canonical. |
 
-## Lexical law
+| section |
+|---|---|
+| Lexical law |
 
-- canonical project-owned source uses `.id`;
-- names are one lowercase semantic word;
-- double quotes delimit text;
-- single quotes delimit bytes;
-- `#` begins a line comment;
-- backtick is reserved and never executes a process;
-- blocks use offside layout;
-- `end`, semicolons, `then`, `do`, Lua long strings/comments, and prefix
-  directives are not canonical Idol.
+| # | directive |
+|---|---|
+| 1 | canonical project-owned source uses `.id`; |
+| 2 | names are one lowercase semantic word; |
+| 3 | double quotes delimit text; |
+| 4 | single quotes delimit bytes; |
+| 5 | `#` begins a line comment; |
+| 6 | backtick is reserved and never executes a process; |
+| 7 | blocks use offside layout; |
+| 8 | `end`, semicolons, `then`, `do`, Lua long strings/comments, and prefix directives are not canonical Idol. |
 
 | # | directive |
 |---|---|
 | 1 | Compatibility recognition preserves its foreign or historical lawset and provenance. |
 | 2 | It never shares canonical token identity and never supplies a pattern for new `.id`. |
 
-## Delimiter roles
+| section |
+|---|---|
+| Delimiter roles |
 
 | # | directive |
 |---|---|
 | 1 | The lexer identifies delimiters, the grammar assigns roles, the parser consumes roles, and resolution assigns meaning. |
 | 2 | Punctuation contributes no semantic identity or physical representation choice after normalization. |
 
-- `()` is ordinary application and grouping only — never aggregate indexing:
-  `f(a, b)`, `(x + y)`; computed projection is `[]`, e.g. `values[i]`;
-- `{}` bounds structured packs, descriptor application, and descriptor homes;
-- `.` is only statically named projection after an explicit subject:
-  `user.name`; leading `.name` and bare `.` are noncanonical;
-- `:` carries only its admitted descriptor, subject, and home roles:
-  `text:len()` for an explicit subject and `:normalize()` for the ambient
-  subject;
-- `@` IS THE CURRENT-WORLD ACCESSOR (`docs/spec/law.md` §4 + World+projection
-  add-on): bare `@` is the current-world value, `@member` accesses a static
-  current-world member (`@` is the accessor itself, so `@member.child` is one
-  world access then one ordinary static projection), `value@world` evaluates
-  `value` under `world`, `@{ k = v }` derives a world with injected facts
-  (injection), `thing@{ k = v }` evaluates a subtree under that derived world
-  (interjection), and `@member = v` mutates a world member place. INVALID:
-  `@.member` and `@:member` — `@` already accesses, so there is no `@.` step and
-  no `@:` dispatch. It never introduces a compiler directive
-  (`@comp`/`@host`/`@runtime`/…).
+| # | directive |
+|---|---|
+| 1 | `()` is ordinary application and grouping only — never aggregate indexing: `f(a, b)`, `(x + y)`; computed projection is `[]`, e.g. `values[i]`; |
+| 2 | `{}` bounds structured packs, descriptor application, and descriptor homes; |
+| 3 | `.` is only statically named projection after an explicit subject: `user.name`; leading `.name` and bare `.` are noncanonical; |
+| 4 | `:` carries only its admitted descriptor, subject, and home roles: `text:len()` for an explicit subject and `:normalize()` for the ambient subject; |
+| 5 | `@` IS THE CURRENT-WORLD ACCESSOR (`docs/spec/law.md` §4 + World+projection add-on): bare `@` is the current-world value, `@member` accesses a static current-world member (`@` is the accessor itself, so `@member.child` is one world access then one ordinary static projection), `value@world` evaluates `value` under `world`, `@{ k = v }` derives a world with injected facts (injection), `thing@{ k = v }` evaluates a subtree under that derived world (interjection), and `@member = v` mutates a world member place. INVALID: `@.member` and `@:member` — `@` already accesses, so there is no `@.` step and no `@:` dispatch. It never introduces a compiler directive (`@comp`/`@host`/`@runtime`/…). |
 
 | # | directive |
 |---|---|
@@ -102,7 +98,9 @@ table[key]
 |---|---|
 | 1 | None of these faces implies a table, record, object, allocation, place, nested container, hash lookup, boxing, or dispatch. |
 
-## Update face
+| section |
+|---|---|
+| Update face |
 
 | # | directive |
 |---|---|
@@ -115,12 +113,12 @@ table[key]
 |---|---|
 | 1 | The witness must prove all of the following: |
 
-- the read and write designate the exact same place;
-- a computed place and every expression that establishes it are evaluated
-  exactly once;
-- evaluation order and observable effects are unchanged;
-- custom relation law, overflow, failure, aliasing, and result demand are
-  preserved.
+| # | directive |
+|---|---|
+| 1 | the read and write designate the exact same place; |
+| 2 | a computed place and every expression that establishes it are evaluated exactly once; |
+| 3 | evaluation order and observable effects are unchanged; |
+| 4 | custom relation law, overflow, failure, aliasing, and result demand are preserved. |
 
 | # | directive |
 |---|---|
@@ -137,7 +135,9 @@ table[key]
 |---|---|
 | 1 | <!-- grammar:begin --> |
 
-## Grammar facts (generated)
+| section |
+|---|---|
+| Grammar facts (generated) |
 
 | # | directive |
 |---|---|
@@ -157,7 +157,9 @@ table[key]
 |---|---|
 | 1 | Total: 42 identities. |
 
-### Operator precedence and associativity
+| section |
+|---|---|
+| Operator precedence and associativity |
 
 | # | directive |
 |---|---|
@@ -203,7 +205,9 @@ table[key]
 |---|---|
 | 1 | <!-- grammar:end --> |
 
-## Parser boundary
+| section |
+|---|---|
+| Parser boundary |
 
 | # | directive |
 |---|---|
@@ -216,7 +220,9 @@ table[key]
 | 1 | The missing machine grammar must generate token roles, expression and binding starts, descriptor-member roles, delimiter capabilities, prefix/postfix roles, precedence, associativity, block/offside behavior, and compatibility status. |
 | 2 | No consumer may maintain a punctuation list, keyword list, expression-start chain, or source-text fallback beside that authority. |
 
-## Authority pipeline
+| section |
+|---|---|
+| Authority pipeline |
 
 | # | directive |
 |---|---|

@@ -1,20 +1,22 @@
-# Frontier Research Log (append-only)
+| field | value |
+|---|---|
+| title | Frontier Research Log (append-only) |
 
 | # | directive |
 |---|---|
 | 1 | Companion to `docs/design/frontier-research.md` (the F1–F24 baseline survey, 2026-09-11) and `docs/design/frontier-loop.md` (the permanent process spec). |
 
-- Findings are numbered in **one global sequence** continuing the survey's
-  F1–F24. This log's first entry therefore starts at **F25**.
-- Entries are **never rewritten**. Corrections, updates, and follow-ups
-  arrive as new entries that reference the finding number.
-- Each entry records: scan date, scan window, method/sources, the new
-  findings (full evaluation for the top tier, short evaluation otherwise),
-  and the next scan due date.
+| # | directive |
+|---|---|
+| 1 | Findings are numbered in **one global sequence** continuing the survey's F1–F24. This log's first entry therefore starts at **F25**. |
+| 2 | Entries are **never rewritten**. Corrections, updates, and follow-ups arrive as new entries that reference the finding number. |
+| 3 | Each entry records: scan date, scan window, method/sources, the new findings (full evaluation for the top tier, short evaluation otherwise), and the next scan due date. |
 
 ---
 
-## Entry #1 — 2026-09-11: first continuous scan
+| section |
+|---|---|
+| Entry #1 — 2026-09-11: first continuous scan |
 
 | # | directive |
 |---|---|
@@ -37,7 +39,9 @@
 
 ---
 
-### F25. Equality saturation / e-graphs as Idol's optimization substrate [MISSED]
+| section |
+|---|---|
+| F25. Equality saturation / e-graphs as Idol's optimization substrate [MISSED] |
 
 | # | directive |
 |---|---|
@@ -55,30 +59,19 @@
 |---|---|
 | 1 | **Integration.** |
 
-- *Workstream:* compiler optimizations (`lib/compiler/native.id`) + bench
-  methodology (F1 oracle lane).
-- *Sketch:* two lanes, mirroring the field's convergence. **(a) Hot path
-  (P0): ægraph-style greedy rewriting.** At IR-node construction time, apply
-  Idol's existing rewrite laws greedily (acyclic by construction, bounded
-  cost): this yields global value numbering, LICM, and rematerialization
-  decisions with ~constant overhead per node — no saturation, no threat to
-  the 35–45% compile-time lead. The data structure is ~2,000 LOC
-  (hashcons + union-find + level annotation); the rules already exist as
-  Idol laws, they only need extraction-cost annotations. **(b) Offline lane
-  (P1): full egglog-style saturation** over hot functions to *discover* new
-  laws; each discovered law is verified through the F1 SMT lane and baked in
-  as a declarative rule — this is F1's rule-mining lane generalized from
-  peepholes to whole functions.
-- *Expected win:* **2–10% runtime geomean** from phase-ordering elimination
-  (the class of wins LLVM leaves on the table between passes); directly
-  attacks the reassociation and loop-idiom runtime losses. Compile-time cost
-  of lane (a) is bounded and small; lane (b) is offline.
+| # | directive |
+|---|---|
+| 1 | *Workstream:* compiler optimizations (`lib/compiler/native.id`) + bench methodology (F1 oracle lane). |
+| 2 | *Sketch:* two lanes, mirroring the field's convergence. **(a) Hot path (P0): ægraph-style greedy rewriting.** At IR-node construction time, apply Idol's existing rewrite laws greedily (acyclic by construction, bounded cost): this yields global value numbering, LICM, and rematerialization decisions with ~constant overhead per node — no saturation, no threat to the 35–45% compile-time lead. The data structure is ~2,000 LOC (hashcons + union-find + level annotation); the rules already exist as Idol laws, they only need extraction-cost annotations. **(b) Offline lane (P1): full egglog-style saturation** over hot functions to *discover* new laws; each discovered law is verified through the F1 SMT lane and baked in as a declarative rule — this is F1's rule-mining lane generalized from peepholes to whole functions. |
+| 3 | *Expected win:* **2–10% runtime geomean** from phase-ordering elimination (the class of wins LLVM leaves on the table between passes); directly attacks the reassociation and loop-idiom runtime losses. Compile-time cost of lane (a) is bounded and small; lane (b) is offline. |
 
 | # | directive |
 |---|---|
 | 1 | **Priority: new P0-6 (lane a) + P1 (lane b).** Does not beat P0-2 (5–20×) or P0-4 (10–40% mispredict-bound); rivals P0-1 (2–8%) and P0-3 (1–5%) on expected geomean. |
 
-### F26. Machine Outliner + PGO-guided outlining + ICF for object size [MISSED]
+| section |
+|---|---|
+| F26. Machine Outliner + PGO-guided outlining + ICF for object size [MISSED] |
 
 | # | directive |
 |---|---|
@@ -94,27 +87,19 @@
 |---|---|
 | 1 | **Integration.** |
 
-- *Workstream:* all backends (ARM64 first) + `bench/` size tracking.
-- *Sketch:* an **Idol-native outliner as a post-emit pass**: run a suffix
-  array over each function's emitted instruction stream, outline repeated
-  sequences ≥ N instructions into shared `OUTLINED_*` functions (ARM64:
-  `BL` + return via LR; respect the F20 constraint — NEON/SME sequences are
-  never outlined across streaming-mode boundaries). Gate on the P0-1
-  profile lane: outline cold code aggressively, keep hot code inline
-  (LLVM's optimistic/conservative distinction, adopted wholesale). Add
-  **identical code folding (ICF)** at emit time: hash emitted function bytes,
-  fold duplicates — free for a direct emitter. Wire both into the bench
-  harness's size column with a per-benchmark size-before/after report.
-- *Expected win:* **3–8% further text-size reduction** on top of the current
-  45–50% lead (LLVM-measured: ~3% on large binaries over -Oz, ~8% on
-  CTMark arm64 -Oz); zero runtime regression on the profile-gated path;
-  compile-time cost is one linear suffix pass.
+| # | directive |
+|---|---|
+| 1 | *Workstream:* all backends (ARM64 first) + `bench/` size tracking. |
+| 2 | *Sketch:* an **Idol-native outliner as a post-emit pass**: run a suffix array over each function's emitted instruction stream, outline repeated sequences ≥ N instructions into shared `OUTLINED_*` functions (ARM64: `BL` + return via LR; respect the F20 constraint — NEON/SME sequences are never outlined across streaming-mode boundaries). Gate on the P0-1 profile lane: outline cold code aggressively, keep hot code inline (LLVM's optimistic/conservative distinction, adopted wholesale). Add **identical code folding (ICF)** at emit time: hash emitted function bytes, fold duplicates — free for a direct emitter. Wire both into the bench harness's size column with a per-benchmark size-before/after report. |
+| 3 | *Expected win:* **3–8% further text-size reduction** on top of the current 45–50% lead (LLVM-measured: ~3% on large binaries over -Oz, ~8% on CTMark arm64 -Oz); zero runtime regression on the profile-gated path; compile-time cost is one linear suffix pass. |
 
 | # | directive |
 |---|---|
 | 1 | **Priority: new P0-7 (size track).** Does not beat any P0 on *runtime* — it is not trying to; it extends the size lead, which is half the project's public scorecard. |
 
-### F27. AlphaEvolve-style evolutionary algorithmic discovery, offline [NEW]
+| section |
+|---|---|
+| F27. AlphaEvolve-style evolutionary algorithmic discovery, offline [NEW] |
 
 | # | directive |
 |---|---|
@@ -132,22 +117,11 @@
 |---|---|
 | 1 | **Integration.** |
 
-- *Workstream:* bench methodology + compiler optimizations (kernel
-  templates); builds on F17/F18.
-- *Sketch:* extend the F1 oracle lane with an **evolutionary loop**: (1)
-  seed = current Idol kernel template (e.g., the SME matmul kernel from
-  F17); (2) propose = local open-weight coder model (Qwen2.5-Coder-7B-class
-  or newer, free local inference only — never a paid API) generates code
-  mutations of the template; (3) evaluate = the bench harness measures
-  cycles and differential-tests against the reference kernel; (4) keep
-  winners, iterate. Discovered kernels are generalized to templates and
-  verified once (F1 lane), then ship as data. Start with FP32 matmul
-  micro-kernels and reciprocal-division sequences (both already in
-  sibling workstreams).
-- *Expected win:* **algorithmic-level gains beyond any peephole pass** —
-  AlphaEvolve's demonstrated 23% kernel speedup is the reference class;
-  compounds P0-2 rather than competing with it (better kernels *inside*
-  the SME path).
+| # | directive |
+|---|---|
+| 1 | *Workstream:* bench methodology + compiler optimizations (kernel templates); builds on F17/F18. |
+| 2 | *Sketch:* extend the F1 oracle lane with an **evolutionary loop**: (1) seed = current Idol kernel template (e.g., the SME matmul kernel from F17); (2) propose = local open-weight coder model (Qwen2.5-Coder-7B-class or newer, free local inference only — never a paid API) generates code mutations of the template; (3) evaluate = the bench harness measures cycles and differential-tests against the reference kernel; (4) keep winners, iterate. Discovered kernels are generalized to templates and verified once (F1 lane), then ship as data. Start with FP32 matmul micro-kernels and reciprocal-division sequences (both already in sibling workstreams). |
+| 3 | *Expected win:* **algorithmic-level gains beyond any peephole pass** — AlphaEvolve's demonstrated 23% kernel speedup is the reference class; compounds P0-2 rather than competing with it (better kernels *inside* the SME path). |
 
 | # | directive |
 |---|---|
@@ -155,7 +129,9 @@
 
 ---
 
-### Short evaluations (logged, not deep-dived this round)
+| section |
+|---|---|
+| Short evaluations (logged, not deep-dived this round) |
 
 | # | directive |
 |---|---|
@@ -196,15 +172,15 @@
 
 ---
 
-### Explicitly considered and deferred
+| section |
+|---|---|
+| Explicitly considered and deferred |
 
-- **RISC-V backend now:** rejected — matrix ISA unratified, no bench
-  hardware; revisit at IME/AME freeze (F32).
-- **CHERI codegen now:** rejected — no Apple/bench hardware; design for it,
-  don't build for it (F33).
-- **Full equality saturation in the compile hot path:** rejected — the
-  35–45% compile-time lead is non-negotiable; saturation stays offline,
-  the greedy ægraph variant goes in the compiler (F25).
+| # | directive |
+|---|---|
+| 1 | **RISC-V backend now:** rejected — matrix ISA unratified, no bench hardware; revisit at IME/AME freeze (F32). |
+| 2 | **CHERI codegen now:** rejected — no Apple/bench hardware; design for it, don't build for it (F33). |
+| 3 | **Full equality saturation in the compile hot path:** rejected — the 35–45% compile-time lead is non-negotiable; saturation stays offline, the greedy ægraph variant goes in the compiler (F25). |
 
 ---
 
@@ -212,7 +188,9 @@
 |---|---|
 | 1 | *End of entry #1.* |
 
-## Entry #2 — 2026-09-12: light scan (continuity run)
+| section |
+|---|---|
+| Entry #2 — 2026-09-12: light scan (continuity run) |
 
 | # | directive |
 |---|---|
@@ -239,7 +217,9 @@
 
 ---
 
-### F35. AY: proof-carrying SAT/SMT/CHC solver (Z3-inspired, Rust) [NEW]
+| section |
+|---|---|
+| F35. AY: proof-carrying SAT/SMT/CHC solver (Z3-inspired, Rust) [NEW] |
 
 | # | directive |
 |---|---|
@@ -264,7 +244,9 @@
 
 ---
 
-### F36. SPEC CPU 2026 released; first characterization on AMD EPYC 9755 (Zen 5) [NEW]
+| section |
+|---|---|
+| F36. SPEC CPU 2026 released; first characterization on AMD EPYC 9755 (Zen 5) [NEW] |
 
 | # | directive |
 |---|---|
@@ -278,7 +260,9 @@
 
 ---
 
-### F37. GCC 16.1: speculative devirtualization for general indirect calls + multiple speculative targets [MISSED]
+| section |
+|---|---|
+| F37. GCC 16.1: speculative devirtualization for general indirect calls + multiple speculative targets [MISSED] |
 
 | # | directive |
 |---|---|
@@ -291,41 +275,31 @@
 
 ---
 
-### Short evaluations (logged, not deep-dived this round)
+| section |
+|---|---|
+| Short evaluations (logged, not deep-dived this round) |
 
-- **MaxKernel (arXiv:2609.04523): agentic kernel generation for TPUs.**
-  Multi-agent LLM system (HITL / autonomous / graph-based autonomous search)
-  with real-time compiler feedback; matches expert hand-tuned baselines on
-  JaxBench (50 kernel tasks), open-sourced. Corroborates F27's AlphaEvolve
-  direction at the kernel level; TPU-specific, not transferable to Idol's
-  M4-SME target today. Watch alongside F27.
-- **Corten (arXiv:2609.04372): foundational Rust verification in Rocq/Iris**
-  (THIR deep embedding, buddy allocator case study). Rust-specific; no
-  technique beyond F12/F28. Reject.
-- **JLIR (arXiv:2609.04585): Julia-native MLIR-inspired IR.** Idol has no MLIR
-  dependency; dialect-oriented compilation already covered by F25's
-  DialEgg/ægraph analysis. Reject.
-- **SMART (arXiv:2609.05364): AI-native ML perf-modeling tool** (design docs as
-  durable artifact, symbolic cost IR). ML-systems serving tool; not a compiler
-  technique. Reject.
-- **CPL (arXiv:2609.04904): compact C-like systems language.** Toy language, no
-  novel technique. Reject.
-- **Augur (arXiv:2609.05288): view-serializability prediction for data
-  stores.** Databases, outside scope. Reject.
-- **CodeQL false-positive study (arXiv:2609.04535); concept-language survey
-  (arXiv:2609.04528).** Outside scope. Reject.
-- **Hardware-prefetch confidence gating (arXiv:2609.04040).** Hardware
-  prefetcher admission policy; not a compiler technique. Reject.
-- **PLDI 2026 distinguished paper "Towards Removing Undef Values From LLVM
-  IR".** Idol's native backend does not lower through LLVM IR; no action.
-  Reject (revisit if an LLVM-IR lowering lane ever appears).
+| # | directive |
+|---|---|
+| 1 | **MaxKernel (arXiv:2609.04523): agentic kernel generation for TPUs.** Multi-agent LLM system (HITL / autonomous / graph-based autonomous search) with real-time compiler feedback; matches expert hand-tuned baselines on JaxBench (50 kernel tasks), open-sourced. Corroborates F27's AlphaEvolve direction at the kernel level; TPU-specific, not transferable to Idol's M4-SME target today. Watch alongside F27. |
+| 2 | **Corten (arXiv:2609.04372): foundational Rust verification in Rocq/Iris** (THIR deep embedding, buddy allocator case study). Rust-specific; no technique beyond F12/F28. Reject. |
+| 3 | **JLIR (arXiv:2609.04585): Julia-native MLIR-inspired IR.** Idol has no MLIR dependency; dialect-oriented compilation already covered by F25's DialEgg/ægraph analysis. Reject. |
+| 4 | **SMART (arXiv:2609.05364): AI-native ML perf-modeling tool** (design docs as durable artifact, symbolic cost IR). ML-systems serving tool; not a compiler technique. Reject. |
+| 5 | **CPL (arXiv:2609.04904): compact C-like systems language.** Toy language, no novel technique. Reject. |
+| 6 | **Augur (arXiv:2609.05288): view-serializability prediction for data stores.** Databases, outside scope. Reject. |
+| 7 | **CodeQL false-positive study (arXiv:2609.04535); concept-language survey (arXiv:2609.04528).** Outside scope. Reject. |
+| 8 | **Hardware-prefetch confidence gating (arXiv:2609.04040).** Hardware prefetcher admission policy; not a compiler technique. Reject. |
+| 9 | **PLDI 2026 distinguished paper "Towards Removing Undef Values From LLVM IR".** Idol's native backend does not lower through LLVM IR; no action. Reject (revisit if an LLVM-IR lowering lane ever appears). |
 
 ---
 
-### Design notes for existing workstreams (no new F-numbers)
+| section |
+|---|---|
+| Design notes for existing workstreams (no new F-numbers) |
 
-- **F17/F18 (SME kernel templates):** community evidence (ggml llama.cpp
-  #26547; onnxruntime #27633) that SME2 on Apple M4 is a *shared 2-device
+| # | directive |
+|---|---|
+| 1 | **F17/F18 (SME kernel templates):** community evidence (ggml llama.cpp #26547; onnxruntime #27633) that SME2 on Apple M4 is a *shared 2-device |
 | # | directive |
 |---|---|
 | 1 | coprocessor*, not per-core — dispatch must cap SME threads (KleidiAI's hardcoded per-chip table: M4=1, M4 Pro/Max/Ultra=2 SME units) and fall back to NEON at wide thread counts, or contention erases the 2.5–4.4x GEMM win (ORT 1.24.x: rec 2.5x faster at t=2 on SME2, dilutes at t=8). |

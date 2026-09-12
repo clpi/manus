@@ -1,8 +1,7 @@
-# Optimization frontier census
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | **Status:** research projection and capability map. **Not language law.** Use this so major compiler/research families stay **visible** and can be expressed in the one semantic graph when admissible. |
+| title | Optimization frontier census |
+| status | research projection and capability map. **Not language law.** Use this so major compiler/research families stay **visible** and can be expressed in the one semantic graph when admissible. |
 
 | # | directive |
 |---|---|
@@ -10,7 +9,9 @@
 | 2 | Sections **XXXIX–XLVII**, the **FTCFTW-ranked priorities**, and **universal optimization architecture** align with the master **763-item frontier census** (687 first-pass + 76 third-pass "strangeness" items — nothing important may remain invisible). |
 | 3 | When adding a family, assign it a stable item number in that master sequence and record it here. |
 
-## Unifying criterion
+| section |
+|---|---|
+| Unifying criterion |
 
 | # | directive |
 |---|---|
@@ -33,7 +34,9 @@
 |---|---|
 | 1 | **what information about a computation does Idol still not model, and what physical work becomes removable once that information is available?** |
 
-## Universal optimization state
+| section |
+|---|---|
+| Universal optimization state |
 
 | # | directive |
 |---|---|
@@ -46,34 +49,27 @@
 
 ---
 
-## I. P0 — foundations that unlock many families at once
+| section |
+|---|---|
+| I. P0 — foundations that unlock many families at once |
 
-1. **General relation-law algebra** — attach algebraic laws to relations
-   (associativity, commutativity, identity, annihilator, idempotence,
-   distributivity, monotonicity) as first-class facts, not ad hoc optimizer
-   predicates.
-2. **Law induction and mining** — prove an implementation satisfies a law → add
-   to graph; SMT/symbolic/enumerative proposal of candidate laws with proof/refusal.
-3. **Scoped and specialized laws** — laws with preconditions; idempotence over
-   a sealed descriptor subset only.
-4. **Proof-directed demand propagation** — derive minimal upstream projections
-   from downstream demand through relation laws (algebraic demand synthesis).
-5. **Minimal sufficient semantics** — for observation `D(f(x))`, find smallest
-   `p(x)` with `D(f(x)) = g(p(x))`; unifies dead-field elimination, precision
-   narrowing, recurrence contraction, partial parsing, query projection, wire
-   elision, foreign boundary minimization.
-6. **Automatic discovery of sufficient statistics** — search projections via laws,
-   symbolic execution, SMT, examples+proof, agent candidates.
-7. **Information-flow as optimization** — invert taint: if result cannot depend
-   on input dimension, eliminate associated work/storage/transfer.
-8. **Logical relations (executable fragment)** — prove representation independence
-   (boxed≈unboxed, hash≈perfect hash, foreign≈native) under exposed observations.
-9. **Change propagation algebra** — incremental facts when inputs/worlds change;
-   pairs with correspondence for cross-version reuse.
+| # | directive |
+|---|---|
+| 1 | **General relation-law algebra** — attach algebraic laws to relations (associativity, commutativity, identity, annihilator, idempotence, distributivity, monotonicity) as first-class facts, not ad hoc optimizer predicates. |
+| 2 | **Law induction and mining** — prove an implementation satisfies a law → add to graph; SMT/symbolic/enumerative proposal of candidate laws with proof/refusal. |
+| 3 | **Scoped and specialized laws** — laws with preconditions; idempotence over a sealed descriptor subset only. |
+| 4 | **Proof-directed demand propagation** — derive minimal upstream projections from downstream demand through relation laws (algebraic demand synthesis). |
+| 5 | **Minimal sufficient semantics** — for observation `D(f(x))`, find smallest `p(x)` with `D(f(x)) = g(p(x))`; unifies dead-field elimination, precision narrowing, recurrence contraction, partial parsing, query projection, wire elision, foreign boundary minimization. |
+| 6 | **Automatic discovery of sufficient statistics** — search projections via laws, symbolic execution, SMT, examples+proof, agent candidates. |
+| 7 | **Information-flow as optimization** — invert taint: if result cannot depend on input dimension, eliminate associated work/storage/transfer. |
+| 8 | **Logical relations (executable fragment)** — prove representation independence (boxed≈unboxed, hash≈perfect hash, foreign≈native) under exposed observations. |
+| 9 | **Change propagation algebra** — incremental facts when inputs/worlds change; pairs with correspondence for cross-version reuse. |
 
 ---
 
-## II. Supercompilation / fold–unfold / generalized partial computation
+| section |
+|---|---|
+| II. Supercompilation / fold–unfold / generalized partial computation |
 
 | # | directive |
 |---|---|
@@ -95,17 +91,21 @@
 
 ---
 
-## III. Optimal graph reduction / interaction nets (selective import)
+| section |
+|---|---|
+| III. Optimal graph reduction / interaction nets (selective import) |
 
 | # | directive |
 |---|---|
 | 1 | Do not become an interaction-net language. |
 | 2 | Import **sharing of semantic work**: |
 
-- shared redex / specialization / proof / compile-time evaluation identity
-- duplication tracking; fan-in/fan-out where duplication is observable or costly
-- higher-order closure reduction without rebuilding equivalent environments
-- reduction-order selection for demanded normal form
+| # | directive |
+|---|---|
+| 1 | shared redex / specialization / proof / compile-time evaluation identity |
+| 2 | duplication tracking; fan-in/fan-out where duplication is observable or costly |
+| 3 | higher-order closure reduction without rebuilding equivalent environments |
+| 4 | reduction-order selection for demanded normal form |
 
 | # | directive |
 |---|---|
@@ -113,20 +113,26 @@
 
 ---
 
-## IV. Relational execution / backward semantics
+| section |
+|---|---|
+| IV. Relational execution / backward semantics |
 
 | # | directive |
 |---|---|
 | 1 | miniKanren-style **modes over one relation** (not separate APIs): |
 
-- forward, inverse, partial, synthesis, legality queries
-- parser ↔ printer, serializer ↔ deserializer, ABI adapter synthesis
-- counterexample / configuration / world synthesis
-- backward demand as relational solving
+| # | directive |
+|---|---|
+| 1 | forward, inverse, partial, synthesis, legality queries |
+| 2 | parser ↔ printer, serializer ↔ deserializer, ABI adapter synthesis |
+| 3 | counterexample / configuration / world synthesis |
+| 4 | backward demand as relational solving |
 
 ---
 
-## V. Search completeness & strategy as realization
+| section |
+|---|---|
+| V. Search completeness & strategy as realization |
 
 | # | directive |
 |---|---|
@@ -138,7 +144,9 @@
 
 ---
 
-## VI. Deductive synthesis / proof-directed construction
+| section |
+|---|---|
+| VI. Deductive synthesis / proof-directed construction |
 
 ```text
 desired relation + laws + target world + cost → synthesize realization
@@ -151,7 +159,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## VII. Proof-producing optimization & trusted core
+| section |
+|---|---|
+| VII. Proof-producing optimization & trusted core |
 
 | # | directive |
 |---|---|
@@ -163,7 +173,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## VIII. Compiler extension without enlarging semantic authority
+| section |
+|---|---|
+| VIII. Compiler extension without enlarging semantic authority |
 
 | # | directive |
 |---|---|
@@ -175,7 +187,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## IX. Kernel / OS / unikernel specialization
+| section |
+|---|---|
+| IX. Kernel / OS / unikernel specialization |
 
 | # | directive |
 |---|---|
@@ -184,7 +198,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## X. Compiler ↔ kernel cooperation
+| section |
+|---|---|
+| X. Compiler ↔ kernel cooperation |
 
 | # | directive |
 |---|---|
@@ -192,7 +208,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XI. Syscall elimination & fusion
+| section |
+|---|---|
+| XI. Syscall elimination & fusion |
 
 | # | directive |
 |---|---|
@@ -200,7 +218,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XII. Storage-aware compilation
+| section |
+|---|---|
+| XII. Storage-aware compilation |
 
 | # | directive |
 |---|---|
@@ -208,7 +228,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XIII. Network protocol & topology realization
+| section |
+|---|---|
+| XIII. Network protocol & topology realization |
 
 | # | directive |
 |---|---|
@@ -216,7 +238,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XIV. Communication & data-movement complexity
+| section |
+|---|---|
+| XIV. Communication & data-movement complexity |
 
 | # | directive |
 |---|---|
@@ -224,7 +248,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XV. Red/blue pebble / recomputation–storage duality
+| section |
+|---|---|
+| XV. Red/blue pebble / recomputation–storage duality |
 
 | # | directive |
 |---|---|
@@ -234,7 +260,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XVI. Semantic memoization & observation-relative reuse
+| section |
+|---|---|
+| XVI. Semantic memoization & observation-relative reuse |
 
 | # | directive |
 |---|---|
@@ -247,7 +275,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XVII. Stateful / reactive equivalence
+| section |
+|---|---|
+| XVII. Stateful / reactive equivalence |
 
 | # | directive |
 |---|---|
@@ -255,7 +285,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XVIII. Temporal logic as demand/law
+| section |
+|---|---|
+| XVIII. Temporal logic as demand/law |
 
 | # | directive |
 |---|---|
@@ -265,7 +297,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XIX. Parsing realization space
+| section |
+|---|---|
+| XIX. Parsing realization space |
 
 | # | directive |
 |---|---|
@@ -274,7 +308,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XX. Succinct & learned structures
+| section |
+|---|---|
+| XX. Succinct & learned structures |
 
 | # | directive |
 |---|---|
@@ -283,7 +319,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXI. Learned compilation without learned correctness
+| section |
+|---|---|
+| XXI. Learned compilation without learned correctness |
 
 | # | directive |
 |---|---|
@@ -292,7 +330,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXII. Adaptive representations
+| section |
+|---|---|
+| XXII. Adaptive representations |
 
 | # | directive |
 |---|---|
@@ -300,7 +340,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXIII. Device memory & heterogeneous placement
+| section |
+|---|---|
+| XXIII. Device memory & heterogeneous placement |
 
 | # | directive |
 |---|---|
@@ -310,7 +352,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXIV. Observer virtualization & semantic tooling
+| section |
+|---|---|
+| XXIV. Observer virtualization & semantic tooling |
 
 | # | directive |
 |---|---|
@@ -323,7 +367,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXV. Trusted-core minimization & semantic linking
+| section |
+|---|---|
+| XXV. Trusted-core minimization & semantic linking |
 
 | # | directive |
 |---|---|
@@ -333,7 +379,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXVI. Boundary contraction & composition-driven optimization
+| section |
+|---|---|
+| XXVI. Boundary contraction & composition-driven optimization |
 
 | # | directive |
 |---|---|
@@ -344,7 +392,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXVII. Error, nondeterminism, reproducibility
+| section |
+|---|---|
+| XXVII. Error, nondeterminism, reproducibility |
 
 | # | directive |
 |---|---|
@@ -355,7 +405,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXVIII. Resources, topology, privacy, security
+| section |
+|---|---|
+| XXVIII. Resources, topology, privacy, security |
 
 | # | directive |
 |---|---|
@@ -369,7 +421,9 @@ desired relation + laws + target world + cost → synthesize realization
 
 ---
 
-## XXIX. Generalize ↔ specialize (anti-unification axis)
+| section |
+|---|---|
+| XXIX. Generalize ↔ specialize (anti-unification axis) |
 
 | # | directive |
 |---|---|
@@ -402,7 +456,9 @@ specialize ↓
 
 ---
 
-## XXX. Semantic factoring & minimum-description state
+| section |
+|---|---|
+| XXX. Semantic factoring & minimum-description state |
 
 | # | directive |
 |---|---|
@@ -428,7 +484,9 @@ common meaning + small varying facts
 
 ---
 
-## XXXI. Specialization economics & semantic clone control
+| section |
+|---|---|
+| XXXI. Specialization economics & semantic clone control |
 
 | # | directive |
 |---|---|
@@ -455,7 +513,9 @@ specialize · share · outline · generalize · merge · discard
 
 ---
 
-## XXXII. Granularity as a physical degree of freedom
+| section |
+|---|---|
+| XXXII. Granularity as a physical degree of freedom |
 
 | # | directive |
 |---|---|
@@ -474,7 +534,9 @@ specialize · share · outline · generalize · merge · discard
 
 ---
 
-## XXXIII. Dimensional, shape, tensor, and sparse facts (without tensor kingdom)
+| section |
+|---|---|
+| XXXIII. Dimensional, shape, tensor, and sparse facts (without tensor kingdom) |
 
 | # | directive |
 |---|---|
@@ -496,7 +558,9 @@ specialize · share · outline · generalize · merge · discard
 
 ---
 
-## XXXIV. Abstraction, precision, and compiler self-query
+| section |
+|---|---|
+| XXXIV. Abstraction, precision, and compiler self-query |
 
 | # | directive |
 |---|---|
@@ -521,7 +585,9 @@ specialize · share · outline · generalize · merge · discard
 
 ---
 
-## XXXV. Negative knowledge, contradiction, and minimal explanations
+| section |
+|---|---|
+| XXXV. Negative knowledge, contradiction, and minimal explanations |
 
 | # | directive |
 |---|---|
@@ -546,7 +612,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XXXVI. Guards, profiles, and dynamic patching
+| section |
+|---|---|
+| XXXVI. Guards, profiles, and dynamic patching |
 
 | # | directive |
 |---|---|
@@ -570,7 +638,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XXXVII. Compiler-graph lifetimes & physical realization of Compiler B
+| section |
+|---|---|
+| XXXVII. Compiler-graph lifetimes & physical realization of Compiler B |
 
 | # | directive |
 |---|---|
@@ -597,7 +667,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XXXVIII. Determinism, distribution, and untrusted optimization
+| section |
+|---|---|
+| XXXVIII. Determinism, distribution, and untrusted optimization |
 
 | # | directive |
 |---|---|
@@ -620,7 +692,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XXXIX. Compiler compile-time architecture itself
+| section |
+|---|---|
+| XXXIX. Compiler compile-time architecture itself |
 
 | # | directive |
 |---|---|
@@ -644,7 +718,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XL. Agent-native compiler capabilities
+| section |
+|---|---|
+| XL. Agent-native compiler capabilities |
 
 | # | directive |
 |---|---|
@@ -671,7 +747,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XLI. Language-level expressiveness still worth exploring
+| section |
+|---|---|
+| XLI. Language-level expressiveness still worth exploring |
 
 | # | Capability | Graph expression |
 |---|---|---|
@@ -694,7 +772,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XLII. Relation algebra specifically
+| section |
+|---|---|
+| XLII. Relation algebra specifically |
 
 | # | directive |
 |---|---|
@@ -723,7 +803,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XLIII. Injection / projection / interjection algebra specifically
+| section |
+|---|---|
+| XLIII. Injection / projection / interjection algebra specifically |
 
 | # | directive |
 |---|---|
@@ -744,7 +826,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XLIV. Lower-bound / theoretical-computing frontier
+| section |
+|---|---|
+| XLIV. Lower-bound / theoretical-computing frontier |
 
 | # | directive |
 |---|---|
@@ -761,7 +845,9 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## XLV. Things Idol should explicitly not copy
+| section |
+|---|---|
+| XLV. Things Idol should explicitly not copy |
 
 | # | directive |
 |---|---|
@@ -780,36 +866,42 @@ unknown · absent · possible · exact · contradictory
 
 ---
 
-## Highest-value still-missed ideas (FTCFTW-ranked)
+| section |
+|---|---|
+| Highest-value still-missed ideas (FTCFTW-ranked) |
 
 | # | directive |
 |---|---|
 | 1 | Compressed priority for ultimate capability, not breadth alone: |
 
-1. Full **observation + demand** algebra.
-2. General **relation-law** algebra.
-3. Effect/trap/termination/**authority closure**.
-4. Sparse graph **consequence/fixpoint** engine.
-5. Exact incremental **change/dependency** algebra.
-6. One **candidate/equivalence/refinement** framework.
-7. **Value-of-information**-controlled optimization search.
-8. **Interpreter specialization / Futamura** compiler generation.
-9. **Polyhedral/affine** reasoning as graph facts, not separate IR.
-10. **Algorithm-family** selection (recurrence/closed-form/data-structure).
-11. Automatic **layout/schedule/representation** search (Halide/TVM ideas).
-12. **Translation validation** + target-semantics validation (Alive2 pattern).
-13. **Virtualization/escape** deeper than conventional object escape.
-14. Application-specific **ABI** and interprocedural register realization.
-15. **Whole-program runtime elimination**.
-16. **Hardware synthesis / heterogeneous placement** from same semantics.
-17. **Wasm semantic import** into the same graph.
-18. **Capability/authority algebra** (CHERI-inspired, semantic not object).
-19. **Projection/injection/interjection** expanded into true world calculus.
-20. **Semantic lower-bound derivation** so FTCFTW can prove OPTIMAL.
+| # | directive |
+|---|---|
+| 1 | Full **observation + demand** algebra. |
+| 2 | General **relation-law** algebra. |
+| 3 | Effect/trap/termination/**authority closure**. |
+| 4 | Sparse graph **consequence/fixpoint** engine. |
+| 5 | Exact incremental **change/dependency** algebra. |
+| 6 | One **candidate/equivalence/refinement** framework. |
+| 7 | **Value-of-information**-controlled optimization search. |
+| 8 | **Interpreter specialization / Futamura** compiler generation. |
+| 9 | **Polyhedral/affine** reasoning as graph facts, not separate IR. |
+| 10 | **Algorithm-family** selection (recurrence/closed-form/data-structure). |
+| 11 | Automatic **layout/schedule/representation** search (Halide/TVM ideas). |
+| 12 | **Translation validation** + target-semantics validation (Alive2 pattern). |
+| 13 | **Virtualization/escape** deeper than conventional object escape. |
+| 14 | Application-specific **ABI** and interprocedural register realization. |
+| 15 | **Whole-program runtime elimination**. |
+| 16 | **Hardware synthesis / heterogeneous placement** from same semantics. |
+| 17 | **Wasm semantic import** into the same graph. |
+| 18 | **Capability/authority algebra** (CHERI-inspired, semantic not object). |
+| 19 | **Projection/injection/interjection** expanded into true world calculus. |
+| 20 | **Semantic lower-bound derivation** so FTCFTW can prove OPTIMAL. |
 
 ---
 
-## Universal optimization architecture (target end state)
+| section |
+|---|---|
+| Universal optimization architecture (target end state) |
 
 | # | directive |
 |---|---|
@@ -844,7 +936,9 @@ meaning → facts → observation → demand → laws → candidates → proofs 
 
 ---
 
-## Architectural moat (summary)
+| section |
+|---|---|
+| Architectural moat (summary) |
 
 | # | directive |
 |---|---|
@@ -868,7 +962,9 @@ foreign adaptation
 
 ---
 
-## XLVI. Second-pass emphasis (112-item research injection)
+| section |
+|---|---|
+| XLVI. Second-pass emphasis (112-item research injection) |
 
 | # | directive |
 |---|---|
@@ -907,7 +1003,9 @@ foreign adaptation
 
 ---
 
-## XLVII. Third-pass emphasis (76-item "strangeness" frontier)
+| section |
+|---|---|
+| XLVII. Third-pass emphasis (76-item "strangeness" frontier) |
 
 | # | directive |
 |---|---|
@@ -943,10 +1041,12 @@ specialize ↓   — demand, profile, world seal, guarded multiversion
 
 ---
 
-## How to use this file
+| section |
+|---|---|
+| How to use this file |
 
-1. Before proposing a new subsystem, locate the family here and express it as
-   graph facts/laws/candidates first.
-2. Record new families here when discovery proves they are not reducible.
-3. Tie implementation work to open `gaps/GAP-*.md` obligations; this file does not
-   replace gap authority.
+| # | directive |
+|---|---|
+| 1 | Before proposing a new subsystem, locate the family here and express it as graph facts/laws/candidates first. |
+| 2 | Record new families here when discovery proves they are not reducible. |
+| 3 | Tie implementation work to open `gaps/GAP-*.md` obligations; this file does not replace gap authority. |

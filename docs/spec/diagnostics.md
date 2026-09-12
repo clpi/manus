@@ -1,4 +1,6 @@
-# Idol diagnostics projection
+| field | value |
+|---|---|
+| title | Idol diagnostics projection |
 
 | # | directive |
 |---|---|
@@ -10,7 +12,9 @@
 | 2 | A diagnostic that only *reports* is leaving all of that on the floor. |
 | 3 | Normative until the graph service hosts it. |
 
-## 1. The governing rule: repair first
+| section |
+|---|---|
+| 1. The governing rule: repair first |
 
 | # | directive |
 |---|---|
@@ -31,7 +35,9 @@
 |---|---|
 | 1 | Repair-first has a hard consequence for the implementation: **a diagnostic must carry a repair or explain why it cannot.** "Cannot" is a legitimate answer — ambiguity is real — but it is a stated one (`no repair: two shapes fit here, name which`), not an omission. |
 
-## 2. Layout
+| section |
+|---|---|
+| 2. Layout |
 
 ```
 ┌ severity  rule-id  one-line REPAIR
@@ -57,38 +63,33 @@
 |---|---|
 | 1 | **Concretely forbidden:** |
 
-- Boilerplate that is byte-identical across diagnostics. If a line does not
-  depend on this program, delete it.
-- Repeating the location. It appears once, in the snippet header.
-- Re-rendering the source snippet for each attached note. One span, one snippet;
-  additional spans get their own snippet only when they point somewhere else.
-- Internal enum names, Zig/C error names, generated-file paths, and stack
-  traces. A user never sees `ExpectedToken`, `/tmp/idol_x.c`, or a line number in
-  the compiler's own source.
-- More than one diagnostic for one cause. Cascades are suppressed (§6).
+| # | directive |
+|---|---|
+| 1 | Boilerplate that is byte-identical across diagnostics. If a line does not depend on this program, delete it. |
+| 2 | Repeating the location. It appears once, in the snippet header. |
+| 3 | Re-rendering the source snippet for each attached note. One span, one snippet; additional spans get their own snippet only when they point somewhere else. |
+| 4 | Internal enum names, Zig/C error names, generated-file paths, and stack traces. A user never sees `ExpectedToken`, `/tmp/idol_x.c`, or a line number in the compiler's own source. |
+| 5 | More than one diagnostic for one cause. Cascades are suppressed (§6). |
 
 | # | directive |
 |---|---|
 | 1 | **Spans are ranges, not points.** A caret under the first character of a construct tells a reader where to start looking; an underline under the whole construct tells them what the compiler thinks the construct *is*, which is very often the actual misunderstanding. |
 
-## 3. Tone
+| section |
+|---|---|
+| 3. Tone |
 
-- **Second person, active, present.** "Write `s[i]`" — not "the expression
-  should be" and not "one must".
-- **Never blame, never praise, never apologize.** No "invalid", no "illegal",
-  no "you forgot", no "oops", no "sorry". The program is a draft and the
-  compiler is reading it.
-- **Say what is true of the program, not what the compiler feels about it.**
-  "`%` here selects the integer remainder, whose sign follows `-7`" beats
-  "unexpected sign in modulo".
-- **No jargon a reader cannot have met yet.** A first-week user does not know
-  what a "descriptor-expected position" is. Name the thing in the source:
-  "after `==`, Duo expects a case from the set `{.eof, .name, .number}`".
-- **Never emit a diagnostic that only a compiler author can act on.** If the
-  real problem is that a construct is unimplemented, say *that*, name the
-  workaround, and cite the gap row (§9).
+| # | directive |
+|---|---|
+| 1 | **Second person, active, present.** "Write `s[i]`" — not "the expression should be" and not "one must". |
+| 2 | **Never blame, never praise, never apologize.** No "invalid", no "illegal", no "you forgot", no "oops", no "sorry". The program is a draft and the compiler is reading it. |
+| 3 | **Say what is true of the program, not what the compiler feels about it.** "`%` here selects the integer remainder, whose sign follows `-7`" beats "unexpected sign in modulo". |
+| 4 | **No jargon a reader cannot have met yet.** A first-week user does not know what a "descriptor-expected position" is. Name the thing in the source: "after `==`, Duo expects a case from the set `{.eof, .name, .number}`". |
+| 5 | **Never emit a diagnostic that only a compiler author can act on.** If the real problem is that a construct is unimplemented, say *that*, name the workaround, and cite the gap row (§9). |
 
-## 4. The counterexample block
+| section |
+|---|---|
+| 4. The counterexample block |
 
 | # | directive |
 |---|---|
@@ -105,20 +106,20 @@ counterexample: caller passes (1); `add` takes (a, b)
 |---|---|
 | 1 | Three rules: |
 
-1. **The counterexample must be real, not illustrative.** It comes from the
-   solver, the fact set, or the literal in the source. A made-up example that
-   happens to fit is a lie with a helpful shape.
-2. **The smallest one.** When the checker can minimize, it minimizes; a
-   64-element counterexample teaches nothing a 2-element one does not.
-3. **When there is no witness, the block is absent** — never a placeholder,
-   never "some value".
+| # | directive |
+|---|---|
+| 1 | **The counterexample must be real, not illustrative.** It comes from the solver, the fact set, or the literal in the source. A made-up example that happens to fit is a lie with a helpful shape. |
+| 2 | **The smallest one.** When the checker can minimize, it minimizes; a 64-element counterexample teaches nothing a 2-element one does not. |
+| 3 | **When there is no witness, the block is absent** — never a placeholder, never "some value". |
 
 | # | directive |
 |---|---|
 | 1 | This is the block that makes a fact system pay off in the user interface. |
 | 2 | A refinement checker that can prove `n < 64` fails can almost always also produce the `n` that makes it fail, and printing it converts an abstract refusal into an obvious bug. |
 
-## 5. Facts and witnesses in a diagnostic
+| section |
+|---|---|
+| 5. Facts and witnesses in a diagnostic |
 
 | # | directive |
 |---|---|
@@ -147,7 +148,9 @@ facts:  i : i64            declared at parse.id:14
 | 1 | Every fact carries **provenance** — the source location that introduced it. |
 | 2 | A fact with no provenance is a compiler bug, not a diagnostic detail. |
 
-## 6. Severity
+| section |
+|---|---|
+| 6. Severity |
 
 | # | directive |
 |---|---|
@@ -164,21 +167,20 @@ facts:  i : i64            declared at parse.id:14
 |---|---|
 | 1 | Deliberately absent: |
 
-- **No `note`.** A note that is not attached to a diagnostic is an `info`; one
-  that is attached is a `hint`.
-- **No severity configuration, no `-Werror`, no per-rule suppression pragmas.**
-  A warning is a construct on a removal schedule, and the schedule is the
-  language's, not the project's. The set of warnings is small, finite, and
-  shrinking; anything that would need permanent suppression is a design error in
-  the rule.
-- **No "deprecated" as a distinct level.** That is what `warning` is.
+| # | directive |
+|---|---|
+| 1 | **No `note`.** A note that is not attached to a diagnostic is an `info`; one that is attached is a `hint`. |
+| 2 | **No severity configuration, no `-Werror`, no per-rule suppression pragmas.** A warning is a construct on a removal schedule, and the schedule is the language's, not the project's. The set of warnings is small, finite, and shrinking; anything that would need permanent suppression is a design error in the rule. |
+| 3 | **No "deprecated" as a distinct level.** That is what `warning` is. |
 
 | # | directive |
 |---|---|
 | 1 | **A `warning` must name the removal**: which pass retired the construct and what replaces it. |
 | 2 | A warning with no end date accumulates forever and is eventually ignored, which is how every large codebase ends up with a wall of them. |
 
-## 7. Rule IDs
+| section |
+|---|---|
+| 7. Rule IDs |
 
 | # | directive |
 |---|---|
@@ -197,19 +199,16 @@ DNB001…DNB0nn    the backend-admission family, already in use
 | # | directive |
 |---|---|
 
-- **The ID is stable forever.** Text may be rewritten freely; an ID is never
-  reused for a different check and never renamed. That is what makes it citable
-  in a changelog, a lint config, or a bug report from two years ago.
-- **The ID names the LAW, not the site.** Two parser paths that both enforce B-1
-  emit the same ID. Two different B-1 obligations get two suffixes.
-- **Every ID resolves.** `why(rule)(DUO-B4-SIGN)` prints the rule, its pass, its
-  rationale, and a passing and a failing example. A diagnostic that cites a rule
-  the toolchain cannot explain is a dead link.
-- **Prose section references are not IDs.** "the §1 deny table" is a fine
-  thing to say in the `rule:` line *after* the ID; it is not a substitute,
-  because prose section numbers move.
+| # | directive |
+|---|---|
+| 1 | **The ID is stable forever.** Text may be rewritten freely; an ID is never reused for a different check and never renamed. That is what makes it citable in a changelog, a lint config, or a bug report from two years ago. |
+| 2 | **The ID names the LAW, not the site.** Two parser paths that both enforce B-1 emit the same ID. Two different B-1 obligations get two suffixes. |
+| 3 | **Every ID resolves.** `why(rule)(DUO-B4-SIGN)` prints the rule, its pass, its rationale, and a passing and a failing example. A diagnostic that cites a rule the toolchain cannot explain is a dead link. |
+| 4 | **Prose section references are not IDs.** "the §1 deny table" is a fine thing to say in the `rule:` line *after* the ID; it is not a substitute, because prose section numbers move. |
 
-## 8. The machine-readable form
+| section |
+|---|---|
+| 8. The machine-readable form |
 
 | # | directive |
 |---|---|
@@ -237,22 +236,13 @@ DNB001…DNB0nn    the backend-admission family, already in use
 |---|---|
 | 1 | Requirements, each of which is a thing agents and editors actually need: |
 
-- **Byte offsets alongside line/col**, and an **end** for every span. An editor
-  cannot underline a range it was not given, and an agent cannot apply an edit
-  to a point.
-- **`fixes` are applicable**, not prose: a list of byte-range replacements that
-  can be applied without re-parsing. Multiple alternatives are allowed and
-  ordered by confidence; zero alternatives is legal and means the repair is
-  human-only.
-- **Structured facts**, each with `state ∈ {proven, unknown, runtime}` — the
-  three-state outcome, machine-visible. This is the thing no other compiler's
-  JSON has, and it is what lets an agent decide whether to add an annotation or
-  restructure the code.
-- **Progress, timing, and summary lines are not diagnostics** and never appear
-  on stdout. Human progress goes to stderr.
-- **The human renderer is a client of this structure**, not a parallel code
-  path. If a field is not in the JSON, it cannot appear in the terminal output —
-  which is the only durable way to keep the two from drifting.
+| # | directive |
+|---|---|
+| 1 | **Byte offsets alongside line/col**, and an **end** for every span. An editor cannot underline a range it was not given, and an agent cannot apply an edit to a point. |
+| 2 | **`fixes` are applicable**, not prose: a list of byte-range replacements that can be applied without re-parsing. Multiple alternatives are allowed and ordered by confidence; zero alternatives is legal and means the repair is human-only. |
+| 3 | **Structured facts**, each with `state ∈ {proven, unknown, runtime}` — the three-state outcome, machine-visible. This is the thing no other compiler's JSON has, and it is what lets an agent decide whether to add an annotation or restructure the code. |
+| 4 | **Progress, timing, and summary lines are not diagnostics** and never appear on stdout. Human progress goes to stderr. |
+| 5 | **The human renderer is a client of this structure**, not a parallel code path. If a field is not in the JSON, it cannot appear in the terminal output — which is the only durable way to keep the two from drifting. |
 
 | # | directive |
 |---|---|
@@ -264,7 +254,9 @@ DNB001…DNB0nn    the backend-admission family, already in use
 | 1 | **Colour is a terminal decision.** ANSI escapes are emitted only when stdout is a TTY *and* `--no-color`/`NO_COLOR` is unset. |
 | 2 | Not "mostly"; a single unguarded escape is what turns a machine consumer's regex into a mystery. |
 
-## 9. Unimplemented is a diagnostic kind
+| section |
+|---|---|
+| 9. Unimplemented is a diagnostic kind |
 
 | # | directive |
 |---|---|
@@ -290,7 +282,9 @@ error  DNB001  this shape is outside the direct backend today
 | 2 | Whatever `check` cannot verify, it must say it cannot verify. |
 | 3 | Silence is a claim. |
 
-## 10. Status in this repository
+| section |
+|---|---|
+| 10. Status in this repository |
 
 | # | directive |
 |---|---|
@@ -302,7 +296,9 @@ error  DNB001  this shape is outside the direct backend today
 |---|---|
 | 1 | **The honest summary: the *good* diagnostics in this tree are very good, and they are good because a human wrote each one by hand.** The structure around them has no repair field, no rule ID, no counterexample block, no fact block, no machine form beyond a text projection, and about a third of the compiler's failures are not diagnostics at all but leaked clang errors, leaked Zig stack traces, or silence. |
 
-### The good ones — real repairs, and they lead
+| section |
+|---|---|
+| The good ones — real repairs, and they lead |
 
 ```
 examples/compile_fail/anchor_infix_at.id:35:11: error: infix '@' has no meaning
@@ -371,7 +367,9 @@ examples/compile_fail/tensor_broadcast_incompatible.id:2:10: error: tensor
 |---|---|
 | 1 | Also note `warning: warning:` — the label is emitted twice, from the call site and again from the renderer. |
 
-### The bad ones — every one of these is what a newcomer will actually hit
+| section |
+|---|---|
+| The bad ones — every one of these is what a newcomer will actually hit |
 
 | # | directive |
 |---|---|
@@ -443,7 +441,9 @@ hint: bail site: lowerBinop() at dnir_lower.zig:2413 — concat
 | 2 | It also repeats itself three times, names a Zig function and line, prints an internal error enum, and never says which construct in the *user's* program was refused. |
 | 3 | (It was `print("d={d}")` with `d: f64`.) |
 
-### Silence where a diagnostic is owed
+| section |
+|---|---|
+| Silence where a diagnostic is owed |
 
 | # | directive |
 |---|---|
@@ -467,7 +467,9 @@ hint: bail site: lowerBinop() at dnir_lower.zig:2413 — concat
 |---|---|
 | 1 | The arity row is the sharpest: it is the exact defect CLAUDE.md's consolidation note describes ("idol-mcp shipped a call passing three arguments to a two-argument function"), the fix for which was to bring the code in-tree so the gates would catch it — and the gate does not catch it. `idol check` is green and the direct backend produces a garbage value. |
 
-### Against §1–§9, row by row
+| section |
+|---|---|
+| Against §1–§9, row by row |
 
 | section | state |
 |---|---|
@@ -486,16 +488,12 @@ hint: bail site: lowerBinop() at dnir_lower.zig:2413 — concat
 | §9 unimplemented-as-a-kind | **PARTIAL.** DNB001 is the shape, addressed to the wrong reader, with no `gap[nn]` citation. |
 | §9 green check on unbuildable | **THE DOMINANT FAILURE.** Ten programs in the table above. |
 
-### The three changes that would move this page furthest
+| section |
+|---|---|
+| The three changes that would move this page furthest |
 
-1. **Give `locErr` a repair and an ID.** Two fields on one function in
-   `src/term.zig`, then reorder the renderer so the repair is the headline. The
-   good messages already contain their repairs — they only need a slot.
-2. **Delete `printDiagnosticHelp`.** Six constant strings, emitted on every
-   diagnostic, carrying nothing. Removing them makes every existing message
-   better with no writing.
-3. **Make `idol check` refuse to be green when lowering will fail.** Ten of the
-   silences above are one class: the checker does not model what the backends
-   can build. Until it does, `check` is claiming something it has not verified,
-   and CLAUDE.md §3's rule — verify by value, never by "it compiled" — applies
-   to the compiler's own verdict about itself.
+| # | directive |
+|---|---|
+| 1 | **Give `locErr` a repair and an ID.** Two fields on one function in `src/term.zig`, then reorder the renderer so the repair is the headline. The good messages already contain their repairs — they only need a slot. |
+| 2 | **Delete `printDiagnosticHelp`.** Six constant strings, emitted on every diagnostic, carrying nothing. Removing them makes every existing message better with no writing. |
+| 3 | **Make `idol check` refuse to be green when lowering will fail.** Ten of the silences above are one class: the checker does not model what the backends can build. Until it does, `check` is claiming something it has not verified, and CLAUDE.md §3's rule — verify by value, never by "it compiled" — applies to the compiler's own verdict about itself. |

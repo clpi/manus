@@ -1,4 +1,6 @@
-# Idol agent integration redirect
+| field | value |
+|---|---|
+| title | Idol agent integration redirect |
 
 | # | directive |
 |---|---|

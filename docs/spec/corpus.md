@@ -1,4 +1,6 @@
-# SOURCE-ZERO transition manifest
+| field | value |
+|---|---|
+| title | SOURCE-ZERO transition manifest |
 
 | # | directive |
 |---|---|
@@ -20,7 +22,9 @@
 | 2 | Production `sourcefactlaw` / `sourcefactprovenance` consume those rows. |
 | 3 | This document does not repeat the roster: a copied list would be a second admission authority. `src/lexer_bridge.zig` only normalizes physical provenance relative to the tree carrying this marker and binds producer-returned names to the temporary host ABI. |
 
-## Executed owner
+| section |
+|---|---|
+| Executed owner |
 
 | # | directive |
 |---|---|

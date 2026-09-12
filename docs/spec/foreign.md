@@ -1,4 +1,6 @@
-# Foreign source, classified: `toolchain@{ foreign = ledger | oracle }`
+| field | value |
+|---|---|
+| title | Foreign source, classified: `toolchain@{ foreign = ledger \| oracle }` |
 
 | # | directive |
 |---|---|
@@ -6,7 +8,9 @@
 | 2 | This file is **machine-read** by `scripts/census/foreign.id` (`zig build foreign-census`). |
 | 3 | Editing the prose is free; editing a rule line changes what the census will accept. |
 
-## Why this file exists
+| section |
+|---|---|
+| Why this file exists |
 
 | # | directive |
 |---|---|
@@ -37,26 +41,23 @@ toolchain@{ foreign = ledger | oracle }
 | 2 | It answers "how much foreign code is there"; this file answers "by what right is each piece here". |
 | 3 | They are separate steps so that a classification failure and a debt-count failure are distinguishable — a census that returns one number cannot tell you which of those went wrong. |
 
-## The rule format, and what the gate enforces about it
+| section |
+|---|---|
+| The rule format, and what the gate enforces about it |
 
 ```
 <class>  <path prefix>  <until:… | license:…>
 ```
 
-- **First match wins**, so order is meaningful: specific prefixes above general
-  ones. A prefix ending in `/` matches a directory; one that does not matches
-  any path starting with that text.
-- A `ledger` row MUST carry `until:` and a condition. *No deletion gate = 
-  architectural debt* is the rule `docs/foreign_code_ledger.md` already states;
-  the gate makes it mechanical, so a ledger row with no stated end fails the
-  census rather than quietly becoming permanent. Every `oracle` row MUST carry
-  `license:` and the authority licensing it.
-- The census reports `ledger` and `oracle` totals every run. **The ledger total
-  is the   number is what the enterprise-migration fixture measures** ("the
-  bootstrap ledger shrinking with evidence attached"), so it belongs on the
-  claims dashboard beside the rest.
+| # | directive |
+|---|---|
+| 1 | **First match wins**, so order is meaningful: specific prefixes above general ones. A prefix ending in `/` matches a directory; one that does not matches any path starting with that text. |
+| 2 | A `ledger` row MUST carry `until:` and a condition. *No deletion gate = architectural debt* is the rule `docs/foreign_code_ledger.md` already states; the gate makes it mechanical, so a ledger row with no stated end fails the census rather than quietly becoming permanent. Every `oracle` row MUST carry `license:` and the authority licensing it. |
+| 3 | The census reports `ledger` and `oracle` totals every run. **The ledger total is the   number is what the enterprise-migration fixture measures** ("the bootstrap ledger shrinking with evidence attached"), so it belongs on the claims dashboard beside the rest. |
 
-## What a file census cannot see, stated rather than hidden
+| section |
+|---|---|
+| What a file census cannot see, stated rather than hidden |
 
 | # | directive |
 |---|---|
@@ -74,7 +75,9 @@ toolchain@{ foreign = ledger | oracle }
 | 3 | The honest advertised count is **181**; shrinking it is enforced by `scripts/ledger/embed.id`, not a second census floor. |
 | 4 | That ledger carries the ratchet as an `EMBED_FLOOR` default rather than a hardcoded constant, so the floor and the advertised count are separately readable. |
 
-## Rules
+| section |
+|---|---|
+| Rules |
 
 ```
 ledger   src/                          until:the self-hosting matrix retires the Zig host
@@ -89,7 +92,9 @@ oracle   benchmarks/                   license:bench-oracle — performance base
 oracle   tests/                        license:test-oracle — differential fixtures
 ```
 
-## Unclassified today
+| section |
+|---|---|
+| Unclassified today |
 
 | # | directive |
 |---|---|

@@ -1,10 +1,13 @@
-# Idol Domain-Frontier Capability and Performance Map
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | **Status:** research disposition, not language law and not an implementation claim. **Repository subject:** `clpi/idol` at `1ae3e38282d8d5ac8071cdcdf948a5fbb1afec69`. **Purpose:** replace C-centric aspiration with a measurable map of the strongest known implementation in every relevant capability and performance domain. |
+| title | Idol Domain-Frontier Capability and Performance Map |
+| status | research disposition, not language law and not an implementation claim. |
+| repository subject | at . |
+| purpose | replace C-centric aspiration with a measurable map of the strongest known implementation in every relevant capability and performance domain. |
 
-## 1. The governing correction
+| section |
+|---|---|
+| 1. The governing correction |
 
 | # | directive |
 |---|---|
@@ -24,7 +27,9 @@ oracle(workload, observations, target)
     = Pareto frontier of every credible equivalent implementation
 ```
 
-### 1.1 Project boundary: Wart is external
+| section |
+|---|---|
+| 1.1 Project boundary: Wart is external |
 
 | # | directive |
 |---|---|
@@ -54,31 +59,37 @@ SUPERSEDED
 |---|---|
 | 1 | Only `ADMITTED` evidence may feed public capability or performance claims. |
 
-## 2. Performance is a vector
+| section |
+|---|---|
+| 2. Performance is a vector |
 
 | # | directive |
 |---|---|
 | 1 | No scalar score is sufficient. |
 | 2 | Every benchmark contract records at least: |
 
-- steady-state latency and throughput;
-- startup, warmup, and tail latency;
-- compile, link, incremental, and installation work;
-- peak and retained memory;
-- allocations, copies, and memory traffic;
-- artifact, relocation, and loaded-code size;
-- instructions, cycles, branches, misses, spills, and vector occupancy;
-- energy when measurable;
-- correctness, safety, determinism, and capability guarantees;
-- target, ABI, machine, OS, thermal, power, and profile state;
-- implementation effort and source information supplied;
-- the exact strongest comparator and physical lower bound.
+| # | directive |
+|---|---|
+| 1 | steady-state latency and throughput; |
+| 2 | startup, warmup, and tail latency; |
+| 3 | compile, link, incremental, and installation work; |
+| 4 | peak and retained memory; |
+| 5 | allocations, copies, and memory traffic; |
+| 6 | artifact, relocation, and loaded-code size; |
+| 7 | instructions, cycles, branches, misses, spills, and vector occupancy; |
+| 8 | energy when measurable; |
+| 9 | correctness, safety, determinism, and capability guarantees; |
+| 10 | target, ABI, machine, OS, thermal, power, and profile state; |
+| 11 | implementation effort and source information supplied; |
+| 12 | the exact strongest comparator and physical lower bound. |
 
 | # | directive |
 |---|---|
 | 1 | A win on one axis does not conceal a loss on another. |
 
-## 3. Domain-frontier matrix
+| section |
+|---|---|
+| 3. Domain-frontier matrix |
 
 | Domain | Leaders and control implementations | Information or freedom they exploit | Idol mechanism to test | Required oracle and admission suite |
 |---|---|---|---|---|
@@ -104,29 +115,37 @@ SUPERSEDED
 | 1 | The table is intentionally open. |
 | 2 | A new language, library, runtime, compiler, or hardware system becomes an oracle whenever it establishes a stronger point in any domain. |
 
-## 4. The language design that falls out
+| section |
+|---|---|
+| 4. The language design that falls out |
 
 | # | directive |
 |---|---|
 | 1 | The performance program does **not** justify constraining the language to the current preferred implementation strategy. |
 | 2 | The source and semantic model preserve choices; evidence chooses realizations. |
 
-### 4.1 Familiar semantic floor
+| section |
+|---|---|
+| 4.1 Familiar semantic floor |
 
 | # | directive |
 |---|---|
 | 1 | Idol keeps Lua’s recognizable foundation: |
 
-- dynamic values and ordinary Lua-correct fallback;
-- tables, closures, metatables, multiple results, coroutines, and ordinary bindings;
-- concise application and subject-oriented relation faces;
-- no mandatory ownership syntax, layout annotations, monomorphization ceremony, or backend-specific types.
+| # | directive |
+|---|---|
+| 1 | dynamic values and ordinary Lua-correct fallback; |
+| 2 | tables, closures, metatables, multiple results, coroutines, and ordinary bindings; |
+| 3 | concise application and subject-oriented relation faces; |
+| 4 | no mandatory ownership syntax, layout annotations, monomorphization ceremony, or backend-specific types. |
 
 | # | directive |
 |---|---|
 | 1 | Static knowledge strengthens this floor rather than replacing it. |
 
-### 4.2 Orthogonal information channels
+| section |
+|---|---|
+| 4.2 Orthogonal information channels |
 
 | # | directive |
 |---|---|
@@ -148,29 +167,35 @@ world · authority · effects · stage · demand · target · profile · hardwar
 | 2 | Evidence and assumptions remain distinct from truth. |
 | 3 | Acquisition cost and expected realization value guide whether a fact is worth learning; they never strengthen its trust class. |
 
-### 4.3 Maximum realization freedom
+| section |
+|---|---|
+| 4.3 Maximum realization freedom |
 
 | # | directive |
 |---|---|
 | 1 | Unless semantically observed or explicitly pinned, source does not force: |
 
-- integer width beyond its semantic law;
-- boxing or unboxing;
-- stack, region, arena, RC, tracing, or manual allocation;
-- AoS, SoA, packing, bitmaps, or pointer topology;
-- closure allocation or environment materialization;
-- static, virtual, inline-cache, trace, method-JIT, or direct dispatch;
-- scalar, SIMD, GPU, accelerator, Wasm, or native realization;
-- a particular algorithm, schedule, loop structure, or intermediate value;
-- a universal concurrency or determinism profile;
-- one physical compiler IR at every optimization level.
+| # | directive |
+|---|---|
+| 1 | integer width beyond its semantic law; |
+| 2 | boxing or unboxing; |
+| 3 | stack, region, arena, RC, tracing, or manual allocation; |
+| 4 | AoS, SoA, packing, bitmaps, or pointer topology; |
+| 5 | closure allocation or environment materialization; |
+| 6 | static, virtual, inline-cache, trace, method-JIT, or direct dispatch; |
+| 7 | scalar, SIMD, GPU, accelerator, Wasm, or native realization; |
+| 8 | a particular algorithm, schedule, loop structure, or intermediate value; |
+| 9 | a universal concurrency or determinism profile; |
+| 10 | one physical compiler IR at every optimization level. |
 
 | # | directive |
 |---|---|
 | 1 | Users may constrain any of these when it is itself an observation or operational requirement. |
 | 2 | Otherwise they remain choices. |
 
-### 4.4 One semantic authority, multiple physical views
+| section |
+|---|---|
+| 4.4 One semantic authority, multiple physical views |
 
 | # | directive |
 |---|---|
@@ -181,17 +206,21 @@ world · authority · effects · stage · demand · target · profile · hardwar
 |---|---|
 | 1 | Typed lowering views are lawful when each: |
 
-1. is derived from exact graph identities and facts;
-2. states which information it preserves, refines, or intentionally forgets;
-3. carries provenance back to graph identities;
-4. cannot create language meaning or optimization eligibility independently;
-5. has an exact consumer, validation oracle, and invalidation rule.
+| # | directive |
+|---|---|
+| 1 | is derived from exact graph identities and facts; |
+| 2 | states which information it preserves, refines, or intentionally forgets; |
+| 3 | carries provenance back to graph identities; |
+| 4 | cannot create language meaning or optimization eligibility independently; |
+| 5 | has an exact consumer, validation oracle, and invalidation rule. |
 
 | # | directive |
 |---|---|
 | 1 | This permits CFG, SSA, vector/tensor, GPU, machine, object, and other target-oriented encodings without creating competing semantic authorities. |
 
-### 4.5 Plural memory and runtime strategy
+| section |
+|---|---|
+| 4.5 Plural memory and runtime strategy |
 
 | # | directive |
 |---|---|
@@ -203,14 +232,18 @@ world · authority · effects · stage · demand · target · profile · hardwar
 |---|---|
 | 1 | Likewise, method specialization with deoptimization is a strong default runtime direction, but tracing, copy-and-patch, interpretation, AOT, and profile-guided variants remain admissible realizations if exact evidence wins for a workload. |
 
-### 4.6 Concurrency without a performance ceiling
+| section |
+|---|---|
+| 4.6 Concurrency without a performance ceiling |
 
 | # | directive |
 |---|---|
 | 1 | Compiler-inserted parallelism over proven-pure relations is valuable, but cannot be the language’s only concurrency mechanism without excluding I/O concurrency, supervision, distributed systems, low-level atomics, and latency-oriented task control. |
 | 2 | The surface should provide the smallest structured and capability-accountable explicit mechanisms needed for those domains while preserving automatic parallel realization as a separate optimization. |
 
-## 5. Benchmark architecture
+| section |
+|---|---|
+| 5. Benchmark architecture |
 
 | # | directive |
 |---|---|
@@ -241,17 +274,23 @@ status and kill criterion
 | 1 | The benchmark harness searches the comparator set rather than preselecting a convenient loser. |
 | 2 | For CPU controls it normally includes tuned GCC, Clang, ICX and AOCC where available, but that set is expanded or replaced whenever another implementation owns the domain frontier. |
 
-## 6. Immediate research order
+| section |
+|---|---|
+| 6. Immediate research order |
 
-1. **Claim and surface freeze.** Public products may expose only admitted records; no new display work until evidence exists.
-2. **Oracle harness.** Implement the domain-frontier comparator contract and exact evidence object.
-3. **Wins corpus.** Reproduce published wins before inventing new mechanisms: no-alias vectorization, Halide scheduling, ISPC SPMD, Futhark fusion/parallelism, FFTW/Spiral generation, AlphaDev primitives, BOLT/profile layout, query compilation, and dynamic specialization.
-4. **Representation controls.** For every win, run fact-on/fact-off and same-algorithm controls through mature and own backends.
-5. **Backend attribution.** Keep C/LLVM/Wasm controls so language-information wins cannot hide backend losses and backend losses cannot erase language wins.
-6. **Agent-legibility experiment.** Measure matched tasks with primer, executable corpus, generated grammar, constrained decoding, and fail-closed diagnostics.
-7. **Live process experiment.** Measure conflict prevention, accepted-change cost, purpose recall, stability, and review load as a layer over a Git/PR + merge-queue baseline; replacement of Git, branches, or human review is not admitted without process dominance and preserved knowledge transfer.
+| # | directive |
+|---|---|
+| 1 | **Claim and surface freeze.** Public products may expose only admitted records; no new display work until evidence exists. |
+| 2 | **Oracle harness.** Implement the domain-frontier comparator contract and exact evidence object. |
+| 3 | **Wins corpus.** Reproduce published wins before inventing new mechanisms: no-alias vectorization, Halide scheduling, ISPC SPMD, Futhark fusion/parallelism, FFTW/Spiral generation, AlphaDev primitives, BOLT/profile layout, query compilation, and dynamic specialization. |
+| 4 | **Representation controls.** For every win, run fact-on/fact-off and same-algorithm controls through mature and own backends. |
+| 5 | **Backend attribution.** Keep C/LLVM/Wasm controls so language-information wins cannot hide backend losses and backend losses cannot erase language wins. |
+| 6 | **Agent-legibility experiment.** Measure matched tasks with primer, executable corpus, generated grammar, constrained decoding, and fail-closed diagnostics. |
+| 7 | **Live process experiment.** Measure conflict prevention, accepted-change cost, purpose recall, stability, and review load as a layer over a Git/PR + merge-queue baseline; replacement of Git, branches, or human review is not admitted without process dominance and preserved knowledge transfer. |
 
-## 7. Public claim rule
+| section |
+|---|---|
+| 7. Public claim rule |
 
 | # | directive |
 |---|---|

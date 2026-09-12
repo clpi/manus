@@ -1,8 +1,9 @@
-# Idol — Authoritative Language and Architecture Specification
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | **STATUS:** SOLE NEW-AGENT BOOTSTRAP **PURPOSE:** LANGUAGE LAW + COMPILER LAW + REPOSITORY LAW + CONVERGENCE LAW **MODE:** FAIL CLOSED |
+| title | Idol — Authoritative Language and Architecture Specification |
+| status | SOLE NEW-AGENT BOOTSTRAP |
+| purpose | LANGUAGE LAW + COMPILER LAW + REPOSITORY LAW + CONVERGENCE LAW |
+| mode | FAIL CLOSED |
 
 | # | directive |
 |---|---|
@@ -16,7 +17,9 @@
 | 2 | This file is constitutional interpretation for new agents. |
 | 3 | If this file conflicts with `docs/spec/law.md` or C0, the higher authority wins and this file must be repaired; where C0 itself diverges from `docs/spec/law.md`, C0 is corrected to match `docs/spec/law.md`. |
 
-## I. Primary Principle
+| section |
+|---|---|
+| I. Primary Principle |
 
 | # | directive |
 |---|---|
@@ -28,14 +31,18 @@
 | 6 | REPRESENTATION CHANGES. |
 | 7 | Every language feature must strengthen this progression rather than introduce a parallel system. |
 
-## II. Priorities
+| section |
+|---|---|
+| II. Priorities |
 
 | # | directive |
 |---|---|
 | 1 | Optimize in this order: runtime performance semantic architecture compile-time performance syntax density semantic expressiveness metaprogramming power agent comprehensibility future extensibility Do not improve superficial familiarity by sacrificing optimization or semantic convergence. |
 | 2 | Prefer: one mechanism → many capabilities over: many mechanisms → one capability each Canonical convergence targets: one id system one graph one descriptor/fact system one table/home model one application algebra one projection algebra one conversion relation one staging model one transformation model one world/universe algebra one realization model |
 
-## III. Identity
+| section |
+|---|---|
+| III. Identity |
 
 | # | directive |
 |---|---|
@@ -46,7 +53,9 @@
 | 5 | Cross-edit or cross-build continuity is an explicit correspondence relation between ids. |
 | 6 | It is never guessed from path/name/hash equality. |
 
-## IV. Fact Ownership
+| section |
+|---|---|
+| IV. Fact Ownership |
 
 | # | directive |
 |---|---|
@@ -54,14 +63,18 @@
 | 2 | Examples: lexical identity lexical authority syntactic structure grammar/parser home provenance source projection relation semantic resolution subject semantic resolution application semantic graph producer world requirement resolved relation/application world witness authority satisfaction demand demand analysis representation realization selected machine target realization machine range machine producer A downstream stage must never reconstruct an upstream fact from: source text function name path AST shape opcode method flag host type string symbol If the fact is missing: fix the producer or edge OR fail closed Never rediscover it. |
 | 3 | One fact with multiple authoritative producers is a language fork. |
 
-## V. Unknown
+| section |
+|---|---|
+| V. Unknown |
 
 | # | directive |
 |---|---|
 | 1 | Unknown compiler knowledge is not a language value. |
 | 2 | Never represent unknown with: 0 false "" nil empty pack fake id placeholder enum default relation default world Distinguish: unknown compiler fact nil language value false zero empty string empty table absent demand not applicable Unknown remains unknown until proven. |
 
-## VI. Nil
+| section |
+|---|---|
+| VI. Nil |
 
 | # | directive |
 |---|---|
@@ -70,7 +83,9 @@
 | 3 | Example: home = env["HOME"] may produce: text \| nil Missing: nil Present but empty: "" These remain distinct. |
 | 4 | Do not collapse: nil → "" nil → false nil → 0 Language refinement may narrow: text \| nil to: text inside a branch proving non-nil. |
 
-## VII. Naming — General
+| section |
+|---|---|
+| VII. Naming — General |
 
 | # | directive |
 |---|---|
@@ -81,7 +96,9 @@
 | 5 | A lowercase one-token spelling is NOT enough. |
 | 6 | Examples of still-invalid names: scanfiles canonicalid tokenview arm64check perfledger because they contain more than one semantic axis. |
 
-## VIII. SINGULAR-ONE
+| section |
+|---|---|
+| VIII. SINGULAR-ONE |
 
 | # | directive |
 |---|---|
@@ -92,7 +109,9 @@
 | 5 | Do not blindly rename: scripts → script examples → example tools → tool docs → doc First determine whether the organizational root should exist at all. |
 | 6 | Prefer semantic rehoming. |
 
-## IX. IDENTITY-IRREDUCIBILITY TEST
+| section |
+|---|---|
+| IX. IDENTITY-IRREDUCIBILITY TEST |
 
 | # | directive |
 |---|---|
@@ -106,7 +125,9 @@
 | 8 | Therefore *able protocol names are not identities — they illegitimately encode relation satisfaction. |
 | 9 | Canonical representation is the application/relation fact. |
 
-## X. PROTOCOL-NAME-ZERO
+| section |
+|---|---|
+| X. PROTOCOL-NAME-ZERO |
 
 | # | directive |
 |---|---|
@@ -116,7 +137,9 @@
 | 4 | It is normally inferred and spelled only at a real boundary; it mints no trait, dictionary, or vtable. |
 | 5 | A name ending in `able`/`ible` (`readable`, `iterable`) remains forbidden. |
 
-## XI. ROLE-NOUN-ZERO
+| section |
+|---|---|
+| XI. ROLE-NOUN-ZERO |
 
 | # | directive |
 |---|---|
@@ -124,14 +147,18 @@
 | 2 | Also distrust role nouns that merely mean "thing that performs relation X": reader writer runner parser encoder decoder serializer formatter validator checker builder emitter generator renderer collector walker scanner evaluator interpreter provider consumer producer receiver sender Such a noun is valid only if the domain contains a genuinely observable entity with that identity. |
 | 3 | Otherwise: subject + relation already expresses the semantics. |
 
-## XII. QUALIFIER-ZERO
+| section |
+|---|---|
+| XII. QUALIFIER-ZERO |
 
 | # | directive |
 |---|---|
 | 1 | Do not mint identities from qualifiers or states such as: active ready valid invalid resolved unresolved known unknown sealed dynamic static native foreign cached dirty clean pending partial complete mutable immutable shared local global pure impure hot cold used unused materialized boxed unboxed inlined folded vectorized These are facts about something else. |
 | 2 | Never: nativevalue dynamiccall boxedvalue validtype specializedfunction as separate semantic identity classes. |
 
-## XIII. REDUNDANT QUALIFIER ZERO
+| section |
+|---|---|
+| XIII. REDUNDANT QUALIFIER ZERO |
 
 | # | directive |
 |---|---|
@@ -140,21 +167,27 @@
 | 3 | "Application algebra" may be an explanatory phrase. |
 | 4 | It does not imply an Algebra object. |
 
-## XIV. META-NOUN-ZERO
+| section |
+|---|---|
+| XIV. META-NOUN-ZERO |
 
 | # | directive |
 |---|---|
 | 1 | Architectural explanatory words do not automatically deserve program identities: algebra calculus lattice framework system model mechanism architecture subsystem layer schema Use them in prose when useful. |
 | 2 | Do not create semantic subsystems merely because the architecture can be described with that word. |
 
-## XV. ORGANIZATIONAL-ESCAPE-ZERO
+| section |
+|---|---|
+| XV. ORGANIZATIONAL-ESCAPE-ZERO |
 
 | # | directive |
 |---|---|
 | 1 | Do not hide unclear semantic ownership under generic organizational names: core base common shared util utility helper support misc internal foundation platform system default general generic A name like "helper" means ownership has not been resolved. |
 | 2 | Rehome to the actual semantic owner. |
 
-## XVI. COLLISION-ZERO
+| section |
+|---|---|
+| XVI. COLLISION-ZERO |
 
 | # | directive |
 |---|---|
@@ -162,13 +195,17 @@
 | 2 | Presumptively forbidden when used as compiler/language architecture: router gateway dispatcher registry manager factory adapter broker mediator controller coordinator orchestrator handler executor runner engine pipeline scheduler loader bridge shim proxy wrapper frontend backend context session service provider framework container The ROLE is forbidden, not only the spelling. |
 | 3 | Renaming: router → broker → manager → service does not fix it. |
 
-## XVII. Existing Machinery Owns These Responsibilities
+| section |
+|---|---|
+| XVII. Existing Machinery Owns These Responsibilities |
 
 | # | directive |
 |---|---|
 | 1 | Routing: application resolution Dispatch: application resolution + realization selection Registration: anchored facts Adaptation: foreign/realization projection Context: current fact/reachability set Execution selection: demand + realization Protocol satisfaction: relation/application facts Transformation selection: transformation dependencies + demand Therefore no second owner object is required. |
 
-## XVIII. KEY→HANDLER ZERO
+| section |
+|---|---|
+| XVIII. KEY→HANDLER ZERO |
 
 | # | directive |
 |---|---|
@@ -177,7 +214,9 @@
 | 3 | A physical lookup index may exist only as acceleration. |
 | 4 | Deleting the index must not alter semantic behavior. |
 
-## XIX. RESPONSIBILITY-BAG ZERO
+| section |
+|---|---|
+| XIX. RESPONSIBILITY-BAG ZERO |
 
 | # | directive |
 |---|---|
@@ -185,7 +224,9 @@
 | 2 | Do not create Context/Session/Manager objects that make facts true merely by containing them. |
 | 3 | Split facts by their real owners. |
 
-## XX. Filesystem Semantics
+| section |
+|---|---|
+| XX. Filesystem Semantics |
 
 | # | directive |
 |---|---|
@@ -225,14 +266,18 @@
 | 2 | The file contributes root-body semantics; the directory contributes members. |
 | 3 | No file/module distinction. |
 
-## XXI. File Is Body
+| section |
+|---|---|
+| XXI. File Is Body |
 
 | # | directive |
 |---|---|
 | 1 | For: gate/census.id filesystem already supplies: home gate member census Inside the file do NOT repeat: census = ... census: {...} gate.census = ... gate = { census = ... } The file contents are the member body. |
 | 2 | Home/member identity is supplied exactly once. |
 
-## XXII. Root Execution
+| section |
+|---|---|
+| XXII. Root Execution |
 
 | # | directive |
 |---|---|
@@ -241,14 +286,18 @@
 | 3 | Example scriptlike body: value = compute() value:print() 0 No main. |
 | 4 | If a file is root-callable: (x) y = transform(x) y No same-name function wrapper. |
 
-## XXIII. Child Relations
+| section |
+|---|---|
+| XXIII. Child Relations |
 
 | # | directive |
 |---|---|
 | 1 | A callable child file is normally a relation on its parent table when the parent is its semantic subject. |
 | 2 | Given: gate/idiom.id with root: (diff) ... canonical invocation: gate:idiom(diff) not: gate.idiom(diff) Graph: relation = idiom subject = gate operands = diff home = gate origin = gate/idiom.id Nested example: test/compiler/smoke.id canonical: test.compiler:smoke(...) `.` projects compiler statically. `:` invokes smoke on compiler. |
 
-## XXIV. DOT-STRICT
+| section |
+|---|---|
+| XXIV. DOT-STRICT |
 
 | # | directive |
 |---|---|
@@ -257,13 +306,17 @@
 | 3 | Keep static qualification only when it disambiguates actual semantic identity: os.env["HOME"] Example forbidden: gate.idiom(diff) when gate is the subject. |
 | 4 | Use: gate:idiom(diff) Never use dot merely because another language would call something a static method/module function. |
 
-## XXV. SUBJECT-FIRST
+| section |
+|---|---|
+| XXV. SUBJECT-FIRST |
 
 | # | directive |
 |---|---|
 | 1 | If an operation belongs semantically to a possessed value, orient the relation on that value: source:read() path:open() stdout:write(text) command:run() text:find(pattern) text:sub(a,b) Avoid: read(source) open(path) write(stdout,text) find(text,pattern) unless the relation genuinely has no natural semantic subject. |
 
-## XXVI. APPLICATION-ONE
+| section |
+|---|---|
+| XXVI. APPLICATION-ONE |
 
 | # | directive |
 |---|---|
@@ -271,14 +324,18 @@
 | 2 | Resolver determines semantic application. |
 | 3 | Do not create independent semantic call kingdoms for: function call method call accessor call protocol call generic call projected call after resolution. |
 
-## XXVII. PAREN-ONE
+| section |
+|---|---|
+| XXVII. PAREN-ONE |
 
 | # | directive |
 |---|---|
 | 1 | `()` is the ordinary canonical application/accessor delimiter. |
 | 2 | The resolver determines whether: f(x) is: callable application keyed access ordinal access place-producing access another admitted application shape Punctuation itself does not mint semantic identity. |
 
-## XXVIII. HUMAN-UNAMBIGUOUS ELISION
+| section |
+|---|---|
+| XXVIII. HUMAN-UNAMBIGUOUS ELISION |
 
 | # | directive |
 |---|---|
@@ -287,7 +344,9 @@
 | 3 | Normally prefer explicit: source:read() path:open() command:run() stdout:write(text) text:parse(json) rather than: source() path() command() stdout(text) text(json) when the omitted relation would force a human reader to guess. |
 | 4 | Syntax density must not reduce semantic clarity. |
 
-## XXIX. ACCESS-ONE
+| section |
+|---|---|
+| XXIX. ACCESS-ONE |
 
 | # | directive |
 |---|---|
@@ -296,7 +355,9 @@
 | 3 | Do not use: x:get(k) x:set(k,v) x:call(...) These duplicate projection/application semantics. |
 | 4 | Long-term place-producing projection may support: x[k] = value when `x[k]` resolves to a place. |
 
-## XXX. PROJECTION-AND-APPLICATION-ONE
+| section |
+|---|---|
+| XXX. PROJECTION-AND-APPLICATION-ONE |
 
 | # | directive |
 |---|---|
@@ -306,7 +367,9 @@
 | 4 | A foreign source law may recognize foreign bracket or parenthesis indexing only inside that law-qualified source projection. |
 | 5 | The spelling remains source provenance and never becomes Idol grammar or semantic authority. |
 
-## XXXI. HAS-ZERO
+| section |
+|---|---|
+| XXXI. HAS-ZERO |
 
 | # | directive |
 |---|---|
@@ -315,13 +378,17 @@
 | 3 | Bad: code:has(pattern) Prefer an irreducible search: pos = code:find(pattern) if pos ... |
 | 4 | Boolean presence should exist only if the bool itself is genuinely demanded. |
 
-## XXXII. TO-ONE
+| section |
+|---|---|
+| XXXII. TO-ONE |
 
 | # | directive |
 |---|---|
 | 1 | There is one semantic descriptor-conversion relation: to Do not create generic conversion synonyms: char cast coerce convert stringify into as encode when the actual semantics are descriptor conversion. |
 
-## XXXIII. Conversion Inference (SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE)
+| section |
+|---|---|
+| XXXIII. Conversion Inference (SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE) |
 
 | # | directive |
 |---|---|
@@ -363,7 +430,9 @@
 | 1 | INTERMEDIATE-ZERO: chain relations directly when identity is preserved. |
 | 2 | Retain a named intermediate only when the name contributes semantic information the chain does not (multiple consumers, or human-clarity place identity). |
 
-## XXXIV. Satisfaction / Conversion / Parse / Realization
+| section |
+|---|---|
+| XXXIV. Satisfaction / Conversion / Parse / Realization |
 
 | # | directive |
 |---|---|
@@ -371,7 +440,9 @@
 | 2 | Do not use parse as a synonym for conversion. |
 | 3 | Do not use realization as semantic conversion. |
 
-## XXXV. ENCODE-ZERO
+| section |
+|---|---|
+| XXXV. ENCODE-ZERO |
 
 | # | directive |
 |---|---|
@@ -382,14 +453,18 @@
 | 5 | A format is a descriptor. |
 | 6 | The transformation is a relation. |
 
-## XXXVI. Format Examples
+| section |
+|---|---|
+| XXXVI. Format Examples |
 
 | # | directive |
 |---|---|
 | 1 | If JSON representation is semantically conversion: out: json = value or explicitly: out = value:to(json) If text must be interpreted as JSON syntax: value = text:parse(json) If emission has independently observable semantics distinct from `to`, an explicit relation may survive only after proof. |
 | 2 | Never invent `encode` merely because ecosystem libraries use that vocabulary. |
 
-## XXXVII. @ — Current-world accessor
+| section |
+|---|---|
+| XXXVII. @ — Current-world accessor |
 
 | # | directive |
 |---|---|
@@ -398,7 +473,9 @@
 | 3 | Prefix compiler-namespace directives are denied. |
 | 4 | Never: @comp.* @host.* @runtime.* @ffi.* as generic source APIs. `@` does not mean import. `@` does not mean generic injection. `@` does not call compiler implementation. |
 
-## XXXVIII. @{}
+| section |
+|---|---|
+| XXXVIII. @{} |
 
 | # | directive |
 |---|---|
@@ -437,7 +514,9 @@
 | 2 | The compiler may describe that algebraically as fact composition. |
 | 3 | There is no `inject` language construct and no user-facing `interjection` syntax. |
 
-## XXXIX. Descriptors
+| section |
+|---|---|
+| XXXIX. Descriptors |
 
 | # | directive |
 |---|---|
@@ -445,7 +524,9 @@
 | 2 | A descriptor is semantic facts/constraints. |
 | 3 | Physical representation is not chosen merely because a descriptor exists. |
 
-## XL. TABLE-ONE
+| section |
+|---|---|
+| XL. TABLE-ONE |
 
 | # | directive |
 |---|---|
@@ -454,7 +535,9 @@
 | 3 | Role is a fact. |
 | 4 | Do not create a separate object model for each role. |
 
-## XLI. World
+| section |
+|---|---|
+| XLI. World |
 
 | # | directive |
 |---|---|
@@ -465,7 +548,9 @@
 | 5 | World means: a closed semantic table whose facts (including, but not limited to, authority facts) resolve meaning not: authority object namespace service API module runtime object Do not define: World FileWorld ReadWorld SandboxWorld readonly writable privileged restricted merely to group permission sets. |
 | 6 | Presence/absence of actual authority facts is sufficient. |
 
-## XLII. OS World
+| section |
+|---|---|
+| XLII. OS World |
 
 | # | directive |
 |---|---|
@@ -474,14 +559,18 @@
 | 3 | Explicit static projection only when qualification disambiguates: os.env["HOME"] os.args[1] `env` and `args` are accessors. |
 | 4 | Do not implement them in canonical Idol source using: getenv @comp.host.env host.env API runtime.env Physical realization belongs below the graph. |
 
-## XLIII. IO World
+| section |
+|---|---|
+| XLIII. IO World |
 
 | # | directive |
 |---|---|
 | 1 | A platform may provide: io stdin stdout stderr These are ordinary endpoint values. |
 | 2 | Meaningful operations orient on the actual endpoint: stdin:read() stdout:write(text) Never: io.read() io.write() because io is not the true subject. |
 
-## XLIV. USER-DEFINED FIXTURE TABLES
+| section |
+|---|---|
+| XLIV. USER-DEFINED FIXTURE TABLES |
 
 | # | directive |
 |---|---|
@@ -510,7 +599,9 @@
 |---|---|
 | 1 | Explicit qualification in source remains valid when ambiguity must be avoided: mock.env["HOME"] |
 
-## XLV. ESSENTIAL MODEL
+| section |
+|---|---|
+| XLV. ESSENTIAL MODEL |
 
 | # | directive |
 |---|---|
@@ -558,7 +649,9 @@
 |---|---|
 | 1 | **Rule (INFER-ONE for world):** if a dependency can be uniquely inferred from an actual semantic use, never require a declaration of that dependency. |
 
-## XLVI. RESOLVE ONCE — NEVER SEARCH LATER
+| section |
+|---|---|
+| XLVI. RESOLVE ONCE — NEVER SEARCH LATER |
 
 | # | directive |
 |---|---|
@@ -607,7 +700,9 @@ if x > app.limit
 | 1 | Local naming is ordinary binding: `limit = app.limit`. |
 | 2 | Do not require `@{}` projection blocks or import ceremony for sibling/home members the layout model already makes referable. |
 
-## XLVII. FILESYSTEM INGEST ONLY
+| section |
+|---|---|
+| XLVII. FILESYSTEM INGEST ONLY |
 
 | # | directive |
 |---|---|
@@ -626,7 +721,9 @@ test/smoke.id  →  test · test.smoke  →  filesystem forgotten except origin
 |---|---|
 | 1 | No language operation means: parent directory walk, sibling file search, root search, import module, load package. |
 
-## XLVIII. @{} IS WORLD DERIVATION, NOT CEREMONY
+| section |
+|---|---|
+| XLVIII. @{} IS WORLD DERIVATION, NOT CEREMONY |
 
 | # | directive |
 |---|---|
@@ -661,7 +758,9 @@ import · require · use · include
 universe declaration · world declaration · scope declaration
 ```
 
-## XLIX. WORLDS AS EXECUTION INPUTS
+| section |
+|---|---|
+| XLIX. WORLDS AS EXECUTION INPUTS |
 
 | # | directive |
 |---|---|
@@ -690,7 +789,9 @@ world = {
 | 1 | Cross-origin selection (args from platform, env from mock) is a **configuration** fact at execution — not source-level `@{ os.args mock.os.env }` blocks. |
 | 2 | Origin/authority lineage is preserved in graph witnesses; no CombinedWorld object. |
 
-## L. World Ambiguity
+| section |
+|---|---|
+| L. World Ambiguity |
 
 | # | directive |
 |---|---|
@@ -710,7 +811,9 @@ mock.env["HOME"]
 | 1 | or supply a unique execution configuration. |
 | 2 | Rejecting OS/IO is witness omission at the boundary — not a negative-capability language in source. |
 
-## LI. Projection Algebra
+| section |
+|---|---|
+| LI. Projection Algebra |
 
 | # | directive |
 |---|---|
@@ -720,7 +823,9 @@ mock.env["HOME"]
 | 4 | Injection / interjection: @{ k = v } derive the current world with exact fact deltas x@{ k = v } scoped interjection x@(@{ k = v }) Projection: P(T,S) ⊆ F(T) preserves ids and origin. |
 | 5 | Projection does not clone meaning. |
 
-## LIII. Injection (internal)
+| section |
+|---|---|
+| LIII. Injection (internal) |
 
 | # | directive |
 |---|---|
@@ -741,14 +846,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | It is **not** a separate source-language operation. |
 | 3 | Do not expose `inject` or `interject` as user syntax. |
 
-## LIV. Protocol
+| section |
+|---|---|
+| LIV. Protocol |
 
 | # | directive |
 |---|---|
 | 1 | A protocol is a projection/constraint over required relation/application facts. |
 | 2 | Example: source:read() on unknown source establishes: source must admit read with the demanded shape Do not create: readable Readable reader protocol interface trait impl The relation/application constraint IS the requirement. |
 
-## LIV. Protocol ≠ World
+| section |
+|---|---|
+| LIV. Protocol ≠ World |
 
 | # | directive |
 |---|---|
@@ -757,7 +866,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Different subject/world facts. |
 | 4 | Never merge into a generic "io capability." |
 
-## LV. Conditional Authority
+| section |
+|---|---|
+| LV. Conditional Authority |
 
 | # | directive |
 |---|---|
@@ -765,7 +876,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | After refinement to file: network requirement disappears. |
 | 3 | Do not eagerly combine authority into generic world categories. |
 
-## LVI. Union
+| section |
+|---|---|
+| LVI. Union |
 
 | # | directive |
 |---|---|
@@ -774,7 +887,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | For: a \| b representation is chosen later. |
 | 4 | If refinement leaves one live alternative: runtime tag cost should disappear unless the tag itself is independently observable. |
 
-## LVII. Value ≠ Place
+| section |
+|---|---|
+| LVII. Value ≠ Place |
 
 | # | directive |
 |---|---|
@@ -783,20 +898,26 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | A table field is not automatically memory. |
 | 4 | Place exists only if observable semantics demand: mutation aliasing address lifetime identity ABI persistent state No place requirement: no mandatory load/store/materialization. |
 
-## LVIII. REPRESENTATION-NOUN-ZERO
+| section |
+|---|---|
+| LVIII. REPRESENTATION-NOUN-ZERO |
 
 | # | directive |
 |---|---|
 | 1 | Do not turn physical storage choices into semantic identities: buffer box slot cell register stack heap lane bucket block page node handle pointer unless they are genuinely observable domain entities. |
 | 2 | Representation belongs to realization. |
 
-## LIX. PACK-ONE
+| section |
+|---|---|
+| LIX. PACK-ONE |
 
 | # | directive |
 |---|---|
 | 1 | One pack model covers: operands results projections multiple returns ABI argument/result shapes Preserve: pack id value ids position/label descriptor demand provenance Do not invent separate: ArgList ReturnTuple ProjectionArgs semantic kingdoms. |
 
-## LX. Multiple Returns
+| section |
+|---|---|
+| LX. Multiple Returns |
 
 | # | directive |
 |---|---|
@@ -805,14 +926,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | If caller consumes values separately, realization may keep them separately in registers. |
 | 4 | Unconsumed result slots should disappear physically. |
 
-## LXI. Closures
+| section |
+|---|---|
+| LXI. Closures |
 
 | # | directive |
 |---|---|
 | 1 | A closure has semantic facts: callable identity captures escape lifetime demand Possible realization: inline constant substitution direct specialized function registers stack heap Heap closure is last resort. |
 | 2 | Source closure syntax never mandates heap allocation. |
 
-## LXII. Curry
+| section |
+|---|---|
+| LXII. Curry |
 
 | # | directive |
 |---|---|
@@ -820,7 +945,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Example: scale = (k) (x) x * k double = scale(2) Missing arity does not magically curry arbitrary functions. |
 | 3 | Projection forms are not currying. |
 
-## LXIII. Functions
+| section |
+|---|---|
+| LXIII. Functions |
 
 | # | directive |
 |---|---|
@@ -832,7 +959,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 6 | No canonical `do`. |
 | 7 | No canonical `then`. |
 
-## LXIV. Methods / Relations
+| section |
+|---|---|
+| LXIV. Methods / Relations |
 
 | # | directive |
 |---|---|
@@ -840,7 +969,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Colon is subject relation orientation. |
 | 3 | A relation whose semantic subject is a table/value uses: subject:relation(...) Do not introduce: method kind method registry method reference ontology impl block Relation identity remains relation identity. |
 
-## LXV. DESCRIPTOR-LOCAL RELATIONS
+| section |
+|---|---|
+| LXV. DESCRIPTOR-LOCAL RELATIONS |
 
 | # | directive |
 |---|---|
@@ -848,14 +979,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | A relation can still be globally identified while its home supplies declaration context. |
 | 3 | Home membership does not mint a new relation identity. |
 
-## LXVI. Home
+| section |
+|---|---|
+| LXVI. Home |
 
 | # | directive |
 |---|---|
 | 1 | Home is: declaration/reachability/context anchor It is NOT: namespace module protocol grant world grant Moving among equivalent homes must not change relation identity. |
 | 2 | Path is provenance after source projection. |
 
-## LXVII. MODULE-ZERO
+| section |
+|---|---|
+| LXVII. MODULE-ZERO |
 
 | # | directive |
 |---|---|
@@ -863,7 +998,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Filesystem tables/homes + reachability already organize source. |
 | 3 | Do not reconstruct module semantics later from paths. |
 
-## LXVIII. STD-ZERO / LIB-ZERO
+| section |
+|---|---|
+| LXVIII. STD-ZERO / LIB-ZERO |
 
 | # | directive |
 |---|---|
@@ -872,7 +1009,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Repository directories named `lib` must not become semantic roots merely because they exist physically. |
 | 4 | Do not repair: std.* by changing it to: semantic.* core.* lib.* Delete the organizational semantic hop. |
 
-## LXIX. META-ZERO
+| section |
+|---|---|
+| LXIX. META-ZERO |
 
 | # | directive |
 |---|---|
@@ -880,7 +1019,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Do not create a parallel `meta` namespace/system unless the value is genuinely external metadata. |
 | 3 | No: metadispatch metaregistry metaobject system for ordinary staging. |
 
-## LXX. Staging
+| section |
+|---|---|
+| LXX. Staging |
 
 | # | directive |
 |---|---|
@@ -891,33 +1032,43 @@ F(D)' = coherent(F(D) ∪ P)
 | 5 | Stage is a fact. |
 | 6 | Compile-time values are ordinary values. |
 
-## LXXI. ARBITRARY COMPILE-TIME EXECUTION
+| section |
+|---|---|
+| LXXI. ARBITRARY COMPILE-TIME EXECUTION |
 
 | # | directive |
 |---|---|
 | 1 | Compile-time execution may perform ordinary Idol computation subject to world, stage, and determinism constraints. |
 | 2 | Cache by: semantic dependencies world observations target facts demand not merely timestamps. |
 
-## LXXII. DERIVE-ZERO AS SUBSYSTEM
+| section |
+|---|---|
+| LXXII. DERIVE-ZERO AS SUBSYSTEM |
 
 | # | directive |
 |---|---|
 | 1 | Do not build: derive registry derive evaluator kingdom derive bundle ontology when behavior is expressible as: relation/descriptor facts stage transformation A physical lookup index may remain if nonauthoritative. |
 
-## LXXIII. TRANSFORM-ONE
+| section |
+|---|---|
+| LXXIII. TRANSFORM-ONE |
 
 | # | directive |
 |---|---|
 | 1 | One transformation model covers: constant folding specialization inlining vectorization fusion staging dead-code elimination target lowering Every transform records: input ids prerequisite facts produced facts eliminated alternatives provenance/lineage physical consequence No rewrite engine/transform engine semantic kingdom. |
 
-## LXXIV. TRANSFORMATION-NAME-ZERO
+| section |
+|---|---|
+| LXXIV. TRANSFORMATION-NAME-ZERO |
 
 | # | directive |
 |---|---|
 | 1 | Do not turn generic transformation families into arbitrary semantic homes: encoding decoding conversion normalization canonicalization lowering rewriting expansion optimization generation emission unless the domain contains an independently observable entity with that name. |
 | 2 | Usually these are relations/transformation records. |
 
-## LXXV. Transformation Lineage
+| section |
+|---|---|
+| LXXV. Transformation Lineage |
 
 | # | directive |
 |---|---|
@@ -926,7 +1077,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Inlining does not erase call provenance. |
 | 4 | Vectorization does not erase scalar relation identity. |
 
-## LXXVI. GRAPH-ONE
+| section |
+|---|---|
+| LXXVI. GRAPH-ONE |
 
 | # | directive |
 |---|---|
@@ -934,7 +1087,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Secondary: call graph region graph dependency graph control graph may exist only as derived indexes/views. |
 | 3 | They cannot own semantic facts unavailable from the primary graph. |
 
-## LXXVII. AST Boundary
+| section |
+|---|---|
+| LXXVII. AST Boundary |
 
 | # | directive |
 |---|---|
@@ -942,7 +1097,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Parser may recognize: delimiters source home declared parameter shape spans syntax forms Parser does NOT authoritatively decide: subject world demand application role semantic projection relation identity Those belong to semantic resolution/graph. |
 | 3 | Do not create hidden syntax bindings to manufacture semantic roles. |
 
-## LXXVIII. DNIR
+| section |
+|---|---|
+| LXXVIII. DNIR |
 
 | # | directive |
 |---|---|
@@ -950,14 +1107,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | It is not a second semantic language. |
 | 3 | It must carry/consume graph facts such as: application id relation id selected target id subject id operand/result packs descriptors world/effect demand provenance Do not reconstruct semantics from: callee name source path symbol opcode host type method flag DNIR operation tags are physical encodings, not new semantic relation identities. |
 
-## LXXIX. Relation ≠ Target
+| section |
+|---|---|
+| LXXIX. Relation ≠ Target |
 
 | # | directive |
 |---|---|
 | 1 | One relation may have multiple lawful implementations. |
 | 2 | Relation: validates semantic meaning Selected target: chooses a concrete implementation/realization Never assume: relation → exactly one physical function Carry selected target separately where needed. |
 
-## LXXX. TARGET-ONE
+| section |
+|---|---|
+| LXXX. TARGET-ONE |
 
 | # | directive |
 |---|---|
@@ -965,14 +1126,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Architecture names such as: arm64 wasm macho may survive only where they genuinely identify foreign/target representation domains. |
 | 3 | They must not qualify native semantic identities unnecessarily. |
 
-## LXXXI. Foreign Boundary
+| section |
+|---|---|
+| LXXXI. Foreign Boundary |
 
 | # | directive |
 |---|---|
 | 1 | Foreign representations normalize exactly once. |
 | 2 | Examples: C ABI Wasm OS handles foreign strings Lua compatibility process exit status Ingress: foreign facts → canonical semantic facts Egress: canonical semantic facts → required foreign representation No permanent adapter/bridge semantic ontology. |
 
-## LXXXII. BRIDGE-DEATH
+| section |
+|---|---|
+| LXXXII. BRIDGE-DEATH |
 
 | # | directive |
 |---|---|
@@ -980,13 +1145,17 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Once replacement exists: delete bridge. |
 | 3 | Never rename: bridge → adapter → gateway and preserve the same architecture. |
 
-## LXXXIII. ZERO-COPY
+| section |
+|---|---|
+| LXXXIII. ZERO-COPY |
 
 | # | directive |
 |---|---|
 | 1 | Zero-copy interop requires proof of: layout alignment ownership lifetime mutation law alias law encoding ABI compatibility Pointer compatibility alone is insufficient. |
 
-## LXXXIV. WASM
+| section |
+|---|---|
+| LXXXIV. WASM |
 
 | # | directive |
 |---|---|
@@ -998,14 +1167,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 6 | Target-specific representation comes later. |
 | 7 | Goal: Idol Wasm faster than Wasmtime smaller binaries faster startup equal semantic correctness But claims require evidence. |
 
-## LXXXV. Numbers
+| section |
+|---|---|
+| LXXXV. Numbers |
 
 | # | directive |
 |---|---|
 | 1 | Compact source faces may remain: i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 But they decompose semantically into facts: width signedness format precision overflow law rounding law Unannotated integer literals retain exact mathematical integer value until demand forces a narrower descriptor. |
 | 2 | Physical register/lane width belongs to realization. |
 
-## LXXXVI. Effects
+| section |
+|---|---|
+| LXXXVI. Effects |
 
 | # | directive |
 |---|---|
@@ -1013,28 +1186,36 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Retain enough facts to determine: may reorder? may duplicate? may eliminate? may speculate? may fail? may allocate? may observe mutation? which world required? may fuse? may parallelize? |
 | 3 | Optimization consumes effect facts. |
 
-## LXXXVII. Order
+| section |
+|---|---|
+| LXXXVII. Order |
 
 | # | directive |
 |---|---|
 | 1 | Source order is semantically binding only when observable dependencies/effects require it. |
 | 2 | Independent work may: reorder fuse parallelize vectorize stage when facts prove equivalence. |
 
-## LXXXVIII. Concurrency
+| section |
+|---|---|
+| LXXXVIII. Concurrency |
 
 | # | directive |
 |---|---|
 | 1 | Do not create semantic kingdoms merely from concurrency strategy: Task Future Promise Actor AsyncFunction unless independently irreducible. |
 | 2 | Semantic facts: dependency ordering sharing ownership transfer lifetime cancellation communication world Realization may choose: inline coroutine thread task SIMD GPU process Native coroutines should be first-class realization capability. |
 
-## LXXXIX. Synchronization
+| section |
+|---|---|
+| LXXXIX. Synchronization |
 
 | # | directive |
 |---|---|
 | 1 | Do not introduce: lock atomic barrier refcount cost unless sharing/order semantics require it. |
 | 2 | Isolation should remove synchronization costs. |
 
-## XC. Ownership
+| section |
+|---|---|
+| XC. Ownership |
 
 | # | directive |
 |---|---|
@@ -1042,7 +1223,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Keep semantic facts: alias lifetime unique escape mutation transfer address observation Representation follows those facts. |
 | 3 | No ownership syntax required merely for compiler optimization. |
 
-## XCI. Iteration
+| section |
+|---|---|
+| XCI. Iteration |
 
 | # | directive |
 |---|---|
@@ -1050,7 +1233,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Do not create unrelated iterator kingdoms: pairs ipairs Iterator Enumerator Generator Range object unless a returned state machine itself is semantically observable. |
 | 3 | Realization may choose: counted loop pointer walk hash walk SIMD coroutine/generator |
 
-## XCII. Fusion
+| section |
+|---|---|
+| XCII. Fusion |
 
 | # | directive |
 |---|---|
@@ -1058,40 +1243,52 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | When facts allow: one fused loop zero intermediate allocation is preferred. |
 | 3 | Semantic relation composition remains visible to graph/tooling. |
 
-## XCIII. Vector
+| section |
+|---|---|
+| XCIII. Vector |
 
 | # | directive |
 |---|---|
 | 1 | SIMD is realization. |
 | 2 | Infer vectorization from: independent iteration descriptor alias freedom alignment reduction law target capabilities Do not require a separate SIMD language. |
 
-## XCIV. SHAPE-ONE
+| section |
+|---|---|
+| XCIV. SHAPE-ONE |
 
 | # | directive |
 |---|---|
 | 1 | Known table shape drives: field offsets scalar replacement register allocation stack layout hash elimination iteration strategy ABI layout vector layout Once shape is known, downstream may not forget it and fall back to generic hash semantics. |
 
-## XCV. COST-ONE
+| section |
+|---|---|
+| XCV. COST-ONE |
 
 | # | directive |
 |---|---|
 | 1 | Every physical cost must identify the unresolved semantic possibility forcing it. |
 | 2 | Audit: allocation copy box tag guard hash lookup indirect call heap closure materialized pack runtime descriptor runtime world object ABI shuffle spill lock atomic buffer conversion If no semantic uncertainty/observable law requires the cost: delete it. |
 
-## XCVI. REQUIRED ZERO-COST CASES
+| section |
+|---|---|
+| XCVI. REQUIRED ZERO-COST CASES |
 
 | # | directive |
 |---|---|
 | 1 | Known shape: generic hash lookup = 0 Sealed target: indirect call = 0 Nonescaping closure: heap allocation = 0 Singleton union: runtime tag = 0 Unused result: materialization = 0 Static protocol witness: runtime witness object = 0 Statically unique world witness: runtime world object = 0 Direct descriptor satisfaction: conversion = 0 |
 
-## XCVII. Specialization
+| section |
+|---|---|
+| XCVII. Specialization |
 
 | # | directive |
 |---|---|
 | 1 | Specialization accumulates facts over existing semantic applications. |
 | 2 | Potential facts: subject relation descriptor exact value table shape result demand world stage target profile Do not create a separate generic/template semantic system. |
 
-## XCVIII. Specialization Budget
+| section |
+|---|---|
+| XCVIII. Specialization Budget |
 
 | # | directive |
 |---|---|
@@ -1099,14 +1296,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Clone a physical implementation only when expected runtime benefit exceeds: compile time code size I-cache cost startup cost memory cost Profile may influence this decision. |
 | 3 | Profile does not establish semantic truth. |
 
-## XCIX. Guards
+| section |
+|---|---|
+| XCIX. Guards |
 
 | # | directive |
 |---|---|
 | 1 | Every speculative guard records: assumed fact evidence guard dependent realization failure/invalidation path No hidden assumptions. |
 | 2 | No profile observation promoted directly to truth. |
 
-## C. Runtime
+| section |
+|---|---|
+| C. Runtime |
 
 | # | directive |
 |---|---|
@@ -1114,7 +1315,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | A sealed native program that needs no: GC scheduler reflection dynamic tables coroutine machinery world adapter should link none. |
 | 3 | Startup should approach: OS loader → entry with minimal language initialization. |
 
-## CI. GC
+| section |
+|---|---|
+| CI. GC |
 
 | # | directive |
 |---|---|
@@ -1122,14 +1325,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | A value may realize as: register stack static region arena isolated heap GC heap according to lifetime/escape/alias facts. |
 | 3 | GC is not mandatory table semantics. |
 
-## CII. COMPILE-TIME PERFORMANCE
+| section |
+|---|---|
+| CII. COMPILE-TIME PERFORMANCE |
 
 | # | directive |
 |---|---|
 | 1 | Semantic richness must not imply heap-object explosion. |
 | 2 | Prefer: dense ids arenas contiguous fact storage bitsets packed facts compact spans lazy indexes Avoid: heap object per semantic fact string-key semantic maps everywhere duplicated complete IRs Derive secondary facts only when demanded or profitable to cache. |
 
-## CIII. Cache
+| section |
+|---|---|
+| CIII. Cache |
 
 | # | directive |
 |---|---|
@@ -1138,21 +1345,27 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Cache candidates may be found by: fingerprint path timestamp but semantic reuse must be verified by authoritative dependencies/facts. |
 | 4 | A cache can never select meaning. |
 
-## CIV. Incrementality
+| section |
+|---|---|
+| CIV. Incrementality |
 
 | # | directive |
 |---|---|
 | 1 | Invalidation is fact-based: changed semantic fact → dependent semantic slice → dependent realization slice Do not make: file changed → rebuild module the fundamental architecture. |
 | 2 | File is provenance partition, not semantic identity. |
 
-## CV. Determinism
+| section |
+|---|---|
+| CV. Determinism |
 
 | # | directive |
 |---|---|
 | 1 | Same: semantic source universe world observations target must produce deterministic semantic meaning. |
 | 2 | These may not choose meaning: filesystem order hash iteration task scheduling pointer addresses agent order source discovery order Ambiguity must fail rather than resolve accidentally. |
 
-## CVI. Source Syntax — Blocks
+| section |
+|---|---|
+| CVI. Source Syntax — Blocks |
 
 | # | directive |
 |---|---|
@@ -1160,7 +1373,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | No canonical: end then do semicolon Outdent closes the block. |
 | 3 | Whitespace is syntactic layout but semantic identity must not depend on formatting details beyond the parsed structure. |
 
-## CVII. Comments
+| section |
+|---|---|
+| CVII. Comments |
 
 | # | directive |
 |---|---|
@@ -1173,7 +1388,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Block-comment machinery should not create a second complex comment language unless independently justified. |
 | 3 | Current source and tooling should consistently teach `#`. |
 
-## CVIII. Strings
+| section |
+|---|---|
+| CVIII. Strings |
 
 | # | directive |
 |---|---|
@@ -1182,7 +1399,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Historical long-string syntax is not canonical. |
 | 4 | Quote/byte semantics must remain consistent with the final lexical authority; do not invent additional string literal kingdoms ad hoc. |
 
-## CIX. `!`
+| section |
+|---|---|
+| CIX. `!` |
 
 | # | directive |
 |---|---|
@@ -1190,7 +1409,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Do not regress into stale Lua-style `not` patterns in canonical source if the current lexical authority has retired them. |
 | 3 | This is surface syntax; semantic boolean negation remains one relation/law. |
 
-## CX. Table Keys
+| section |
+|---|---|
+| CX. Table Keys |
 
 | # | directive |
 |---|---|
@@ -1198,14 +1419,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Do not write computed bracket keys merely because Lua historically required them. |
 | 3 | Use explicit computed projection only when the key genuinely is computed or the place semantics require it. |
 
-## CXI. Generics
+| section |
+|---|---|
+| CXI. Generics |
 
 | # | directive |
 |---|---|
 | 1 | Do not introduce bracket generic syntax: Slice[Byte] Foo[T] Types/descriptors are first-class semantic values. |
 | 2 | Generic behavior comes from: ordinary parameters compile-time/stage facts descriptors application specialization No separate generic language. |
 
-## CXII. Casts
+| section |
+|---|---|
+| CXII. Casts |
 
 | # | directive |
 |---|---|
@@ -1214,7 +1439,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Representation reinterpretation is not necessarily semantic conversion and may require a view/realization law rather than `to`. |
 | 4 | Do not conflate bit reinterpretation with semantic conversion. |
 
-## CXIII. Shell
+| section |
+|---|---|
+| CXIII. Shell |
 
 | # | directive |
 |---|---|
@@ -1225,14 +1452,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 5 | Avoid textual shell pipelines for native compiler/gate logic when structured semantic operations can express the work. |
 | 6 | Bootstrap shell use must have deletion debt. |
 
-## CXIV. Status / Outcome
+| section |
+|---|---|
+| CXIV. Status / Outcome |
 
 | # | directive |
 |---|---|
 | 1 | Foreign process status is not automatically native semantic outcome. |
 | 2 | Distinguish: process status transport completion semantic result evidence verdict Do not infer: status == 0 → semantic truth without an admitted boundary law. |
 
-## CXV. PREDICATE-ZERO
+| section |
+|---|---|
+| CXV. PREDICATE-ZERO |
 
 | # | directive |
 |---|---|
@@ -1240,7 +1471,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Prefer direct refinement/consumption of the richer result. |
 | 3 | A bool exists only when bool itself is demanded. |
 
-## CXVI. MODE-ZERO
+| section |
+|---|---|
+| CXVI. MODE-ZERO |
 
 | # | directive |
 |---|---|
@@ -1248,7 +1481,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Decompose into actual facts. |
 | 3 | Example: mode = readonly is usually inferior to simply omitting write authority. |
 
-## CXVII. KIND-TAXONOMY CAUTION
+| section |
+|---|---|
+| CXVII. KIND-TAXONOMY CAUTION |
 
 | # | directive |
 |---|---|
@@ -1256,14 +1491,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | They may not replace decomposed semantic facts. |
 | 3 | Dangerous: kind = callable kind = native kind = world kind = reader Prefer direct fact relations. |
 
-## CXVIII. PROVENANCE-NAME-ZERO
+| section |
+|---|---|
+| CXVIII. PROVENANCE-NAME-ZERO |
 
 | # | directive |
 |---|---|
 | 1 | Do not create distinct semantic identity classes: generatedvalue sourcevalue nativevalue importedvalue syntheticvalue inferredvalue derivedvalue because origin/provenance differs. |
 | 2 | Provenance is a fact on the same semantic identity where meaning persists. |
 
-## CXIX. DEMAND-NAME-ZERO
+| section |
+|---|---|
+| CXIX. DEMAND-NAME-ZERO |
 
 | # | directive |
 |---|---|
@@ -1271,7 +1510,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Demand drives realization. |
 | 3 | It does not rename the semantic value. |
 
-## CXX. EVIDENCE-NO-AUTHORITY
+| section |
+|---|---|
+| CXX. EVIDENCE-NO-AUTHORITY |
 
 | # | directive |
 |---|---|
@@ -1279,7 +1520,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | It does not make language facts true. |
 | 3 | Profile guides optimization only. |
 
-## CXXI. PHASE-NO-AUTHORITY
+| section |
+|---|---|
+| CXXI. PHASE-NO-AUTHORITY |
 
 | # | directive |
 |---|---|
@@ -1287,7 +1530,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Facts remain owned according to semantic responsibility. |
 | 3 | "Frontend" and "backend" must not become parallel semantic kingdoms. |
 
-## CXXII. Source Order / File Path
+| section |
+|---|---|
+| CXXII. Source Order / File Path |
 
 | # | directive |
 |---|---|
@@ -1295,14 +1540,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | After resolution, path becomes provenance. |
 | 3 | Path never chooses: relation world target conversion protocol realization Move/rename with semantic correspondence must not silently change meaning. |
 
-## CXXIII. LSP
+| section |
+|---|---|
+| CXXIII. LSP |
 
 | # | directive |
 |---|---|
 | 1 | Every language feature must support: formatting completion hover semantic highlighting diagnostics navigation refactoring LSP consumes compiler semantic graph. |
 | 2 | Do not create a second LSP semantic model. |
 
-## CXXIV. MCP
+| section |
+|---|---|
+| CXXIV. MCP |
 
 | # | directive |
 |---|---|
@@ -1311,7 +1560,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Useful queries: what relation is this? what is the subject? why this world? why this representation? what blocks scalarization? what prevents direct call? what transformation produced this instruction? what unknown fact caused this allocation? |
 | 4 | Avoid text-based semantic workflows whenever graph facts are available. |
 
-## CXXV. Repository Corpus
+| section |
+|---|---|
+| CXXV. Repository Corpus |
 
 | # | directive |
 |---|---|
@@ -1320,7 +1571,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Prefer: generated transient negative fixtures over permanently storing large searchable noncanonical source corpora. |
 | 4 | If negative fixtures remain stored, their role must be mechanically explicit and excluded from canonical training/search projections. |
 
-## CXXVI. ZERO-HISTORY
+| section |
+|---|---|
+| CXXVI. ZERO-HISTORY |
 
 | # | directive |
 |---|---|
@@ -1329,7 +1582,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Current comments explain current truth. |
 | 4 | Do not write: formerly... used to... release 0.1... migration from... into canonical source. |
 
-## CXXVII. Current Identity
+| section |
+|---|---|
+| CXXVII. Current Identity |
 
 | # | directive |
 |---|---|
@@ -1337,7 +1592,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Retired suffixes `.duo`, `.duon`, `.idsem` are forbidden in the active tree. |
 | 3 | Canonical executable/tool spelling: idol Do not reintroduce retired project identities or suffixes into active project source, paths, caches, generated files, or current teaching. |
 
-## CXXVIII. Gate
+| section |
+|---|---|
+| CXXVIII. Gate |
 
 | # | directive |
 |---|---|
@@ -1348,7 +1605,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 5 | Generated verification from C0/graph is preferred. |
 | 6 | Any temporary lexical detector must have a deletion condition once graph authority exists. |
 
-## CXXIX. Manual Vocabulary Tables
+| section |
+|---|---|
+| CXXIX. Manual Vocabulary Tables |
 
 | # | directive |
 |---|---|
@@ -1356,7 +1615,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Gate queries the authoritative fact source. |
 | 3 | It does not duplicate it. |
 
-## CXXX. SELF-HOSTING
+| section |
+|---|---|
+| CXXX. SELF-HOSTING |
 
 | # | directive |
 |---|---|
@@ -1366,14 +1627,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 4 | Then delete the old owner/fallback. |
 | 5 | Priority frontier: lexical identity → grammar role → parser recognition → semantic resolution → graph → demand → realization → machine |
 
-## CXXXI. No Silent Fallback
+| section |
+|---|---|
+| CXXXI. No Silent Fallback |
 
 | # | directive |
 |---|---|
 | 1 | After semantic authority moves, old path may not silently answer. |
 | 2 | Unsupported native behavior: diagnose/fail closed Do not silently: emit C call Lua invoke host helper use textual builtin query stale registry reconstruct from path unless explicitly performing an admitted foreign realization. |
 
-## CXXXII. C Backend
+| section |
+|---|---|
+| CXXXII. C Backend |
 
 | # | directive |
 |---|---|
@@ -1388,20 +1653,26 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | C-backend evidence proves only the C feature; it cannot certify direct native. |
 | 4 | The `c` foreign world is an independent interop capability and does not select a backend. |
 
-## CXXXIII. FTCFTW
+| section |
+|---|---|
+| CXXXIII. FTCFTW |
 
 | # | directive |
 |---|---|
 | 1 | Goal: faster than C across equivalent semantics and: Idol Wasm faster than Wasmtime smaller binaries faster startup Claims require evidence. |
 | 2 | Optimization principle: unresolved semantic possibility → physical cost As semantic uncertainty disappears: physical cost should disappear Track unknowns that force: allocation box tag hash indirect call guard copy runtime descriptor lock spill materialization |
 
-## CXXXIV. Performance Evidence
+| section |
+|---|---|
+| CXXXIV. Performance Evidence |
 
 | # | directive |
 |---|---|
 | 1 | Every performance claim binds: exact revision dirty state exact input semantic result target CPU/features competitor version compile time startup execution time peak memory artifact size sample count variance Timing with incorrect/different semantics is invalid evidence. |
 
-## CXXXV. Performance Damage Control
+| section |
+|---|---|
+| CXXXV. Performance Damage Control |
 
 | # | directive |
 |---|---|
@@ -1409,27 +1680,35 @@ F(D)' = coherent(F(D) ∪ P)
 | 2 | Intentionally worsen the measured dimension: add delay force allocation force hash force indirect call force copy disable vectorization The benchmark must measurably worsen. |
 | 3 | Otherwise the measurement path is not trusted. |
 
-## CXXXVI. FTCFTW DIMENSIONS
+| section |
+|---|---|
+| CXXXVI. FTCFTW DIMENSIONS |
 
 | # | directive |
 |---|---|
 | 1 | Do not optimize runtime alone. |
 | 2 | Track jointly: runtime startup compile time compiler memory runtime memory binary size linked runtime bytes I-cache impact No benchmark victory purchased by catastrophic size/startup/compile regressions without explicit tradeoff evidence. |
 
-## CXXXVII. Agent Work Rule
+| section |
+|---|---|
+| CXXXVII. Agent Work Rule |
 
 | # | directive |
 |---|---|
 | 1 | Before adding any language/compiler concept: identify existing semantic owner Before adding a name: prove identity irreducibility Before adding a wrapper: prove the wrapped relation cannot already express it Before adding a registry: prove graph facts cannot own it Before adding a module: stop; module semantics are denied Before adding *able: stop; protocol satisfaction is a fact Before adding encode/decode: classify satisfaction/to/parse/realization first Before adding plural table/root: stop; cardinality is a fact Before adding router/gateway/context/engine: stop; find the actual existing semantic machinery Before reconstructing information downstream: stop; fix the producer edge |
 
-## CXXXVIII. Hard Stop Conditions
+| section |
+|---|---|
+| CXXXVIII. Hard Stop Conditions |
 
 | # | directive |
 |---|---|
 | 1 | Do not continue implementation when: semantic owner is unclear relation identity is unclear subject is unclear world authority is ambiguous application role is ambiguous upstream fact is missing easiest solution is a registry/context/router solution requires path/name semantic lookup solution requires semantic fallback new concept duplicates an existing mechanism Record the exact missing semantic fact/boundary. |
 | 2 | Do not invent architecture to unblock yourself. |
 
-## CXXXIX. Required Review For Every New Name
+| section |
+|---|---|
+| CXXXIX. Required Review For Every New Name |
 
 | # | directive |
 |---|---|
@@ -1449,14 +1728,18 @@ F(D)' = coherent(F(D) ∪ P)
 | 14 | Would a fact change require renaming it? |
 | 15 | Any bad answer: reject/decompose. |
 
-## CXL. Required Review For Every Application
+| section |
+|---|---|
+| CXL. Required Review For Every Application |
 
 | # | directive |
 |---|---|
 | 1 | For each application determine: relation subject operands result pack descriptor facts demand world requirement world witness effect stage origin provenance selected target when realized Then ask: which facts need source spelling? which are uniquely inferable? would elision confuse a human reader? |
 | 2 | No spelling is omitted merely because compiler inference can guess it. |
 
-## CXLI. Required Review For Every Compiler Structure
+| section |
+|---|---|
+| CXLI. Required Review For Every Compiler Structure |
 
 | # | directive |
 |---|---|
@@ -1471,20 +1754,26 @@ F(D)' = coherent(F(D) ∪ P)
 | 9 | Does representation leak upward into meaning? |
 | 10 | If deleting a supposed cache/index changes meaning: it was illegally authoritative. |
 
-## CXLII. Required Review For Every Physical Cost
+| section |
+|---|---|
+| CXLII. Required Review For Every Physical Cost |
 
 | # | directive |
 |---|---|
 | 1 | For: allocation copy box tag branch indirect call hash runtime metadata world object closure environment temporary pack synchronization answer: Which unresolved semantic possibility requires this? |
 | 2 | No answer: delete the cost. |
 
-## CXLIII. Required Review For Every Pr/Workstream
+| section |
+|---|---|
+| CXLIII. Required Review For Every Pr/Workstream |
 
 | # | directive |
 |---|---|
 | 1 | Report: revision dirty state semantic boundary owned authority before authority after fact producer changed consumers changed ids preserved facts added facts removed reconstruction removed new concepts deleted concepts naming debt introduced naming debt removed bridges remaining bridge deletion condition SHC frontier before SHC frontier after physical delta: allocation copy box tag hash indirect call runtime bytes compile-time delta startup delta runtime delta memory delta size delta positive control negative control integrated result No "done" without this. |
 
-## CXLIV. Negative Controls For Naming
+| section |
+|---|---|
+| CXLIV. Negative Controls For Naming |
 
 | # | directive |
 |---|---|
@@ -1493,7 +1782,9 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | The gate is semantic-role based. |
 | 4 | Not a word blacklist. |
 
-## CXLV. Positive Domain Exceptions
+| section |
+|---|---|
+| CXLV. Positive Domain Exceptions |
 
 | # | directive |
 |---|---|
@@ -1502,27 +1793,35 @@ F(D)' = coherent(F(D) ∪ P)
 | 3 | Likewise: json cbor protobuf wasm macho may identify real observable format/foreign domains. |
 | 4 | Their associated operations still follow the common semantic algebra. |
 
-## CXLVI. Current Canonical Style Examples
+| section |
+|---|---|
+| CXLVI. Current Canonical Style Examples |
 
 | # | directive |
 |---|---|
 | 1 | Descriptor/table (ordinary table — no sigil): point = { x: f64 y: f64 } Compact function: add = (a, b) a + b Tail-return body: normalize = (value) value:validate():normalize() Accessor: home = env["HOME"] first = args[1] Meaningful relation: stdout:write(source:read()) Search + nil refinement: position = text:find("idol") if position print(position) Conversion inferred: count: i64 = text only when the compiler can prove the unique lawful to(i64) conversion and that conversion is actually the intended semantic operation. |
 | 2 | Conversion explicit when necessary: count = text:to(i64) Static projection followed by accessor: home = mock.os.env["HOME"] Parent relation from child file: gate:idiom(diff) No: gate.idiom(diff) No: env["HOME"] No: source() when source() would obscure "read." No: code:has(pattern) No: encode(value) without proving encode is independently irreducible. |
 
-## CXLVII. Current Canonical Topology Example
+| section |
+|---|---|
+| CXLVII. Current Canonical Topology Example |
 
 | # | directive |
 |---|---|
 | 1 | gate/ census.id idiom.id test/ smoke.id mock/ os.id input.id input/ read.id output.id output/ write.id No root gate.id/test.id/mock.id is required for the directories to imply those tables. |
 | 2 | If same-name root files exist, they contribute to the same homes. |
 
-## CXLVIII. THINGS THAT MUST TREND TO ZERO
+| section |
+|---|---|
+| CXLVIII. THINGS THAT MUST TREND TO ZERO |
 
 | # | directive |
 |---|---|
 | 1 | retired project identities historical syntax pass-number source/comments module/import semantics std namespace lib semantic namespace semantic.* replacement namespace plural cardinality names *able/*ible identities role-noun protocol identities encode/decode generic systems codec systems router/gateway/dispatcher systems registry systems manager/factory systems context/session responsibility bags engine/pipeline systems bridge/shim/proxy layers main/entry wrappers redundant file self-bindings relation invocation through dot operation-first possessed-subject calls bracket ordinary access has/presence reboxing conversion synonyms explicit to when uniquely inferable world classes universe classes adjective capability worlds relation→world string maps protocol-granted authority host API wrappers compiler API namespaces downstream semantic reconstruction target-qualified semantic relations DNIR semantic duplication known-shape hash lookup sealed indirect calls nonescaping heap closures singleton-union tags undemanded result materialization undemanded runtime witness objects unexplained physical cost silent host/C/Lua fallback stale committed session state historical gap archive |
 
-## CXLIX. Final Compression
+| section |
+|---|---|
+| CXLIX. Final Compression |
 
 | # | directive |
 |---|---|

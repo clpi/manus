@@ -1,6 +1,10 @@
-# optimum
+| field | value |
+|---|---|
+| title | optimum |
 
-## levels
+| section |
+|---|---|
+| levels |
 
 | level | name | basis | literal |
 |---|---|---|---|
@@ -9,7 +13,9 @@
 | L3 | super | exhaustive search to length n | yes |
 | L4 | bound | analytic or checked lower bound | yes |
 
-## beats
+| section |
+|---|---|
+| beats |
 
 | criterion | rule |
 |---|---|
@@ -24,7 +30,9 @@
 | rerun | win reproduces on fresh protocol run |
 | disasm | hot loop difference explainable |
 
-## revision
+| section |
+|---|---|
+| revision |
 
 | step | name | act |
 |---|---|---|
@@ -34,7 +42,9 @@
 | 4 | revise | revise oracle; bump version; rerun |
 | 5 | stand | claim exceeds only if oracle stands under l3 or l4; publish version argument technique correction |
 
-## platform
+| section |
+|---|---|
+| platform |
 
 | rule | value |
 |---|---|
@@ -44,7 +54,9 @@
 | rounds | scale with timer granularity; 21 floor |
 | timer | prefer os counter over tsc |
 
-## threats
+| section |
+|---|---|
+| threats |
 
 | threat | mitigation |
 |---|---|

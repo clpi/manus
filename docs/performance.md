@@ -1,4 +1,6 @@
-# Idol performance contract
+| field | value |
+|---|---|
+| title | Idol performance contract |
 
 | # | directive |
 |---|---|
@@ -7,7 +9,9 @@
 | 3 | Exact results belong to run-bound evidence artifacts and current gaps |
 | 4 | Git preserves retired records. |
 
-## FTCFTW
+| section |
+|---|---|
+| FTCFTW |
 
 | # | directive |
 |---|---|
@@ -26,25 +30,29 @@
 |---|---|
 | 1 | Native evidence reports separately: |
 
-- runtime;
-- compile time and compiler work;
-- startup;
-- memory and compiler state;
-- artifact and runtime-support footprint;
-- incremental work.
+| # | directive |
+|---|---|
+| 1 | runtime; |
+| 2 | compile time and compiler work; |
+| 3 | startup; |
+| 4 | memory and compiler state; |
+| 5 | artifact and runtime-support footprint; |
+| 6 | incremental work. |
 
 | # | directive |
 |---|---|
 | 1 | Wasm evidence additionally reports: |
 
-- decode and import;
-- compilation;
-- instantiation;
-- startup;
-- steady execution;
-- memory;
-- artifact and runtime footprint;
-- end-to-end latency from bytes available to useful completion.
+| # | directive |
+|---|---|
+| 1 | decode and import; |
+| 2 | compilation; |
+| 3 | instantiation; |
+| 4 | startup; |
+| 5 | steady execution; |
+| 6 | memory; |
+| 7 | artifact and runtime footprint; |
+| 8 | end-to-end latency from bytes available to useful completion. |
 
 | # | directive |
 |---|---|
@@ -52,20 +60,23 @@
 | 2 | Generated-C evidence is not direct-native evidence. |
 | 3 | Direct-native evidence is not Wasm evidence. |
 
-## Admission
+| section |
+|---|---|
+| Admission |
 
 | # | directive |
 |---|---|
 | 1 | Every performance change names: |
 
-1. the semantic relation, facts, demand, and exact path exercised;
-2. the lawful realization family improved;
-3. compiler-state and compile-work effects;
-4. runtime, startup, memory, and artifact effects actually measured;
-5. positive, negative, differential, and anti-gaming controls;
-6. the exact revision, dirty state, command, requested-run outcome, and raw
-   evidence artifact;
-7. the aggregate gate outcome, including known red rows.
+| # | directive |
+|---|---|
+| 1 | the semantic relation, facts, demand, and exact path exercised; |
+| 2 | the lawful realization family improved; |
+| 3 | compiler-state and compile-work effects; |
+| 4 | runtime, startup, memory, and artifact effects actually measured; |
+| 5 | positive, negative, differential, and anti-gaming controls; |
+| 6 | the exact revision, dirty state, command, requested-run outcome, and raw evidence artifact; |
+| 7 | the aggregate gate outcome, including known red rows. |
 
 | # | directive |
 |---|---|
@@ -78,7 +89,9 @@
 | 1 | Progress headline metrics: `docs/METRICS.md` (executed frontier, reconstruction debt, FTCFTW matrix). |
 | 2 | Do not substitute file counts or keyword removal. |
 
-## Demand and representation
+| section |
+|---|---|
+| Demand and representation |
 
 | # | directive |
 |---|---|
@@ -95,7 +108,9 @@
 | 1 | Optimization follows cheap fact closure, opportunity estimation, demand, and expensive reasoning only where its expected value justifies the compiler work. |
 | 2 | Persistent facts should make incremental reuse cheaper than reconstruction. |
 
-## Evidence integrity
+| section |
+|---|---|
+| Evidence integrity |
 
 | # | directive |
 |---|---|
@@ -108,7 +123,9 @@
 | 1 | Heavy gates and benchmarks run under the repository lock. |
 | 2 | The live router and build projection supply exact current commands; this contract intentionally contains no static suite counts or claimed current scores. |
 
-## Migration constraint
+| section |
+|---|---|
+| Migration constraint |
 
 | # | directive |
 |---|---|
@@ -123,7 +140,9 @@
 | 2 | Removing a namespace does not justify boxing, dynamic dispatch, allocation, copying, shell execution, or a slower abstraction. |
 | 3 | Packages contribute implementation candidates; sealed selection has zero runtime catalog cost. |
 
-## Machine-code strategy
+| section |
+|---|---|
+| Machine-code strategy |
 
 | # | directive |
 |---|---|
@@ -141,53 +160,27 @@
 | 1 | Everything in the catalogues below (this section, § Physical realization space, and § Square-zero foundational basis) is an **instance discovered inside the frontier** `R(S,W,T,E,P)` of `docs/spec/law.md` §107 OPTIMIZATION-SPACE-COMPLETE (C0 `law.optimization.space`), organized by its 12+1 axes (observation, knowledge, demand, algebra, algorithm, representation, placement, schedule, boundary, search, verify, cost, and change). |
 | 2 | None is a separate optimizer subsystem or a constitution addition; each is admitted only by the four-part rule — preserves demanded observations under the current world, satisfies authority/effect/resource constraints, is verifiable, and improves the chosen Pareto frontier. |
 
-### Opportunity classes
+| section |
+|---|---|
+| Opportunity classes |
 
-- **Instruction + representation co-selection.** Choose instruction form and
-  physical representation jointly — FMA, address-mode synthesis from projection
-  algebra, immediate folding, operand-register reuse, range-selected width — not
-  temporaries then late repair (`law.representation.one`).
-- **Spill-last, interprocedural registers, application-specific ABI.** Spill only
-  when a value is live across a call, its home is clobbered, rematerialization is
-  not cheaper, and no schedule/assignment avoids it. Closed-world calls select a
-  custom internal ABI, clobber contract, and cross-call assignment; foreign ABI
-  only at a real boundary (`law.abi.internal`).
-- **Place-on-demand, alias provenance, sparse memory dependence.** Refuse to
-  create a place until mutation/alias/address/identity/lifetime/foreign-ABI
-  forces one; carry disjointness from creation; only observable places carry
-  store/load dependence (`law.alias.provenance`).
-- **Bufferization- and layout-on-demand.** Keep table/array/text chains virtual
-  until cardinality/shape/effects/alias/target/demand are known; then one loop,
-  zero intermediate tables, demand-selected AoS/SoA/AoSoA/split/scalarized
-  layout, hot/cold field splitting, whole-array optimization without a tensor
-  kingdom (`law.buffer.demand`).
-- **One vectorization algebra.** Iteration, structurally-similar-application,
-  reduction, scan, fusion, and thread/GPU realization from one graph; zero
-  runtime alias checks where place facts prove independence (`law.vector.one`).
-- **Fact-minimal guards, branch and dispatch selection.** A guard tests only the
-  one unresolved fact a profitable realization needs; share dominating guards;
-  inherit refinement proofs; select branch/branchless/jump-table/perfect-hash by
-  target cost and possibility density (`law.guard.one`).
-- **World, authority, and capability specialization.** Sealed world/witness ⇒
-  world object 0, world lookup 0, permission lookup 0, capability dispatch 0; a
-  dynamic world retains checks (`law.world.closed`, `law.world.capability`).
-- **Effect-level fusion.** Text views, scatter/gather I/O, syscall batching,
-  cross-call load/store elimination from application effect summaries, and
-  demand-directed parse/serialize/query specialization (`law.cost.explain`).
-- **Lifetime, concurrency, and GC elimination.** Region/stack-frame coalescing,
-  shrink-wrap, no-prologue leaves; coroutine-state minimization and collapse;
-  lock elision and atomic narrowing from isolation facts; barrier-free and
-  GC-free sealed programs where lifetime proof covers all values.
-- **Target realization and linking.** Target chosen late from one
-  target-independent graph (ARM/x86/Wasm, subtarget multiversioning), semantic
-  link elimination, fact-level incremental invalidation of the dependent
-  application closure, single-pass object emission (`law.link.semantic`).
-- **Verification, cost, and evidence.** Translation-validation witness on every
-  aggressive rewrite; bounded local superoptimization; causal instruction
-  attribution; unnecessary-instruction causal-count gates; the three-layer
-  lower-bound measurement (`law.realization.valid`, `law.lower.bound`).
+| # | directive |
+|---|---|
+| 1 | **Instruction + representation co-selection.** Choose instruction form and physical representation jointly — FMA, address-mode synthesis from projection algebra, immediate folding, operand-register reuse, range-selected width — not temporaries then late repair (`law.representation.one`). |
+| 2 | **Spill-last, interprocedural registers, application-specific ABI.** Spill only when a value is live across a call, its home is clobbered, rematerialization is not cheaper, and no schedule/assignment avoids it. Closed-world calls select a custom internal ABI, clobber contract, and cross-call assignment; foreign ABI only at a real boundary (`law.abi.internal`). |
+| 3 | **Place-on-demand, alias provenance, sparse memory dependence.** Refuse to create a place until mutation/alias/address/identity/lifetime/foreign-ABI forces one; carry disjointness from creation; only observable places carry store/load dependence (`law.alias.provenance`). |
+| 4 | **Bufferization- and layout-on-demand.** Keep table/array/text chains virtual until cardinality/shape/effects/alias/target/demand are known; then one loop, zero intermediate tables, demand-selected AoS/SoA/AoSoA/split/scalarized layout, hot/cold field splitting, whole-array optimization without a tensor kingdom (`law.buffer.demand`). |
+| 5 | **One vectorization algebra.** Iteration, structurally-similar-application, reduction, scan, fusion, and thread/GPU realization from one graph; zero runtime alias checks where place facts prove independence (`law.vector.one`). |
+| 6 | **Fact-minimal guards, branch and dispatch selection.** A guard tests only the one unresolved fact a profitable realization needs; share dominating guards; inherit refinement proofs; select branch/branchless/jump-table/perfect-hash by target cost and possibility density (`law.guard.one`). |
+| 7 | **World, authority, and capability specialization.** Sealed world/witness ⇒ world object 0, world lookup 0, permission lookup 0, capability dispatch 0; a dynamic world retains checks (`law.world.closed`, `law.world.capability`). |
+| 8 | **Effect-level fusion.** Text views, scatter/gather I/O, syscall batching, cross-call load/store elimination from application effect summaries, and demand-directed parse/serialize/query specialization (`law.cost.explain`). |
+| 9 | **Lifetime, concurrency, and GC elimination.** Region/stack-frame coalescing, shrink-wrap, no-prologue leaves; coroutine-state minimization and collapse; lock elision and atomic narrowing from isolation facts; barrier-free and GC-free sealed programs where lifetime proof covers all values. |
+| 10 | **Target realization and linking.** Target chosen late from one target-independent graph (ARM/x86/Wasm, subtarget multiversioning), semantic link elimination, fact-level incremental invalidation of the dependent application closure, single-pass object emission (`law.link.semantic`). |
+| 11 | **Verification, cost, and evidence.** Translation-validation witness on every aggressive rewrite; bounded local superoptimization; causal instruction attribution; unnecessary-instruction causal-count gates; the three-layer lower-bound measurement (`law.realization.valid`, `law.lower.bound`). |
 
-### Prerequisite order
+| section |
+|---|---|
+| Prerequisite order |
 
 | # | directive |
 |---|---|
@@ -195,24 +188,24 @@
 | 2 | The enabling order is: graph sovereignty → exact fact cardinality → application fact closure → occurrence-specific demand → place/lifetime/alias facts → representation-one → complete effects → machine provenance. |
 | 3 | Passes exist physically as fact producers, transformations, and derived indexes over one graph; the pipeline never determines meaning (`law.realization.late`, no pass pipeline as semantic architecture). |
 
-### Vertical FTCFTW kernels
+| section |
+|---|---|
+| Vertical FTCFTW kernels |
 
 | # | directive |
 |---|---|
 | 1 | Prove the architecture with vertical slices, not speculative optimizers (tracked in `gaps/GAP-169.md`): |
 
-1. **Scalarized record call.** Known table/record → scalarize → application-
-   specific call ABI → exact liveness → joint instruction/register decision →
-   no spill → direct object.
-2. **Fused table iteration.** Table iteration chain → effect/alias proof →
-   fusion → vectorization → no intermediate table.
-3. **World-qualified I/O/text pipeline.** Specialize world/witness → fuse
-   formatting → zero temporary string → direct syscall or library realization.
-4. **Numeric/array kernel.** Layout choice → range/bounds proof → SIMD →
-   measured against Clang `-O3`/LTO and a Fortran-grade array compiler under
-   `law.lower.bound`.
+| # | directive |
+|---|---|
+| 1 | **Scalarized record call.** Known table/record → scalarize → application- specific call ABI → exact liveness → joint instruction/register decision → no spill → direct object. |
+| 2 | **Fused table iteration.** Table iteration chain → effect/alias proof → fusion → vectorization → no intermediate table. |
+| 3 | **World-qualified I/O/text pipeline.** Specialize world/witness → fuse formatting → zero temporary string → direct syscall or library realization. |
+| 4 | **Numeric/array kernel.** Layout choice → range/bounds proof → SIMD → measured against Clang `-O3`/LTO and a Fortran-grade array compiler under `law.lower.bound`. |
 
-## Physical realization space
+| section |
+|---|---|
+| Physical realization space |
 
 | # | directive |
 |---|---|
@@ -223,194 +216,120 @@
 | 5 | Every class below is a search strategy admitted only when it preserves observations, satisfies authority/effect and target/world constraints, and improves the selected cost frontier (`law.optimization.open`, `law.optimization.validated`, `law.ftcftw.dominance`). |
 | 6 | These remain opportunity classes, not measured wins, until a current-subject three-layer measurement exists (`law.lower.bound`). |
 
-### Representation and precision
+| section |
+|---|---|
+| Representation and precision |
 
-- **Entropy-driven representation/compression.** Sparse or low-entropy value
-  domains select compressed physical form without changing semantic identity:
-  `bool`→bit, `0..7`→3 bits, minimal enum encoding, mostly-zero→sparse, repeated
-  →dictionary/interned, monotonic→delta. Applies to fields, graphs, indexes,
-  strings, packets, arrays. Compression is a performance win when memory/network
-  bandwidth dominates even at CPU cost — search the frontier.
-- **Bit-level logic synthesis.** Boolean-heavy, masking, parsing, state-machine
-  and crypto regions lower predicates → boolean algebra → minimized bit network:
-  boolean minimization, bit slicing, SWAR, packed predicates, BMI/bitmanip,
-  vector masks, table-lookup synthesis; dozens of scalar branches → a few
-  bitwise ops.
-- **Precision proportional to demand.** When a descriptor/demand permits an error
-  bound (`relative error ≤ 1e-6`, bounded range) instead of exact IEEE output,
-  choose smaller polynomials, vector approximation, lookup/interpolation, lower
-  precision, or early iterative stop — legal only when the demand explicitly
-  permits it.
-- **Range-specialized transcendentals.** Known argument range synthesizes the
-  minimum approximation for that interval (`sin`/`exp`/`log`/`sqrt`/`trig`/`pow`)
-  instead of a general libm path — function synthesis from semantic range.
+| # | directive |
+|---|---|
+| 1 | **Entropy-driven representation/compression.** Sparse or low-entropy value domains select compressed physical form without changing semantic identity: `bool`→bit, `0..7`→3 bits, minimal enum encoding, mostly-zero→sparse, repeated →dictionary/interned, monotonic→delta. Applies to fields, graphs, indexes, strings, packets, arrays. Compression is a performance win when memory/network bandwidth dominates even at CPU cost — search the frontier. |
+| 2 | **Bit-level logic synthesis.** Boolean-heavy, masking, parsing, state-machine and crypto regions lower predicates → boolean algebra → minimized bit network: boolean minimization, bit slicing, SWAR, packed predicates, BMI/bitmanip, vector masks, table-lookup synthesis; dozens of scalar branches → a few bitwise ops. |
+| 3 | **Precision proportional to demand.** When a descriptor/demand permits an error bound (`relative error ≤ 1e-6`, bounded range) instead of exact IEEE output, choose smaller polynomials, vector approximation, lookup/interpolation, lower precision, or early iterative stop — legal only when the demand explicitly permits it. |
+| 4 | **Range-specialized transcendentals.** Known argument range synthesizes the minimum approximation for that interval (`sin`/`exp`/`log`/`sqrt`/`trig`/`pow`) instead of a general libm path — function synthesis from semantic range. |
 
-### Schedule, sparsity, and algorithm
+| section |
+|---|---|
+| Schedule, sparsity, and algorithm |
 
-- **Polyhedral/affine schedule search.** Derive legal schedules from dependence
-  facts (interchange, tiling, strip-mining, skewing, fusion, fission,
-  distribution, peeling, unswitching, unrolling, jam, software pipelining,
-  wavefront) — semantic iteration scheduling, not source-loop scheduling.
-- **Sparse iteration specialization.** Known sparsity/predicates turn scan-all
-  into iterate-present via sparse indexes, bitmaps, compressed rows, run-length,
-  skip lists, rank/select; table semantics plus observed shape pick dense vs
-  sparse.
-- **Distribution-sensitive and adaptive algorithms.** Profile/semantic facts
-  (nearly sorted, heavy duplicates, Zipf lookups, mostly zero) select
-  distribution-tuned algorithms; long runs may migrate representation/algorithm
-  as distributions change (tiny→inline, grows→hash, static→frozen; sparse↔dense)
-  with persistent table identity. Profile evidence alters realization, never
-  meaning (`law.profile.evidence`).
-- **Closed-form/symbolic/constraint-driven synthesis.** Under exact arithmetic
-  and overflow laws: reduce loops to formulas (O(n)→O(1)), algebraic
-  simplification, recurrence solving, CSE factoring; descriptor laws (sorted,
-  unique, monotonic, bounded, invertible) justify algorithms unavailable from raw
-  memory — a reason to preserve descriptor facts aggressively.
-- **Index/query/materialized-view synthesis.** Repeated lookups synthesize a
-  secondary index (asymptotic improvement); joins/filters/aggregations over
-  ordinary tables get query-plan optimization (predicate reorder/pushdown, join
-  choice, fusion); repeated pure projections materialize when beneficial — no
-  data-framework kingdom.
+| # | directive |
+|---|---|
+| 1 | **Polyhedral/affine schedule search.** Derive legal schedules from dependence facts (interchange, tiling, strip-mining, skewing, fusion, fission, distribution, peeling, unswitching, unrolling, jam, software pipelining, wavefront) — semantic iteration scheduling, not source-loop scheduling. |
+| 2 | **Sparse iteration specialization.** Known sparsity/predicates turn scan-all into iterate-present via sparse indexes, bitmaps, compressed rows, run-length, skip lists, rank/select; table semantics plus observed shape pick dense vs sparse. |
+| 3 | **Distribution-sensitive and adaptive algorithms.** Profile/semantic facts (nearly sorted, heavy duplicates, Zipf lookups, mostly zero) select distribution-tuned algorithms; long runs may migrate representation/algorithm as distributions change (tiny→inline, grows→hash, static→frozen; sparse↔dense) with persistent table identity. Profile evidence alters realization, never meaning (`law.profile.evidence`). |
+| 4 | **Closed-form/symbolic/constraint-driven synthesis.** Under exact arithmetic and overflow laws: reduce loops to formulas (O(n)→O(1)), algebraic simplification, recurrence solving, CSE factoring; descriptor laws (sorted, unique, monotonic, bounded, invertible) justify algorithms unavailable from raw memory — a reason to preserve descriptor facts aggressively. |
+| 5 | **Index/query/materialized-view synthesis.** Repeated lookups synthesize a secondary index (asymptotic improvement); joins/filters/aggregations over ordinary tables get query-plan optimization (predicate reorder/pushdown, join choice, fusion); repeated pure projections materialize when beneficial — no data-framework kingdom. |
 
-### Specialization lifecycle
+| section |
+|---|---|
+| Specialization lifecycle |
 
-- **Cross-run persistent specialization.** Persist observed world shapes, hot
-  applications, stable call targets, target calibration, and successful
-  realization choices; run 2 starts optimized without JIT warmup.
-- **AOT/JIT-hybrid realization.** Per application: sealed→AOT, likely→guarded AOT
-  specialization, runtime-dependent+hot→runtime specialization, cold dynamic→
-  general — one program, not a language mode bit.
-- **Snapshot/preinitialized state.** Deterministic build-time state construction
-  emits a snapshot the loader maps ready, subject to relocation/identity
-  constraints — attacks startup/first-request latency beyond linker DCE.
-- **Computed code / partial evaluation of control flow.** Generate only the
-  surviving CFG from staged values; loop-free code for tiny known cardinalities
-  and vectorized/blocked loops for large known N; representation search decides.
-- **Background reoptimization / partial migration.** Build a better
-  representation/realization concurrently, switch future applications atomically,
-  retire the old safely; migrate only a hot subset while the cold tail stays
-  generic.
+| # | directive |
+|---|---|
+| 1 | **Cross-run persistent specialization.** Persist observed world shapes, hot applications, stable call targets, target calibration, and successful realization choices; run 2 starts optimized without JIT warmup. |
+| 2 | **AOT/JIT-hybrid realization.** Per application: sealed→AOT, likely→guarded AOT specialization, runtime-dependent+hot→runtime specialization, cold dynamic→ general — one program, not a language mode bit. |
+| 3 | **Snapshot/preinitialized state.** Deterministic build-time state construction emits a snapshot the loader maps ready, subject to relocation/identity constraints — attacks startup/first-request latency beyond linker DCE. |
+| 4 | **Computed code / partial evaluation of control flow.** Generate only the surviving CFG from staged values; loop-free code for tiny known cardinalities and vectorized/blocked loops for large known N; representation search decides. |
+| 5 | **Background reoptimization / partial migration.** Build a better representation/realization concurrently, switch future applications atomically, retire the old safely; migrate only a hot subset while the cold tail stays generic. |
 
-### Memory, cache, and frontend
+| section |
+|---|---|
+| Memory, cache, and frontend |
 
-- **Page-fault, huge-page, TLB, cache-set realization.** Track startup page
-  working set (pages touched before first result, dirty/COW/demand faults);
-  choose page size for hot data; place co-traversed objects to cut TLB footprint;
-  lay out controlled/static hot objects to avoid pathological cache-set
-  conflicts.
-- **Frontend-aware code layout.** Model uop-cache residency, decoder pressure,
-  and frontend bandwidth (fewer instructions is not always faster); macro/micro-
-  fusion-aware compare/branch/addressing forms; branch-predictor aliasing and
-  BTB-aware function/indirect layout; speculation-window scheduling that supplies
-  useful speculative work without long dependency chains. Microarchitecture-
-  specific — target evidence, not semantic law.
-- **Recompute-vs-store and memoization.** Search store+reload vs recompute at
-  every scale (spill, cached derived value, precomputed table, runtime memo);
-  recompute can be cheaper than memory. Memoize pure/expensive/recurring
-  applications only when caching cost wins, and drop it otherwise; build-time-
-  known arguments collapse memo tables to constants; memo layout specializes
-  (single-entry, tiny direct-mapped, hash, perfect static) — no default dict.
-- **Prefetch and streaming synthesis.** Insert software prefetch/stream hints
-  only where hardware prefetch is insufficient and measured; autotune prefetch
-  distance to memory latency/iteration cost/target/dataset; use non-temporal/
-  cache-bypass loads/stores from future-use demand; group adjacent output for
-  write-combining (serialization, image/video, buffers, packets).
-- **Memory-bandwidth budgeting.** For bandwidth-bound kernels reducing ALU ops
-  does nothing; find the lower bound (bytes / achievable bandwidth), then seek
-  compression, layout, fusion, or recomputation instead of loads.
+| # | directive |
+|---|---|
+| 1 | **Page-fault, huge-page, TLB, cache-set realization.** Track startup page working set (pages touched before first result, dirty/COW/demand faults); choose page size for hot data; place co-traversed objects to cut TLB footprint; lay out controlled/static hot objects to avoid pathological cache-set conflicts. |
+| 2 | **Frontend-aware code layout.** Model uop-cache residency, decoder pressure, and frontend bandwidth (fewer instructions is not always faster); macro/micro- fusion-aware compare/branch/addressing forms; branch-predictor aliasing and BTB-aware function/indirect layout; speculation-window scheduling that supplies useful speculative work without long dependency chains. Microarchitecture- specific — target evidence, not semantic law. |
+| 3 | **Recompute-vs-store and memoization.** Search store+reload vs recompute at every scale (spill, cached derived value, precomputed table, runtime memo); recompute can be cheaper than memory. Memoize pure/expensive/recurring applications only when caching cost wins, and drop it otherwise; build-time- known arguments collapse memo tables to constants; memo layout specializes (single-entry, tiny direct-mapped, hash, perfect static) — no default dict. |
+| 4 | **Prefetch and streaming synthesis.** Insert software prefetch/stream hints only where hardware prefetch is insufficient and measured; autotune prefetch distance to memory latency/iteration cost/target/dataset; use non-temporal/ cache-bypass loads/stores from future-use demand; group adjacent output for write-combining (serialization, image/video, buffers, packets). |
+| 5 | **Memory-bandwidth budgeting.** For bandwidth-bound kernels reducing ALU ops does nothing; find the lower bound (bytes / achievable bandwidth), then seek compression, layout, fusion, or recomputation instead of loads. |
 
-### OS, kernel, and I/O
+| section |
+|---|---|
+| OS, kernel, and I/O |
 
-- **Kernel-crossing elimination and interface selection.** Treat syscalls as a
-  cost class: combine calls, mmap instead of repeated read, userspace buffering,
-  async submission, handle reuse; pick libc/direct syscall/mmap/io_uring/vectored
-  I/O/sendfile-splice by target, size, authority, and blocking semantics.
-- **Kernel/network zero-copy and protocol fusion.** `file:read():write(socket)`
-  may realize as sendfile/splice kernel-to-kernel with no user-space copy;
-  file-backed tables/text stay mmap'd (projections reference mapped pages, parse
-  lazily, materialize only on mutation/ownership); protocol composition
-  (encode→compress→encrypt→frame→send) fuses into a streaming pipeline writing
-  directly into socket/scatter-gather/kernel buffers with no giant intermediates.
+| # | directive |
+|---|---|
+| 1 | **Kernel-crossing elimination and interface selection.** Treat syscalls as a cost class: combine calls, mmap instead of repeated read, userspace buffering, async submission, handle reuse; pick libc/direct syscall/mmap/io_uring/vectored I/O/sendfile-splice by target, size, authority, and blocking semantics. |
+| 2 | **Kernel/network zero-copy and protocol fusion.** `file:read():write(socket)` may realize as sendfile/splice kernel-to-kernel with no user-space copy; file-backed tables/text stay mmap'd (projections reference mapped pages, parse lazily, materialize only on mutation/ownership); protocol composition (encode→compress→encrypt→frame→send) fuses into a streaming pipeline writing directly into socket/scatter-gather/kernel buffers with no giant intermediates. |
 
-### Hardware and accelerators
+| section |
+|---|---|
+| Hardware and accelerators |
 
-- **Accelerator instructions beyond SIMD.** Include AMX, matrix extensions,
-  SVE/SME, crypto, CRC, dot-product, DSP-like instructions — do not pigeonhole
-  hardware optimization into "SIMD."
-- **GPU/NPU/DSP and cross-device fusion.** Any semantically equivalent
-  accelerator is admissible with complete transfer/launch/sync/conversion cost;
-  keep pipelines on one device or fuse kernels instead of CPU↔GPU bouncing;
-  different targets may deserve fundamentally different algorithms (scalar sort /
-  AVX partition / GPU radix) for the same relation.
-- **Thermal, DVFS, and topology placement.** Report cold and sustained-thermal
-  performance separately (AVX-heavy code can lose under throttling); optimize for
-  turbo/sustained/battery/power-cap where world policy permits; place work on
-  heterogeneous cores (hot kernel→P-core, background→E-core), avoid SMT-sibling
-  interference, and jointly optimize NUMA compute/data placement, communication
-  topology, and migration cost. Realization, not source semantics.
+| # | directive |
+|---|---|
+| 1 | **Accelerator instructions beyond SIMD.** Include AMX, matrix extensions, SVE/SME, crypto, CRC, dot-product, DSP-like instructions — do not pigeonhole hardware optimization into "SIMD." |
+| 2 | **GPU/NPU/DSP and cross-device fusion.** Any semantically equivalent accelerator is admissible with complete transfer/launch/sync/conversion cost; keep pipelines on one device or fuse kernels instead of CPU↔GPU bouncing; different targets may deserve fundamentally different algorithms (scalar sort / AVX partition / GPU radix) for the same relation. |
+| 3 | **Thermal, DVFS, and topology placement.** Report cold and sustained-thermal performance separately (AVX-heavy code can lose under throttling); optimize for turbo/sustained/battery/power-cap where world policy permits; place work on heterogeneous cores (hot kernel→P-core, background→E-core), avoid SMT-sibling interference, and jointly optimize NUMA compute/data placement, communication topology, and migration cost. Realization, not source semantics. |
 
-### Concurrency, storage, and distribution
+| section |
+|---|---|
+| Concurrency, storage, and distribution |
 
-- **Transaction/concurrency realization.** Atomic observation realizes as
-  hardware transaction, lock, copy-on-write, redo log, or version swap — no
-  mandatory transaction-object overhead; rare conflicts admit optimistic
-  concurrency + validation; search lock coarsening vs splitting on contention;
-  contention-aware layout (sharding, per-core replicas + associative reduction);
-  per-core-local code/data to cut cache bouncing.
-- **Storage-tier and persistent-memory realization.** A table need not commit to
-  one tier (registers/caches/RAM/PMEM/mmap/disk/remote) when access/lifetime/
-  world permit choice; operate over persistent representation while respecting
-  crash-consistency; long-running processes relearn hot fields/keys/locality and
-  reorganize at safe boundaries with preserved identity.
-- **Distributed realization.** When the world defines multiple machines and
-  semantics permit, partition work/data, choose communication topology, and move
-  computation to data or data to computation from effect/world/locality facts —
-  architecturally possible, not an immediate goal.
+| # | directive |
+|---|---|
+| 1 | **Transaction/concurrency realization.** Atomic observation realizes as hardware transaction, lock, copy-on-write, redo log, or version swap — no mandatory transaction-object overhead; rare conflicts admit optimistic concurrency + validation; search lock coarsening vs splitting on contention; contention-aware layout (sharding, per-core replicas + associative reduction); per-core-local code/data to cut cache bouncing. |
+| 2 | **Storage-tier and persistent-memory realization.** A table need not commit to one tier (registers/caches/RAM/PMEM/mmap/disk/remote) when access/lifetime/ world permit choice; operate over persistent representation while respecting crash-consistency; long-running processes relearn hot fields/keys/locality and reorganize at safe boundaries with preserved identity. |
+| 3 | **Distributed realization.** When the world defines multiple machines and semantics permit, partition work/data, choose communication topology, and move computation to data or data to computation from effect/world/locality facts — architecturally possible, not an immediate goal. |
 
-### Cost frontier
+| section |
+|---|---|
+| Cost frontier |
 
-- **Energy/carbon/cost as first-class dimensions.** Joules/task and
-  joules/request belong on the Pareto frontier; a "faster" realization can lose
-  under an energy budget. For distributed/cloud worlds, world policy may jointly
-  optimize dollar cost, energy, and latency — world-directed realization, not a
-  language semantic.
-- **Security-constrained speculation.** When world/policy mandates hardening
-  (barriers, masking, retpolines, bounds speculation), it is a realization cost;
-  a proof that a mitigation is unnecessary for an exact application makes that
-  cost zero — never globally penalize secure builds.
-- **Full physical Pareto accounting.** Cost vectors include runtime, compile,
-  startup, memory, artifact/code footprint (finer than final bytes), incremental
-  work, energy, page faults, TLB, frontend/uop-cache pressure, kernel
-  transitions, and sustained thermal performance — with I-cache/uop-cache
-  pressure making duplicate-code/inline-vs-outline/function-outlining decisions
-  evidence-based, not a monotonic inline bias.
+| # | directive |
+|---|---|
+| 1 | **Energy/carbon/cost as first-class dimensions.** Joules/task and joules/request belong on the Pareto frontier; a "faster" realization can lose under an energy budget. For distributed/cloud worlds, world policy may jointly optimize dollar cost, energy, and latency — world-directed realization, not a language semantic. |
+| 2 | **Security-constrained speculation.** When world/policy mandates hardening (barriers, masking, retpolines, bounds speculation), it is a realization cost; a proof that a mitigation is unnecessary for an exact application makes that cost zero — never globally penalize secure builds. |
+| 3 | **Full physical Pareto accounting.** Cost vectors include runtime, compile, startup, memory, artifact/code footprint (finer than final bytes), incremental work, energy, page faults, TLB, frontend/uop-cache pressure, kernel transitions, and sustained thermal performance — with I-cache/uop-cache pressure making duplicate-code/inline-vs-outline/function-outlining decisions evidence-based, not a monotonic inline bias. |
 
-### Top unresolved design questions
+| section |
+|---|---|
+| Top unresolved design questions |
 
 | # | directive |
 |---|---|
 | 1 | Highest-leverage remaining work, in priority order: |
 
-1. **Exact observation model** — what behavior must realizations preserve?
-   (`law.observation.minimum`; every accidental observable is a permanent barrier).
-2. **Precision/error contracts** — allow safe approximation only when demanded.
-3. **Adaptive representation migration** — dynamic table/data evolution with
-   preserved identity.
-4. **Persistent specialization evidence** — verified learning across executions.
-5. **OS/kernel realization** — mmap/sendfile/io_uring/etc. as first-class
-   alternatives.
-6. **Thermal/power/heterogeneous-core model.**
-7. **Entropy/compression-aware representation.**
-8. **Query/index/data-structure synthesis** capable of asymptotic improvement.
-9. **Polyhedral/sparse symbolic schedule search.**
-10. **Full physical Pareto accounting** — energy, page faults, TLB, frontend/
-    uop-cache, kernel transitions, sustained thermal.
+| # | directive |
+|---|---|
+| 1 | **Exact observation model** — what behavior must realizations preserve? (`law.observation.minimum`; every accidental observable is a permanent barrier). |
+| 2 | **Precision/error contracts** — allow safe approximation only when demanded. |
+| 3 | **Adaptive representation migration** — dynamic table/data evolution with preserved identity. |
+| 4 | **Persistent specialization evidence** — verified learning across executions. |
+| 5 | **OS/kernel realization** — mmap/sendfile/io_uring/etc. as first-class alternatives. |
+| 6 | **Thermal/power/heterogeneous-core model.** |
+| 7 | **Entropy/compression-aware representation.** |
+| 8 | **Query/index/data-structure synthesis** capable of asymptotic improvement. |
+| 9 | **Polyhedral/sparse symbolic schedule search.** |
+| 10 | **Full physical Pareto accounting** — energy, page faults, TLB, frontend/ uop-cache, kernel transitions, sustained thermal. |
 
 | # | directive |
 |---|---|
 | 1 | Final formulation: Idol optimizes everything that semantics do not make observable, across the entire physical stack — from algebra and algorithms through layouts, instructions, OS mechanisms, hardware placement and persistent adaptation — and a remaining loss is acceptable only when a verified lower bound proves no lawful physical realization can do better (`law.lower.bound`, `law.ftcftw.dominance`). |
 
-## Square-zero foundational basis
+| section |
+|---|---|
+| Square-zero foundational basis |
 
 | # | directive |
 |---|---|
@@ -420,7 +339,9 @@
 | 4 | C0 `law.observation.one` (folds BOUNDARY-ONE and physical-nonexistence `none`), `law.equivalence.observation`, `law.demand.derivative`, `law.relation.property`, `law.change.delta`, `law.uncertainty.algebra`, `law.optimizer.economy`, `law.optimization.space`. |
 | 5 | Design program in `gaps/GAP-170.md` (observation model) and `gaps/GAP-171.md` (algebra foundation). |
 
-### The complete frontier (OPTIMIZATION-SPACE-COMPLETE)
+| section |
+|---|---|
+| The complete frontier (OPTIMIZATION-SPACE-COMPLETE) |
 
 | # | directive |
 |---|---|
@@ -432,7 +353,9 @@
 | 6 | Every optimization class below and in § Physical realization space is an **instance discovered inside `R`** on the frontier axes. |
 | 7 | Individual ideas are instances, never new constitutional mechanisms. |
 
-### The realization contract (REALIZATION-CONTRACT)
+| section |
+|---|---|
+| The realization contract (REALIZATION-CONTRACT) |
 
 | # | directive |
 |---|---|
@@ -448,95 +371,40 @@
 |---|---|
 | 1 | ranging over computation, **noncomputation**, algorithm, data structure, encoding, precision, architecture, partition, placement, schedule, memory, persistence, OS mechanism, hardware, distribution, and adaptation, such that `observations(R) ∈ allowed(O,S,W,F)`, `R` is Pareto-optimal under `P`, correctness is verified, and the gap to known lower bounds is explicit. |
 
-- **Lower bounds are physical, not instruction counts.** Track information
-  required vs processed (entropy, distinguishing bits), communication complexity
-  across every boundary (core/NUMA/device/kernel/machine), I/O and cache-block
-  complexity, circuit depth/size, parallel **work vs span** (available parallelism
-  = work/span), synchronization and round complexity, roofline position, and
-  ultimately speed-of-light / memory-latency / thermodynamic-energy limits. State
-  which bound was reached (provable semantic / architectural / measured / best
-  known external).
-- **Lawful nonexecution is the ultimate realization.** A cached exact answer, a
-  theorem, materialized state, or a world fact preanswering a query means `R` runs
-  nothing; a demand proven irrelevant to any observer disappears, and an
-  unobservable effect takes its producer with it.
-- **Architecture is realization.** Erase an unobservable API/serialization/
-  process/RPC/module boundary; introduce one where isolation/parallelism/
-  distribution/offload pays. Cross-layer optimization spans language, compiler,
-  runtime, allocator, OS, database, network, hardware, and deployment.
-- **Meta-cost is lifecycle-global.** Compile/search/proof/autotune/profile/variant
-  storage are costs; carry a break-even execution count; costs are distributions
-  and no dominance is claimed when confidence intervals overlap or a candidate
-  loses under slight workload/adversarial variation.
+| # | directive |
+|---|---|
+| 1 | **Lower bounds are physical, not instruction counts.** Track information required vs processed (entropy, distinguishing bits), communication complexity across every boundary (core/NUMA/device/kernel/machine), I/O and cache-block complexity, circuit depth/size, parallel **work vs span** (available parallelism = work/span), synchronization and round complexity, roofline position, and ultimately speed-of-light / memory-latency / thermodynamic-energy limits. State which bound was reached (provable semantic / architectural / measured / best known external). |
+| 2 | **Lawful nonexecution is the ultimate realization.** A cached exact answer, a theorem, materialized state, or a world fact preanswering a query means `R` runs nothing; a demand proven irrelevant to any observer disappears, and an unobservable effect takes its producer with it. |
+| 3 | **Architecture is realization.** Erase an unobservable API/serialization/ process/RPC/module boundary; introduce one where isolation/parallelism/ distribution/offload pays. Cross-layer optimization spans language, compiler, runtime, allocator, OS, database, network, hardware, and deployment. |
+| 4 | **Meta-cost is lifecycle-global.** Compile/search/proof/autotune/profile/variant storage are costs; carry a break-even execution count; costs are distributions and no dominance is claimed when confidence intervals overlap or a candidate loses under slight workload/adversarial variation. |
 
 | # | directive |
 |---|---|
 | 1 | The ~24 foundational axes (extend, not replace, §107's twelve): IDENTITY, OBSERVATION, LAW, KNOWLEDGE, UNCERTAINTY, DEMAND, CHANGE, EQUIVALENCE, INFORMATION, WORK, COMMUNICATION, REPRESENTATION, ARCHITECTURE, PLACEMENT, SCHEDULE, BOUNDARY, FAILURE, RESOURCE, SEARCH, VERIFICATION, EVIDENCE, COST, ADAPTATION, META-COST. |
 | 2 | Observation sets, cost dimensions, semantic facts, and hardware targets remain extensible; no named ontology may permanently narrow `R`. |
 
-### The twelve algebras
+| section |
+|---|---|
+| The twelve algebras |
 
-1. **Observation** — a program is a set of required observable relationships
-   among inputs/worlds/effects/outcomes/outputs, not steps; only explicitly
-   semantic observations constrain realization. Semantic time ≠ physical time
-   (duration is not semantics without an observed clock/deadline); a program may
-   admit an allowed outcome set; observation sets are world-dependent (a security
-   world can make timing/cache/address observable). `none` is a first-class
-   representation.
-2. **Equivalence** — realizations are equivalent when they produce the same
-   permitted observations under the same inputs/world; every optimization is
-   "prove equivalent, choose cheaper"; identity equality, semantic equivalence,
-   and representation sharing are distinct; two values may share storage while
-   staying distinct identities, and one identity may migrate representation over
-   time; copy semantics derive from observation, not a copy/move-type kingdom.
-3. **Demand** — a transformer: `demand(output) → demand(inputs)` (field pruning,
-   lazy parsing, dead-result elimination, query optimization). Demand carries
-   portion/quality/cardinality/order: partial consumption, first-N, existential
-   `any`/`all`, `count`, membership, top-k/order-statistic (`sort:first()` →
-   O(n) selection, not O(n log n)); aggregate-demand rewrites (`map(f):sum()`
-   builds no mapped values; `filter(p):count()` counts directly) derive from
-   relation law, not a hardcoded pipeline list. Inverse demand cancels work a
-   producer already satisfies (sorted input deletes a sort).
-4. **Law** — associativity, commutativity, identity, idempotence, invertibility,
-   monotonicity, distributivity, fusion-compatibility, and descriptor subsumption
-   are relation facts, not arithmetic special-casing; reductions, parallelization,
-   distributed aggregation, incremental update, and automatic fusion of unknown
-   future relation combinations all follow from them.
-5. **Change** — a relation may expose a semantic delta/derivative so "recompute
-   whole result" becomes "update changed portion"; generalized differentiation
-   unifies incrementalization, gradients, and dependency updates; reversibility
-   lets a runtime store less and reconstruct on demand.
-6. **Resource** — latency, throughput, tail latency, deadline, memory, energy,
-   and reliability define the desired frontier; policy attaches to use/world, not
-   a global compiler mode; deadline can make an allowed approximation superior to
-   a slower exact result.
-7. **Uncertainty** — a refinement lattice (unknown → possibility set → constrained
-   set → singleton), monotonic except behind explicit guards; fact/evidence/
-   assumption/proof are strictly separated; partial knowledge (range, subset,
-   prefix, cardinality, partial shape, effect exclusion, alias impossibility) is
-   first-class; absence is a general algebra (unknown / known-absent / known-exact
-   / possibly-one-of-set) over effect, authority, result, field, alias, failure,
-   world member, capture, allocation. Contradiction (no meaning), ambiguity
-   (several meanings), and unknown (not-yet-known) are distinct.
-8. **Physical realization** — see § Physical realization space; `none` and
-   BOUNDARY-ONE finite foreign extent belong here.
-9. **Verification** — a small trusted core (semantic checker, proof/validation
-   verifier, cost measurement) admits candidates from any source; proof and
-   provenance are irrelevant to realization unless observable/authority-sensitive;
-   minimize the trusted kernel.
-10. **Search** — search the observation-equivalence space, not a finite pass list;
-    discovery (agents/ML/superopt/solver/autotuner) is separated from trusted
-    admission.
-11. **Optimization-of-optimization** — budget compile/search/proof effort by ROI
-    (expected gain × executions − compile/search/code-size cost); anytime,
-    background-build, and distributed search; a proof-carrying realization cache
-    reuses verified realizations for matching graph fragment + target.
-12. **Self-improvement** — a verified discovered equivalence is promoted to a
-    reusable law; because Idol self-hosts, the loop is recursive and bounded by
-    verification. Cross-program target calibration and rewrite theorems generalize
-    without carrying program-specific semantics.
+| # | directive |
+|---|---|
+| 1 | **Observation** — a program is a set of required observable relationships among inputs/worlds/effects/outcomes/outputs, not steps; only explicitly semantic observations constrain realization. Semantic time ≠ physical time (duration is not semantics without an observed clock/deadline); a program may admit an allowed outcome set; observation sets are world-dependent (a security world can make timing/cache/address observable). `none` is a first-class representation. |
+| 2 | **Equivalence** — realizations are equivalent when they produce the same permitted observations under the same inputs/world; every optimization is "prove equivalent, choose cheaper"; identity equality, semantic equivalence, and representation sharing are distinct; two values may share storage while staying distinct identities, and one identity may migrate representation over time; copy semantics derive from observation, not a copy/move-type kingdom. |
+| 3 | **Demand** — a transformer: `demand(output) → demand(inputs)` (field pruning, lazy parsing, dead-result elimination, query optimization). Demand carries portion/quality/cardinality/order: partial consumption, first-N, existential `any`/`all`, `count`, membership, top-k/order-statistic (`sort:first()` → O(n) selection, not O(n log n)); aggregate-demand rewrites (`map(f):sum()` builds no mapped values; `filter(p):count()` counts directly) derive from relation law, not a hardcoded pipeline list. Inverse demand cancels work a producer already satisfies (sorted input deletes a sort). |
+| 4 | **Law** — associativity, commutativity, identity, idempotence, invertibility, monotonicity, distributivity, fusion-compatibility, and descriptor subsumption are relation facts, not arithmetic special-casing; reductions, parallelization, distributed aggregation, incremental update, and automatic fusion of unknown future relation combinations all follow from them. |
+| 5 | **Change** — a relation may expose a semantic delta/derivative so "recompute whole result" becomes "update changed portion"; generalized differentiation unifies incrementalization, gradients, and dependency updates; reversibility lets a runtime store less and reconstruct on demand. |
+| 6 | **Resource** — latency, throughput, tail latency, deadline, memory, energy, and reliability define the desired frontier; policy attaches to use/world, not a global compiler mode; deadline can make an allowed approximation superior to a slower exact result. |
+| 7 | **Uncertainty** — a refinement lattice (unknown → possibility set → constrained set → singleton), monotonic except behind explicit guards; fact/evidence/ assumption/proof are strictly separated; partial knowledge (range, subset, prefix, cardinality, partial shape, effect exclusion, alias impossibility) is first-class; absence is a general algebra (unknown / known-absent / known-exact / possibly-one-of-set) over effect, authority, result, field, alias, failure, world member, capture, allocation. Contradiction (no meaning), ambiguity (several meanings), and unknown (not-yet-known) are distinct. |
+| 8 | **Physical realization** — see § Physical realization space; `none` and BOUNDARY-ONE finite foreign extent belong here. |
+| 9 | **Verification** — a small trusted core (semantic checker, proof/validation verifier, cost measurement) admits candidates from any source; proof and provenance are irrelevant to realization unless observable/authority-sensitive; minimize the trusted kernel. |
+| 10 | **Search** — search the observation-equivalence space, not a finite pass list; discovery (agents/ML/superopt/solver/autotuner) is separated from trusted admission. |
+| 11 | **Optimization-of-optimization** — budget compile/search/proof effort by ROI (expected gain × executions − compile/search/code-size cost); anytime, background-build, and distributed search; a proof-carrying realization cache reuses verified realizations for matching graph fragment + target. |
+| 12 | **Self-improvement** — a verified discovered equivalence is promoted to a reusable law; because Idol self-hosts, the loop is recursive and bounded by verification. Cross-program target calibration and rewrite theorems generalize without carrying program-specific semantics. |
 
-### FTCFTW measurement rigor
+| section |
+|---|---|
+| FTCFTW measurement rigor |
 
 | # | directive |
 |---|---|
@@ -547,14 +415,18 @@
 | 5 | Metamorphic and fuzz-equivalence testing guard optimizer correctness; robust/adversarial/ worst-case (p99, worst-case complexity), security (constant-time/oblivious), fault, and reliability dimensions join the Pareto frontier. |
 | 6 | "Best" is relative to the whole workload and whole-system interference (shared cache/bandwidth/ registers/threads/power), across program phases and known/uncertain targets. |
 
-### Deepest square-zero omissions (design order)
+| section |
+|---|---|
+| Deepest square-zero omissions (design order) |
 
 | # | directive |
 |---|---|
 | 1 | Observation algebra · equivalence algebra · demand algebra · law algebra · change algebra · resource algebra · uncertainty algebra · physical-realization algebra · verification algebra · search algebra · optimization-of-optimization · self-improvement. |
 | 2 | The strongest statement: **semantic observations are the only invariants** — identity and facts define which observations are required, and everything else (control flow, algorithms, data structures, memory, code, OS interaction, hardware placement, and compiler strategy) is realization space that may disappear, transform, migrate, or be synthesized whenever verified equivalence permits a cheaper physical outcome. |
 
-## The complete frontier (corrected shape)
+| section |
+|---|---|
+| The complete frontier (corrected shape) |
 
 | # | directive |
 |---|---|
@@ -591,19 +463,14 @@
 |---|---|
 | 1 | **Lower bounds are not instruction counts.** The relevant floor comes from the applicable family, and closure names which one was reached: |
 
-- **Information-theoretic** — bits that must be learned/moved/distinguished/emitted
-  (comparison-sort bounds, entropy bounds, distinguishing information). Reading a
-  GiB to answer a 1-bit question is catastrophically far from the floor even with
-  perfect codegen.
-- **Communication** — information crossing any boundary (CPU↔GPU, core↔core, NUMA,
-  process↔kernel, machine↔machine); rounds and latency-hiding, not just bytes.
-- **I/O & memory hierarchy** — cache-block/external-memory transfers; a RAM-model
-  win can lose in the cache-oblivious/external-memory model.
-- **Circuit** — depth/size/fanout/critical path for vector/GPU/FPGA/bitwise.
-- **Work/span** — total operations vs longest dependency chain; parallelism =
-  work/span; synchronization/round counts have their own floors.
-- **Physical law** — speed of light, memory latency, thermodynamic energy, device
-  throughput. The target is the best physically achievable lawful implementation.
+| # | directive |
+|---|---|
+| 1 | **Information-theoretic** — bits that must be learned/moved/distinguished/emitted (comparison-sort bounds, entropy bounds, distinguishing information). Reading a GiB to answer a 1-bit question is catastrophically far from the floor even with perfect codegen. |
+| 2 | **Communication** — information crossing any boundary (CPU↔GPU, core↔core, NUMA, process↔kernel, machine↔machine); rounds and latency-hiding, not just bytes. |
+| 3 | **I/O & memory hierarchy** — cache-block/external-memory transfers; a RAM-model win can lose in the cache-oblivious/external-memory model. |
+| 4 | **Circuit** — depth/size/fanout/critical path for vector/GPU/FPGA/bitwise. |
+| 5 | **Work/span** — total operations vs longest dependency chain; parallelism = work/span; synchronization/round counts have their own floors. |
+| 6 | **Physical law** — speed of light, memory latency, thermodynamic energy, device throughput. The target is the best physically achievable lawful implementation. |
 
 | # | directive |
 |---|---|
@@ -616,7 +483,9 @@
 | 1 | **Extensibility (unknown-unknowns).** Cost dimensions, observation sets, descriptor/relation/world facts, and target families are all extensible; today's illegal-looking transform may be the best on future hardware, so keep equivalence alternatives and never bake a target's cost model into transformation legality (separate correctness proof from target cost evidence). |
 | 2 | Realization ≠ instruction sequence on a classical CPU — GPU/NPU/DSP/FPGA/PIM/analog/neuromorphic/quantum and whatever comes next are admissible whenever semantics and target facts permit. |
 
-## Executed rows, and the frontier as measured
+| section |
+|---|---|
+| Executed rows, and the frontier as measured |
 
 | # | directive |
 |---|---|
@@ -643,30 +512,12 @@
 |---|---|
 | 1 | The frontier that remains, each axis with its measured blocker: |
 
-- **Nonexecution beyond one module** — the stage scope is single-name module
-  relations; dotted homes, overload identity, and cross-run persistence are
-  the recorded next steps (`gaps/GAP-227.md`, the stage-scope dup poisoning).
-- **Aliasing facts as `restrict`** — OWNERSHIP-ZERO alias facts have no C
-  surface yet because the C99 slice emits scalar locals only; the axis opens
-  when the slice admits aggregates (`gate/realize/census.sh` measures the
-  slice's edge; `gaps/GAP-226.md` and `gaps/GAP-234.md` own the walls in
-  front of it).
-- **Width narrowing** — MEASURED, `gate/ftcftw/width.sh`. The declared-u32
-  row: the C realizer carries `Instr.ty` into `(int64_t)((uint32_t)(…))` at
-  every write to a narrow binding, agreeing with the independent Z/2^32
-  oracle and with hand `uint32_t` C, where the pre-seam realizer answered in
-  the full 64-bit ring (silently, exit 0 — that wrong answer is the row's
-  negative control). The width-widened `uint64_t` control answers a different
-  value, proving the kernel exercises the seam. Nine-run end-to-end ranges
-  overlapped the strongest equivalent C arm on this 64-bit host, so the
-  outcome is `unknownbound`: the narrowing is CORRECTNESS-carried, not yet a
-  measured speed win; the instruction-selection axis (32-bit register pairs,
-  sub-register ALU) opens when a row on a host where it matters measures it.
-- **Closed-form realization** (§101 `law.algorithm.realization`) — a linear
-  recurrence has an O(log n) matrix-power realization for runtime-bound n;
-  no machinery proves or extracts it yet. This is the axis where dominance
-  over the best C is structurally available rather than fuel-bounded,
-  because it changes the algorithm, not the instruction selection.
+| # | directive |
+|---|---|
+| 1 | **Nonexecution beyond one module** — the stage scope is single-name module relations; dotted homes, overload identity, and cross-run persistence are the recorded next steps (`gaps/GAP-227.md`, the stage-scope dup poisoning). |
+| 2 | **Aliasing facts as `restrict`** — OWNERSHIP-ZERO alias facts have no C surface yet because the C99 slice emits scalar locals only; the axis opens when the slice admits aggregates (`gate/realize/census.sh` measures the slice's edge; `gaps/GAP-226.md` and `gaps/GAP-234.md` own the walls in front of it). |
+| 3 | **Width narrowing** — MEASURED, `gate/ftcftw/width.sh`. The declared-u32 row: the C realizer carries `Instr.ty` into `(int64_t)((uint32_t)(…))` at every write to a narrow binding, agreeing with the independent Z/2^32 oracle and with hand `uint32_t` C, where the pre-seam realizer answered in the full 64-bit ring (silently, exit 0 — that wrong answer is the row's negative control). The width-widened `uint64_t` control answers a different value, proving the kernel exercises the seam. Nine-run end-to-end ranges overlapped the strongest equivalent C arm on this 64-bit host, so the outcome is `unknownbound`: the narrowing is CORRECTNESS-carried, not yet a measured speed win; the instruction-selection axis (32-bit register pairs, sub-register ALU) opens when a row on a host where it matters measures it. |
+| 4 | **Closed-form realization** (§101 `law.algorithm.realization`) — a linear recurrence has an O(log n) matrix-power realization for runtime-bound n; no machinery proves or extracts it yet. This is the axis where dominance over the best C is structurally available rather than fuel-bounded, because it changes the algorithm, not the instruction selection. |
 
 | # | directive |
 |---|---|

@@ -1,11 +1,15 @@
-# Total convergence contract
+| field | value |
+|---|---|
+| title | Total convergence contract |
 
 | # | directive |
 |---|---|
 | 1 | Blocking execution contract for every agent lane. |
 | 2 | Projection of C0 `law.zero.history`, `law.fact.producer.one`, `law.projection.one`, `law.infer.one`, and SHC/FTCFTW obligations. **Not semantic law** — C0 owns verdicts. |
 
-## Pipeline (sole architecture)
+| section |
+|---|---|
+| Pipeline (sole architecture) |
 
 ```text
 source
@@ -22,37 +26,45 @@ source
 |---|---|
 | 1 | Absolute: one meaning · one id · one relation · one fact producer · one projection algebra · one lowering lineage. |
 
-## STOP conditions
+| section |
+|---|---|
+| STOP conditions |
 
 | # | directive |
 |---|---|
 | 1 | Stop implementation immediately when: |
 
-- semantic owner unclear
-- relation identity unclear
-- projection role unclear
-- subject unclear
-- world authority ambiguous
-- required upstream fact absent
-- multiple incomparable specializations
-- code requires source-text reconstruction
-- new helper would invent vocabulary
-- host architecture is the easiest template
-- fallback would silently decide meaning
+| # | directive |
+|---|---|
+| 1 | semantic owner unclear |
+| 2 | relation identity unclear |
+| 3 | projection role unclear |
+| 4 | subject unclear |
+| 5 | world authority ambiguous |
+| 6 | required upstream fact absent |
+| 7 | multiple incomparable specializations |
+| 8 | code requires source-text reconstruction |
+| 9 | new helper would invent vocabulary |
+| 10 | host architecture is the easiest template |
+| 11 | fallback would silently decide meaning |
 
 | # | directive |
 |---|---|
 | 1 | Record the missing fact/boundary. |
 | 2 | Do not unblock with guesses. |
 
-## Source is not canonical by default
+| section |
+|---|---|
+| Source is not canonical by default |
 
 | # | directive |
 |---|---|
 | 1 | Revalidate every touched construct against current C0. |
 | 2 | Implementation debt never becomes language law. |
 
-## Fact producer ledger
+| section |
+|---|---|
+| Fact producer ledger |
 
 | # | directive |
 |---|---|
@@ -78,7 +90,9 @@ source
 |---|---|
 | 1 | Multiple producers for one fact: **merge block**. |
 
-## P0 repair order (current)
+| section |
+|---|---|
+| P0 repair order (current) |
 
 | # | directive |
 |---|---|
@@ -108,7 +122,9 @@ source
 |---|---|
 | 1 | **G — FTCFTW:** value-checked benchmarks · positive damage controls · evidence rows. |
 
-## Completion report
+| section |
+|---|---|
+| Completion report |
 
 | # | directive |
 |---|---|

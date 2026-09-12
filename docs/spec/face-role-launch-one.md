@@ -1,4 +1,6 @@
-# FACE / ROLE / APPLICATOR / HOME / LAUNCH ONE
+| field | value |
+|---|---|
+| title | FACE / ROLE / APPLICATOR / HOME / LAUNCH ONE |
 
 | # | directive |
 |---|---|
@@ -11,10 +13,9 @@
 | 1 | That is the whole reconciliation. |
 | 2 | It buys the convenience of `test/`, `bench/` and a shebang without letting path spelling become authority — because home, reach, world, authority and witness stay different facts. |
 
-| # | directive |
+| section |
 |---|---|
-
-## §1 NAMES ARE SOURCE FACES, NEVER SEMANTIC IDENTITIES
+| §1 NAMES ARE SOURCE FACES, NEVER SEMANTIC IDENTITIES |
 
 | # | directive |
 |---|---|
@@ -39,7 +40,9 @@
 | 2 | The declaration now wins. |
 | 3 | That is the general law. |
 
-## §2 APPLICATOR, RELATION AND SUBJECT ARE DISTINCT
+| section |
+|---|---|
+| §2 APPLICATOR, RELATION AND SUBJECT ARE DISTINCT |
 
 | # | directive |
 |---|---|
@@ -73,7 +76,9 @@
 |---|---|
 | 1 | Only a CLOSED modifier algebra is admitted — cardinality, application role, state, stage, ordering, polarity, authority, specialization — each where its meaning is exact. `-ful`, `-ist`, `-ish`, `-like`, `-ly` and most `-ed` are NOT. |
 
-## §3 PLURALITY IS SHAPE, NEVER IDENTITY
+| section |
+|---|---|
+| §3 PLURALITY IS SHAPE, NEVER IDENTITY |
 
 | # | directive |
 |---|---|
@@ -85,7 +90,9 @@
 |---|---|
 | 1 | A collection binding and an element binding remain DISTINCT entities that share an element descriptor. `counted` is not a relation — completion is a witness/provenance fact on the `count` application. `callable` is not an identity — callability is "exactly one lawful application exists". |
 
-## §4 ITERATOR IS A REALIZATION, NOT ITERATION — AND THE COST IS NOT WHERE IT LOOKS
+| section |
+|---|---|
+| §4 ITERATOR IS A REALIZATION, NOT ITERATION — AND THE COST IS NOT WHERE IT LOOKS |
 
 | # | directive |
 |---|---|
@@ -103,7 +110,9 @@
 |---|---|
 | 1 | **The actionable optimization is inlining the advance, not erasing the object.** Which is exactly why applicator, relation and realization must stay distinguishable: the win is on one of them and not the others. |
 
-## §5 APPEND AND PREPEND ARE POSITION FACTS
+| section |
+|---|---|
+| §5 APPEND AND PREPEND ARE POSITION FACTS |
 
 | # | directive |
 |---|---|
@@ -114,7 +123,9 @@
 | 1 | The faces communicate a real distinction compactly and must NOT create unrelated ontologies. |
 | 2 | Representation follows demand: dynamic array for tail-heavy, deque for mixed, rope for persistent, static data when compile-time known, **nothing when the result is unobserved.** If `append` might mean concatenation rather than one-element insertion, descriptors must distinguish it — never spelling. |
 
-## §6 COMPOUNDS ARE NEVER MECHANICALLY SPLIT
+| section |
+|---|---|
+| §6 COMPOUNDS ARE NEVER MECHANICALLY SPLIT |
 
 | # | directive |
 |---|---|
@@ -129,7 +140,9 @@
 | 1 | A naming gate must consume SEMANTIC FACTS, not regex. |
 | 2 | A grep count is a candidate upper bound only — the same rule already applied to the 6,449 dot-shaped calls. |
 
-## §7 THE ROLE / AUTHORITY MATRIX — the load-bearing distinction
+| section |
+|---|---|
+| §7 THE ROLE / AUTHORITY MATRIX — the load-bearing distinction |
 
 | physical fact | MAY infer | MUST NOT infer |
 |---|---|---|
@@ -154,7 +167,9 @@
 | 1 | `bench/` works identically: the benchmark world supplies exact clock/counter witnesses and the relation never mentions a timer — the runner places measurement demand AROUND the application. |
 | 2 | Production never reaches `compiler.bench`, so harness 0, measurement world 0, counter lookup 0. |
 
-## §8 SHELL IS ORDINARY SEMANTICS — AND `sh("…")` IS NOT A FACE
+| section |
+|---|---|
+| §8 SHELL IS ORDINARY SEMANTICS — AND `sh("…")` IS NOT A FACE |
 
 | # | directive |
 |---|---|
@@ -173,7 +188,9 @@
 | # | directive |
 |---|---|
 
-## §9 MEASURED BASELINE — 2026-08-16, idol `19cda086`
+| section |
+|---|---|
+| §9 MEASURED BASELINE — 2026-08-16, idol `19cda086` |
 
 | # | directive |
 |---|---|

@@ -1,6 +1,10 @@
-# Idol — supreme language, semantic-graph, compiler, and performance law
+| field | value |
+|---|---|
+| title | Idol — supreme language, semantic-graph, compiler, and performance law |
 
-## pins
+| section |
+|---|---|
+| pins |
 
 | pin | statement |
 |---|---|
@@ -12,7 +16,9 @@
 | projection | `[]` is computed/indexed projection. |
 | structure | `{}` carries structured pack/table/descriptor structure. |
 
-## 0. Identity and objective
+| section |
+|---|---|
+| 0. Identity and objective |
 
 | # | law |
 |---|---|
@@ -48,7 +54,9 @@ ordinary Lua meaning
 → target-specific realization
 ```
 
-## 1. Observation, identity, facts
+| section |
+|---|---|
+| 1. Observation, identity, facts |
 
 | # | law |
 |---|---|
@@ -70,7 +78,9 @@ SEMANTIC IDENTITY PERSISTS
 REPRESENTATION CHANGES
 ```
 
-## 2. The only semantic architecture
+| section |
+|---|---|
+| 2. The only semantic architecture |
 
 | # | law |
 |---|---|
@@ -87,7 +97,9 @@ REPRESENTATION CHANGES
 | 11 | CFG, SSA, vector/tensor, GPU, machine, object, cache, and other target-oriented views are lawful when they are derived from exact graph ids and facts, state what information they preserve or intentionally forget, retain provenance back to the graph, have exact consumers and invalidation rules, and cannot create language meaning or optimization eligibility independently. |
 | 12 | The graph owns meaning; physical views own only the work needed by their bounded consumer. |
 
-## 3. Source minimum, graph maximum, physical minimum
+| section |
+|---|---|
+| 3. Source minimum, graph maximum, physical minimum |
 
 | # | law |
 |---|---|
@@ -105,7 +117,9 @@ MAXIMUM SEMANTIC FACTS
 MINIMUM PHYSICAL WORK
 ```
 
-## 4. Source, grammar, world, graph, realization
+| section |
+|---|---|
+| 4. Source, grammar, world, graph, realization |
 
 | # | law |
 |---|---|
@@ -134,7 +148,9 @@ recognize(source, source law)
 → machine + evidence
 ```
 
-## 5. Delimiter and face closure
+| section |
+|---|---|
+| 5. Delimiter and face closure |
 
 | # | law |
 |---|---|
@@ -165,7 +181,9 @@ value = table[key]
 table[key] = replacement
 ```
 
-## 6. World, home, reach, subject, place
+| section |
+|---|---|
+| 6. World, home, reach, subject, place |
 
 | # | law |
 |---|---|
@@ -202,7 +220,9 @@ binding != place
 world witness != relation/protocol witness
 ```
 
-## 7. Files, homes, distribution
+| section |
+|---|---|
+| 7. Files, homes, distribution |
 
 | # | law |
 |---|---|
@@ -217,7 +237,9 @@ world witness != relation/protocol witness
 | 9 | Canonical vocabulary is compiler-owned initial reachability of admitted semantic identities. |
 | 10 | It is not a runtime `std` object or duplicated registry. |
 
-## 8. Descriptors, relations, protocols
+| section |
+|---|---|
+| 8. Descriptors, relations, protocols |
 
 | # | law |
 |---|---|
@@ -228,7 +250,9 @@ world witness != relation/protocol witness
 | 5 | No trait/impl/interface/vtable ontology is native Idol law. |
 | 6 | Tables, closures, metatables, multiple results, and ordinary bindings remain the Lua semantic foundation and become progressively more specialized rather than being replaced by host-language abstractions. |
 
-## 9. Application and projection
+| section |
+|---|---|
+| 9. Application and projection |
 
 | # | law |
 |---|---|
@@ -249,7 +273,9 @@ world witness != relation/protocol witness
 | 15 | Compile-time knowledge at a call site may specialize an application without minting a declared axis. |
 | 16 | There is no anonymous self slot `(:)` and no pipeline operator `\|>`; chaining is subject/relation chaining through demanded results. |
 
-## 10. Demand and observation
+| section |
+|---|---|
+| 10. Demand and observation |
 
 | # | law |
 |---|---|
@@ -260,7 +286,9 @@ world witness != relation/protocol witness
 | 5 | Observer/world demand participates in cache identity whenever it changes lawful realizations. |
 | 6 | Demand over user-defined and recursive relations is solved through graph relation/application identities and finite fixpoints with explicit refusal for unsupported effects, traps, captures, rebinding, budgets, or disagreement. |
 
-## 11. Transformations and laws
+| section |
+|---|---|
+| 11. Transformations and laws |
 
 | # | law |
 |---|---|
@@ -277,7 +305,9 @@ world witness != relation/protocol witness
 | 11 | Local op enums or bounded search encodings may be physical indexes, never semantic owners. |
 | 12 | Unsupported or unproved cases refuse or fall back without changing meaning. |
 
-## 12. Representation and DNIR
+| section |
+|---|---|
+| 12. Representation and DNIR |
 
 | # | law |
 |---|---|
@@ -299,7 +329,9 @@ world witness != relation/protocol witness
 | 16 | Direct, C, Wasm, JIT, interpreter, and tool backends consume the same graph meaning and may differ only in lawful physical realization. |
 | 17 | Generated C is a bootstrap/foreign realization, not proof of direct-native performance or SHC. |
 
-## 13. Cache, artifacts, concurrency
+| section |
+|---|---|
+| 13. Cache, artifacts, concurrency |
 
 | # | law |
 |---|---|
@@ -317,7 +349,9 @@ world witness != relation/protocol witness
 | 12 | Programs whose observations require I/O concurrency, supervision, distributed coordination, latency control, atomics, or explicit memory order need the smallest structured and capability-accountable mechanism that preserves those observations. |
 | 13 | Automatic parallelization and explicit concurrency are distinct; neither may be used to erase the other’s required information. |
 
-## 14. Performance admission and evidence
+| section |
+|---|---|
+| 14. Performance admission and evidence |
 
 | # | law |
 |---|---|
@@ -346,7 +380,9 @@ world witness != relation/protocol witness
 | 23 | Without such a record the lawful public state is `UNMEASURED`, `NOT IMPLEMENTED`, `NOT ADMITTED`, or `RESEARCH HYPOTHESIS`. |
 | 24 | A truthful empty surface is preferable to an attractive speculative one. |
 
-## 15. Agent, LSP, MCP, tooling
+| section |
+|---|---|
+| 15. Agent, LSP, MCP, tooling |
 
 | # | law |
 |---|---|
@@ -356,7 +392,9 @@ world witness != relation/protocol witness
 | 4 | Agent workflows use stable ids, provenance, transformations, gaps, and evidence rather than branch-local prose or session-state files. |
 | 5 | Kira’s ordinary ad hoc questions and other personal conversation are unrelated to Idol authority unless the user explicitly connects them to the project. |
 
-## 16. Research, gaps, and zero-history active tree
+| section |
+|---|---|
+| 16. Research, gaps, and zero-history active tree |
 
 | # | law |
 |---|---|
@@ -368,7 +406,9 @@ world witness != relation/protocol witness
 | 6 | Every bridge records semantic owner, physical owner, facts crossing/lost, consumer, evidence, and deletion witness. |
 | 7 | Consumer-zero production modules move to research or gain a real consumer. |
 
-## 17. Absolute direction
+| section |
+|---|---|
+| 17. Absolute direction |
 
 | # | law |
 |---|---|

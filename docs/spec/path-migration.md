@@ -1,11 +1,15 @@
-# Path migration ledger (PATH-ONE)
+| field | value |
+|---|---|
+| title | Path migration ledger (PATH-ONE) |
 
 | # | directive |
 |---|---|
 | 1 | Projection of C0 `law.path.name` and GAP-163. |
 | 2 | Not semantic law. |
 
-## Rule
+| section |
+|---|---|
+| Rule |
 
 | # | directive |
 |---|---|
@@ -16,7 +20,9 @@
 |---|---|
 | 1 | Renaming without semantic decomposition is forbidden (`abi_matrix` → `abimatrix`). |
 
-## Classification
+| section |
+|---|---|
+| Classification |
 
 | Path | Class | Target / gate |
 |---|---|---|
@@ -35,13 +41,19 @@
 | `src/measurement.zig` | foreign bootstrap | delete when performance evidence executes in Idol (GAP-090 ledger) |
 | `src/assumption_guard.zig` | foreign bootstrap | delete when profile guard is graph fact (GAP-085) |
 
-## Enforcement
+| section |
+|---|---|
+| Enforcement |
 
-- **New paths:** `gate/path.id` on staged added/renamed paths — zero violations.
-- **Existing debt:** ratchet via `gate/census.id`; classify before rename.
-- **Agents:** record `PATH-SEMANTICS-BLOCKED` when decomposition is unclear; do not mint compound filenames.
+| # | directive |
+|---|---|
+| 1 | **New paths:** `gate/path.id` on staged added/renamed paths — zero violations. |
+| 2 | **Existing debt:** ratchet via `gate/census.id`; classify before rename. |
+| 3 | **Agents:** record `PATH-SEMANTICS-BLOCKED` when decomposition is unclear; do not mint compound filenames. |
 
-## Census
+| section |
+|---|---|
+| Census |
 
 ```bash
 git ls-files | rg '(^|/)[^/]*[_0-9][^/]*\.(id|zig)$' | head

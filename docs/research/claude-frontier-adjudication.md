@@ -1,12 +1,15 @@
-# Adjudication of the 2025–2026 Idol / wart / Live Frontier Surveys
+| field | value |
+|---|---|
+| title | Adjudication of the 2025–2026 Idol / wart / Live Frontier Surveys |
+| status | research adjudication, not language law. |
+| repository subject | at . |
+| documents reviewed |  |
 
 | # | directive |
 |---|---|
-| 1 | **Status:** research adjudication, not language law. **Repository subject:** `clpi/idol` at `1ae3e38282d8d5ac8071cdcdf948a5fbb1afec69`. **Documents reviewed:** |
-
-- *The Idol Constitution*, revision 13;
-- *Frontier Survey for Idol / wart / Live — Dispositioned*;
-- *Second Exhaustive Survey — Idol / wart / Live Project Family*.
+| 1 | *The Idol Constitution*, revision 13; |
+| 2 | *Frontier Survey for Idol / wart / Live — Dispositioned*; |
+| 3 | *Second Exhaustive Survey — Idol / wart / Live Project Family*. |
 
 | # | directive |
 |---|---|
@@ -14,7 +17,9 @@
 | 2 | It therefore cannot supersede the repository’s current supreme compact law by declaration. |
 | 3 | Its valuable findings are research proposals until reconciled with `docs/spec/law.md`, the executable corpus, and current implementation evidence. |
 
-## Project-boundary correction
+| section |
+|---|---|
+| Project-boundary correction |
 
 | # | directive |
 |---|---|
@@ -25,7 +30,9 @@
 | 5 | Only then may a separately scoped experiment rewrite that exact subject in Idol, preserve its semantics, and measure whether Idol's facts and realization freedom improve it. |
 | 6 | External comparison evidence never becomes Idol meaning. |
 
-## 1. Verdict vocabulary
+| section |
+|---|---|
+| 1. Verdict vocabulary |
 
 | Verdict | Meaning |
 |---|---|
@@ -34,7 +41,9 @@
 | **REJECTED AS LAW** | The item may be an experiment or realization strategy, but evidence does not justify a constitutional prohibition or universal semantic commitment. |
 | **OPEN** | The claimed project result has no decisive external evidence and must be settled by a bounded experiment in the project that owns the claim. |
 
-## 2. High-confidence confirmations
+| section |
+|---|---|
+| 2. High-confidence confirmations |
 
 | Finding | Verdict | Adjudication |
 |---|---|---|
@@ -52,9 +61,13 @@
 | MLIR’s progressive multi-level lowering preserves domain structure that low-level IRs cannot recover | **CONFIRMED** | It supports a distinction between one semantic authority and several typed, provenance-connected physical lowering representations. |
 | A no-resource language is a material risk for coding agents; executable fixtures, a primer, generated grammar, constrained decoding, and local diagnostics are sensible mitigations | **CONFIRMED AS RISK/MITIGATION** | No published result establishes parity with mature languages. The project’s agent-legibility claim remains an experiment. |
 
-## 3. Findings that must be qualified
+| section |
+|---|---|
+| 3. Findings that must be qualified |
 
-### 3.1 “Own backends remain behind LLVM”
+| section |
+|---|---|
+| 3.1 “Own backends remain behind LLVM” |
 
 | # | directive |
 |---|---|
@@ -72,7 +85,9 @@
 | 1 | Project consequence: keep mature C/LLVM/Wasm pipelines as controls and an own backend as a product/research axis, never a mandatory shipping boundary while it loses. |
 | 2 | Attribute each loss to backend, missing information, algorithm, runtime, or measurement state. |
 
-### 3.2 “The honest C baseline is max(GCC, Clang, ICX, AOCC)”
+| section |
+|---|---|
+| 3.2 “The honest C baseline is max(GCC, Clang, ICX, AOCC)” |
 
 | # | directive |
 |---|---|
@@ -87,7 +102,9 @@
 |---|---|
 | 1 | Project consequence: use the domain-frontier envelope defined in `domain-frontier-map.md`. |
 
-### 3.3 “One graph plus e-graphs/Datalog is the right substrate”
+| section |
+|---|---|
+| 3.3 “One graph plus e-graphs/Datalog is the right substrate” |
 
 | # | directive |
 |---|---|
@@ -104,7 +121,9 @@
 | 1 | Project consequence: one semantic graph owns meaning |
 | 2 | CFG, SSA, vector/tensor, GPU, machine, object, and indexing views are permitted when derived, provenance-linked, validated, and semantically subordinate. |
 
-### 3.4 “Method JITs won; reject tracing”
+| section |
+|---|---|
+| 3.4 “Method JITs won; reject tracing” |
 
 | # | directive |
 |---|---|
@@ -121,7 +140,9 @@
 |---|---|
 | 1 | Project consequence: prefer a method/profile-specialization architecture initially, while keeping trace fragments or trace-derived implementations admissible under the same evidence and deoptimization law. |
 
-### 3.5 “AOT partial evaluation is a compiler generator”
+| section |
+|---|---|
+| 3.5 “AOT partial evaluation is a compiler generator” |
 
 | # | directive |
 |---|---|
@@ -137,7 +158,9 @@
 |---|---|
 | 1 | Project consequence: preserve the experiment and kill criteria; do not treat it as a shortcut around building a capable runtime/backend. |
 
-### 3.6 “Claim-time semantic identity prevention will drive conflicts near zero”
+| section |
+|---|---|
+| 3.6 “Claim-time semantic identity prevention will drive conflicts near zero” |
 
 | # | directive |
 |---|---|
@@ -153,9 +176,13 @@
 | 1 | Project consequence: replay an external corpus and instrument a live project before making product claims. |
 | 2 | Test Live first as coordination/context/admission over Git and merge-queue baselines; do not ratify it as a replacement for Git, branches, or human review. |
 
-## 4. Findings rejected as universal project law
+| section |
+|---|---|
+| 4. Findings rejected as universal project law |
 
-### 4.1 “MVS subsumes the disjoint fact”
+| section |
+|---|---|
+| 4.1 “MVS subsumes the disjoint fact” |
 
 | # | directive |
 |---|---|
@@ -171,7 +198,9 @@
 |---|---|
 | 1 | Ruling: MVS is an inferred/sealed specialization regime. `disjoint`, uniqueness, no-alias, and acyclicity remain distinct provable facts unless the executable fact algebra proves equivalence in a bounded regime. |
 
-### 4.2 “No GC is settled”
+| section |
+|---|---|
+| 4.2 “No GC is settled” |
 
 | # | directive |
 |---|---|
@@ -188,7 +217,9 @@
 | 1 | Ruling: leave memory strategy open. |
 | 2 | Prefer stack/region/arena/RC/reuse when facts permit; retain a tracing, cycle-collection, explicit-cycle, or other admitted strategy for cyclic dynamic graphs. |
 
-### 4.3 “Only compiler-inserted concurrency”
+| section |
+|---|---|
+| 4.3 “Only compiler-inserted concurrency” |
 
 | # | directive |
 |---|---|
@@ -203,7 +234,9 @@
 | 1 | Ruling: automatic parallelization of proven-pure work remains a major optimization. |
 | 2 | The language also needs a minimal structured, effect- and capability-accountable explicit concurrency floor, plus low-level memory-order operations where demanded. |
 
-### 4.4 “Agreement testing replaces coherence”
+| section |
+|---|---|
+| 4.4 “Agreement testing replaces coherence” |
 
 | # | directive |
 |---|---|
@@ -220,7 +253,9 @@
 | 2 | Use proof, translation validation, exhaustive finite checking, differential/metamorphic tests, or explicit priority/refusal according to the domain. |
 | 3 | Tests are evidence, not universal coherence. |
 
-### 4.5 “Deterministic realization makes record/replay free”
+| section |
+|---|---|
+| 4.5 “Deterministic realization makes record/replay free” |
 
 | # | directive |
 |---|---|
@@ -236,7 +271,9 @@
 | 2 | Provide explicit deterministic execution profiles where useful. |
 | 3 | Record or control nondeterministic world observations for replay. |
 
-### 4.6 “Static erasure makes capability attestation zero-cost”
+| section |
+|---|---|
+| 4.6 “Static erasure makes capability attestation zero-cost” |
 
 | # | directive |
 |---|---|
@@ -252,7 +289,9 @@
 | 1 | Ruling: distinguish static capability requirement, granted authority, and observed use. |
 | 2 | Measure instrumentation cost rather than declaring it zero. |
 
-### 4.7 “A single physical IR/no pass pipeline is required by one semantic graph”
+| section |
+|---|---|
+| 4.7 “A single physical IR/no pass pipeline is required by one semantic graph” |
 
 | # | directive |
 |---|---|
@@ -269,7 +308,9 @@
 | 2 | Multiple typed physical views and scheduled analyses are lawful. |
 | 3 | No physical view may become a second language authority. |
 
-### 4.8 “A fixed seven-keyword language follows from the research”
+| section |
+|---|---|
+| 4.8 “A fixed seven-keyword language follows from the research” |
 
 | # | directive |
 |---|---|
@@ -281,7 +322,9 @@
 | 2 | The current supreme law and executable grammar own canonical syntax. |
 | 3 | Keyword count is an axis to measure, not a result imported from a research synthesis. |
 
-### 4.9 “Imprecise faults should be the familiar default”
+| section |
+|---|---|
+| 4.9 “Imprecise faults should be the familiar default” |
 
 | # | directive |
 |---|---|
@@ -292,7 +335,9 @@
 | 1 | The cited imprecise-exception work establishes a transformation-preserving model for lazy Haskell, not a general result that imprecision is the right familiar default for Idol. |
 | 2 | Preserve the experiment as an explicit relaxed observation regime if bounded evidence justifies it; ordinary fault behavior remains governed by current observation/effect law rather than imported by analogy. |
 
-## 5. Current repository correction
+| section |
+|---|---|
+| 5. Current repository correction |
 
 | # | directive |
 |---|---|
@@ -311,58 +356,78 @@ semantic identity
 |---|---|
 | 1 | The required amendments are meta-laws, not a wholesale replacement of current syntax: |
 
-1. **Domain-frontier oracle:** C is one control; the strongest equivalent domain leader is the comparator.
-2. **Physical-view freedom:** one semantic authority permits multiple derived lowering representations.
-3. **Strategy openness:** memory, runtime specialization, parallelism, layout, and backend strategies remain open until evidence and semantics constrain them.
-4. **Evidence-gated publication:** public surfaces consume admitted evidence; they do not author language or performance claims.
-5. **Website-last priority:** no product surface work outranks benchmark, artifact, self-host, runtime, or Live process evidence.
+| # | directive |
+|---|---|
+| 1 | **Domain-frontier oracle:** C is one control; the strongest equivalent domain leader is the comparator. |
+| 2 | **Physical-view freedom:** one semantic authority permits multiple derived lowering representations. |
+| 3 | **Strategy openness:** memory, runtime specialization, parallelism, layout, and backend strategies remain open until evidence and semantics constrain them. |
+| 4 | **Evidence-gated publication:** public surfaces consume admitted evidence; they do not author language or performance claims. |
+| 5 | **Website-last priority:** no product surface work outranks benchmark, artifact, self-host, runtime, or Live process evidence. |
 
-## 6. Project decisions recommended now
+| section |
+|---|---|
+| 6. Project decisions recommended now |
 
-### Adopt now as research and implementation direction
+| section |
+|---|---|
+| Adopt now as research and implementation direction |
 
-- domain-frontier benchmark envelope;
-- fact-on/fact-off strip tests;
-- alias/range/alignment vectorization experiments;
-- typed, provenance-linked physical lowering views;
-- Perceus-style reuse only in proven cycle-free regimes;
-- mature control backends plus own low-latency backend;
-- differential, metamorphic, fuzz, and translation-validation gates;
-- executable corpus, primer, generated grammar, and agent-legibility experiment;
-- revision-bound evidence records and public projections derived from admitted records;
-- Live claim/context/admission experiments with DORA and AgenticFlict-style controls.
+| # | directive |
+|---|---|
+| 1 | domain-frontier benchmark envelope; |
+| 2 | fact-on/fact-off strip tests; |
+| 3 | alias/range/alignment vectorization experiments; |
+| 4 | typed, provenance-linked physical lowering views; |
+| 5 | Perceus-style reuse only in proven cycle-free regimes; |
+| 6 | mature control backends plus own low-latency backend; |
+| 7 | differential, metamorphic, fuzz, and translation-validation gates; |
+| 8 | executable corpus, primer, generated grammar, and agent-legibility experiment; |
+| 9 | revision-bound evidence records and public projections derived from admitted records; |
+| 10 | Live claim/context/admission experiments with DORA and AgenticFlict-style controls. |
 
-### Keep open pending measurement
+| section |
+|---|---|
+| Keep open pending measurement |
 
-- trace versus method/profile runtime tiers;
-- exact memory strategy for cyclic dynamic graphs;
-- Datalog/DBSP implementation choices;
-- first Futamura performance bounds;
-- hardware realization;
-- semantic claim granularity and conflict policy;
-- explicit concurrency surface;
-- proof/test/priority requirements for overlapping implementations.
+| # | directive |
+|---|---|
+| 1 | trace versus method/profile runtime tiers; |
+| 2 | exact memory strategy for cyclic dynamic graphs; |
+| 3 | Datalog/DBSP implementation choices; |
+| 4 | first Futamura performance bounds; |
+| 5 | hardware realization; |
+| 6 | semantic claim granularity and conflict policy; |
+| 7 | explicit concurrency surface; |
+| 8 | proof/test/priority requirements for overlapping implementations. |
 
-### Stop or demote immediately
+| section |
+|---|---|
+| Stop or demote immediately |
 
-- generic “faster than C” prose;
-- public claims of native completeness, self-hosting, executing Live, admitted worlds, or performance without exact records;
-- website-authored semantic explanations that exceed current law and implementation;
-- universal no-GC, no-explicit-concurrency, no-lowering-IR, or no-tracing prohibitions;
-- treating research documents as authority merely because they are comprehensive.
+| # | directive |
+|---|---|
+| 1 | generic “faster than C” prose; |
+| 2 | public claims of native completeness, self-hosting, executing Live, admitted worlds, or performance without exact records; |
+| 3 | website-authored semantic explanations that exceed current law and implementation; |
+| 4 | universal no-GC, no-explicit-concurrency, no-lowering-IR, or no-tracing prohibitions; |
+| 5 | treating research documents as authority merely because they are comprehensive. |
 
-## 7. Primary evidence consulted
+| section |
+|---|---|
+| 7. Primary evidence consulted |
 
-- Racordon et al., *Native Implementation of Mutable Value Semantics* (2021).
-- Reinking, Xie, de Moura, and Leijen, *Perceus: Garbage Free Reference Counting with Reuse* (PLDI 2021).
-- V8 team, *Land ahoy: leaving the Sea of Nodes* (2025).
-- LLVM MLIR rationale, Linalg rationale, dialect-conversion and target documentation.
-- W3C WebAssembly 3.0 release and specification materials (2025).
-- Budiu et al., *DBSP: Automatic Incremental View Maintenance for Rich Query Languages* (VLDB 2023).
-- Mankowitz et al., *Faster sorting algorithms discovered using deep reinforcement learning* (Nature 2023).
-- Halide, Futhark, ISPC, Umbra/Tidy Tuples, Unison, Truffle, and Bytecode Alliance primary project/paper materials.
-- Ogenrwot and Businge et al., AgenticFlict dataset paper (2026).
-- Google DORA 2024 and 2025 reports.
+| # | directive |
+|---|---|
+| 1 | Racordon et al., *Native Implementation of Mutable Value Semantics* (2021). |
+| 2 | Reinking, Xie, de Moura, and Leijen, *Perceus: Garbage Free Reference Counting with Reuse* (PLDI 2021). |
+| 3 | V8 team, *Land ahoy: leaving the Sea of Nodes* (2025). |
+| 4 | LLVM MLIR rationale, Linalg rationale, dialect-conversion and target documentation. |
+| 5 | W3C WebAssembly 3.0 release and specification materials (2025). |
+| 6 | Budiu et al., *DBSP: Automatic Incremental View Maintenance for Rich Query Languages* (VLDB 2023). |
+| 7 | Mankowitz et al., *Faster sorting algorithms discovered using deep reinforcement learning* (Nature 2023). |
+| 8 | Halide, Futhark, ISPC, Umbra/Tidy Tuples, Unison, Truffle, and Bytecode Alliance primary project/paper materials. |
+| 9 | Ogenrwot and Businge et al., AgenticFlict dataset paper (2026). |
+| 10 | Google DORA 2024 and 2025 reports. |
 
 | # | directive |
 |---|---|

@@ -5,7 +5,9 @@
 | 3 | Emitter: scripts/alignment_emit.id. |
 | 4 | Check and regenerate: sh gate/alignment-projection.sh C0 law.semantic.service binds the constitution to generate the teaching corpus and fails independently handwritten copies; law.doc.corpus makes documentation corpus. gaps/GAP-133.md records the drift this closes. --> |
 
-# Agent Alignment Compass
+| field | value |
+|---|---|
+| title | Agent Alignment Compass |
 
 | # | directive |
 |---|---|
@@ -19,7 +21,9 @@
 | 1 | Everything outside the residue markers is emitted from C0 by `scripts/alignment_emit.id`; the residue between them is authored operative guidance, carried byte-for-byte and counted. |
 | 2 | A `law.*` identity cited anywhere in this file must resolve in C0 or regeneration fails, so a retired authority cannot keep being taught here — that is the GAP-133 defect class. |
 
-## Cited laws (resolved against C0 at emit time)
+| section |
+|---|---|
+| Cited laws (resolved against C0 at emit time) |
 
 | Law | Kind | Holds |
 |---|---|---|
@@ -28,55 +32,54 @@
 | `law.bootstrap.velocity` | protocol | priority |
 | `law.bridge.death` | invariant | deletion |
 
-## The docs gate (C0 §57)
+| section |
+|---|---|
+| The docs gate (C0 §57) |
 
 | # | directive |
 |---|---|
 | 1 | Documentation is corpus (`law.doc.corpus`). |
 | 2 | Each of these is a build failure: |
 
-1. a visible semantic token lacks a semantic role
-2. a current lowering claim lacks compiler evidence
-3. source, graph, dnir and assembly correspondence is broken
-4. stale canonical syntax contradicts an owner ruling
-5. generated escape artifacts appear in output
-6. distinguishable semantic roles collapse to identical rendering by accident
+| # | directive |
+|---|---|
+| 1 | a visible semantic token lacks a semantic role |
+| 2 | a current lowering claim lacks compiler evidence |
+| 3 | source, graph, dnir and assembly correspondence is broken |
+| 4 | stale canonical syntax contradicts an owner ruling |
+| 5 | generated escape artifacts appear in output |
+| 6 | distinguishable semantic roles collapse to identical rendering by accident |
 
 | # | directive |
 |---|---|
 | 1 | <!-- @@residue:begin — authored; counted; shrink it by moving facts into C0 --> |
 
-## Architectural mandate (2026-08-20 — supersedes fixture-chasing)
+| section |
+|---|---|
+| Architectural mandate (2026-08-20 — supersedes fixture-chasing) |
 
 | # | directive |
 |---|---|
 | 1 | **A passing fixture is not the objective.** Never repair a downstream consumer when its upstream authoritative fact is wrong. |
 
-- **DNIR may not filter, reinterpret, recover, or correct semantic graph facts.**
-  If `graph.application.arguments` contains non-arguments, fix the producer —
-  do not sanitize in lowering.
-- **Sema may not choose relations by hard-coded home names, home priority, or
-  first textual match.** Filesystem/home placement is provenance/topology, not
-  semantic dispatch.
-- **If multiple compatible relations exist,** resolve through exact
-  descriptor/world/relation facts or diagnose ambiguity — never `iter` before
-  `table` by array order.
-- **Never alter canonical compiler source merely to fit an immature direct
-  backend** unless the source itself violates current law.
-- **`lib/compiler/monolith.id` is a capability probe, not compiler-B
-  architecture.**
-- **Every self-host green must name the semantic authority gained**, not merely
-  the DNB removed.
-- **Every new workaround must delete or move authority upstream** rather than
-  increase backend intelligence about source syntax, names, AST shape, or local
-  storage.
+| # | directive |
+|---|---|
+| 1 | **DNIR may not filter, reinterpret, recover, or correct semantic graph facts.** If `graph.application.arguments` contains non-arguments, fix the producer — do not sanitize in lowering. |
+| 2 | **Sema may not choose relations by hard-coded home names, home priority, or first textual match.** Filesystem/home placement is provenance/topology, not semantic dispatch. |
+| 3 | **If multiple compatible relations exist,** resolve through exact descriptor/world/relation facts or diagnose ambiguity — never `iter` before `table` by array order. |
+| 4 | **Never alter canonical compiler source merely to fit an immature direct backend** unless the source itself violates current law. |
+| 5 | **`lib/compiler/monolith.id` is a capability probe, not compiler-B architecture.** |
+| 6 | **Every self-host green must name the semantic authority gained**, not merely the DNB removed. |
+| 7 | **Every new workaround must delete or move authority upstream** rather than increase backend intelligence about source syntax, names, AST shape, or local storage. |
 
 | # | directive |
 |---|---|
 | 1 | **Review question (required before every commit):** If I deleted all source spelling, AST shape, filesystem names, and host-local variable names after resolution, would my new code still know enough to make this decision? |
 | 2 | If the answer is no, the change is almost certainly landing at the wrong layer. |
 
-## Architectural negative controls (2026-08-20 inventory)
+| section |
+|---|---|
+| Architectural negative controls (2026-08-20 inventory) |
 
 | # | directive |
 |---|---|
@@ -108,7 +111,9 @@
 | 1 | **Source-shape rule:** before changing compiler `.id` for direct-backend limits, answer whether source violates law or backend lacks lawful capability. |
 | 2 | Do not shape canonical source into whatever immature DNIR can lower today. |
 
-## Systemic misunderstandings (2026-08-20 — supersedes pipeline-chasing)
+| section |
+|---|---|
+| Systemic misunderstandings (2026-08-20 — supersedes pipeline-chasing) |
 
 | # | directive |
 |---|---|
@@ -157,7 +162,9 @@
 |---|---|
 | 1 | Executable negative controls: `sh gate/architecture-negative.sh` (idol) and the sibling wrapper in idol-native. |
 
-## Dominant dashboard
+| section |
+|---|---|
+| Dominant dashboard |
 
 | # | directive |
 |---|---|
@@ -171,18 +178,19 @@
 |---|---|
 | 1 | Full debt inventory and workstream order: `.agents/TECH_DEBT_WORKSTREAM.md`. |
 
-1. **Executed authority frontier** — production stages actually Idol-owned
-   (`docs/bootstrap.md` ledger).
-2. **Semantic reconstruction debt** — downstream decisions still re-deriving
-   meaning from text/AST/opcode/host shape after resolution.
-3. **FTCFTW evidence matrix coverage** — workloads × backends × dimensions;
-   empty cells stay explicit until revision-bound proof fills them.
+| # | directive |
+|---|---|
+| 1 | **Executed authority frontier** — production stages actually Idol-owned (`docs/bootstrap.md` ledger). |
+| 2 | **Semantic reconstruction debt** — downstream decisions still re-deriving meaning from text/AST/opcode/host shape after resolution. |
+| 3 | **FTCFTW evidence matrix coverage** — workloads × backends × dimensions; empty cells stay explicit until revision-bound proof fills them. |
 
 | # | directive |
 |---|---|
 | 1 | Canonicality splits permanently: **new debt introduced = 0** (gates on changed lines) vs **existing corpus debt** (historical ledgers; substantial). |
 
-## Architectural mandate (agent orientation)
+| section |
+|---|---|
+| Architectural mandate (agent orientation) |
 
 | # | directive |
 |---|---|
@@ -197,18 +205,16 @@
 |---|---|
 | 1 | Hard constraints from that injection: |
 
-- **Tonight's priority:** read the "Tonight's priority injection" section in
-  `.agents/ARCHITECTURE_INJECTION.md` before any fix.
-- **Architecture-negative controls:** `docs/architecture-negative-controls.md`
-  and `gate/architecture-negative.sh` / `gate/architecture-companion.sh` — run
-  before claiming semantic progress; a passing fixture is not the objective.
-- **Canonical source debt:** `docs/projections/canonical-source-debt.md` — three
-  states (canonical / migratable / debt) for every `lib/compiler/**` construct.
-- DNIR must not silently drop semantic facts recoverable from the graph.
-- Sema must not route meaning by hard-coded relation names.
-- Canonical source must not be weakened for immature backends.
-- New capabilities belong in the one graph unless irreducibility is proved.
-- External plugins may propose candidates and witnesses, not relation meaning.
+| # | directive |
+|---|---|
+| 1 | **Tonight's priority:** read the "Tonight's priority injection" section in `.agents/ARCHITECTURE_INJECTION.md` before any fix. |
+| 2 | **Architecture-negative controls:** `docs/architecture-negative-controls.md` and `gate/architecture-negative.sh` / `gate/architecture-companion.sh` — run before claiming semantic progress; a passing fixture is not the objective. |
+| 3 | **Canonical source debt:** `docs/projections/canonical-source-debt.md` — three states (canonical / migratable / debt) for every `lib/compiler/**` construct. |
+| 4 | DNIR must not silently drop semantic facts recoverable from the graph. |
+| 5 | Sema must not route meaning by hard-coded relation names. |
+| 6 | Canonical source must not be weakened for immature backends. |
+| 7 | New capabilities belong in the one graph unless irreducibility is proved. |
+| 8 | External plugins may propose candidates and witnesses, not relation meaning. |
 
 | # | directive |
 |---|---|
@@ -216,7 +222,9 @@
 | 2 | See **§ XLVII** (items 688–763) for the third-pass "strangeness" frontier — anti-unification, factoring, liveness, guards, compiler self-realization, and untrusted optimization. |
 | 3 | Route new research there before inventing parallel subsystems. |
 
-## One target
+| section |
+|---|---|
+| One target |
 
 | # | directive |
 |---|---|
@@ -243,7 +251,9 @@ current canonical `.id` source
 | 1 | Idol and Lua are distinct lawsets hosted by one compiler. |
 | 2 | Idol is not a Lua superset, and Lua compatibility may not define Idol semantics or architecture. |
 
-## Current phase
+| section |
+|---|---|
+| Current phase |
 
 | # | directive |
 |---|---|
@@ -262,22 +272,21 @@ current canonical `.id` source
 | 2 | That class of work does not move executed authority. |
 | 3 | Current compass: `.agents/TECH_DEBT_WORKSTREAM.md`. |
 
-1. Close GAP-145 lexical identities on the already-Idol `tokenize()` route.
-   Host `tokenizeHost` is differential-only. Suffix/path ingress remains host.
-2. Then grammar-role authority + immutable token view (`GAP-134`) and the first
-   Idol parser recognition.
-3. Preserve exact graph ids (zero rediscovery); delete physical cost from
-   graph → demand → realization; prove FTCFTW with revision-bound damage
-   controls.
-4. Cursor/corpus lanes reject new syntax/naming debt. They do not become the
-   SHC frontier.
+| # | directive |
+|---|---|
+| 1 | Close GAP-145 lexical identities on the already-Idol `tokenize()` route. Host `tokenizeHost` is differential-only. Suffix/path ingress remains host. |
+| 2 | Then grammar-role authority + immutable token view (`GAP-134`) and the first Idol parser recognition. |
+| 3 | Preserve exact graph ids (zero rediscovery); delete physical cost from graph → demand → realization; prove FTCFTW with revision-bound damage controls. |
+| 4 | Cursor/corpus lanes reject new syntax/naming debt. They do not become the SHC frontier. |
 
 | # | directive |
 |---|---|
 | 1 | Horizontal ports are useful only when they remove a dependency. |
 | 2 | They are not self-hosting progress unless semantic and production authority move into Idol. |
 
-## New Zig: bounded bootstrap bridges only (`law.bootstrap.velocity`)
+| section |
+|---|---|
+| New Zig: bounded bootstrap bridges only (`law.bootstrap.velocity`) |
 
 | # | directive |
 |---|---|
@@ -288,13 +297,12 @@ current canonical `.id` source
 |---|---|
 | 1 | A new or edited Zig bridge is admissible when all of these hold: |
 
-1. It advances the executed authority frontier — or passes existing Idol-owned
-   authority into the current production path — rather than minting a parallel
-   semantic owner.
-2. No decision is reconstructed from syntax, text, names, or backend shape.
-3. It carries a `law.bridge.death` deletion witness: host owner before, Idol
-   owner after, and the next host-owned boundary.
-4. Generated artifacts are regenerated from their Idol owner, never hand-forked.
+| # | directive |
+|---|---|
+| 1 | It advances the executed authority frontier — or passes existing Idol-owned authority into the current production path — rather than minting a parallel semantic owner. |
+| 2 | No decision is reconstructed from syntax, text, names, or backend shape. |
+| 3 | It carries a `law.bridge.death` deletion witness: host owner before, Idol owner after, and the next host-owned boundary. |
+| 4 | Generated artifacts are regenerated from their Idol owner, never hand-forked. |
 
 | # | directive |
 |---|---|
@@ -302,27 +310,25 @@ current canonical `.id` source
 | 2 | Running the existing Zig bootstrap and its gates is validation, not permission to expand it. |
 | 3 | Retain old host implementations as differential oracles until the Idol replacement is proven, then delete them. |
 
-## Compiler-B Queue
+| section |
+|---|---|
+| Compiler-B Queue |
 
 | # | directive |
 |---|---|
 | 1 | Every implementation task belongs to one rung. |
 | 2 | Do not substitute another audit, corpus sweep, backend target, or tool surface for the earliest open rung. |
 
-1. Close the canonical lexical identities required by `GAP-145`.
-2. Project generated grammar roles and an immutable token view from one grammar
-   authority under `GAP-134`.
-3. Transfer the first production parser-recognition decision into executed
-   canonical `.id`, with a negative control that perturbs that implementation.
-4. Advance through binding and scope without constructing a duplicate host AST.
-5. Produce exact graph-owned relation, application, subject, pack, value,
-   descriptor, world, demand, and provenance facts.
-6. Consume those facts through demand, realization, machine, and object without
-   text, path, hash, or a second semantic operation vocabulary.
-7. Build compiler B through the honest existing backend, make B build C from
-   identical source, and prove semantic and behavioral closure.
-8. After B -> C, retire remaining host realization and artifact authorities in
-   dependency order, then widen native and Wasm FTCFTW proof.
+| # | directive |
+|---|---|
+| 1 | Close the canonical lexical identities required by `GAP-145`. |
+| 2 | Project generated grammar roles and an immutable token view from one grammar authority under `GAP-134`. |
+| 3 | Transfer the first production parser-recognition decision into executed canonical `.id`, with a negative control that perturbs that implementation. |
+| 4 | Advance through binding and scope without constructing a duplicate host AST. |
+| 5 | Produce exact graph-owned relation, application, subject, pack, value, descriptor, world, demand, and provenance facts. |
+| 6 | Consume those facts through demand, realization, machine, and object without text, path, hash, or a second semantic operation vocabulary. |
+| 7 | Build compiler B through the honest existing backend, make B build C from identical source, and prove semantic and behavioral closure. |
+| 8 | After B -> C, retire remaining host realization and artifact authorities in dependency order, then widen native and Wasm FTCFTW proof. |
 
 | # | directive |
 |---|---|
@@ -331,7 +337,9 @@ current canonical `.id` source
 | 3 | That is valid B evidence, not backend sovereignty. |
 | 4 | Do not shrink parser or semantic meaning merely to avoid tables, iteration, worlds, or application identity. |
 
-## Evidence Labels
+| section |
+|---|---|
+| Evidence Labels |
 
 | # | directive |
 |---|---|
@@ -356,27 +364,25 @@ external compiler
 | 3 | A zero requires a positive control. |
 | 4 | A named checker not reachable from an aggregate is not release evidence. |
 
-## Semantic Discipline
+| section |
+|---|---|
+| Semantic Discipline |
 
-- One relation has one identity from source through machine provenance.
-- Worlds grant authority; homes only navigate identity.
-- Work from the subject when the subject is held.
-- `std` is migration distribution, never semantic architecture. New native
-  `std.*` APIs and call sites are forbidden.
-- `std.script` is frozen migration debt: do not add, improve, rename, alias, or
-  advertise it. Touched uses require a semantic classification and deletion
-  gate.
-- If process, environment, filesystem, or result vocabulary is unresolved,
-  record `SEMANTIC-VOCABULARY-BLOCKED`; do not invent a helper.
-- PREDICATE-ZERO applies after subject correction: semantic cases, descriptor,
-  capability, shape, demand, transition, and realization facts do not become
-  `has`, `is`, `can`, `exists`, sentinel, or negated helper booleans.
-- Canonicality is part of correctness. Parser, tests, and performance passing do
-  not excuse a weaker conventional spelling.
-- One file owns one durable semantic boundary. Do not create `utils`, `types`,
-  pass-number, migration, or agent-shaped homes.
+| # | directive |
+|---|---|
+| 1 | One relation has one identity from source through machine provenance. |
+| 2 | Worlds grant authority; homes only navigate identity. |
+| 3 | Work from the subject when the subject is held. |
+| 4 | `std` is migration distribution, never semantic architecture. New native `std.*` APIs and call sites are forbidden. |
+| 5 | `std.script` is frozen migration debt: do not add, improve, rename, alias, or advertise it. Touched uses require a semantic classification and deletion gate. |
+| 6 | If process, environment, filesystem, or result vocabulary is unresolved, record `SEMANTIC-VOCABULARY-BLOCKED`; do not invent a helper. |
+| 7 | PREDICATE-ZERO applies after subject correction: semantic cases, descriptor, capability, shape, demand, transition, and realization facts do not become `has`, `is`, `can`, `exists`, sentinel, or negated helper booleans. |
+| 8 | Canonicality is part of correctness. Parser, tests, and performance passing do not excuse a weaker conventional spelling. |
+| 9 | One file owns one durable semantic boundary. Do not create `utils`, `types`, pass-number, migration, or agent-shaped homes. |
 
-## Coordination
+| section |
+|---|---|
+| Coordination |
 
 | # | directive |
 |---|---|

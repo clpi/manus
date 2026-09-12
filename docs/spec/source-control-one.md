@@ -1,4 +1,6 @@
-# SOURCE-CONTROL-ONE
+| field | value |
+|---|---|
+| title | SOURCE-CONTROL-ONE |
 
 | # | directive |
 |---|---|
@@ -18,10 +20,9 @@
 | 5 | A source `match` need not exist after parsing. |
 | 6 | A relation chain need not allocate an intermediate collection. **The only invariant is the required observation.** |
 
-| # | directive |
+| section |
 |---|---|
-
-## §0 THE INVARIANTS THIS SITS ON
+| §0 THE INVARIANTS THIS SITS ON |
 
 | # | directive |
 |---|---|
@@ -41,34 +42,30 @@
 |---|---|
 | 1 | APPLICATION-ONE remains absolute: source category, spelling, AST kind, file path or "looks like a control construct" may not reconstruct semantic meaning downstream. |
 
-## §1 THE HIERARCHY — there is NO single preferred spelling per shape
+| section |
+|---|---|
+| §1 THE HIERARCHY — there is NO single preferred spelling per shape |
 
 | # | directive |
 |---|---|
 | 1 | This is the correction that governs every other section. |
 | 2 | Rank by MEANING: |
 
-1. **If the operation has an independently meaningful relation, use the
-   relation/chained form.** `xs:any(p)` states *existence*; the explicit
-   flag-and-break loop states *scan and mutate a flag*, and forces the compiler
-   to rediscover the question.
-2. **If the operation is fundamentally refinement, recurrence, or generic
-   iteration, use `if` / `while` / `for`.** These stay canonical when no
-   stronger domain relation exists.
-3. **Familiar legacy spellings are ACCEPTED where useful, and normalized
-   immediately.**
-4. **Every equivalent face publishes the same semantic graph facts.** Source
-   choice cannot constrain realization.
-5. **Never invent `:if`, `:while`, `:for`, `:call`, `:get`, `:set`, iterator
-   objects, or fake relation names merely to make syntax look uniform.** A
-   relation exists only if it has independently meaningful semantic identity. A
-   boolean does not inherently own a relation named `if` or `then`.
+| # | directive |
+|---|---|
+| 1 | **If the operation has an independently meaningful relation, use the relation/chained form.** `xs:any(p)` states *existence*; the explicit flag-and-break loop states *scan and mutate a flag*, and forces the compiler to rediscover the question. |
+| 2 | **If the operation is fundamentally refinement, recurrence, or generic iteration, use `if` / `while` / `for`.** These stay canonical when no stronger domain relation exists. |
+| 3 | **Familiar legacy spellings are ACCEPTED where useful, and normalized immediately.** |
+| 4 | **Every equivalent face publishes the same semantic graph facts.** Source choice cannot constrain realization. |
+| 5 | **Never invent `:if`, `:while`, `:for`, `:call`, `:get`, `:set`, iterator objects, or fake relation names merely to make syntax look uniform.** A relation exists only if it has independently meaningful semantic identity. A boolean does not inherently own a relation named `if` or `then`. |
 
 | # | directive |
 |---|---|
 | 1 | **Canonical means the smallest spelling that preserves actual domain meaning — not the fewest characters.** An explicit `for` body carrying three effects is clearer than a forced `:each`, and §31 keeps it. |
 
-## §2 CONTROL-HEAD BINDINGS
+| section |
+|---|---|
+| §2 CONTROL-HEAD BINDINGS |
 
 | # | directive |
 |---|---|
@@ -100,7 +97,9 @@
 | 2 | So `if(x = first()) … else(x = second()) …` is valid and clean; each `x` is a distinct binding. |
 | 3 | No maybe-initialized outer variable, no forced stack slot. |
 
-## §3 REFINEMENT — `if`, `else(pred)`, `else`, match
+| section |
+|---|---|
+| §3 REFINEMENT — `if`, `else(pred)`, `else`, match |
 
 | # | directive |
 |---|---|
@@ -120,7 +119,9 @@
 |---|---|
 | 1 | An `if` may realize as: compile-time selection, nothing (result unused), conditional select, predication, an ordinary branch, a jump table, a binary decision tree, a perfect hash, a bit test, a SIMD mask, or a GPU predicate. |
 
-## §4 RECURRENCE — `while`
+| section |
+|---|---|
+| §4 RECURRENCE — `while` |
 
 | # | directive |
 |---|---|
@@ -144,7 +145,9 @@
 |---|---|
 | 1 | **Tail recursion is an equivalent recurrence.** A domain-meaningful recursive definition must NOT be rewritten to `while` merely because it eventually loops physically — `fib` carries algebraic structure worth keeping, and its physical realization may be entirely non-recursive. |
 
-## §5 ITERATION — `for`, and the relation chain
+| section |
+|---|---|
+| §5 ITERATION — `for`, and the relation chain |
 
 | # | directive |
 |---|---|
@@ -172,7 +175,9 @@
 | 1 | `pairs`/`ipairs` are not canonical — the table/shape/world determines lawful iteration. |
 | 2 | If ordering is semantically demanded, that must be explicit through the relation, descriptor or world, never hidden in a helper name. |
 
-## §6 EXITS — `return`, `break`, `continue`
+| section |
+|---|---|
+| §6 EXITS — `return`, `break`, `continue` |
 
 | # | directive |
 |---|---|
@@ -213,7 +218,9 @@
 |---|---|
 | 1 | Where the meaning is really search, prefer the relation: break-on-first-truth is `any`, break-on-first-false is `all`, break-at-first-match is `find`. |
 
-## §7 DEMAGICKING — the keyword ontology shrinks
+| section |
+|---|---|
+| §7 DEMAGICKING — the keyword ontology shrinks |
 
 | # | directive |
 |---|---|
@@ -223,7 +230,9 @@
 |---|---|
 | 1 | Mutability is determined by whether a semantic place is demanded, not by a declaration keyword. |
 
-## §8 EQUIVALENCE IS A GRAPH CLAIM, NOT A SYNTAX CLAIM
+| section |
+|---|---|
+| §8 EQUIVALENCE IS A GRAPH CLAIM, NOT A SYNTAX CLAIM |
 
 | # | directive |
 |---|---|
@@ -244,30 +253,38 @@
 | 3 | Break an algebraic law and the closed-form candidate must vanish. |
 | 4 | Introduce alias/effect/order dependence and fusion must stop. |
 
-## §9 ORDERING
+| section |
+|---|---|
+| §9 ORDERING |
 
 | # | directive |
 |---|---|
 | 1 | Normalize control BEFORE lowering to an opaque CFG — never lower first and try to reconstruct the laws. |
 | 2 | Expose opportunities in ladder order: observation, demand, refinement/quotient, recurrence/iteration law, algorithm, representation, movement, parallel, SIMD, ABI, instruction selection, microarchitecture. |
 
-## §10 IMPLEMENTATION ORDER — never land syntax without graph convergence
+| section |
+|---|---|
+| §10 IMPLEMENTATION ORDER — never land syntax without graph convergence |
 
-1. grammar recognizes canonical + familiar faces
-2. parser publishes explicit source regions, binders, targets
-3. semantic graph owns normalized control facts
-4. exact equivalence gates prove convergence
-5. downstream AST-kind / name reconstruction DELETED
-6. demand / refinement / recurrence / iteration consume graph facts
-7. realization stays completely source-face independent
-8. formatter migrates toward canonical surface
-9. only then widen familiar compatibility
+| # | directive |
+|---|---|
+| 1 | grammar recognizes canonical + familiar faces |
+| 2 | parser publishes explicit source regions, binders, targets |
+| 3 | semantic graph owns normalized control facts |
+| 4 | exact equivalence gates prove convergence |
+| 5 | downstream AST-kind / name reconstruction DELETED |
+| 6 | demand / refinement / recurrence / iteration consume graph facts |
+| 7 | realization stays completely source-face independent |
+| 8 | formatter migrates toward canonical surface |
+| 9 | only then widen familiar compatibility |
 
 | # | directive |
 |---|---|
 | 1 | **Compatibility is ingress, never authority** — a familiar face may live forever without docs, formatter, graph or backend preserving it. |
 
-## §11 STOP CONDITION
+| section |
+|---|---|
+| §11 STOP CONDITION |
 
 | # | directive |
 |---|---|
@@ -276,7 +293,9 @@
 | # | directive |
 |---|---|
 
-## §11.5 CONTROL-ALGEBRA-NOT-METHODS
+| section |
+|---|---|
+| §11.5 CONTROL-ALGEBRA-NOT-METHODS |
 
 | # | directive |
 |---|---|
@@ -353,7 +372,9 @@
 |---|---|
 | 1 | syntactic mimicry users:for(...) REJECTED |
 
-## §12 MEASURED BASELINE — 2026-08-16, idol `06723d39`
+| section |
+|---|---|
+| §12 MEASURED BASELINE — 2026-08-16, idol `06723d39` |
 
 | # | directive |
 |---|---|
@@ -388,7 +409,9 @@
 | 1 | **Not yet measured:** whether the faces that DO answer publish identical graphs. |
 | 2 | Answer parity is not graph parity (§8), and no equivalence gate exists yet. |
 
-### §12.1 `else if` — CORRECTED TWICE, and the real defect is narrower than either reading
+| section |
+|---|---|
+| §12.1 `else if` — CORRECTED TWICE, and the real defect is narrower than either reading |
 
 | # | directive |
 |---|---|
@@ -414,7 +437,9 @@
 | 2 | The fix that found it was to run BOTH programs, then vary one clause at a time — indent width, then trailing `else` — until a single variable separated them. |
 | 3 | A face that "does not parse" and a face that "parses" can both be true of the same construct under different terminations, and a one-program probe cannot tell the difference. |
 
-### §12.2 CLOSED — both faces landed, and the real finding is underneath them
+| section |
+|---|---|
+| §12.2 CLOSED — both faces landed, and the real finding is underneath them |
 
 | # | directive |
 |---|---|

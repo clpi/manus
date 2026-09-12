@@ -1,14 +1,15 @@
-# Canonical source debt projection (lib/compiler)
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | **Status:** CURRENT PROJECTION — not language law. |
+| title | Canonical source debt projection (lib/compiler) |
+| status | CURRENT PROJECTION — not language law. |
 
 | # | directive |
 |---|---|
 | 1 | **Do not treat a direct-build green row as architectural acceptance.** Each module may compile while still carrying bootstrap workaround source. |
 
-## Construct states
+| section |
+|---|---|
+| Construct states |
 
 | # | directive |
 |---|---|
@@ -20,7 +21,9 @@
 | **migratable** | Lawful today but spelling/shape will change; semantics preserved | OK to touch only when migrating to canonical form |
 | **debt** | Bootstrap workaround, host transcription, or backend appeasement | Fix realization/graph facts; delete when replacement lands |
 
-## Module ledger (initial projection)
+| section |
+|---|---|
+| Module ledger (initial projection) |
 
 | # | directive |
 |---|---|
@@ -43,7 +46,9 @@
 |---|---|
 | 1 | Update this table from `gate/selfhost.sh` output, not from static prose elsewhere. |
 
-## Historical reports
+| section |
+|---|---|
+| Historical reports |
 
 | # | directive |
 |---|---|
@@ -57,7 +62,9 @@ HISTORICAL — DO NOT USE FOR CURRENT COUNTS
 |---|---|
 | 1 | Live counts come only from executable projections. |
 
-## Negative controls
+| section |
+|---|---|
+| Negative controls |
 
 | # | directive |
 |---|---|

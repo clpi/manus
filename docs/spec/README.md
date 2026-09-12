@@ -1,4 +1,6 @@
-# Idol Specification Router
+| field | value |
+|---|---|
+| title | Idol Specification Router |
 
 | # | directive |
 |---|---|
@@ -15,19 +17,22 @@ docs/spec/constitution.md   — structured expansion and stable law.* identity o
 | 2 | When compact law and constitution differ, `law.md` wins and the constitution is repaired. |
 | 3 | Both are documentation projections, not executable source or canonical implementation examples. |
 
-## Projections
+| section |
+|---|---|
+| Projections |
 
-- `grammar.md` — source roles, delimiter law, parser boundary, authority pipeline.
-- `source.md` — source/home/package/world closure; no native module or admission syntax.
-- `host.md` — host boundary, root values, endpoints, shell interpretation law,
-  and independent process authority.
-- `world.md` — world/home invocation; no `io.method()` or `std.os` namespaces.
-- `cost.md` projects the cost model.
-- `soundness.md` projects soundness obligations.
-- `numerics.md` projects numeric law.
-- `AUTHORITY.md` defines routing, migration, and conflict handling.
-- `METRICS.md` — progress dashboard; three dominant metrics; audit scorecard (not C0).
-- `corpus.md` classifies source provenance for canonicality gates.
+| # | directive |
+|---|---|
+| 1 | `grammar.md` — source roles, delimiter law, parser boundary, authority pipeline. |
+| 2 | `source.md` — source/home/package/world closure; no native module or admission syntax. |
+| 3 | `host.md` — host boundary, root values, endpoints, shell interpretation law, and independent process authority. |
+| 4 | `world.md` — world/home invocation; no `io.method()` or `std.os` namespaces. |
+| 5 | `cost.md` projects the cost model. |
+| 6 | `soundness.md` projects soundness obligations. |
+| 7 | `numerics.md` projects numeric law. |
+| 8 | `AUTHORITY.md` defines routing, migration, and conflict handling. |
+| 9 | `METRICS.md` — progress dashboard; three dominant metrics; audit scorecard (not C0). |
+| 10 | `corpus.md` classifies source provenance for canonicality gates. |
 
 | # | directive |
 |---|---|
@@ -35,7 +40,9 @@ docs/spec/constitution.md   — structured expansion and stable law.* identity o
 | 2 | They do not override `law.md` or contradict the constitution expansion. |
 | 3 | A contradiction is a projection defect: stop, report it, and repair the projection rather than choosing a convenient answer. |
 
-## Current tree
+| section |
+|---|---|
+| Current tree |
 
 | # | directive |
 |---|---|

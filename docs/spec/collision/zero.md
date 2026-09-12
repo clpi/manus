@@ -1,4 +1,6 @@
-# COLLISION-ZERO — machinery ownership closure
+| field | value |
+|---|---|
+| title | COLLISION-ZERO — machinery ownership closure |
 
 | # | directive |
 |---|---|
@@ -6,7 +8,9 @@
 | 2 | Idol already owns application resolution, projection/reachability, anchored facts, worlds, demand, transformation, realization, target selection, and provenance. |
 | 3 | No second owner may be named. |
 
-## Deny (semantic machinery)
+| section |
+|---|---|
+| Deny (semantic machinery) |
 
 | # | directive |
 |---|---|
@@ -27,14 +31,18 @@ context session runtime service provider driver host framework container
 |---|---|
 | 1 | Renaming `router` → `broker` → `service` does **not** repair the role. |
 
-## PROTOCOL-NAME-ZERO
+| section |
+|---|---|
+| PROTOCOL-NAME-ZERO |
 
 | # | directive |
 |---|---|
 | 1 | Never use `able`, `ible`, or `*able`/`*ible` as semantic identifiers — including as gate helper names. `able` encodes protocol/algebra machinery, not a domain noun. |
 | 2 | Bare `able`/`ible` and suffix forms (`readable`, `writable`, …) are denied; protocol satisfaction is a relation/application fact on the subject. |
 
-## Already owned (use these, not machinery)
+| section |
+|---|---|
+| Already owned (use these, not machinery) |
 
 | Misplaced machinery | Actual owner |
 |---|---|
@@ -46,7 +54,9 @@ context session runtime service provider driver host framework container
 | home reach | `"scripts/proof/bit.id":read()` — path subject + read relation; never `semantic[slot]` or `check(semantic)(slot)` |
 | proof home reach | path string + `audit(path)(pattern)` — never `proof[slot]` bracket index |
 
-## Application closure (same law family as `args(n)`)
+| section |
+|---|---|
+| Application closure (same law family as `args(n)`) |
 
 | # | directive |
 |---|---|
@@ -64,31 +74,38 @@ env["KEY"]
 |---|---|
 | 1 | Never teach or write `semantic[ingest]`, `proof[view]`, `home[slot]`, or `check(semantic)(slot)` on canonical lines. |
 
-## Foreign exception
+| section |
+|---|---|
+| Foreign exception |
 
 | # | directive |
 |---|---|
 | 1 | Domain objects may keep domain names when modeling an **external** thing (HTTP proxy, network router, API gateway, device driver). |
 | 2 | They must not name compiler/language machinery. |
 
-## Enforcement
+| section |
+|---|---|
+| Enforcement |
 
 | # | directive |
 |---|---|
 | 1 | `gate/idiom.id` enforces on added lines via decomposed checks — no mashed selector kingdom: |
 
-- `collision(name)` in `eq` — identifier/path stem role classification
-- `flag(..., "router(", ...)` (and sibling selector calls) in `adj`
-- `subject(slotindex)` — rejects `semantic[`, `proof[`, `home[`
-- mash binding names (`ingestbody`, `viewrouter`, …) with fixes pointing at
-  `"scripts/proof/bit.id":read()` / `audit(path)(pattern)`
-- `check(semantic` — slot-dispatch machinery; use path `:read()` on the home
+| # | directive |
+|---|---|
+| 1 | `collision(name)` in `eq` — identifier/path stem role classification |
+| 2 | `flag(..., "router(", ...)` (and sibling selector calls) in `adj` |
+| 3 | `subject(slotindex)` — rejects `semantic[`, `proof[`, `home[` |
+| 4 | mash binding names (`ingestbody`, `viewrouter`, …) with fixes pointing at `"scripts/proof/bit.id":read()` / `audit(path)(pattern)` |
+| 5 | `check(semantic` — slot-dispatch machinery; use path `:read()` on the home |
 
 | # | directive |
 |---|---|
 | 1 | Graph canonicalization (`GAP-124`) remains the production owner; the gate is migration pressure only. |
 
-## Required audit targets (bootstrap debt)
+| section |
+|---|---|
+| Required audit targets (bootstrap debt) |
 
 ```text
 src/duo_lexer_dispatch.zig
@@ -108,12 +125,14 @@ src/explain_pipeline.zig
 |---|---|
 | 1 | Tracked in `gaps/GAP-167.md`. |
 
-## Redress algorithm
+| section |
+|---|---|
+| Redress algorithm |
 
-1. Identify the fact/decision the machinery object owns.
-2. Map it onto relation, subject, application, descriptor, home, anchor, world,
-   universe, stage, demand, transformation, realization, provenance, or evidence.
-3. Delete the machinery identity when fully expressible.
-4. Keep private indexes only when acceleration cannot change meaning.
-5. Prove with negative controls that deleting/renaming the helper cannot change
-   semantic resolution.
+| # | directive |
+|---|---|
+| 1 | Identify the fact/decision the machinery object owns. |
+| 2 | Map it onto relation, subject, application, descriptor, home, anchor, world, universe, stage, demand, transformation, realization, provenance, or evidence. |
+| 3 | Delete the machinery identity when fully expressible. |
+| 4 | Keep private indexes only when acceleration cannot change meaning. |
+| 5 | Prove with negative controls that deleting/renaming the helper cannot change semantic resolution. |

@@ -1,4 +1,6 @@
-# Projection debt classification (PROJECTION-ONE)
+| field | value |
+|---|---|
+| title | Projection debt classification (PROJECTION-ONE) |
 
 | # | directive |
 |---|---|
@@ -20,7 +22,9 @@ idol run scripts/census/infer.id
 |---|---|
 | 1 | Application record contract: `docs/spec/application-record.md`. |
 
-## Debt classes
+| section |
+|---|---|
+| Debt classes |
 
 | class | pattern | repair | owner |
 |---|---|---|---|
@@ -32,7 +36,9 @@ idol run scripts/census/infer.id
 | codegen reconstruction | literal `"to"` in Zig | relation edge from graph (GAP-082) | Poolside |
 | gate teaching | `gate/idiom.id` `:from(` rule text | keep — law/ratchet text; direct run DNB001-blocked | graph-owned admission |
 
-## `:from(` sites (canonical source = 0)
+| section |
+|---|---|
+| `:from(` sites (canonical source = 0) |
 
 | # | directive |
 |---|---|
@@ -50,7 +56,9 @@ idol run scripts/census/infer.id
 |---|---|
 | 1 | **FROM-ZERO canonical source debt: clear.** |
 
-## Top `:to(` debt by file (migration / std-migration)
+| section |
+|---|---|
+| Top `:to(` debt by file (migration / std-migration) |
 
 | # | directive |
 |---|---|
@@ -63,7 +71,9 @@ idol run scripts/census/infer.id
 | gate | `gate/idiom.id` | K — ratchet rules mentioning patterns |
 | canonical-teaching | `examples/conversion/*`, `examples/projection/*`, … | verified — must match C0 |
 
-## Corpus tagging (GAP-161 interim)
+| section |
+|---|---|
+| Corpus tagging (GAP-161 interim) |
 
 | partition | tag | status |
 |---|---|---|
@@ -76,7 +86,9 @@ idol run scripts/census/infer.id
 |---|---|
 | 1 | Gate: `tools/node/dev/corpuscensus`. |
 
-## Next repair steps
+| section |
+|---|---|
+| Next repair steps |
 
 | step | work | blocked |
 |---|---|---|

@@ -1,4 +1,6 @@
-# The demand quotient as a lattice — three identities, and what falls out of them
+| field | value |
+|---|---|
+| title | The demand quotient as a lattice — three identities, and what falls out of them |
 
 | # | directive |
 |---|---|
@@ -8,7 +10,9 @@
 
 ---
 
-## 1. The identities
+| section |
+|---|---|
+| 1. The identities |
 
 | # | directive |
 |---|---|
@@ -53,7 +57,9 @@
 
 ---
 
-## 2. Derived class: existence-only demand on a count — MEASURED
+| section |
+|---|---|
+| 2. Derived class: existence-only demand on a count — MEASURED |
 
 | # | directive |
 |---|---|
@@ -68,17 +74,12 @@
 |---|---|
 | 1 | **Derivation, with no new mechanism.** |
 
-1. `projectionOfName(whole, "hits != 0", hits)` = `nonzero`. The rule is the
-   comparison-against-zero homomorphism: the value of `x != 0` is a function of
-   `h(x) = (x != 0)`, not of `x`. `I2`.
-2. `u` is `hits = hits + 1`. `lawsOf(.add)` says `+` is a ring homomorphism mod
-   2^k, is monotone on the non-negative domain, and CAN produce zero from a
-   nonzero operand — so no law-only argument is available.
-3. The uncertainty algebra supplies the missing half. `hits` starts at a proven
-   literal `0`; the trip count is proven `T = 2e9`; therefore after the first
-   write `hits ∈ [1, 2e9]`, an interval that both excludes 0 and stays inside
-   i64. `h(hits) = 1` from the first write to the exit. `I1`.
-4. `R_truncate` is emitted: `break` after the write.
+| # | directive |
+|---|---|
+| 1 | `projectionOfName(whole, "hits != 0", hits)` = `nonzero`. The rule is the comparison-against-zero homomorphism: the value of `x != 0` is a function of `h(x) = (x != 0)`, not of `x`. `I2`. |
+| 2 | `u` is `hits = hits + 1`. `lawsOf(.add)` says `+` is a ring homomorphism mod 2^k, is monotone on the non-negative domain, and CAN produce zero from a nonzero operand — so no law-only argument is available. |
+| 3 | The uncertainty algebra supplies the missing half. `hits` starts at a proven literal `0`; the trip count is proven `T = 2e9`; therefore after the first write `hits ∈ [1, 2e9]`, an interval that both excludes 0 and stays inside i64. `h(hits) = 1` from the first write to the exit. `I1`. |
+| 4 | `R_truncate` is emitted: `break` after the write. |
 
 | # | directive |
 |---|---|
@@ -101,7 +102,9 @@
 
 ---
 
-## 3. Derived class: width-narrowed witness agreement — MEASURED
+| section |
+|---|---|
+| 3. Derived class: width-narrowed witness agreement — MEASURED |
 
 | # | directive |
 |---|---|
@@ -124,7 +127,9 @@
 
 ---
 
-## 4. Derived class: short-circuit universal quantification — MEASURED (unit)
+| section |
+|---|---|
+| 4. Derived class: short-circuit universal quantification — MEASURED (unit) |
 
 | # | directive |
 |---|---|
@@ -133,7 +138,9 @@
 
 ---
 
-## 5. Derived class: absorbing relation without any interval fact — MEASURED
+| section |
+|---|---|
+| 5. Derived class: absorbing relation without any interval fact — MEASURED |
 
 | # | directive |
 |---|---|
@@ -153,7 +160,9 @@
 
 ---
 
-## 6. Derived class: `sort:first()` → selection — DERIVED, NOT MEASURED
+| section |
+|---|---|
+| 6. Derived class: `sort:first()` → selection — DERIVED, NOT MEASURED |
 
 | # | directive |
 |---|---|
@@ -179,15 +188,10 @@
 |---|---|
 | 1 | **Why it is not measured, precisely.** Two independent blockers, both outside this module: |
 
-1. `:sort()` does not reach machine code on the surface where demand runs. The
-   direct backend refuses it at the scalar precheck —
-   `method-unresolved:sort`, DNB001 — so the *program* cannot be compiled, let
-   alone optimized.
-2. The `I1`-on-`g` half needs a GUARDED truncation (`break` only when the fold
-   reaches `a`), and `demand.Plan` carries an unconditional `break_after` set and
-   nothing else. Realising it needs a `break_when` map on `demand.Plan` plus the
-   matching arm in `demand.prune` — both in a held file. See the lane report for
-   the exact anchor and the projected gain.
+| # | directive |
+|---|---|
+| 1 | `:sort()` does not reach machine code on the surface where demand runs. The direct backend refuses it at the scalar precheck — `method-unresolved:sort`, DNB001 — so the *program* cannot be compiled, let alone optimized. |
+| 2 | The `I1`-on-`g` half needs a GUARDED truncation (`break` only when the fold reaches `a`), and `demand.Plan` carries an unconditional `break_after` set and nothing else. Realising it needs a `break_when` map on `demand.Plan` plus the matching arm in `demand.prune` — both in a held file. See the lane report for the exact anchor and the projected gain. |
 
 | # | directive |
 |---|---|
@@ -195,7 +199,9 @@
 
 ---
 
-## 7. Derived class: `map:sum()` → no materialization — DERIVED, NOT MEASURED
+| section |
+|---|---|
+| 7. Derived class: `map:sum()` → no materialization — DERIVED, NOT MEASURED |
 
 | # | directive |
 |---|---|
@@ -222,38 +228,18 @@
 
 ---
 
-## 8. What the identity set does NOT yet cover
+| section |
+|---|---|
+| 8. What the identity set does NOT yet cover |
 
 | # | directive |
 |---|---|
 | 1 | Stated so the completeness claim is falsifiable rather than decorative. |
 
-- **`law.change.delta`** (GAP-171 algebra 4). A semantic derivative
-  `Δf(x, Δx)` is `I2` with `h = Δ`, and nothing here computes it. Not
-  implemented, not claimed.
-- **Guarded truncation.** `I1` is implemented only where the absorbing class is
-  entered by EVERY write. Where only some writes enter it — `min`, `top-k`,
-  threshold counts — the candidate is derived and refused. See §6.
-- **Hyperproperties.** Every check in this module and in `gate/quotient.sh` is
-  SINGLE-TRACE. `I1` changes the iteration count, which a timing observer
-  distinguishes, so no amount of per-trace evidence authorizes it under a
-  determinism, noninterference, serializability or linearizability demand.
-  **This one IS a mechanism**: `observationRefusal` asks
-  `observation.World.demandsHyperproperty()` first and refuses the whole module
-  with its own distinct reason, and it refuses again unless the observer roster
-  computed by `observation.World.observers()` is exactly
-  `{program, deployment, failure_recovery}` — the three that provably cannot
-  distinguish an iteration count. Nine world facts each delete every candidate
-  on their own; `--emit obj`/`dylib` delete them by not closing the world.
-- **The per-place observation ruling is NOT consulted, and that is the real
-  hole.** `observation.permits(&Program.report(place), .schedule)` is the finer
-  instrument GAP-171 deletion condition 2 names, and it cannot answer here:
-  `observation.zig` indexes evidence by `place.zig`'s census, which records a
-  place only where a binding's value is a `.table` literal. MEASURED on the §2
-  fixture: 7 program points walked, **0 places produced**, `report("hits", …)`
-  null. Permitting where no report exists would treat an absent authority as a
-  permissive one. The gap is in `place.zig`'s census, not in the observation
-  model.
-- **Order-statistic projections** are in the lattice as a derivation only;
-  `Projection` has no `rank_k` constructor because nothing could consume one.
-  Adding one before a consumer exists would be `HPLS.md` §7 scenery.
+| # | directive |
+|---|---|
+| 1 | **`law.change.delta`** (GAP-171 algebra 4). A semantic derivative `Δf(x, Δx)` is `I2` with `h = Δ`, and nothing here computes it. Not implemented, not claimed. |
+| 2 | **Guarded truncation.** `I1` is implemented only where the absorbing class is entered by EVERY write. Where only some writes enter it — `min`, `top-k`, threshold counts — the candidate is derived and refused. See §6. |
+| 3 | **Hyperproperties.** Every check in this module and in `gate/quotient.sh` is SINGLE-TRACE. `I1` changes the iteration count, which a timing observer distinguishes, so no amount of per-trace evidence authorizes it under a determinism, noninterference, serializability or linearizability demand. **This one IS a mechanism**: `observationRefusal` asks `observation.World.demandsHyperproperty()` first and refuses the whole module with its own distinct reason, and it refuses again unless the observer roster computed by `observation.World.observers()` is exactly `{program, deployment, failure_recovery}` — the three that provably cannot distinguish an iteration count. Nine world facts each delete every candidate on their own; `--emit obj`/`dylib` delete them by not closing the world. |
+| 4 | **The per-place observation ruling is NOT consulted, and that is the real hole.** `observation.permits(&Program.report(place), .schedule)` is the finer instrument GAP-171 deletion condition 2 names, and it cannot answer here: `observation.zig` indexes evidence by `place.zig`'s census, which records a place only where a binding's value is a `.table` literal. MEASURED on the §2 fixture: 7 program points walked, **0 places produced**, `report("hits", …)` null. Permitting where no report exists would treat an absent authority as a permissive one. The gap is in `place.zig`'s census, not in the observation model. |
+| 5 | **Order-statistic projections** are in the lattice as a derivation only; `Projection` has no `rank_k` constructor because nothing could consume one. Adding one before a consumer exists would be `HPLS.md` §7 scenery. |

@@ -1,11 +1,15 @@
-# PERF-MONOTONE program
+| field | value |
+|---|---|
+| title | PERF-MONOTONE program |
 
 | # | directive |
 |---|---|
 | 1 | Durable program for historical compiler exploitation and monotone performance admission in Idol. |
 | 2 | Main never loses an already-known lawful realization or an already-measured performance point merely because a new experiment lands. |
 
-## Principle
+| section |
+|---|---|
+| Principle |
 
 | # | directive |
 |---|---|
@@ -26,7 +30,7 @@
 | 2 | C, clang, GCC, Rust, Zig, Cranelift, Wasmtime, hand assembly, tuned libraries, GPUs and existing algorithms are things to beat, not limits to reach. |
 | 3 | The floor is physics, information, and required observation. |
 
-## Compiler Prior Art Matrix
+<!-- idol-perf-matrix:v1:begin -->
 
 | # | directive |
 |---|---|
@@ -242,7 +246,9 @@
 | string pooling | linkers | representation cache | equivalence | pending | missing | string pool |
 | post-link PGO | PGO | machine evidence feeding semantic IDs | profile facts | pending | missing | post-link |
 
-## Mandatory Performance Monotonicity Contract
+<!-- idol-perf-matrix:v1:end -->
+
+<!-- idol-perf-contract:v1:begin -->
 
 | # | directive |
 |---|---|
@@ -271,38 +277,50 @@
 |---|---|
 | 1 | Main goes green only if every row above passes. |
 
-## What remains genuinely Idol-specific
+<!-- idol-perf-contract:v1:end -->
+
+| section |
+|---|---|
+| What remains genuinely Idol-specific |
 
 | # | directive |
 |---|---|
 | 1 | The novelty budget is concentrated here: |
 
-- one semantic id
-- exact lawset-preserving foreign ingestion
-- world/projection algebra
-- demand as observer quotient
-- cross-law semantic equivalence
-- representation theorem FFI
-- persistent cross-representation equivalence
-- semantic continuity across revisions
-- fact provenance/trust
-- candidate-set monotonicity
-- value-of-information optimization
-- semantic lower-bound debt
-- cross-law fusion
-- semantic frontier exposed to agents
+| # | directive |
+|---|---|
+| 1 | one semantic id |
+| 2 | exact lawset-preserving foreign ingestion |
+| 3 | world/projection algebra |
+| 4 | demand as observer quotient |
+| 5 | cross-law semantic equivalence |
+| 6 | representation theorem FFI |
+| 7 | persistent cross-representation equivalence |
+| 8 | semantic continuity across revisions |
+| 9 | fact provenance/trust |
+| 10 | candidate-set monotonicity |
+| 11 | value-of-information optimization |
+| 12 | semantic lower-bound debt |
+| 13 | cross-law fusion |
+| 14 | semantic frontier exposed to agents |
 
 | # | directive |
 |---|---|
 | 1 | Everything below that should be aggressively informed by prior art. |
 
-## Three hard monotonicity laws
+| section |
+|---|---|
+| Three hard monotonicity laws |
 
-- **knowledge:** stronger facts never destroy semantic truth
-- **capability:** stronger compiler knowledge never destroys a lawful realization
-- **performance:** a new candidate never replaces a known-better candidate without evidence
+| # | directive |
+|---|---|
+| 1 | **knowledge:** stronger facts never destroy semantic truth |
+| 2 | **capability:** stronger compiler knowledge never destroys a lawful realization |
+| 3 | **performance:** a new candidate never replaces a known-better candidate without evidence |
 
-## Frontier experiment classification
+| section |
+|---|---|
+| Frontier experiment classification |
 
 | kind | may land on main? | selection effect |
 | --- | --- | --- |
@@ -311,7 +329,9 @@
 | cost/evidence producer | yes after calibration | may change ranking |
 | semantic law change | only via C0 | may change what candidates are legal |
 
-## Historical champion realization
+| section |
+|---|---|
+| Historical champion realization |
 
 | # | directive |
 |---|---|
@@ -325,18 +345,22 @@
 |---|---|
 | 1 | The champion remains a conceptual competitor until either a new candidate dominates it or a semantic-law change invalidates its equivalence. |
 
-## Permanent PERF-MONOTONE gate
+| section |
+|---|---|
+| Permanent PERF-MONOTONE gate |
 
 | # | directive |
 |---|---|
 | 1 | For every merge touching compiler stages, the gate must answer: |
 
-- baseline revision
-- dirty: false
-- correctness: no previous-correct cases lost, no new wrong answers, no new crashes
-- capability: previously accepted applications still accepted
-- candidate: no previously lawful candidate removed
-- performance: no unresolved-or-worse replacement of a previous best
-- floors: C-equivalent, previous-head winner, and historical-best winner retained
-- evidence: every chosen replacement has measured/proven dominance
-- losses: named individually
+| # | directive |
+|---|---|
+| 1 | baseline revision |
+| 2 | dirty: false |
+| 3 | correctness: no previous-correct cases lost, no new wrong answers, no new crashes |
+| 4 | capability: previously accepted applications still accepted |
+| 5 | candidate: no previously lawful candidate removed |
+| 6 | performance: no unresolved-or-worse replacement of a previous best |
+| 7 | floors: C-equivalent, previous-head winner, and historical-best winner retained |
+| 8 | evidence: every chosen replacement has measured/proven dominance |
+| 9 | losses: named individually |

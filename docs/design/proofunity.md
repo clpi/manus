@@ -1,11 +1,15 @@
-# ProofUnity — unifying proof assistants with programming in Idol
+| field | value |
+|---|---|
+| title | ProofUnity — unifying proof assistants with programming in Idol |
 
 | # | directive |
 |---|---|
 | 1 | Status: design. |
 | 2 | Phase 1 (kernel) implemented in `lib/proof/`, measured in `test/proof/` against references in `test/proofdata/` — `proofunity ok`. |
 
-## 1. Objective
+| section |
+|---|---|
+| 1. Objective |
 
 | # | directive |
 |---|---|
@@ -22,61 +26,37 @@
 |---|---|
 | 1 | One language for programming and proving, with less syntax than either activity takes anywhere else: |
 
-- **Capability**: dependent types, proof terms, and tactics as ordinary Idol —
-  no second language, no separate proof script dialect, no tactic metalanguage
-  standing beside the programming language. Capability is co-equal with
-  performance: the deliverable is fastest *and* most powerful.
-- **Unity**: a proposition is a value, a proof is a value, a tactic is a
-  relation. Checking a proof is calling a relation. The same compiler, the
-  same world algebra, the same evidence rules govern both.
-- **Minimality**: the smallest measured proof artifact per theorem, in lines
-  and in bytes, across Coq, Lean, Agda, and Python (§5) — machine-censused,
-  not asserted.
+| # | directive |
+|---|---|
+| 1 | **Capability**: dependent types, proof terms, and tactics as ordinary Idol — no second language, no separate proof script dialect, no tactic metalanguage standing beside the programming language. Capability is co-equal with performance: the deliverable is fastest *and* most powerful. |
+| 2 | **Unity**: a proposition is a value, a proof is a value, a tactic is a relation. Checking a proof is calling a relation. The same compiler, the same world algebra, the same evidence rules govern both. |
+| 3 | **Minimality**: the smallest measured proof artifact per theorem, in lines and in bytes, across Coq, Lean, Agda, and Python (§5) — machine-censused, not asserted. |
 
 | # | directive |
 |---|---|
 | 1 | This is a direction with a measured kernel, not a finished claim. §9 keeps the honest ledger of what is new versus aspirational. §6 names the power frontiers — what Idol expresses that no other language can. §7 makes the synthesis rigorous: density *is* power, directness *is* speed, from the same source. |
 
-## 2. Why Idol's law already wants this
+| section |
+|---|---|
+| 2. Why Idol's law already wants this |
 
 | # | directive |
 |---|---|
 | 1 | Nothing below needs a new syntactic kingdom. |
 | 2 | Each piece reduces to an admitted concept (`law.semantic.universe`): |
 
-- **Propositions are descriptors.** `docs/spec/law.md` §8: one descriptor
-  system expresses types, shapes, schemas, and protocol demands "where they
-  are genuinely descriptors of existing identities." A proposition is a
-  descriptor of the identity its proofs inhabit. No separate `Prop`/`Set`
-  kingdom is minted beside the descriptor system.
-- **Proofs are witnesses.** `law.witness.algebra`: "witness is proof of
-  relation constraint satisfaction." A proof term is exactly that: the
-  witness carried by the satisfaction of a proposition's demands. The
-  compiler already speaks "witness"; proofs join that vocabulary instead of
-  inventing `Qed`-shaped ceremony.
-- **Checking is application.** `law.application.algebra`: every application
-  resolves from relation × subject × operand pack × world × witnesses ×
-  demand. `t:check(c, p)` — "does term `t` prove `p` under context `c`" — is
-  one such application, resolved and refused like any other. An ill-typed
-  proof term is a refused application, not a new error kingdom.
-- **Tactics are relations on goal states.** A tactic takes a goal state and
-  returns a goal state. `g:intro()`, `g:exact(u)`, `g:apply(u)` are
-  subject-oriented relations (§9: `subject:edge(rest)`), the same face as
-  every other Idol relation. There is no Ltac-shaped sublanguage because
-  there is no need for one: tactics compose through ordinary application —
-  including chained in one expression
-  (`p:goal():intro():apply("2"):exact("1"):qed()`), because the goal state
-  is a named value, not ambient tactic state.
-- **Names obey LAW-16.** Every new word is one irreducible lowercase word
-  (`syntax.name`: `shape = .word`, `underscore = false`, `uppercase =
-  false`). The kernel vocabulary is twenty-three words (§3.5): no
-  underscores, no capitals, no mashed compounds.
-- **Delimiters keep their one meaning** (`law.md` §5). `:` orients a relation
-  around its subject (`t:check(c, p)` — the term is what checking is about).
-  `()` is application. Strings carry the encoded propositions; no delimiter
-  is overloaded to mean "proof mode".
+| # | directive |
+|---|---|
+| 1 | **Propositions are descriptors.** `docs/spec/law.md` §8: one descriptor system expresses types, shapes, schemas, and protocol demands "where they are genuinely descriptors of existing identities." A proposition is a descriptor of the identity its proofs inhabit. No separate `Prop`/`Set` kingdom is minted beside the descriptor system. |
+| 2 | **Proofs are witnesses.** `law.witness.algebra`: "witness is proof of relation constraint satisfaction." A proof term is exactly that: the witness carried by the satisfaction of a proposition's demands. The compiler already speaks "witness"; proofs join that vocabulary instead of inventing `Qed`-shaped ceremony. |
+| 3 | **Checking is application.** `law.application.algebra`: every application resolves from relation × subject × operand pack × world × witnesses × demand. `t:check(c, p)` — "does term `t` prove `p` under context `c`" — is one such application, resolved and refused like any other. An ill-typed proof term is a refused application, not a new error kingdom. |
+| 4 | **Tactics are relations on goal states.** A tactic takes a goal state and returns a goal state. `g:intro()`, `g:exact(u)`, `g:apply(u)` are subject-oriented relations (§9: `subject:edge(rest)`), the same face as every other Idol relation. There is no Ltac-shaped sublanguage because there is no need for one: tactics compose through ordinary application — including chained in one expression (`p:goal():intro():apply("2"):exact("1"):qed()`), because the goal state is a named value, not ambient tactic state. |
+| 5 | **Names obey LAW-16.** Every new word is one irreducible lowercase word (`syntax.name`: `shape = .word`, `underscore = false`, `uppercase = false`). The kernel vocabulary is twenty-three words (§3.5): no underscores, no capitals, no mashed compounds. |
+| 6 | **Delimiters keep their one meaning** (`law.md` §5). `:` orients a relation around its subject (`t:check(c, p)` — the term is what checking is about). `()` is application. Strings carry the encoded propositions; no delimiter is overloaded to mean "proof mode". |
 
-## 3. Phase 1 kernel: concrete syntax and semantics
+| section |
+|---|---|
+| 3. Phase 1 kernel: concrete syntax and semantics |
 
 | # | directive |
 |---|---|
@@ -84,7 +64,9 @@
 | 2 | The encoding is chosen for one reason: it is the whole of what the current direct-native backend admits today (scalar precheck; see §9). |
 | 3 | The semantics is the permanent part; the encoding is a phase-1 realization choice and is documented as such. |
 
-### 3.1 Propositions
+| section |
+|---|---|
+| 3.1 Propositions |
 
 | # | directive |
 |---|---|
@@ -102,7 +84,9 @@
 | 1 | `>a>bc` is `a → (b → c)`. |
 | 2 | A hypothesis context is propositions joined by `;`, most recent first: `"a;>bc;>ab"`. |
 
-### 3.2 Proof terms
+| section |
+|---|---|
+| 3.2 Proof terms |
 
 | # | directive |
 |---|---|
@@ -126,44 +110,43 @@
 | 1 | Single digits stay one byte (`1`); indices ≥ 10 are `!`-quoted (`!10!`, `!21!`). `L` cannot be inferred — only checked — because the term does not name its antecedent. |
 | 2 | That is a deliberate phase-1 limitation, not a gap: inference for `L` arrives with elaboration in phase 2. |
 
-### 3.3 The checker: one relation
+| section |
+|---|---|
+| 3.3 The checker: one relation |
 
-- `t:check(c, p)` → bool: `t` proves proposition `p` under context `c`.
-  `L`-terms check against `>ab` by checking the body under `c` extended
-  with `a`; every other term infers its proposition with `t:of(c)` and
-  compares.
-- `t:of(c)` → str: the proposition `t` proves under `c`, or `""` on any
-  mismatch. Application checks the argument against the domain; `case`
-  checks both branches agree. `""` is failure, never an exception: unknown
-  and false stay distinct, per `law.md` §1.
-- Helpers: `s:span()` (extent of the first encoded item — one scanner for
-  both grammars, dispatched on the first byte), `s:first()` / `s:rest()`
-  (split one item off), `c:nth(n)` (context projection), `c:push(p)`
-  (context extension), `t:num()` (parse a `!`-quoted index).
+| # | directive |
+|---|---|
+| 1 | `t:check(c, p)` → bool: `t` proves proposition `p` under context `c`. `L`-terms check against `>ab` by checking the body under `c` extended with `a`; every other term infers its proposition with `t:of(c)` and compares. |
+| 2 | `t:of(c)` → str: the proposition `t` proves under `c`, or `""` on any mismatch. Application checks the argument against the domain; `case` checks both branches agree. `""` is failure, never an exception: unknown and false stay distinct, per `law.md` §1. |
+| 3 | Helpers: `s:span()` (extent of the first encoded item — one scanner for both grammars, dispatched on the first byte), `s:first()` / `s:rest()` (split one item off), `c:nth(n)` (context projection), `c:push(p)` (context extension), `t:num()` (parse a `!`-quoted index). |
 
-### 3.4 Tactics: hole refinement
+| section |
+|---|---|
+| 3.4 Tactics: hole refinement |
 
 | # | directive |
 |---|---|
 | 1 | A tactic state is a partial proof term (holes marked `?`) plus a hole list of `context TAB proposition` entries, one string. |
 | 2 | Each tactic refines the first hole — a graph transformation in the `law.md` §11 sense, with an exact input occurrence (the first hole), a precondition (goal shape), and a replacement (the plugged term): |
 
-- `p:goal()` — one hole demanding `p`.
-- `g:intro()` — goal `>ab` becomes goal `b` under `c` extended with `a`;
-  term grows `L?`.
-- `g:exact(u)` — `u` must check against the goal; the hole becomes `u`.
-- `g:apply(u)` — `u` must prove `arg → goal`; new goal `arg`; term grows
-  `Au?`.
-- `g:split()` — goal `&ab` becomes goals `a`, `b`; term grows `P??`.
-- `g:left()` / `g:right()` — goal `|ab` becomes goal `a` / `b`.
-- `g:qed()` — returns the term iff no holes remain, else `""`.
+| # | directive |
+|---|---|
+| 1 | `p:goal()` — one hole demanding `p`. |
+| 2 | `g:intro()` — goal `>ab` becomes goal `b` under `c` extended with `a`; term grows `L?`. |
+| 3 | `g:exact(u)` — `u` must check against the goal; the hole becomes `u`. |
+| 4 | `g:apply(u)` — `u` must prove `arg → goal`; new goal `arg`; term grows `Au?`. |
+| 5 | `g:split()` — goal `&ab` becomes goals `a`, `b`; term grows `P??`. |
+| 6 | `g:left()` / `g:right()` — goal `\|ab` becomes goal `a` / `b`. |
+| 7 | `g:qed()` — returns the term iff no holes remain, else `""`. |
 
 | # | directive |
 |---|---|
 | 1 | Every tactic fails closed (`""`) on a wrongly shaped goal. |
 | 2 | And `qed` does not trust tactic bookkeeping: the finished term is re-run through `check` (`law.run.algebra`: transport completion never proves inner success). |
 
-### 3.5 Worked example
+| section |
+|---|---|
+| 3.5 Worked example |
 
 | # | directive |
 |---|---|
@@ -195,7 +178,9 @@ d = g:check("", ">>ab>>bc>ac")
 | 1 | Kernel vocabulary census (37 words, all LAW-16 clean): `span`, `binary`, `triple`, `scan`, `first`, `rest`, `num`, `digits`, `find`, `nth`, `push`, `of`, `app`, `pair`, `fst`, `snd`, `inl`, `inr`, `elim`, `lam`, `infer`, `check`, `term`, `holes`, `head`, `tail`, `ctx`, `prop`, `plug`, `goal`, `intro`, `exact`, `apply`, `split`, `left`, `right`, `qed`. |
 | 2 | (Each resolves to an admitted binding — the binding census `law.binding.census` holds by construction: there is nowhere else for a name to resolve.) |
 
-### 3.6 Implementation discipline (Idol family code)
+| section |
+|---|---|
+| 3.6 Implementation discipline (Idol family code) |
 
 | # | directive |
 |---|---|
@@ -206,47 +191,27 @@ d = g:check("", ">>ab>>bc>ac")
 | 5 | Each name is bound exactly once — files are table scope, so there is no rebinding (`ok = ok and …` is rewritten as one conjunction). |
 | 6 | Names are single irreducible lowercase words; comments are zero, absolutely. |
 
-## 4. Proofs and the §67 world/projection algebra
+| section |
+|---|---|
+| 4. Proofs and the §67 world/projection algebra |
 
 | # | directive |
 |---|---|
 | 1 | `docs/spec/constitution.md` §67 is the sole authority for home, subject, world, protocol, witness, injection, projection, union, reachability, shell/run/outcome, binding census, and completion metrics. |
 | 2 | Proofs compose with it as follows — no new algebra is introduced: |
 
-- **Hypotheses are injected worlds.** `intro` derives a new closed world
-  carrying exactly one more fact (`law.projection.algebra`: injection
-  derives a new world; "nested injection shadows by formation order not
-  search"). De Bruijn indices *are* formation-order addressing: index 1 is
-  the most recently injected hypothesis. The checker evaluates the term
-  under the injected world and never mutates the caller's world —
-  interjection semantics (`thing@{…}`), not ambient capture
-  (`law.injection.authority`: a closure captures the smallest exact
-  necessary facts).
-- **Checking is world-scoped evaluation.** `t:check(c, p)` runs under the
-  world `c`. A hypothesis absent from `c` is absent from that world, not a
-  special diagnostic — exactly the `law.md` §6 reading of stage/world
-  absence.
-- **Tactics are transformations** (`law.md` §11): exact input occurrence
-  ids (first-hole position), preconditions (goal shape), world obligations
-  (the extended context), replacement ids (the plugged term), and a
-  verification witness (the final `check`). Nothing is destructively
-  rewritten; partial terms are values threaded through.
-- **Scripts are runs; outcomes are checked** (`law.shell.run`,
-  `law.run.algebra`). A tactic script is a `run`; its outcome is either a
-  checked proof term or a refusal. Refusal is total: a tactic applied to a
-  wrongly shaped goal yields `""`, and `qed` on open holes yields `""`.
-- **Witnesses stay witnesses** (`law.witness.algebra`). A proof term is
-  evidence of proposition satisfaction, not a runtime object the program
-  must carry: after `check` succeeds, the term may be erased. Proof
-  erasure is phase 5; the law already permits it ("materialize witness
-  data only when reflection or runtime uncertainty is demanded").
-- **Completion metrics are the admission evidence** (`law.completion.metric`).
-  The minimal-syntax claim is not prose: `test/proof/main.id` is a machine
-  census that counts non-blank lines and bytes of the Idol proof artifact
-  against the Coq, Lean, Agda, and Python artifacts in `test/proofdata/`
-  and refuses unless Idol is strictly smaller on both measures.
+| # | directive |
+|---|---|
+| 1 | **Hypotheses are injected worlds.** `intro` derives a new closed world carrying exactly one more fact (`law.projection.algebra`: injection derives a new world; "nested injection shadows by formation order not search"). De Bruijn indices *are* formation-order addressing: index 1 is the most recently injected hypothesis. The checker evaluates the term under the injected world and never mutates the caller's world — interjection semantics (`thing@{…}`), not ambient capture (`law.injection.authority`: a closure captures the smallest exact necessary facts). |
+| 2 | **Checking is world-scoped evaluation.** `t:check(c, p)` runs under the world `c`. A hypothesis absent from `c` is absent from that world, not a special diagnostic — exactly the `law.md` §6 reading of stage/world absence. |
+| 3 | **Tactics are transformations** (`law.md` §11): exact input occurrence ids (first-hole position), preconditions (goal shape), world obligations (the extended context), replacement ids (the plugged term), and a verification witness (the final `check`). Nothing is destructively rewritten; partial terms are values threaded through. |
+| 4 | **Scripts are runs; outcomes are checked** (`law.shell.run`, `law.run.algebra`). A tactic script is a `run`; its outcome is either a checked proof term or a refusal. Refusal is total: a tactic applied to a wrongly shaped goal yields `""`, and `qed` on open holes yields `""`. |
+| 5 | **Witnesses stay witnesses** (`law.witness.algebra`). A proof term is evidence of proposition satisfaction, not a runtime object the program must carry: after `check` succeeds, the term may be erased. Proof erasure is phase 5; the law already permits it ("materialize witness data only when reflection or runtime uncertainty is demanded"). |
+| 6 | **Completion metrics are the admission evidence** (`law.completion.metric`). The minimal-syntax claim is not prose: `test/proof/main.id` is a machine census that counts non-blank lines and bytes of the Idol proof artifact against the Coq, Lean, Agda, and Python artifacts in `test/proofdata/` and refuses unless Idol is strictly smaller on both measures. |
 
-## 5. Comparison: the same theorems everywhere
+| section |
+|---|---|
+| 5. Comparison: the same theorems everywhere |
 
 | # | directive |
 |---|---|
@@ -278,7 +243,9 @@ e = "LLLLLLLLLLLLLLLLLLLLLA2A3A4A5A6A7A8A9A!10!A!11!A!12!A!13!A!14!A!15!A!16!A!1
 | 1 | The chain is the paradigm demo, and it is a *scaling* claim, not a constant-factor one: Idol proof artifacts are **O(1) lines in proof depth** — the chain proof is one line at depth 2 and one line at depth 20 — while Coq tactic scripts are O(n) lines (14 at depth 20), Lean/Agda term proofs are O(n) in statement size (10 lines), and the ratio grows without bound as proofs get deeper. |
 | 2 | Measured at depth 20: 14× fewer lines than Coq, 10× fewer than Lean and Agda. |
 
-### 5.1 Against Python
+| section |
+|---|---|
+| 5.1 Against Python |
 
 | # | directive |
 |---|---|
@@ -301,7 +268,9 @@ e = "LLLLLLLLLLLLLLLLLLLLLA2A3A4A5A6A7A8A9A!10!A!11!A!12!A!13!A!14!A!15!A!16!A!1
 |---|---|
 | 1 | Reference artifacts live in `test/proofdata/` (`id.v`, `id.lean`, `id.agda`, `id.id`, `chain.py`); the census runs in `test/proof/main.id`. |
 
-## 6. Power frontiers: what Idol expresses that no other language can
+| section |
+|---|---|
+| 6. Power frontiers: what Idol expresses that no other language can |
 
 | # | directive |
 |---|---|
@@ -343,7 +312,9 @@ e = "LLLLLLLLLLLLLLLLLLLLLA2A3A4A5A6A7A8A9A!10!A!11!A!12!A!13!A!14!A!15!A!16!A!1
 | 4 | (c) machine-checked *claims about proofs* — the census is a proof about proof size that no assistant's suite expresses. |
 | 5 | The paradigm shift is not a stronger logic; it is that proving, programming, and compiling stop being three activities. |
 
-## 7. The synthesis: density is power, directness is speed
+| section |
+|---|---|
+| 7. The synthesis: density is power, directness is speed |
 
 | # | directive |
 |---|---|
@@ -386,61 +357,29 @@ e = "LLLLLLLLLLLLLLLLLLLLLA2A3A4A5A6A7A8A9A!10!A!11!A!12!A!13!A!14!A!15!A!16!A!1
 |---|---|
 | 1 | **Capability targets, mapped to mechanism:** |
 
-- *More expressive than Python* — proof artifacts 11× smaller by line;
-  and proofs are inexpressible in stdlib Python at all (§5.1).
-- *More safe than Rust* — the law structure as compile-time guarantees:
-  phase-5 proof-carrying compilation makes safety evidence (not just
-  safety rules) a compiler input. Target, not current state (§9).
-- *More rigorous than Coq/Lean/Agda* — unity, not logical strength: one
-  language for programming and proving, one witness algebra for proofs
-  and compiler, no bolted-together seam (Frontier 3).
-- *More innovative than research languages* — self-censusing minimality
-  as standing practice (Frontier 4): the language measures itself
-  against its competitors on every run.
+| # | directive |
+|---|---|
+| 1 | *More expressive than Python* — proof artifacts 11× smaller by line; and proofs are inexpressible in stdlib Python at all (§5.1). |
+| 2 | *More safe than Rust* — the law structure as compile-time guarantees: phase-5 proof-carrying compilation makes safety evidence (not just safety rules) a compiler input. Target, not current state (§9). |
+| 3 | *More rigorous than Coq/Lean/Agda* — unity, not logical strength: one language for programming and proving, one witness algebra for proofs and compiler, no bolted-together seam (Frontier 3). |
+| 4 | *More innovative than research languages* — self-censusing minimality as standing practice (Frontier 4): the language measures itself against its competitors on every run. |
 
-## 8. Phased implementation plan
+| section |
+|---|---|
+| 8. Phased implementation plan |
 
-- **Phase 1 — kernel (done).** String-encoded propositions, proof terms
-  (`1`–`9` plus `!n!` multi-digit indices), `check`/`of`, hole-refinement
-  tactic set — written as pure functional Idol per §3.6 (no
-  `while`/`if`/`for`; branching by short-circuit `and`/`or`; structural
-  recursion; each name bound once). Files: `lib/proof/prop.id`
-  (scanner), `lib/proof/check.id` (checker), `lib/proof/tac.id`
-  (tactics). Tests: `test/proof/main.id`
-  proves identity, composition, and the 20-deep chain by term, proves
-  composition by chained tactic, exercises every rule (pair, projections,
-  injections, case), checks refusals fail closed (`qed` on open holes,
-  wrong-shape tactics, wrong proofs), and censuses line/byte counts
-  against `test/proofdata/` — `proofunity ok`. The suite caught one real
-  kernel bug before release: `span` classified `|` (byte 124) as an atom
-  because the atom test was `b >= 97`; fixed to `b >= 97 and b <= 122`
-  (§9). All Idol code: zero comments, no underscores, LAW-16 names,
-  `subject:edge(rest)`. This phase is the #13 identity requirement made
-  concrete: the "proof assistant" is 37 ordinary relations — there is no
-  second language in the artifact.
-- **Phase 2 — descriptor-native propositions.** Replace the string
-  encoding with packs (`{k = "imp", l = a, r = b}`) once the native
-  backend admits pack-typed parameters; add an elaborator from a terse
-  surface syntax to kernel terms. Multi-digit indices become ordinary
-  integers. No compiler changes: it is a library phase, gated only on
-  backend subset admission.
-- **Phase 3 — dependent types.** `A`/`E` binders (de Bruijn stays),
-  equality, induction principles. Propositions become dependent
-  descriptors under `law.md` §8.
-- **Phase 4 — automation.** Tactic combinators (`;` sequencing, `try`,
-  `repeat`), assumption search, congruence closure — still ordinary
-  relations, still fail-closed.
-- **Phase 5 — extraction and erasure.** Programs with proofs erase to
-  programs; `law.witness.algebra` governs when witness data materializes.
-  Proof-carrying compilation: the compiler may demand a proof term as the
-  witness for an optimization's precondition.
-- **Phase 6 — compiler integration.** Proof terms as graph witnesses;
-  `check` as a world-scoped relation inside the compiler's own
-  reasoning. Explicitly *not* a change to `lib/compiler/native.id`'s
-  codegen: integration is through witness facts, and each step needs its
-  own evidence.
+| # | directive |
+|---|---|
+| 1 | **Phase 1 — kernel (done).** String-encoded propositions, proof terms (`1`–`9` plus `!n!` multi-digit indices), `check`/`of`, hole-refinement tactic set — written as pure functional Idol per §3.6 (no `while`/`if`/`for`; branching by short-circuit `and`/`or`; structural recursion; each name bound once). Files: `lib/proof/prop.id` (scanner), `lib/proof/check.id` (checker), `lib/proof/tac.id` (tactics). Tests: `test/proof/main.id` proves identity, composition, and the 20-deep chain by term, proves composition by chained tactic, exercises every rule (pair, projections, injections, case), checks refusals fail closed (`qed` on open holes, wrong-shape tactics, wrong proofs), and censuses line/byte counts against `test/proofdata/` — `proofunity ok`. The suite caught one real kernel bug before release: `span` classified `\|` (byte 124) as an atom because the atom test was `b >= 97`; fixed to `b >= 97 and b <= 122` (§9). All Idol code: zero comments, no underscores, LAW-16 names, `subject:edge(rest)`. This phase is the #13 identity requirement made concrete: the "proof assistant" is 37 ordinary relations — there is no second language in the artifact. |
+| 2 | **Phase 2 — descriptor-native propositions.** Replace the string encoding with packs (`{k = "imp", l = a, r = b}`) once the native backend admits pack-typed parameters; add an elaborator from a terse surface syntax to kernel terms. Multi-digit indices become ordinary integers. No compiler changes: it is a library phase, gated only on backend subset admission. |
+| 3 | **Phase 3 — dependent types.** `A`/`E` binders (de Bruijn stays), equality, induction principles. Propositions become dependent descriptors under `law.md` §8. |
+| 4 | **Phase 4 — automation.** Tactic combinators (`;` sequencing, `try`, `repeat`), assumption search, congruence closure — still ordinary relations, still fail-closed. |
+| 5 | **Phase 5 — extraction and erasure.** Programs with proofs erase to programs; `law.witness.algebra` governs when witness data materializes. Proof-carrying compilation: the compiler may demand a proof term as the witness for an optimization's precondition. |
+| 6 | **Phase 6 — compiler integration.** Proof terms as graph witnesses; `check` as a world-scoped relation inside the compiler's own reasoning. Explicitly *not* a change to `lib/compiler/native.id`'s codegen: integration is through witness facts, and each step needs its own evidence. |
 
-## 9. Honesty ledger
+| section |
+|---|---|
+| 9. Honesty ledger |
 
 | # | directive |
 |---|---|
@@ -468,15 +407,12 @@ e = "LLLLLLLLLLLLLLLLLLLLLA2A3A4A5A6A7A8A9A!10!A!11!A!12!A!13!A!14!A!15!A!16!A!1
 | 2 | The case-analysis test failed, the trace localized it, fixed to `b >= 97 and b <= 122`. |
 | 3 | Recorded here because a test suite that catches real kernel bugs is evidence the census is load-bearing, not ceremony. |
 
-## 10. Integration hooks (no compiler changes)
+| section |
+|---|---|
+| 10. Integration hooks (no compiler changes) |
 
-- `lib/compiler/native.id` and siblings: untouched. The kernel is a
-  library under `lib/proof/`; composition today is source-partition
-  concatenation (`cat lib/proof/*.id test/proof/main.id`), which is the
-  honest current mechanism given no import system (`law.md` §7).
-- Run: `idol run --backend direct <unit>` from the repo root (proofdata
-  paths are relative).
-- Future hook, no action now: when the backend admits richer values, the
-  kernel's relations keep their names and faces; only the encoding
-  changes. A world-scoped `check` (`t:check(c, p)@logic`) is the
-  sketched phase-6 spelling, not a current directive.
+| # | directive |
+|---|---|
+| 1 | `lib/compiler/native.id` and siblings: untouched. The kernel is a library under `lib/proof/`; composition today is source-partition concatenation (`cat lib/proof/*.id test/proof/main.id`), which is the honest current mechanism given no import system (`law.md` §7). |
+| 2 | Run: `idol run --backend direct <unit>` from the repo root (proofdata paths are relative). |
+| 3 | Future hook, no action now: when the backend admits richer values, the kernel's relations keep their names and faces; only the encoding changes. A world-scoped `check` (`t:check(c, p)@logic`) is the sketched phase-6 spelling, not a current directive. |

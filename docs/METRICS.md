@@ -1,4 +1,6 @@
-# Idol progress metrics
+| field | value |
+|---|---|
+| title | Idol progress metrics |
 
 | # | directive |
 |---|---|
@@ -9,20 +11,18 @@
 |---|---|
 | 1 | Two kinds of statement live here and they are never interchangeable: |
 
-- **Measurements.** Every one names the COMMAND that recomputes it. No count,
-  exit code, or census total is written as a literal in this file's prose
-  (`AGENTS.md`, "Numbers live in exactly one place, and that place runs"). Where
-  a number must be pinned, it is pinned inside the runner that checks it, and
-  this file cites the runner.
-- **Judgments.** Percentage-like scores are normalized architectural opinions.
-  They are labelled as judgments and dated. A judgment is never a counter, and a
-  dated judgment does not become a measurement by being repeated.
+| # | directive |
+|---|---|
+| 1 | **Measurements.** Every one names the COMMAND that recomputes it. No count, exit code, or census total is written as a literal in this file's prose (`AGENTS.md`, "Numbers live in exactly one place, and that place runs"). Where a number must be pinned, it is pinned inside the runner that checks it, and this file cites the runner. |
+| 2 | **Judgments.** Percentage-like scores are normalized architectural opinions. They are labelled as judgments and dated. A judgment is never a counter, and a dated judgment does not become a measurement by being repeated. |
 
 | # | directive |
 |---|---|
 | 1 | Repository truth lives in `docs/spec/law.md` (supreme) and `docs/spec/constitution.md`; executed authority in `docs/bootstrap.md`; and machine-measurable counts in the ledgers and gates cited below, run against a clean HEAD. |
 
-## The three questions this file must not conflate
+| section |
+|---|---|
+| The three questions this file must not conflate |
 
 | # | directive |
 |---|---|
@@ -40,14 +40,18 @@
 | 1 | An owner existing is not consumer closure, and consumer closure would still not be parser ownership. |
 | 2 | Progress on the first two does **not** move the bootstrap stage. |
 
-## Top-line dashboard (dominant)
+| section |
+|---|---|
+| Top-line dashboard (dominant) |
 
 | # | directive |
 |---|---|
 | 1 | All other metrics — file counts, Zig counts, `.id` percentage, keyword counts — are **subordinate diagnostics**. |
 | 2 | Report these three first. |
 
-### 1. Executed authority frontier
+| section |
+|---|---|
+| 1. Executed authority frontier |
 
 | # | directive |
 |---|---|
@@ -117,7 +121,9 @@ semantics → resolution → demand → realization → machine → object → r
 |---|---|
 | 1 | The `../idol-native/` prefix on those three paths is deliberate and must not be "repaired" to a bare `gate/…` spelling: `gate/all.sh`'s citation census counts a qualified sibling citation as its own class, names this file as the example of the correct form, and would score a bare spelling as an unresolved citation. |
 
-### 2. Semantic reconstruction debt
+| section |
+|---|---|
+| 2. Semantic reconstruction debt |
 
 | # | directive |
 |---|---|
@@ -128,7 +134,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 1 | **Trend:** major islands deleted — AST-machine reconstruction, evidence identity shadows, target-spelling realization selection, and now the parser's second operator ontology (see "Recomputing every count" below). |
 | 2 | Not zero. |
 
-### 3. FTCFTW evidence matrix coverage
+| section |
+|---|---|
+| 3. FTCFTW evidence matrix coverage |
 
 | # | directive |
 |---|---|
@@ -140,7 +148,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 1 | **Complete FTCFTW claim is not proven.** `scripts/ledger/ftcftw.id` passing means indexed contracts exist — not that the bound is proven. |
 | 2 | Stale proof bundles do not certify current HEAD. `docs/bootstrap.md` records FTCFTW as **invalid** as a performance claim at this stage. |
 
-## Recomputing every count on this page
+| section |
+|---|---|
+| Recomputing every count on this page |
 
 | # | directive |
 |---|---|
@@ -173,9 +183,13 @@ semantics → resolution → demand → realization → machine → object → r
 | 1 | **Do not** copy an output of any of these into this file. |
 | 2 | If a number matters enough to assert, it belongs in the runner that checks it — which is where the `demandsOperand` membership size already lives, and why that one has not gone stale. |
 
-## Permanent metric splits
+| section |
+|---|---|
+| Permanent metric splits |
 
-### New debt vs existing corpus
+| section |
+|---|---|
+| New debt vs existing corpus |
 
 | Metric | Meaning |
 |---|---|
@@ -186,7 +200,9 @@ semantics → resolution → demand → realization → machine → object → r
 |---|---|
 | 1 | A staged migration diff passing idiomgate/semanticgate proves **no new debt in that diff**, not that the entire historical `.id` corpus satisfies present law. |
 
-### Architecture vs embodiment
+| section |
+|---|---|
+| Architecture vs embodiment |
 
 | # | directive |
 |---|---|
@@ -197,7 +213,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 1 | For grammar specifically, that split is now three-valued rather than two, and the middle value is the one that moved — see "The three questions this file must not conflate" above. |
 | 2 | Design closure being high has never implied consumer closure, and consumer closure does not imply parser ownership. |
 
-### Ownership is not coverage
+| section |
+|---|---|
+| Ownership is not coverage |
 
 | # | directive |
 |---|---|
@@ -206,7 +224,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 3 | A generated artifact is only evidence of ownership when a gate proves it regenerates byte-identically from its owner — otherwise it is a tracked file that may drift, and "the grammar is Idol owned" becomes a claim with no counterfactual. |
 | 4 | That reasoning is written into `gate/grammar-projection.sh` itself. |
 
-## Dated architectural judgments (2026-08-23)
+| section |
+|---|---|
+| Dated architectural judgments (2026-08-23) |
 
 | # | directive |
 |---|---|
@@ -254,7 +274,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 4 | FTCFTW proof is red. |
 | 5 | Metrics are harder to fake than in earlier eras — that is the progress, and it is why this table no longer carries percentages that could be mistaken for counters. |
 
-## Identity (current)
+| section |
+|---|---|
+| Identity (current) |
 
 | # | directive |
 |---|---|
@@ -267,7 +289,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 1 | Repository identity is a dev/release split, not a contradiction: `docs/spec/AUTHORITY.md` names `clpi/idol` as the living development authority, and `docs/spec/constitution.md`'s `idollang/idol` is the release identity the project SHIPS as (`tools/node/dev/orient` projects both: `devrepository: clpi/idol`, `releaserepository: idollang/idol`, the latter untouched until RELEASE_READINESS authorization). |
 | 2 | Cite the orient projection, not this paragraph. |
 
-## Ledgers and fresh evidence
+| section |
+|---|---|
+| Ledgers and fresh evidence |
 
 | # | directive |
 |---|---|
@@ -278,22 +302,27 @@ semantics → resolution → demand → realization → machine → object → r
 | 1 | Inspect committed evidence artifacts for revision, dirty state, and aggregate outcome. |
 | 2 | A proof bundle at an older revision does not certify current HEAD; the live tree is not automatically the measured program (`law.evidence.subject`, `docs/bootstrap.md`). |
 
-## Prohibited headline metrics
+| section |
+|---|---|
+| Prohibited headline metrics |
 
 | # | directive |
 |---|---|
 | 1 | Do not report as primary progress: |
 
-- `.id` file count or "percent in language"
-- keyword removal counts alone
-- green focused tests without aggregate revision-bound proof
-- file-count or Zig-count reduction as self-hosting
-- architecture convergence percentages without executed frontier movement
-- **grammar-owner existence presented as grammar closure, or grammar work of any
-  kind presented as movement toward compiler B**
-- any count copied out of a gate's output into prose
+| # | directive |
+|---|---|
+| 1 | `.id` file count or "percent in language" |
+| 2 | keyword removal counts alone |
+| 3 | green focused tests without aggregate revision-bound proof |
+| 4 | file-count or Zig-count reduction as self-hosting |
+| 5 | architecture convergence percentages without executed frontier movement |
+| 6 | **grammar-owner existence presented as grammar closure, or grammar work of any kind presented as movement toward compiler B** |
+| 7 | any count copied out of a gate's output into prose |
 
-## Superseded observations
+| section |
+|---|---|
+| Superseded observations |
 
 | # | directive |
 |---|---|
@@ -301,7 +330,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 2 | It is kept for trend reading only. |
 | 3 | Where it conflicts with the sections above, the sections above are current; where it conflicts with `docs/bootstrap.md`, that document is current. |
 
-### Superseded: frontier statement (pre-2026-08-23)
+| section |
+|---|---|
+| Superseded: frontier statement (pre-2026-08-23) |
 
 | # | directive |
 |---|---|
@@ -321,7 +352,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 1 | The milestone table formerly listed `B-G0 grammar Idol owner` as a single `open` row. |
 | 2 | It is split above, because the owner exists and the consumers do not. |
 
-### Superseded: normalized dimension percentages
+| section |
+|---|---|
+| Superseded: normalized dimension percentages |
 
 | # | directive |
 |---|---|
@@ -338,7 +371,9 @@ semantics → resolution → demand → realization → machine → object → r
 | 2 | A single "grammar single-authority implementation" percentage could not distinguish an owner that does not exist from an owner whose consumers have not closed, so it kept reporting a middling fraction across a period in which the owner was built, the parser's operator ontology was deleted, and two parser membership sets moved to the owner. |
 | 3 | A number that cannot move when the architecture moves is not a measurement. |
 
-### Superseded: longitudinal scorecard
+| section |
+|---|---|
+| Superseded: longitudinal scorecard |
 
 | # | directive |
 |---|---|
@@ -370,21 +405,15 @@ semantics → resolution → demand → realization → machine → object → r
 | Agent orientation | prompt discipline | repository-enforced authority + scoped projections | ↑↑ |
 | Anti-drift durability | tell agents what not to do | forbidden semantic authority fail-closed | ↑↑ |
 
-### Superseded: "What improved" inflection list
+| section |
+|---|---|
+| Superseded: "What improved" inflection list |
 
-- **Canonical gates:** idiom controls fail-closed; subject-first loopholes
-  tightened; boxing census separated "green path" from whole-compiler clean.
-- **SEMANTIC-ONE target:** zero independent semantic taxonomies, downstream
-  source-name reconstruction, storage-as-meaning, DNIR meanings without
-  canonical relations, duplicated spellings, lost facts, tooling-owned vocab.
-- **Graph application authority:** packed application roles authoritative;
-  negative controls damage descriptors/ranges and verify invalid applications —
-  stronger than bulk source rewrites.
-- **Suffix migration:** tracked canonical source → `.id`; hooks/gates redirected;
-  migration reported idiomgate/semanticgate clean on the **staged diff**
-  (qualification: not whole-corpus purity).
-- **Evidence integrity:** synthetic bootstrap verifier deleted; benchmark/trace
-  binding to revision, environment, hashes; graph-backed assumptions required.
-- **Grammar ownership:** one executable owner with byte-identical regeneration
-  proved by a gate that includes a malformed-producer control, and an editor
-  grammar disagreement pinned as a ratchet rather than a budget.
+| # | directive |
+|---|---|
+| 1 | **Canonical gates:** idiom controls fail-closed; subject-first loopholes tightened; boxing census separated "green path" from whole-compiler clean. |
+| 2 | **SEMANTIC-ONE target:** zero independent semantic taxonomies, downstream source-name reconstruction, storage-as-meaning, DNIR meanings without canonical relations, duplicated spellings, lost facts, tooling-owned vocab. |
+| 3 | **Graph application authority:** packed application roles authoritative; negative controls damage descriptors/ranges and verify invalid applications — stronger than bulk source rewrites. |
+| 4 | **Suffix migration:** tracked canonical source → `.id`; hooks/gates redirected; migration reported idiomgate/semanticgate clean on the **staged diff** (qualification: not whole-corpus purity). |
+| 5 | **Evidence integrity:** synthetic bootstrap verifier deleted; benchmark/trace binding to revision, environment, hashes; graph-backed assumptions required. |
+| 6 | **Grammar ownership:** one executable owner with byte-identical regeneration proved by a gate that includes a malformed-producer control, and an editor grammar disagreement pinned as a ratchet rather than a budget. |

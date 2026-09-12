@@ -1,4 +1,6 @@
-# Idol source, home, reach, and world projection
+| field | value |
+|---|---|
+| title | Idol source, home, reach, and world projection |
 
 | # | directive |
 |---|---|
@@ -12,7 +14,9 @@
 | 1 | The exhaustive predecessor is preserved in Git history through `a2986997a12857d10bd76c9e8eb1efff772eee17` and the research ancestry merges on `main`. |
 | 2 | Its useful findings remain provenance; contradictions do not remain law. |
 
-## Identity and boundaries
+| section |
+|---|---|
+| Identity and boundaries |
 
 | # | directive |
 |---|---|
@@ -49,7 +53,9 @@ recognize(source, law)
 |---|---|
 | 1 | No later phase reconstructs meaning from filenames, paths, token spelling, AST shape, local enums, opcodes, or host-language types. |
 
-## Delimiter law
+| section |
+|---|---|
+| Delimiter law |
 
 | # | directive |
 |---|---|
@@ -70,7 +76,9 @@ recognize(source, law)
 | 2 | Parentheses remain ordinary relation application. |
 | 3 | A compatibility parser may accept historical spellings only by publishing their exact provenance and canonicalizing them before semantic consumption; compatibility never changes the meaning of a delimiter. |
 
-## Files and directories
+| section |
+|---|---|
+| Files and directories |
 
 | # | directive |
 |---|---|
@@ -103,7 +111,9 @@ use using open expose inject admit provide service-locator dependency-container
 | 1 | Existing occurrences are migration debt or exact foreign-law provenance. |
 | 2 | They are not templates for new Idol code. |
 
-## Home, reach, subject, and world
+| section |
+|---|---|
+| Home, reach, subject, and world |
 
 | # | directive |
 |---|---|
@@ -137,7 +147,9 @@ projection witness != semantic identity
 | 3 | A witness proves satisfaction. |
 | 4 | Filesystem position, dependency possession, a host global, or an organizational home never grants a world. |
 
-## Subject orientation and projection
+| section |
+|---|---|
+| Subject orientation and projection |
 
 | # | directive |
 |---|---|
@@ -171,7 +183,9 @@ name = user.name
 | 2 | The witness may differ; the relation/value identity does not. |
 | 3 | Ambiguity fails closed—never first/last/load/path/hash order. |
 
-## Dependency and distribution
+| section |
+|---|---|
+| Dependency and distribution |
 
 | # | directive |
 |---|---|
@@ -184,14 +198,18 @@ name = user.name
 | 1 | A package is distribution provenance for ordinary graph content. |
 | 2 | Native Idol has no runtime package object, package registry, module table, or standard namespace unless observation and demand independently require an ordinary value with that shape. |
 
-## Canonical vocabulary
+| section |
+|---|---|
+| Canonical vocabulary |
 
 | # | directive |
 |---|---|
 | 1 | Canonical vocabulary is compiler-owned initial reachability of admitted semantic identities such as `len`, `iter`, `read`, `write`, `run`, `to`, and `from` only where current law admits them. |
 | 2 | It is not a `std` object and not a second registry for the compiler, formatter, LSP, MCP, shell, or documentation. |
 
-## Inference and minimum source
+| section |
+|---|---|
+| Inference and minimum source |
 
 | # | directive |
 |---|---|
@@ -207,7 +225,9 @@ name = user.name
 | 1 | One-use intermediates disappear when the chain preserves semantic identity. |
 | 2 | Names remain when they add semantic information, multiple consumers, observable place identity, or human-facing provenance. |
 
-## Foreign source
+| section |
+|---|---|
+| Foreign source |
 
 | # | directive |
 |---|---|
@@ -219,7 +239,9 @@ name = user.name
 |---|---|
 | 1 | Never try several grammars and choose one that accepts, switch source law from command-looking text, or infer authority from source syntax. |
 
-## Realization and FTCFTW
+| section |
+|---|---|
+| Realization and FTCFTW |
 
 | # | directive |
 |---|---|
@@ -239,7 +261,9 @@ name = user.name
 | 1 | A performance mechanism is admitted only with observation equivalence, exact negative controls, current-revision evidence, and a measured Pareto improvement. |
 | 2 | A non-performance change must preserve the strongest available performance baseline and may not claim an improvement. |
 
-## Migration and deletion
+| section |
+|---|---|
+| Migration and deletion |
 
 | # | directive |
 |---|---|
@@ -247,13 +271,15 @@ name = user.name
 | 2 | Each bridge must have a named consumer and deletion condition. |
 | 3 | High-priority deletion targets include: |
 
-- call-shaped indexing and any parser/lowering branch that confuses call with projection;
-- path/name/AST-pointer reconstruction after graph resolution;
-- runtime module/namespace/`std` machinery;
-- duplicate grammar, descriptor, result, builtin, world, or optimization registries;
-- semantic decisions encoded only in DNIR/local opcodes;
-- consumer-zero production analysis modules;
-- stale session-state and branch-local authority documents.
+| # | directive |
+|---|---|
+| 1 | call-shaped indexing and any parser/lowering branch that confuses call with projection; |
+| 2 | path/name/AST-pointer reconstruction after graph resolution; |
+| 3 | runtime module/namespace/`std` machinery; |
+| 4 | duplicate grammar, descriptor, result, builtin, world, or optimization registries; |
+| 5 | semantic decisions encoded only in DNIR/local opcodes; |
+| 6 | consumer-zero production analysis modules; |
+| 7 | stale session-state and branch-local authority documents. |
 
 | # | directive |
 |---|---|

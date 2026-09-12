@@ -1,11 +1,15 @@
-# Idol grammar-role projection
+| field | value |
+|---|---|
+| title | Idol grammar-role projection |
 
 | # | directive |
 |---|---|
 | 1 | The supreme law is [`docs/spec/law.md`](law.md) and [`docs/spec/constitution.md`](constitution.md) is its structured expansion. |
 | 2 | This page describes the role projection required by the production frontend; it is not a role taxonomy or a second grammar authority. |
 
-## One owner
+| section |
+|---|---|
+| One owner |
 
 | # | directive |
 |---|---|
@@ -17,19 +21,23 @@
 |---|---|
 | 1 | The generated projection must include, as demanded: |
 
-- token identity and exact source span;
-- canonical, compatibility, deprecated, and removed status;
-- expression, binding, statement, and descriptor-member starts;
-- prefix, postfix, delimiter, and offside capabilities;
-- precedence and associativity;
-- payload and source-law provenance.
+| # | directive |
+|---|---|
+| 1 | token identity and exact source span; |
+| 2 | canonical, compatibility, deprecated, and removed status; |
+| 3 | expression, binding, statement, and descriptor-member starts; |
+| 4 | prefix, postfix, delimiter, and offside capabilities; |
+| 5 | precedence and associativity; |
+| 6 | payload and source-law provenance. |
 
 | # | directive |
 |---|---|
 | 1 | No handwritten LSP table, parser switch, punctuation list, token text, or highlight color may outrank or extend that owner. |
 | 2 | Protocol and editor classes are renderings of generated roles, never semantic identities. |
 
-## Recognition boundary
+| section |
+|---|---|
+| Recognition boundary |
 
 | # | directive |
 |---|---|
@@ -41,23 +49,23 @@
 |---|---|
 | 1 | Current delimiter roles remain: |
 
-- `()` ordinary application and grouping; it never means aggregate indexing;
-- `{}` structured packs, descriptor application, and descriptor homes;
-- `[]` computed or indexed projection (`values[i]`, `table[key]`); read and
-  write are demand-selected faces of one projected place/value relation;
-- `.` statically named projection after an explicit subject;
-- `:` admitted descriptor, subject, and home roles;
-- `@` the current-world accessor: bare `@` the current-world value, `@member`
-  world access (never `@.member` or `@:member` — `@` already accesses),
-  `@member = v` mutation, `thing@world` qualification, `@{ k = v }` injection,
-  never a directive or a postfix relation anchor.
+| # | directive |
+|---|---|
+| 1 | `()` ordinary application and grouping; it never means aggregate indexing; |
+| 2 | `{}` structured packs, descriptor application, and descriptor homes; |
+| 3 | `[]` computed or indexed projection (`values[i]`, `table[key]`); read and write are demand-selected faces of one projected place/value relation; |
+| 4 | `.` statically named projection after an explicit subject; |
+| 5 | `:` admitted descriptor, subject, and home roles; |
+| 6 | `@` the current-world accessor: bare `@` the current-world value, `@member` world access (never `@.member` or `@:member` — `@` already accesses), `@member = v` mutation, `thing@world` qualification, `@{ k = v }` injection, never a directive or a postfix relation anchor. |
 
 | # | directive |
 |---|---|
 | 1 | An incompatible source face and resolved subject diagnose before lowering. |
 | 2 | Parser acceptance never authorizes a backend fallback. |
 
-## Current implementation boundary
+| section |
+|---|---|
+| Current implementation boundary |
 
 | # | directive |
 |---|---|

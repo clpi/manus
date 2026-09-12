@@ -1,4 +1,6 @@
-# idol 0.1 — The Cost Model
+| field | value |
+|---|---|
+| title | idol 0.1 — The Cost Model |
 
 | # | directive |
 |---|---|
@@ -18,10 +20,9 @@
 |---|---|
 | 1 | **The one sentence.** Duo is strict. **Demand governs MATERIALIZATION, never evaluation order.** |
 
-| # | directive |
+| section |
 |---|---|
-
-## 1. Strict evaluation, as small-step semantics
+| 1. Strict evaluation, as small-step semantics |
 
 | # | directive |
 |---|---|
@@ -80,7 +81,9 @@ E ::= []
 |---|---|
 | 1 | Short-circuit is **control flow**, not demand. `v and e` does not reduce `e` because rule `(and-f)` says so, exactly as in C — not because nobody observed it. |
 
-### 1.1 The materialization lemma — what demand is allowed to do
+| section |
+|---|---|
+| 1.1 The materialization lemma — what demand is allowed to do |
 
 > **LEMMA.** Demand is a quotient on `v`. It is not a rewrite on `E`.
 >
@@ -112,14 +115,17 @@ E ::= []
 | 1 | **Erasure cannot make a program's output depend on the optimizer.** If a construct has an effect, the effect happens; if it has none, its absence is unobservable by definition. |
 | 2 | A witness that claims otherwise is reporting a compiler defect, not a trade-off. |
 
-### 1.2 What demand does govern
+| section |
+|---|---|
+| 1.2 What demand does govern |
 
-- whether a heap object exists for a table, pack, descriptor, or closure
-- which representation a value takes (interned tag, niche nil, tag+payload,
-  registers, stack slots, heap)
-- whether an intermediate collection exists between two pipeline stages
-- whether a stream is buffered (`proc.out` unread is never captured)
-- whether a formatting apparatus is instantiated
+| # | directive |
+|---|---|
+| 1 | whether a heap object exists for a table, pack, descriptor, or closure |
+| 2 | which representation a value takes (interned tag, niche nil, tag+payload, registers, stack slots, heap) |
+| 3 | whether an intermediate collection exists between two pipeline stages |
+| 4 | whether a stream is buffered (`proc.out` unread is never captured) |
+| 5 | whether a formatting apparatus is instantiated |
 
 | # | directive |
 |---|---|
@@ -129,7 +135,9 @@ E ::= []
 | # | directive |
 |---|---|
 
-## 2. The guaranteed-erasure list
+| section |
+|---|---|
+| 2. The guaranteed-erasure list |
 
 | # | directive |
 |---|---|
@@ -172,7 +180,9 @@ E ::= []
 | # | directive |
 |---|---|
 
-## 3. Worst-case behaviour, one page
+| section |
+|---|---|
+| 3. Worst-case behaviour, one page |
 
 | # | directive |
 |---|---|
@@ -238,7 +248,9 @@ E ::= []
 | # | directive |
 |---|---|
 
-## 4. Where allocation can occur
+| section |
+|---|---|
+| 4. Where allocation can occur |
 
 | # | directive |
 |---|---|
@@ -275,7 +287,9 @@ A6  a foreign call that allocates — rung-6, provenance-tagged, never implicit
 | # | directive |
 |---|---|
 
-## 5. Cost of the resolution ladder
+| section |
+|---|---|
+| 5. Cost of the resolution ladder |
 
 | # | directive |
 |---|---|
@@ -300,7 +314,9 @@ rung 8   dynamic — RUN TIME. Boxed argument vector, dynamic dispatch.
 | # | directive |
 |---|---|
 
-## 6. Memory cost, per tier
+| section |
+|---|---|
+| 6. Memory cost, per tier |
 
 | # | directive |
 |---|---|
@@ -326,7 +342,9 @@ never   tracing stop-the-world. Latency is a language property.
 | # | directive |
 |---|---|
 
-## 7. Status in this repository
+| section |
+|---|---|
+| 7. Status in this repository |
 
 | # | directive |
 |---|---|
@@ -335,37 +353,17 @@ never   tracing stop-the-world. Latency is a language property.
 | 3 | Every row was produced by running a probe and reading a value or generated artifact — never by reading source and inferring. |
 | 4 | Identifiers quoted from generated output are **C**, not Duo. |
 
-### Specified and implemented
+| section |
+|---|---|
+| Specified and implemented |
 
-- **Strictness holds, demonstrated.** A binding whose value is never read still
-  runs its callee's effect: a program binding `x = noisy(n)` and returning `7`
-  prints `evaluated` then `7`, exit 0. Demand did not elide the reduction. This
-  is the document's central claim and it is the one that is demonstrated rather
-  than asserted.
-- **E3 holds for anonymous tables (C backend), demonstrated by artifact.** A
-  two-field table constructed and never projected from compiles to
-  `void* t = NULL; return (n * 2);` — the constructor is absent, and the boxed
-  runtime prelude is not emitted at all (10 allocation sites in the generated C,
-  all string helpers, against 107 for the escaping variant of the same program).
-- **E2 holds, demonstrated by artifact.** A callable with an empty world
-  fragment passed as a value compiles to a plain function-pointer box; the
-  closure allocator appears in the generated C only as a definition, never as a
-  call site. The capturing variant does allocate, which is the correct contrast:
-  the closure is a measurement, and here the measurement is right.
-- **Sealed descriptors get flat layout.** A two-field sealed descriptor becomes
-  a C struct of two `int64_t`, returned by value, with field reads compiled as
-  direct member access. E5's layout half is real.
-- **TAIL holds under the direct backend, and the shape it declines is named.**
-  The emitted form for a call in tail position is now `restore the frame; b
-  <callee>` — no `bl`, no caller-save block, x30 left holding the caller's
-  return address so the callee returns straight past the frame that jumped to
-  it. Measured at idol f2c7e67c: depths 100, 1,000, 100,000 and 1,000,000 each
-  answer correctly, and `examples/table/tailcall.id`'s ten million frames
-  answer `10000000` in 0.06s of user time where the same binary under
-  `IDOL_NO_TAILCALL=1` exits **139**. MUTUAL tail calls are included — the two
-  relations may carry different frame sizes, because each tears down its own
-  before the jump. Over the 257 corpus programs that compile to assembly the
-  emitted instruction count falls by 751 (-1.19%) and **no program grows**.
+| # | directive |
+|---|---|
+| 1 | **Strictness holds, demonstrated.** A binding whose value is never read still runs its callee's effect: a program binding `x = noisy(n)` and returning `7` prints `evaluated` then `7`, exit 0. Demand did not elide the reduction. This is the document's central claim and it is the one that is demonstrated rather than asserted. |
+| 2 | **E3 holds for anonymous tables (C backend), demonstrated by artifact.** A two-field table constructed and never projected from compiles to `void* t = NULL; return (n * 2);` — the constructor is absent, and the boxed runtime prelude is not emitted at all (10 allocation sites in the generated C, all string helpers, against 107 for the escaping variant of the same program). |
+| 3 | **E2 holds, demonstrated by artifact.** A callable with an empty world fragment passed as a value compiles to a plain function-pointer box; the closure allocator appears in the generated C only as a definition, never as a call site. The capturing variant does allocate, which is the correct contrast: the closure is a measurement, and here the measurement is right. |
+| 4 | **Sealed descriptors get flat layout.** A two-field sealed descriptor becomes a C struct of two `int64_t`, returned by value, with field reads compiled as direct member access. E5's layout half is real. |
+| 5 | **TAIL holds under the direct backend, and the shape it declines is named.** The emitted form for a call in tail position is now `restore the frame; b <callee>` — no `bl`, no caller-save block, x30 left holding the caller's return address so the callee returns straight past the frame that jumped to it. Measured at idol f2c7e67c: depths 100, 1,000, 100,000 and 1,000,000 each answer correctly, and `examples/table/tailcall.id`'s ten million frames answer `10000000` in 0.06s of user time where the same binary under `IDOL_NO_TAILCALL=1` exits **139**. MUTUAL tail calls are included — the two relations may carry different frame sizes, because each tears down its own before the jump. Over the 257 corpus programs that compile to assembly the emitted instruction count falls by 751 (-1.19%) and **no program grows**. |
 
 | # | directive |
 |---|---|
@@ -437,86 +435,38 @@ never   tracing stop-the-world. Latency is a language property.
 | 4 | The same applies to a metered function in a linked LIBRARY object, whose limit word is a separate local symbol nothing initializes. |
 | 5 | (3) A syntactically-tail recursive call that the emitter then DECLINES (the emission-state grounds `tailCallFusible` checks and the static predicate cannot) leaves its function unmetered; that frame is metered by nobody and still exhausts unnamed. |
 
-- **The direct ARM64 backend has no heap opcode.** Its only allocation
-  instruction is `alloc_slots`, and that arm lowers to a stack-pointer offset
-  (`src/native.zig`). The only fixed runtime symbols it can branch to
-  are `printf` and `puts`; every other branch target is a user callee name, so
-  a program that reaches an allocator does so by calling one, never implicitly.
-  Read the result carefully: the backend's allocation-freedom is **partly
-  attainment and partly refusal** — programs that would need a heap are
-  refused, not compiled without one. See the bail note below.
+| # | directive |
+|---|---|
+| 1 | **The direct ARM64 backend has no heap opcode.** Its only allocation instruction is `alloc_slots`, and that arm lowers to a stack-pointer offset (`src/native.zig`). The only fixed runtime symbols it can branch to are `printf` and `puts`; every other branch target is a user callee name, so a program that reaches an allocator does so by calling one, never implicitly. Read the result carefully: the backend's allocation-freedom is **partly attainment and partly refusal** — programs that would need a heap are refused, not compiled without one. See the bail note below. |
 
-### Specified and NOT implemented
+| section |
+|---|---|
+| Specified and NOT implemented |
 
-- **No deallocation is emitted, at any tier.** Zero `free` call sites appear in
-  the user region of the generated C (0 below line 5900 of a 6039-line output;
-  the 45 in the file are all inside the runtime's own rehash and string-pool
-  helpers). A capturing closure's heap object initializes a `refcount` field to
-  1; across the whole generated file that field is written twice and decremented
-  **zero** times. Tier 1 is described as the only tier this tree has; measured, the tree has none of the three.
-- **Interpolation costs two allocations and leaks both.** `"value {n}"` compiles
-  to an integer-to-string allocation feeding a concat allocation, and nothing
-  frees either. The §3 table's row is right about the count and optimistic about
-  the lifetime.
-- **OVFL is not checked.** `i64` maximum plus one prints `-9223372036854775808`,
-  exit 0. §12 says checked is the default. Re-confirmed at idol d3affe8a — this
-  row still holds, unlike the division row above it.
-- **Integer division by zero now FAULTS, and this row is corrected.** It used
-  to read: "`7 / 0` with both operands `i64` prints **9218868437227405312** —
-  the bit pattern of IEEE `+inf` read as an integer … a wrong answer with a
-  green exit code, and it is the worst row on this page." Re-measured at idol
-  d3affe8a: `7 / 0` produces **no output and exits 134**, and `7 % 0` likewise;
-  under `--backend=wasm` it is `wasm trap: unreachable instruction executed`.
-  Both realizations fail closed, so the wrong answer is gone.
-  What remains is a DIAGNOSTIC gap, not a correctness one: neither realization
-  NAMES the fault. Direct aborts with an empty stderr and Wasm reports a
-  generic `unreachable`, so a program that divides by zero and one that trips
-  any other trap are indistinguishable to its caller. SIGABRT is a deliberate
-  fault rather than a SIGSEGV, so the "No SIGSEGV as an API" contract is not
-  violated by it.
-  This sentence used to read "B-4 says `i64/i64` truncates". **`§12 B-4` does not
-  exist**: this line was the only citation of it in `docs/spec/`, six corpus
-  files quote it, and no document in either tree defines it. Its `%` clause is
-  overturned by `docs/rulings.md` § "Modulo and floor division" (FLOORED, from
-  `law.md`'s "ordinary Lua meaning"); its "no `//`" clause is checkably false —
-  `//` is lexed, parsed, given a precedence row and a formatter spelling. Cite
-  a document that opens, or state the measurement without a citation.
-- **`range` does not exist**, so `for i in range(0, n)` is a parse-clean
-  `call to undeclared function`. **`check`, `why`, and `todo` do not exist**
-  either — every witness obligation in §2 is therefore unenforceable today,
-  which is the honest reason the guarantee list has no fixtures.
-- **Pipelines do not compile.** `xs:filter(odd):map(dbl):sum()` fails in the C
-  backend with a type error. The fusion row of §3 is untestable, not merely
-  unfused.
-- **Descriptor construction does not compile, in either spelling.**
-  `pair{ n, n + 1 }` and `pair{ a = n, b = n + 1 }` both emit a call to a
-  nonexistent C function wrapping a boxed table into a struct-returning
-  function; the direct backend refuses the same construct at `lowerExprCons()`
-  (`src/dnir_lower.zig`, DNB001). So the flat-layout result above is measured
-  through *field access on a value the compiler produced*, and the constructor
-  cost row in §3 is **SPECIFIED, NOT DEMONSTRATED**.
+| # | directive |
+|---|---|
+| 1 | **No deallocation is emitted, at any tier.** Zero `free` call sites appear in the user region of the generated C (0 below line 5900 of a 6039-line output; the 45 in the file are all inside the runtime's own rehash and string-pool helpers). A capturing closure's heap object initializes a `refcount` field to 1; across the whole generated file that field is written twice and decremented **zero** times. Tier 1 is described as the only tier this tree has; measured, the tree has none of the three. |
+| 2 | **Interpolation costs two allocations and leaks both.** `"value {n}"` compiles to an integer-to-string allocation feeding a concat allocation, and nothing frees either. The §3 table's row is right about the count and optimistic about the lifetime. |
+| 3 | **OVFL is not checked.** `i64` maximum plus one prints `-9223372036854775808`, exit 0. §12 says checked is the default. Re-confirmed at idol d3affe8a — this row still holds, unlike the division row above it. |
+| 4 | **Integer division by zero now FAULTS, and this row is corrected.** It used to read: "`7 / 0` with both operands `i64` prints **9218868437227405312** — the bit pattern of IEEE `+inf` read as an integer … a wrong answer with a green exit code, and it is the worst row on this page." Re-measured at idol d3affe8a: `7 / 0` produces **no output and exits 134**, and `7 % 0` likewise; under `--backend=wasm` it is `wasm trap: unreachable instruction executed`. Both realizations fail closed, so the wrong answer is gone. What remains is a DIAGNOSTIC gap, not a correctness one: neither realization NAMES the fault. Direct aborts with an empty stderr and Wasm reports a generic `unreachable`, so a program that divides by zero and one that trips any other trap are indistinguishable to its caller. SIGABRT is a deliberate fault rather than a SIGSEGV, so the "No SIGSEGV as an API" contract is not violated by it. This sentence used to read "B-4 says `i64/i64` truncates". **`§12 B-4` does not exist**: this line was the only citation of it in `docs/spec/`, six corpus files quote it, and no document in either tree defines it. Its `%` clause is overturned by `docs/rulings.md` § "Modulo and floor division" (FLOORED, from `law.md`'s "ordinary Lua meaning"); its "no `//`" clause is checkably false — `//` is lexed, parsed, given a precedence row and a formatter spelling. Cite a document that opens, or state the measurement without a citation. |
+| 5 | **`range` does not exist**, so `for i in range(0, n)` is a parse-clean `call to undeclared function`. **`check`, `why`, and `todo` do not exist** either — every witness obligation in §2 is therefore unenforceable today, which is the honest reason the guarantee list has no fixtures. |
+| 6 | **Pipelines do not compile.** `xs:filter(odd):map(dbl):sum()` fails in the C backend with a type error. The fusion row of §3 is untestable, not merely unfused. |
+| 7 | **Descriptor construction does not compile, in either spelling.** `pair{ n, n + 1 }` and `pair{ a = n, b = n + 1 }` both emit a call to a nonexistent C function wrapping a boxed table into a struct-returning function; the direct backend refuses the same construct at `lowerExprCons()` (`src/dnir_lower.zig`, DNB001). So the flat-layout result above is measured through *field access on a value the compiler produced*, and the constructor cost row in §3 is **SPECIFIED, NOT DEMONSTRATED**. |
 
-### Implemented differently
+| section |
+|---|---|
+| Implemented differently |
 
-- **An escaping anonymous table is a hashed heap table, not a struct.** It
-  compiles to a table allocated with zero array capacity and two hash slots,
-  with the two fields stored by hashed literal key. §3's "1 heap object" is
-  right; the constant factor is a hash store per field, not a struct write.
-- **Out-of-range index answers `nil`, not a fault** — consistent with B-8's
-  absence-over-sentinels, and worth stating because the §3 table's "unwind"
-  column would otherwise be read as promising a check.
-- **The two backends disagree, and asm success is not run success.** A program
-  reading two fields of an anonymous table emits correct scalarized ARM64 under
-  `--backend=direct #emit asm` (exit 0, arithmetic verified by hand) and
-  **fails to build** under the default path, because the C backend calls an
-  undeclared table getter. Anyone measuring cost from `--emit asm` alone will
-  measure a program that does not run.
-- **Native coverage is 103 of 139 reachable programs** (`zig build
-  native-census`, exit 0; 36 bail, 16 unreachable C-emitter fixtures). The
-  heap-free property of the direct backend applies to those 103 and to nothing
-  else.
+| # | directive |
+|---|---|
+| 1 | **An escaping anonymous table is a hashed heap table, not a struct.** It compiles to a table allocated with zero array capacity and two hash slots, with the two fields stored by hashed literal key. §3's "1 heap object" is right; the constant factor is a hash store per field, not a struct write. |
+| 2 | **Out-of-range index answers `nil`, not a fault** — consistent with B-8's absence-over-sentinels, and worth stating because the §3 table's "unwind" column would otherwise be read as promising a check. |
+| 3 | **The two backends disagree, and asm success is not run success.** A program reading two fields of an anonymous table emits correct scalarized ARM64 under `--backend=direct #emit asm` (exit 0, arithmetic verified by hand) and **fails to build** under the default path, because the C backend calls an undeclared table getter. Anyone measuring cost from `--emit asm` alone will measure a program that does not run. |
+| 4 | **Native coverage is 103 of 139 reachable programs** (`zig build native-census`, exit 0; 36 bail, 16 unreachable C-emitter fixtures). The heap-free property of the direct backend applies to those 103 and to nothing else. |
 
-### A note on measuring this yourself
+| section |
+|---|---|
+| A note on measuring this yourself |
 
 | # | directive |
 |---|---|

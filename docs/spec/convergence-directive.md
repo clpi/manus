@@ -1,4 +1,6 @@
-# IDOL TOTAL CONVERGENCE
+| field | value |
+|---|---|
+| title | IDOL TOTAL CONVERGENCE |
 
 | # | directive |
 |---|---|
@@ -18,10 +20,9 @@
 | 1 | Projection of C0 convergence laws. |
 | 2 | C0 owns verdicts; this document owns execution discipline and merge-blocking repair order. |
 
-| # | directive |
+| section |
 |---|---|
-
-## 0. Objective
+| 0. Objective |
 
 | # | directive |
 |---|---|
@@ -58,23 +59,27 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 1. STOP conditions
+| section |
+|---|---|
+| 1. STOP conditions |
 
 | # | directive |
 |---|---|
 | 1 | STOP IMPLEMENTATION IMMEDIATELY when any of these occurs: |
 
-- semantic owner unclear
-- relation identity unclear
-- projection role unclear
-- subject unclear
-- world authority ambiguous
-- required upstream fact absent
-- multiple incomparable specializations
-- current code requires source-text reconstruction
-- new helper would invent semantic vocabulary
-- host architecture appears to be the easiest implementation template
-- fallback would silently decide meaning
+| # | directive |
+|---|---|
+| 1 | semantic owner unclear |
+| 2 | relation identity unclear |
+| 3 | projection role unclear |
+| 4 | subject unclear |
+| 5 | world authority ambiguous |
+| 6 | required upstream fact absent |
+| 7 | multiple incomparable specializations |
+| 8 | current code requires source-text reconstruction |
+| 9 | new helper would invent semantic vocabulary |
+| 10 | host architecture appears to be the easiest implementation template |
+| 11 | fallback would silently decide meaning |
 
 | # | directive |
 |---|---|
@@ -84,7 +89,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 2. Current tree is not canonical by default
+| section |
+|---|---|
+| 2. Current tree is not canonical by default |
 
 | # | directive |
 |---|---|
@@ -95,7 +102,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 3. Zero-history
+| section |
+|---|---|
+| 3. Zero-history |
 
 | # | directive |
 |---|---|
@@ -118,7 +127,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 4. Current specific identity violations
+| section |
+|---|---|
+| 4. Current specific identity violations |
 
 | # | directive |
 |---|---|
@@ -133,7 +144,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 5. Delete `.duo` acceptance
+| section |
+|---|---|
+| 5. Delete `.duo` acceptance |
 
 | # | directive |
 |---|---|
@@ -144,7 +157,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 6. STD-ZERO
+| section |
+|---|---|
+| 6. STD-ZERO |
 
 | # | directive |
 |---|---|
@@ -156,7 +171,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 7. LIB-ZERO
+| section |
+|---|---|
+| 7. LIB-ZERO |
 
 | # | directive |
 |---|---|
@@ -168,7 +185,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 8. MODULE-ZERO
+| section |
+|---|---|
+| 8. MODULE-ZERO |
 
 | # | directive |
 |---|---|
@@ -184,7 +203,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 9. Path-no-identity
+| section |
+|---|---|
+| 9. Path-no-identity |
 
 | # | directive |
 |---|---|
@@ -195,7 +216,9 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 10. One fact producer
+| section |
+|---|---|
+| 10. One fact producer |
 
 | # | directive |
 |---|---|
@@ -205,23 +228,20 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 11–28. Semantic invariants (summary)
+| section |
+|---|---|
+| 11–28. Semantic invariants (summary) |
 
-- **UNKNOWN-ONE:** distinguish known/unknown/absent/not applicable/not demanded; never
-  fill with 0/false/nil/""/placeholder.
-- **Negative facts first-class:** preserve does-not-escape, cannot-allocate, world-not-required, etc.
-- **PROJECTION-ONE:** application id, relation id, projection pack, subject, operands,
-  result, descriptor, law, world, effects, stage, origin, provenance, demand — no
-  independent projection kingdoms.
-- **CURRY-STRUCTURAL / CURRY-ZERO-COST:** partial application only when genuinely callable;
-  nonescaping → zero heap cost when provable.
-- **TO-ONE / FROM-ZERO / INFER-ONE:** one conversion relation `to`; eliminate inverse
-  `from`; shortest recoverable source face.
-- **SATISFACTION ≠ CONVERSION ≠ REALIZATION:** no spurious `to(i32)` on exact integer facts.
-- **WORLD-ONE / RUN-ONE / SENTINEL-ZERO:** worlds grant authority; run/outcome/evidence
-  distinct; foreign sentinels normalize at ingress.
-- **Environment lookup (open defect):** absent and present-empty must not collapse to the
-  same value.
+| # | directive |
+|---|---|
+| 1 | **UNKNOWN-ONE:** distinguish known/unknown/absent/not applicable/not demanded; never fill with 0/false/nil/""/placeholder. |
+| 2 | **Negative facts first-class:** preserve does-not-escape, cannot-allocate, world-not-required, etc. |
+| 3 | **PROJECTION-ONE:** application id, relation id, projection pack, subject, operands, result, descriptor, law, world, effects, stage, origin, provenance, demand — no independent projection kingdoms. |
+| 4 | **CURRY-STRUCTURAL / CURRY-ZERO-COST:** partial application only when genuinely callable; nonescaping → zero heap cost when provable. |
+| 5 | **TO-ONE / FROM-ZERO / INFER-ONE:** one conversion relation `to`; eliminate inverse `from`; shortest recoverable source face. |
+| 6 | **SATISFACTION ≠ CONVERSION ≠ REALIZATION:** no spurious `to(i32)` on exact integer facts. |
+| 7 | **WORLD-ONE / RUN-ONE / SENTINEL-ZERO:** worlds grant authority; run/outcome/evidence distinct; foreign sentinels normalize at ingress. |
+| 8 | **Environment lookup (open defect):** absent and present-empty must not collapse to the same value. |
 
 | # | directive |
 |---|---|
@@ -230,32 +250,38 @@ source → lexical identity → grammar role → semantic resolution
 | # | directive |
 |---|---|
 
-## 29–68. Realization and FTCFTW (summary)
+| section |
+|---|---|
+| 29–68. Realization and FTCFTW (summary) |
 
-- **PROTOCOL-ZERO / UNION-ONE / VALUE≠PLACE / PACK-ONE**
-- **RECONSTRUCTION-ZERO / DNIR = REALIZATION ONLY:** `ResolvedType`, `RecordDesc`,
-  `FieldKind`, `BinOpTag`, `Op` must not decide semantic meaning; relation ids authority.
-- **TARGET-ONE:** no armadd/wasmadd semantic identities.
-- **COST-ONE / FTCFTW EVIDENCE CONTRACT:** every claim binds revision, dirty state, semantic
-  equivalence, realization family, timings, memory, artifact, positive damage control.
-- **Wasm benchmark (open):** fix environment-contract mismatch before optimizing against cells.
+| # | directive |
+|---|---|
+| 1 | **PROTOCOL-ZERO / UNION-ONE / VALUE≠PLACE / PACK-ONE** |
+| 2 | **RECONSTRUCTION-ZERO / DNIR = REALIZATION ONLY:** `ResolvedType`, `RecordDesc`, `FieldKind`, `BinOpTag`, `Op` must not decide semantic meaning; relation ids authority. |
+| 3 | **TARGET-ONE:** no armadd/wasmadd semantic identities. |
+| 4 | **COST-ONE / FTCFTW EVIDENCE CONTRACT:** every claim binds revision, dirty state, semantic equivalence, realization family, timings, memory, artifact, positive damage control. |
+| 5 | **Wasm benchmark (open):** fix environment-contract mismatch before optimizing against cells. |
 
 | # | directive |
 |---|---|
 
-## 69–88. Process and gates (summary)
+| section |
+|---|---|
+| 69–88. Process and gates (summary) |
 
-- **BRIDGE-DEATH:** every bridge records responsibility, replacement owner, deletion
-  condition, positive/negative control.
-- **CLOSED GAP DELETE:** resolved obligations delete gap files; git stores history.
-- **GENERATED AGENT CONTEXT SPLIT:** stable C0 harness vs ephemeral session envelope.
-- **CONCEPT / PHYSICAL DELTA GATE:** default zero new semantic kinds; physical regression
-  needs evidence.
+| # | directive |
+|---|---|
+| 1 | **BRIDGE-DEATH:** every bridge records responsibility, replacement owner, deletion condition, positive/negative control. |
+| 2 | **CLOSED GAP DELETE:** resolved obligations delete gap files; git stores history. |
+| 3 | **GENERATED AGENT CONTEXT SPLIT:** stable C0 harness vs ephemeral session envelope. |
+| 4 | **CONCEPT / PHYSICAL DELTA GATE:** default zero new semantic kinds; physical regression needs evidence. |
 
 | # | directive |
 |---|---|
 
-## 89–91. SHC priority
+| section |
+|---|---|
+| 89–91. SHC priority |
 
 | # | directive |
 |---|---|
@@ -280,7 +306,9 @@ canonical lexical identity (GAP-145)
 | # | directive |
 |---|---|
 
-## 92–97. Required reviews and zero targets
+| section |
+|---|---|
+| 92–97. Required reviews and zero targets |
 
 | # | directive |
 |---|---|
@@ -301,7 +329,9 @@ canonical lexical identity (GAP-145)
 | # | directive |
 |---|---|
 
-## 98. Immediate repair order
+| section |
+|---|---|
+| 98. Immediate repair order |
 
 | # | directive |
 |---|---|
@@ -334,7 +364,9 @@ canonical lexical identity (GAP-145)
 | # | directive |
 |---|---|
 
-## 99. Completion report format
+| section |
+|---|---|
+| 99. Completion report format |
 
 | # | directive |
 |---|---|
@@ -369,7 +401,9 @@ next earliest host-owned semantic boundary:
 | # | directive |
 |---|---|
 
-## 100. Final law
+| section |
+|---|---|
+| 100. Final law |
 
 | # | directive |
 |---|---|
@@ -391,16 +425,15 @@ next earliest host-owned semantic boundary:
 | # | directive |
 |---|---|
 
-## Attack-first triad (current tree)
+| section |
+|---|---|
+| Attack-first triad (current tree) |
 
-1. **Delete remaining source/module/identity architecture** around native_req_support,
-   `.duo`, `duo_*`, semantic `std`, and `lib` — these give old semantics a production path.
-2. **Push one complete application fact set through native lowering** — relation,
-   projection, subject, packs, descriptors, world/effect, lineage; eliminate name/type/opcode
-   reconstruction in that family (`native_ir.zig` must not host a second semantic vocabulary).
-3. **Repair FTCFTW evidence before steering optimization** — Wasm benchmark contract is
-   known invalid for affected cells; no beat-wasmtime work until semantic-result verification
-   and positive controls pass.
+| # | directive |
+|---|---|
+| 1 | **Delete remaining source/module/identity architecture** around native_req_support, `.duo`, `duo_*`, semantic `std`, and `lib` — these give old semantics a production path. |
+| 2 | **Push one complete application fact set through native lowering** — relation, projection, subject, packs, descriptors, world/effect, lineage; eliminate name/type/opcode reconstruction in that family (`native_ir.zig` must not host a second semantic vocabulary). |
+| 3 | **Repair FTCFTW evidence before steering optimization** — Wasm benchmark contract is known invalid for affected cells; no beat-wasmtime work until semantic-result verification and positive controls pass. |
 
 | # | directive |
 |---|---|

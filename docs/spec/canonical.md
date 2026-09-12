@@ -1,24 +1,27 @@
-# IDOL — blind one-pager / total canonical + repository law
+| field | value |
+|---|---|
+| title | IDOL — blind one-pager / total canonical + repository law |
+| authority | This document is authoritative over repository accidents. |
+| supreme one-page law | is authoritative over every document, including this one; wherever this file diverges from , that page wins and this file must be corrected.  (C0) is the structured long-form expansion of  and the home of the  identities. |
+| enforcement nuance | regex owns **lexical impossibility**; semantic gates own **conceptual impossibility**. |
+| gate pipeline (mechanical → semantic) |  |
 
 | # | directive |
 |---|---|
-| 1 | **AUTHORITY:** This document is authoritative over repository accidents. |
-
-| # | directive |
-|---|---|
-| 1 | **SUPREME one-page law:** `docs/spec/law.md` is authoritative over every document, including this one; wherever this file diverges from `docs/spec/law.md`, that page wins and this file must be corrected. `docs/spec/constitution.md` (C0) is the structured long-form expansion of `docs/spec/law.md` and the home of the `law.*` identities. |
 | 2 | Readable bootstrap: `docs/spec/agent.md`. **Read this file before repository code.** |
 
 | # | directive |
 |---|---|
 | 1 | Existing Git state may contain: |
 
-- stale syntax
-- stale names
-- migration machinery
-- old ontology
-- host-language patterns
-- historical tests/docs
+| # | directive |
+|---|---|
+| 1 | stale syntax |
+| 2 | stale names |
+| 3 | migration machinery |
+| 4 | old ontology |
+| 5 | host-language patterns |
+| 6 | historical tests/docs |
 
 | # | directive |
 |---|---|
@@ -37,12 +40,7 @@ EDGES NEVER NAME OPERATIONS.
 
 | # | directive |
 |---|---|
-| 1 | **Enforcement nuance:** regex owns **lexical impossibility**; semantic gates own **conceptual impossibility**. |
 | 2 | Do not “solve” naming with one giant regexp — `broker` is as wrong as `router`, `bundle` can encode plurality without ending in `s`, and `tokenview` satisfies `^[a-z][a-z0-9]*$` while encoding two meanings. |
-
-| # | directive |
-|---|---|
-| 1 | **Gate pipeline (mechanical → semantic):** |
 
 ```text
 lexical regex
@@ -57,10 +55,9 @@ lexical regex
 |---|---|
 | 1 | Current migration implementation: `gate/idiom.id`, `gate/path.id`, `gate/host.id`, `gate/admission.id`, `gate/graph.id` — partial coverage until GAP-124 graph gate. |
 
-| # | directive |
+| section |
 |---|---|
-
-## 1. Canonical source
+| 1. Canonical source |
 
 | # | directive |
 |---|---|
@@ -131,41 +128,43 @@ text:parse(json)
 | # | directive |
 |---|---|
 
-## 2. Canonical source zero list
+| section |
+|---|---|
+| 2. Canonical source zero list |
 
 | # | directive |
 |---|---|
 | 1 | Canonical Idol **must not introduce:** |
 
-- `function`, `fun`, `fn`
-- `local`, `let`, `var`, `const`
-- `then`, `do`, `end`
-- `main`, `entry`, `init`
-- `import`, `require`, `req`, `include`
-- `module`, `namespace`
-- `trait`, `interface`, `impl`
-- `class`, `struct` as independent object-model kingdom
-- `concept` as independent protocol kingdom
-- `std.*`, `lib.*`, `core.*`
-- `@comp.*`, `@host.*`, `@runtime.*`, `@c.*` — `@` IS THE CURRENT-WORLD ACCESSOR
-  (`docs/spec/law.md` §4): bare `@` current-world value, `@member` world access
-  (`@target`, `@env`), `@member = v` mutation, postfix `thing@world` / `thing@`,
-  `@{ k=v }` world injection (`thing@{ k=v }` interjection), `@(eval)`; never a
-  compiler/host/runtime/emit directive namespace, and never `@.member` or
-  `@:member` — `@` already accesses, so `@.` and `@:` are INVALID
+| # | directive |
+|---|---|
+| 1 | `function`, `fun`, `fn` |
+| 2 | `local`, `let`, `var`, `const` |
+| 3 | `then`, `do`, `end` |
+| 4 | `main`, `entry`, `init` |
+| 5 | `import`, `require`, `req`, `include` |
+| 6 | `module`, `namespace` |
+| 7 | `trait`, `interface`, `impl` |
+| 8 | `class`, `struct` as independent object-model kingdom |
+| 9 | `concept` as independent protocol kingdom |
+| 10 | `std.*`, `lib.*`, `core.*` |
+| 11 | `@comp.*`, `@host.*`, `@runtime.*`, `@c.*` — `@` IS THE CURRENT-WORLD ACCESSOR (`docs/spec/law.md` §4): bare `@` current-world value, `@member` world access (`@target`, `@env`), `@member = v` mutation, postfix `thing@world` / `thing@`, `@{ k=v }` world injection (`thing@{ k=v }` interjection), `@(eval)`; never a compiler/host/runtime/emit directive namespace, and never `@.member` or `@:member` — `@` already accesses, so `@.` and `@:` are INVALID |
 
 | # | directive |
 |---|---|
 | 1 | **Aggregate access must not be:** |
 
-- `x:get(k)`, `x:set(k,v)`, `get(x, k)`, `set(x, k, v)` — computed projection is
-  `x[k]`, and its place face is `x[k] = v`
+| # | directive |
+|---|---|
+| 1 | `x:get(k)`, `x:set(k,v)`, `get(x, k)`, `set(x, k, v)` — computed projection is `x[k]`, and its place face is `x[k] = v` |
 
 | # | directive |
 |---|---|
 | 1 | **Ordinary application must not be:** |
 
-- `f:call(x)`, `f.call(x)`, `table(key)` standing in for aggregate indexing
+| # | directive |
+|---|---|
+| 1 | `f:call(x)`, `f.call(x)`, `table(key)` standing in for aggregate indexing |
 
 | # | directive |
 |---|---|
@@ -184,16 +183,20 @@ position = text:find(pattern)
 | # | directive |
 |---|---|
 
-## 3. Application / table dispatch
+| section |
+|---|---|
+| 3. Application / table dispatch |
 
 | # | directive |
 |---|---|
 | 1 | One application algebra owns: |
 
-- relation, subject, operand, result
-- descriptor, demand, effect
-- world requirement, witness
-- stage, provenance, realization
+| # | directive |
+|---|---|
+| 1 | relation, subject, operand, result |
+| 2 | descriptor, demand, effect |
+| 3 | world requirement, witness |
+| 4 | stage, provenance, realization |
 
 | # | directive |
 |---|---|
@@ -208,7 +211,9 @@ position = text:find(pattern)
 | # | directive |
 |---|---|
 
-## 4. Edge law
+| section |
+|---|---|
+| 4. Edge law |
 
 | # | directive |
 |---|---|
@@ -257,17 +262,21 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 5. Reverse edge zero
+| section |
+|---|---|
+| 5. Reverse edge zero |
 
 | # | directive |
 |---|---|
 | 1 | Do not create semantic inverse duplicates: |
 
-- `calls` / `calledby`
-- `contains` / `containedby`
-- `uses` / `usedby`
-- `reads` / `readby`
-- `parent` / `child`
+| # | directive |
+|---|---|
+| 1 | `calls` / `calledby` |
+| 2 | `contains` / `containedby` |
+| 3 | `uses` / `usedby` |
+| 4 | `reads` / `readby` |
+| 5 | `parent` / `child` |
 
 | # | directive |
 |---|---|
@@ -277,7 +286,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 6. Resolve once
+| section |
+|---|---|
+| 6. Resolve once |
 
 | # | directive |
 |---|---|
@@ -291,12 +302,14 @@ command --run--> process
 |---|---|
 | 1 | After resolution there is no: |
 
-- `findFunc(name)`, `findByName(name)`
-- semantic `.get(name)`, semantic `["name"]`
-- callee string matching
-- descriptor name identity matching
-- path-based lookup, module lookup
-- namespace / global / parent-scope / parent-world fallback
+| # | directive |
+|---|---|
+| 1 | `findFunc(name)`, `findByName(name)` |
+| 2 | semantic `.get(name)`, semantic `["name"]` |
+| 3 | callee string matching |
+| 4 | descriptor name identity matching |
+| 5 | path-based lookup, module lookup |
+| 6 | namespace / global / parent-scope / parent-world fallback |
 
 | # | directive |
 |---|---|
@@ -306,7 +319,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 7. String matching classification
+| section |
+|---|---|
+| 7. String matching classification |
 
 | # | directive |
 |---|---|
@@ -332,7 +347,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 8. `.get` / `[]` host rule
+| section |
+|---|---|
+| 8. `.get` / `[]` host rule |
 
 | # | directive |
 |---|---|
@@ -342,20 +359,24 @@ command --run--> process
 |---|---|
 | 1 | **Allowed:** |
 
-- `graph.get(exact_id)`
-- `rows[application_id]`
-- `json.object.get("field")`
-- runtime user-data map lookup
+| # | directive |
+|---|---|
+| 1 | `graph.get(exact_id)` |
+| 2 | `rows[application_id]` |
+| 3 | `json.object.get("field")` |
+| 4 | runtime user-data map lookup |
 
 | # | directive |
 |---|---|
 | 1 | **Forbidden:** |
 
-- `functions.get(name)`
-- `descriptors.get(name)`
-- `handlers.get(kind_name)`
-- `worlds.get("io")`
-- `semantic["read"]`
+| # | directive |
+|---|---|
+| 1 | `functions.get(name)` |
+| 2 | `descriptors.get(name)` |
+| 3 | `handlers.get(kind_name)` |
+| 4 | `worlds.get("io")` |
+| 5 | `semantic["read"]` |
 
 | # | directive |
 |---|---|
@@ -365,7 +386,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 9. Naming — one word / one thing
+| section |
+|---|---|
+| 9. Naming — one word / one thing |
 
 | # | directive |
 |---|---|
@@ -386,7 +409,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 10. Plural zero
+| section |
+|---|---|
+| 10. Plural zero |
 
 | # | directive |
 |---|---|
@@ -413,7 +438,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11. Able zero
+| section |
+|---|---|
+| 11. Able zero |
 
 | # | directive |
 |---|---|
@@ -436,7 +463,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11a. Boolean-mirror zero (BOOLEAN-MIRROR-ZERO)
+| section |
+|---|---|
+| 11a. Boolean-mirror zero (BOOLEAN-MIRROR-ZERO) |
 
 | # | directive |
 |---|---|
@@ -460,7 +489,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11b. Catalog zero (CATALOG-ZERO)
+| section |
+|---|---|
+| 11b. Catalog zero (CATALOG-ZERO) |
 
 | # | directive |
 |---|---|
@@ -484,7 +515,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11c. Magic-code zero (MAGIC-CODE-ZERO)
+| section |
+|---|---|
+| 11c. Magic-code zero (MAGIC-CODE-ZERO) |
 
 | # | directive |
 |---|---|
@@ -496,10 +529,12 @@ command --run--> process
 |---|---|
 | 1 | Forbidden reconstructions: |
 
-- negative status → diagnostic (`lexErrorFromCode`)
-- enum ordinal → host enum (`tokenKindFromOrdinal`)
-- opcode → semantic relation
-- foreign `$?` → run outcome
+| # | directive |
+|---|---|
+| 1 | negative status → diagnostic (`lexErrorFromCode`) |
+| 2 | enum ordinal → host enum (`tokenKindFromOrdinal`) |
+| 3 | opcode → semantic relation |
+| 4 | foreign `$?` → run outcome |
 
 | # | directive |
 |---|---|
@@ -508,7 +543,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11d. Schema-one (SCHEMA-ONE)
+| section |
+|---|---|
+| 11d. Schema-one (SCHEMA-ONE) |
 
 | # | directive |
 |---|---|
@@ -519,21 +556,22 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11e. Main zero / generic-action zero / collision zero
+| section |
+|---|---|
+| 11e. Main zero / generic-action zero / collision zero |
 
-- **MAIN-ZERO** (`law.main.zero`): file-scope result or the named step. Never
-  `main: i64 = ()` wrapping another routine.
-- **GENERIC-ACTION-ZERO** (`law.action.zero`): `run`, `execute`, `process`,
-  `apply`, `perform`, `handle` as root/helper names require an actual semantic
-  subject. `command:run()` is legitimate; `run: i64 = ()` is not.
-- **FOUNDATIONAL-WORD-COLLISION-ZERO** (`law.foundation.zero`): do not use
-  `apply`, `project`, `realize`, `resolve`, `bind`, `demand`, `witness`,
-  `relation`, `subject`, `world`, `shape`, `descriptor` as generic helpers.
+| # | directive |
+|---|---|
+| 1 | **MAIN-ZERO** (`law.main.zero`): file-scope result or the named step. Never `main: i64 = ()` wrapping another routine. |
+| 2 | **GENERIC-ACTION-ZERO** (`law.action.zero`): `run`, `execute`, `process`, `apply`, `perform`, `handle` as root/helper names require an actual semantic subject. `command:run()` is legitimate; `run: i64 = ()` is not. |
+| 3 | **FOUNDATIONAL-WORD-COLLISION-ZERO** (`law.foundation.zero`): do not use `apply`, `project`, `realize`, `resolve`, `bind`, `demand`, `witness`, `relation`, `subject`, `world`, `shape`, `descriptor` as generic helpers. |
 
 | # | directive |
 |---|---|
 
-## 11f. Evidence-subject one (EVIDENCE-SUBJECT-ONE)
+| section |
+|---|---|
+| 11f. Evidence-subject one (EVIDENCE-SUBJECT-ONE) |
 
 | # | directive |
 |---|---|
@@ -545,9 +583,11 @@ command --run--> process
 |---|---|
 | 1 | Status authorities: |
 
-- executed frontier → `docs/bootstrap.md`
-- metrics interpretation → `docs/METRICS.md`
-- revision-bound evidence → generated evidence artifact
+| # | directive |
+|---|---|
+| 1 | executed frontier → `docs/bootstrap.md` |
+| 2 | metrics interpretation → `docs/METRICS.md` |
+| 3 | revision-bound evidence → generated evidence artifact |
 
 | # | directive |
 |---|---|
@@ -557,7 +597,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11g. Oracle bound
+| section |
+|---|---|
+| 11g. Oracle bound |
 
 | # | directive |
 |---|---|
@@ -568,7 +610,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11h. Source-family one
+| section |
+|---|---|
+| 11h. Source-family one |
 
 | # | directive |
 |---|---|
@@ -583,7 +627,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11i. Representation one
+| section |
+|---|---|
+| 11i. Representation one |
 
 | # | directive |
 |---|---|
@@ -599,16 +645,20 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11j. Guard one
+| section |
+|---|---|
+| 11j. Guard one |
 
 | # | directive |
 |---|---|
 | 1 | A guard is an unresolved semantic alternative whose fast realization depends on a fact (`law.guard.one`). |
 | 2 | Not an optimization artifact, type-check object, or a reason to box everything. |
 
-- fact known → guard 0
-- fact speculated from evidence → exact guard + exact slow alternative
-- fact unknown → lawful general realization
+| # | directive |
+|---|---|
+| 1 | fact known → guard 0 |
+| 2 | fact speculated from evidence → exact guard + exact slow alternative |
+| 3 | fact unknown → lawful general realization |
 
 | # | directive |
 |---|---|
@@ -618,7 +668,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11k. Specialize budget
+| section |
+|---|---|
+| 11k. Specialize budget |
 
 | # | directive |
 |---|---|
@@ -630,7 +682,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11l. Internal ABI
+| section |
+|---|---|
+| 11l. Internal ABI |
 
 | # | directive |
 |---|---|
@@ -642,7 +696,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11m. Crash first / cost explain
+| section |
+|---|---|
+| 11m. Crash first / cost explain |
 
 | # | directive |
 |---|---|
@@ -654,7 +710,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11n. Application consumer zero
+| section |
+|---|---|
+| 11n. Application consumer zero |
 
 | # | directive |
 |---|---|
@@ -667,7 +725,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11o. Fact locality one
+| section |
+|---|---|
+| 11o. Fact locality one |
 
 | # | directive |
 |---|---|
@@ -679,7 +739,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11p. Grammar one
+| section |
+|---|---|
+| 11p. Grammar one |
 
 | # | directive |
 |---|---|
@@ -697,7 +759,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 11q. Control plane derived zero
+| section |
+|---|---|
+| 11q. Control plane derived zero |
 
 | # | directive |
 |---|---|
@@ -708,7 +772,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 12. Role noun zero
+| section |
+|---|---|
+| 12. Role noun zero |
 
 | # | directive |
 |---|---|
@@ -725,7 +791,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 13. Collision zero
+| section |
+|---|---|
+| 13. Collision zero |
 
 | # | directive |
 |---|---|
@@ -750,7 +818,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 14. Qualifier zero
+| section |
+|---|---|
+| 14. Qualifier zero |
 
 | # | directive |
 |---|---|
@@ -767,7 +837,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 15. Meta / organizational zero
+| section |
+|---|---|
+| 15. Meta / organizational zero |
 
 | # | directive |
 |---|---|
@@ -785,7 +857,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 16. Abbreviation zero
+| section |
+|---|---|
+| 16. Abbreviation zero |
 
 | # | directive |
 |---|---|
@@ -802,7 +876,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 17. Nil / presence
+| section |
+|---|---|
+| 17. Nil / presence |
 
 | # | directive |
 |---|---|
@@ -815,7 +891,9 @@ command --run--> process
 | # | directive |
 |---|---|
 
-## 18. Conversion / format
+| section |
+|---|---|
+| 18. Conversion / format |
 
 | # | directive |
 |---|---|
@@ -859,7 +937,9 @@ migrate   to(target)(value) → value:to(target) → value
 | # | directive |
 |---|---|
 
-## 18a. Source inference (SOURCE-INFER-ONE)
+| section |
+|---|---|
+| 18a. Source inference (SOURCE-INFER-ONE) |
 
 | # | directive |
 |---|---|
@@ -958,7 +1038,9 @@ ZERO REDUNDANT REALIZATION
 | # | directive |
 |---|---|
 
-## 18b. Fact composition inference (FACT-COMPOSITION-INFER-ONE)
+| section |
+|---|---|
+| 18b. Fact composition inference (FACT-COMPOSITION-INFER-ONE) |
 
 | # | directive |
 |---|---|
@@ -1031,7 +1113,9 @@ SOURCE MINIMUM. GRAPH MAXIMUM. REALIZATION MINIMUM.
 | # | directive |
 |---|---|
 
-## 19. File / directory law
+| section |
+|---|---|
+| 19. File / directory law |
 
 | # | directive |
 |---|---|
@@ -1060,12 +1144,16 @@ gate/
 | # | directive |
 |---|---|
 
-## 20. World / universe / projection
+| section |
+|---|---|
+| 20. World / universe / projection |
 
-- **World:** authority-bearing facts/witnesses
-- **Universe:** closed compiler-internal fact set for body/application
-- **Projection:** select exact facts preserving id/origin
-- **Injection/composition:** make exact selected facts available to exact context/application
+| # | directive |
+|---|---|
+| 1 | **World:** authority-bearing facts/witnesses |
+| 2 | **Universe:** closed compiler-internal fact set for body/application |
+| 3 | **Projection:** select exact facts preserving id/origin |
+| 4 | **Injection/composition:** make exact selected facts available to exact context/application |
 
 | # | directive |
 |---|---|
@@ -1087,7 +1175,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 21. Protocol
+| section |
+|---|---|
+| 21. Protocol |
 
 | # | directive |
 |---|---|
@@ -1110,7 +1200,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 22. FTCFTW
+| section |
+|---|---|
+| 22. FTCFTW |
 
 | # | directive |
 |---|---|
@@ -1134,7 +1226,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 23. SHC
+| section |
+|---|---|
+| 23. SHC |
 
 | # | directive |
 |---|---|
@@ -1153,7 +1247,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 24. Hard file / path rules
+| section |
+|---|---|
+| 24. Hard file / path rules |
 
 | # | directive |
 |---|---|
@@ -1190,7 +1286,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 25. Hard lexical regex gates
+| section |
+|---|---|
+| 25. Hard lexical regex gates |
 
 | # | directive |
 |---|---|
@@ -1225,7 +1323,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 26. File-name regex gates
+| section |
+|---|---|
+| 26. File-name regex gates |
 
 | # | directive |
 |---|---|
@@ -1243,12 +1343,14 @@ gate/
 |---|---|
 | 1 | **High-risk filename suffix/prefix review patterns:** |
 
-- `(?i)(reader|writer|runner|caller|encoder|decoder|parser|formatter|checker|validator|builder|emitter|generator|scanner|resolver|provider|producer|consumer)\.id$`
-- `(?i)(router|gateway|dispatcher|registry|manager|factory|adapter|broker|mediator|controller|coordinator|orchestrator|handler|executor|engine|pipeline|scheduler|loader|bridge|shim|proxy|wrapper|frontend|backend|context|session|service|provider|framework|container)\.id$`
-- `(?i)(callable|readable|writable|iterable|indexable|hashable|comparable|serializable|encodable|decodable|parseable|printable|executable|runnable|awaitable|seekable)\.id$`
-- `(?i)(bytes|strings|fields|values|arguments|results|nodes|edges|captures|tests|gates|examples|fixtures|files|rules|worlds|protocols|descriptors|collections|contracts|encodings|formats)\.id$`
-- `(?i)(pass|phase|gap)[-_]?[0-9]+`
-- `(?i)(showcase|smoke|legacy|migration|deprecated|old|compat)`
+| # | directive |
+|---|---|
+| 1 | `(?i)(reader\|writer\|runner\|caller\|encoder\|decoder\|parser\|formatter\|checker\|validator\|builder\|emitter\|generator\|scanner\|resolver\|provider\|producer\|consumer)\.id$` |
+| 2 | `(?i)(router\|gateway\|dispatcher\|registry\|manager\|factory\|adapter\|broker\|mediator\|controller\|coordinator\|orchestrator\|handler\|executor\|engine\|pipeline\|scheduler\|loader\|bridge\|shim\|proxy\|wrapper\|frontend\|backend\|context\|session\|service\|provider\|framework\|container)\.id$` |
+| 3 | `(?i)(callable\|readable\|writable\|iterable\|indexable\|hashable\|comparable\|serializable\|encodable\|decodable\|parseable\|printable\|executable\|runnable\|awaitable\|seekable)\.id$` |
+| 4 | `(?i)(bytes\|strings\|fields\|values\|arguments\|results\|nodes\|edges\|captures\|tests\|gates\|examples\|fixtures\|files\|rules\|worlds\|protocols\|descriptors\|collections\|contracts\|encodings\|formats)\.id$` |
+| 5 | `(?i)(pass\|phase\|gap)[-_]?[0-9]+` |
+| 6 | `(?i)(showcase\|smoke\|legacy\|migration\|deprecated\|old\|compat)` |
 
 | # | directive |
 |---|---|
@@ -1257,7 +1359,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 27. Directory-name regex gates
+| section |
+|---|---|
+| 27. Directory-name regex gates |
 
 | # | directive |
 |---|---|
@@ -1294,7 +1398,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 28. Plural regex is not sufficient
+| section |
+|---|---|
+| 28. Plural regex is not sufficient |
 
 | # | directive |
 |---|---|
@@ -1316,18 +1422,20 @@ gate/
 | # | directive |
 |---|---|
 
-## 29. Semantic role gates — regex cannot replace these
+| section |
+|---|---|
+| 29. Semantic role gates — regex cannot replace these |
 
 | # | directive |
 |---|---|
 | 1 | For every new/changed project-owned identity ask: |
 
-1. What independently observable thing exists?
-2. Is this name merely: capability, role, cardinality, transformation, direction,
-   representation, stage, target, provenance, state, implementation technique,
-   collection, or mediator responsibility?
-3. Would changing one of those facts force renaming the entity?
-4. Does existing Idol machinery already own the implied behavior?
+| # | directive |
+|---|---|
+| 1 | What independently observable thing exists? |
+| 2 | Is this name merely: capability, role, cardinality, transformation, direction, representation, stage, target, provenance, state, implementation technique, collection, or mediator responsibility? |
+| 3 | Would changing one of those facts force renaming the entity? |
+| 4 | Does existing Idol machinery already own the implied behavior? |
 
 | # | directive |
 |---|---|
@@ -1336,7 +1444,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 30. Format / file content gate
+| section |
+|---|---|
+| 30. Format / file content gate |
 
 | # | directive |
 |---|---|
@@ -1357,47 +1467,57 @@ gate/
 | # | directive |
 |---|---|
 
-## 31. Source-file content hard stops
+| section |
+|---|---|
+| 31. Source-file content hard stops |
 
 | # | directive |
 |---|---|
 | 1 | A **new canonical** `.id` file may not introduce: |
 
-- `main` wrapper, import/module syntax
-- `std`/`lib`/`core` namespace
-- `table(key)` or other `()` standing in for aggregate indexing; `.get`/`.set`/`.call` access
-- `has`/`contains` presence wrapper
-- `*able`/`*ible` protocol name
-- encode/decode subsystem
-- role-noun protocol object
-- collision mediator object
-- Pass/history prose, old project identity
+| # | directive |
+|---|---|
+| 1 | `main` wrapper, import/module syntax |
+| 2 | `std`/`lib`/`core` namespace |
+| 3 | `table(key)` or other `()` standing in for aggregate indexing; `.get`/`.set`/`.call` access |
+| 4 | `has`/`contains` presence wrapper |
+| 5 | `*able`/`*ible` protocol name |
+| 6 | encode/decode subsystem |
+| 7 | role-noun protocol object |
+| 8 | collision mediator object |
+| 9 | Pass/history prose, old project identity |
 
 | # | directive |
 |---|---|
 | 1 | A **new compiler graph change** may not introduce: |
 
-- operational edge kind
-- semantic string dispatch, semantic path dispatch
-- name-based descriptor identity
-- reverse-edge duplicate authority
-- parent-scope downstream lookup
+| # | directive |
+|---|---|
+| 1 | operational edge kind |
+| 2 | semantic string dispatch, semantic path dispatch |
+| 3 | name-based descriptor identity |
+| 4 | reverse-edge duplicate authority |
+| 5 | parent-scope downstream lookup |
 
 | # | directive |
 |---|---|
 
-## 32. Final agent stop rule
+| section |
+|---|---|
+| 32. Final agent stop rule |
 
 | # | directive |
 |---|---|
 | 1 | **STOP** if: |
 
-- only semantic key available is string
-- only semantic locator is path
-- relation id, subject id, or descriptor id is missing
-- witness is missing
-- easiest fix is registry/router/context
-- easiest fix is operation edge, `.get(name)`, bracket-string dispatch, parent lookup, or compatibility fallback
+| # | directive |
+|---|---|
+| 1 | only semantic key available is string |
+| 2 | only semantic locator is path |
+| 3 | relation id, subject id, or descriptor id is missing |
+| 4 | witness is missing |
+| 5 | easiest fix is registry/router/context |
+| 6 | easiest fix is operation edge, `.get(name)`, bracket-string dispatch, parent lookup, or compatibility fallback |
 
 | # | directive |
 |---|---|
@@ -1407,7 +1527,9 @@ gate/
 | # | directive |
 |---|---|
 
-## 33. Final compression
+| section |
+|---|---|
+| 33. Final compression |
 
 ```text
 NO CALL EDGE.  NO RUN EDGE.  NO READ EDGE.  NO WRITE EDGE.  NO EXECUTE EDGE.
@@ -1446,7 +1568,9 @@ SHC: MAKE IDOL PRODUCE THE FACTS ITSELF.
 | # | directive |
 |---|---|
 
-## Corpus
+| section |
+|---|---|
+| Corpus |
 
 | # | directive |
 |---|---|
@@ -1458,7 +1582,9 @@ SHC: MAKE IDOL PRODUCE THE FACTS ITSELF.
 | # | directive |
 |---|---|
 
-## Live gate mapping (migration)
+| section |
+|---|---|
+| Live gate mapping (migration) |
 
 | # | directive |
 |---|---|

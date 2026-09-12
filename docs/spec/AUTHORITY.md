@@ -1,38 +1,49 @@
-# Idol authority
+| field | value |
+|---|---|
+| title | Idol authority |
 
 | # | directive |
 |---|---|
 | 1 | `clpi/idol` `main` is the sole living semantic authority for Idol. |
 
-## Order
+| section |
+|---|---|
+| Order |
 
-1. `docs/spec/law.md` — supreme compact law.
-2. `docs/spec/constitution.md` — structured expansion and stable `law.*` identity owner.
-3. Generated or human projections (`source.md`, `agent.md`, `canonical.md`, gates, LSP/MCP/docs) — consumers that must agree; never competing law.
-4. Implementation and evidence — must consume exact graph facts and prove behavior/performance.
-5. Research/history — preserved source and ancestry; inactive until reconciled.
+| # | directive |
+|---|---|
+| 1 | `docs/spec/law.md` — supreme compact law. |
+| 2 | `docs/spec/constitution.md` — structured expansion and stable `law.*` identity owner. |
+| 3 | Generated or human projections (`source.md`, `agent.md`, `canonical.md`, gates, LSP/MCP/docs) — consumers that must agree; never competing law. |
+| 4 | Implementation and evidence — must consume exact graph facts and prove behavior/performance. |
+| 5 | Research/history — preserved source and ancestry; inactive until reconciled. |
 
 | # | directive |
 |---|---|
 | 1 | Where the compact law and constitution differ, the compact law is the current owner ruling and the constitution must be repaired without minting an amendment subsystem. |
 | 2 | Where a projection differs from either, the projection is wrong. |
 
-## Current closure
+| section |
+|---|---|
+| Current closure |
 
-- identity: **Idol** / `idol` / `.id`;
-- `()` ordinary application;
-- `[]` computed/indexed projection;
-- `{}` structured pack/table/descriptor structure;
-- `.` one static projection;
-- `:` subject relation/constraint face;
-- `@` current-world access/injection/qualification;
-- one semantic graph, one exact id concept qualified by facts, and one producer
-  per authoritative fact;
-- DNIR and backends are physical realization, never semantic authority;
-- demand/observation remove work before representation choice;
-- FTCFTW requires exact-head Pareto evidence or a proven physical optimum.
+| # | directive |
+|---|---|
+| 1 | identity: **Idol** / `idol` / `.id`; |
+| 2 | `()` ordinary application; |
+| 3 | `[]` computed/indexed projection; |
+| 4 | `{}` structured pack/table/descriptor structure; |
+| 5 | `.` one static projection; |
+| 6 | `:` subject relation/constraint face; |
+| 7 | `@` current-world access/injection/qualification; |
+| 8 | one semantic graph, one exact id concept qualified by facts, and one producer per authoritative fact; |
+| 9 | DNIR and backends are physical realization, never semantic authority; |
+| 10 | demand/observation remove work before representation choice; |
+| 11 | FTCFTW requires exact-head Pareto evidence or a proven physical optimum. |
 
-## Executable source-law edition
+| section |
+|---|---|
+| Executable source-law edition |
 
 | # | directive |
 |---|---|
@@ -54,14 +65,18 @@
 | 3 | The typed cross-class identity/lineage correction is recorded separately as an open architecture gap, not asserted as current compiler enforcement. |
 | 4 | The constitution remains the complete law-id owner while that projection is incomplete; an omitted row does not become permission to consult historical Pass prose. |
 
-## Repository split
+| section |
+|---|---|
+| Repository split |
 
 | # | directive |
 |---|---|
 | 1 | `clpi/idol-native` is the native/self-host/target realization and evidence projection. |
 | 2 | It may retain machine-specific research, controls, and implementation, but it may not establish a second language identity, delimiter law, graph ontology, optimizer law, or evidence truth. |
 
-## Research
+| section |
+|---|---|
+| Research |
 
 | # | directive |
 |---|---|
@@ -78,7 +93,9 @@
 | 2 | Even when a historical document contains an idea retained by current law, the document is non-authoritative and must not be used as current-law training or agent context without an exact current ruling that owns the idea. |
 | 3 | Identical archive bytes are recorded as duplicates rather than treated as independent corroboration. |
 
-## No session authority
+| section |
+|---|---|
+| No session authority |
 
 | # | directive |
 |---|---|

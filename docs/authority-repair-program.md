@@ -1,6 +1,10 @@
-# Authority repair program
+| field | value |
+|---|---|
+| title | Authority repair program |
 
-## Final rulings
+| section |
+|---|---|
+| Final rulings |
 
 | # | directive |
 |---|---|
@@ -653,7 +657,9 @@
 | law.compact.s16 | current | invariant | 16 |  |
 | law.compact.s17 | current | invariant | 17 |  |
 
-## Canonicality status relation
+| section |
+|---|---|
+| Canonicality status relation |
 
 | law | canonicality | edition |
 |---|---|---|

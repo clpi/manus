@@ -1,4 +1,6 @@
-# Idol text and bytes
+| field | value |
+|---|---|
+| title | Idol text and bytes |
 
 | # | directive |
 |---|---|
@@ -6,7 +8,9 @@
 | 2 | This page projects its text, bytes, source-face, demand, and realization facts. |
 | 3 | It is not a second vocabulary or an implementation catalog. |
 
-## Meaning
+| section |
+|---|---|
+| Meaning |
 
 | # | directive |
 |---|---|
@@ -19,17 +23,20 @@
 |---|---|
 | 1 | Canonical source exposes that distinction directly: |
 
-- double quotes delimit text;
-- single quotes delimit bytes;
-- compatibility literals retain their foreign lawset and provenance until a
-  witnessed canonical rewrite;
-- backtick is reserved and never executes a process.
+| # | directive |
+|---|---|
+| 1 | double quotes delimit text; |
+| 2 | single quotes delimit bytes; |
+| 3 | compatibility literals retain their foreign lawset and provenance until a witnessed canonical rewrite; |
+| 4 | backtick is reserved and never executes a process. |
 
 | # | directive |
 |---|---|
 | 1 | [`GAP-145`](../../gaps/GAP-145.md) owns the distinct production lexical identities still required for those facts to survive the token boundary. |
 
-## Relations and projection
+| section |
+|---|---|
+| Relations and projection |
 
 | # | directive |
 |---|---|
@@ -49,7 +56,9 @@
 | 2 | A byte offset, scalar position, and grapheme position are not interchangeable merely because one host API represents each as an integer. |
 | 3 | Unknown or absent projection results remain semantic cases and never become an ordinary sentinel. |
 
-## Demand and realization
+| section |
+|---|---|
+| Demand and realization |
 
 | # | directive |
 |---|---|
@@ -63,7 +72,9 @@
 | 2 | It may not assume validity, flatten incompatible foreign text laws, or convert an unknown fact to false. |
 | 3 | If required text vocabulary or law is absent from the graph, the source is `SEMANTIC-VOCABULARY-BLOCKED` rather than expressed through a helper predicate or namespace. |
 
-## Current implementation boundary
+| section |
+|---|---|
+| Current implementation boundary |
 
 | # | directive |
 |---|---|

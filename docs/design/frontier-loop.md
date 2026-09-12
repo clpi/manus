@@ -1,6 +1,10 @@
-# frontier-loop
+| field | value |
+|---|---|
+| title | frontier-loop |
 
-## loop
+| section |
+|---|---|
+| loop |
 
 | stage | act |
 |---|---|
@@ -9,7 +13,9 @@
 | decide | integrate watch reject |
 | log | append dated entry to frontier-log.md |
 
-## cadence
+| section |
+|---|---|
+| cadence |
 
 | rhythm | what | owner |
 |---|---|---|
@@ -18,7 +24,9 @@
 | monthly | deep scan proceedings | loop agent |
 | continuous | watchlist triggers | coordinator |
 
-## sources
+| section |
+|---|---|
+| sources |
 
 | class | items |
 |---|---|
@@ -29,7 +37,9 @@
 | hardware | apple silicon intel amd risc-v cheri |
 | trackers | llvm egglog cranelift verus kleidiai riscv |
 
-## decide
+| section |
+|---|---|
+| decide |
 
 | outcome | meaning |
 |---|---|
@@ -37,7 +47,9 @@
 | watch | logged with revisit trigger |
 | reject | logged with reason; not rescanned |
 
-## escalate
+| section |
+|---|---|
+| escalate |
 
 | condition | act |
 |---|---|

@@ -1,10 +1,14 @@
-# Idol numeric meaning
+| field | value |
+|---|---|
+| title | Idol numeric meaning |
 
 | # | directive |
 |---|---|
 | 1 | This page is a projection of [`docs/spec/constitution.md`](constitution.md), not a second numeric specification or a primitive-type catalog. |
 
-## Primitive-zero
+| section |
+|---|---|
+| Primitive-zero |
 
 | # | directive |
 |---|---|
@@ -15,19 +19,23 @@
 |---|---|
 | 1 | Numeric meaning consists of one numeric value or relation plus demanded facts, including where observable: |
 
-- exact value, range, and cardinality;
-- integral, rational, real, or other admitted numeric law;
-- signedness, width, radix, precision, and floating format;
-- overflow, rounding, exceptional-value, and comparison laws;
-- bit, serialization, ABI, foreign-lawset, and target obligations;
-- provenance, proof, demand, and result correspondence.
+| # | directive |
+|---|---|
+| 1 | exact value, range, and cardinality; |
+| 2 | integral, rational, real, or other admitted numeric law; |
+| 3 | signedness, width, radix, precision, and floating format; |
+| 4 | overflow, rounding, exceptional-value, and comparison laws; |
+| 5 | bit, serialization, ABI, foreign-lawset, and target obligations; |
+| 6 | provenance, proof, demand, and result correspondence. |
 
 | # | directive |
 |---|---|
 | 1 | Qualification belongs in those facts. |
 | 2 | Native relation identity does not encode `i64`, `u32`, `f64`, ABI class, register class, or target spelling. |
 
-## Literals and demand
+| section |
+|---|---|
+| Literals and demand |
 
 | # | directive |
 |---|---|
@@ -46,7 +54,9 @@ ratio: f32 = input
 | 2 | Do not reconstruct it from a source enum or copy a host promotion table. |
 | 3 | If the required numeric law is absent from the authoritative graph vocabulary, the result is `SEMANTIC-VOCABULARY-BLOCKED`. |
 
-## Realization freedom
+| section |
+|---|---|
+| Realization freedom |
 
 | # | directive |
 |---|---|
@@ -58,7 +68,9 @@ ratio: f32 = input
 | 1 | Demand should erase unused numeric work before materialization. |
 | 2 | Range and exact value facts may erase checks, narrow physical operations, fold relations, or select stronger algorithms while preserving the original relation, application, value, and transformation lineage. |
 
-## Current implementation boundary
+| section |
+|---|---|
+| Current implementation boundary |
 
 | # | directive |
 |---|---|

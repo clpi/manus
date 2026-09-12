@@ -1,4 +1,6 @@
-# PROTOCOL-PROJECTION-ONE
+| field | value |
+|---|---|
+| title | PROTOCOL-PROJECTION-ONE |
 
 | # | directive |
 |---|---|
@@ -14,10 +16,9 @@
 |---|---|
 | 1 | This is not "standardize magic methods." It is: **standardize semantic algebras, then project their natural relation faces from exact graph facts.** The programmer gets the ergonomics of *just define what this thing naturally does*; the compiler gets far more information than an interface system, and therefore far more freedom to erase, fuse, specialize, or replace the mechanism entirely. |
 
-| # | directive |
+| section |
 |---|---|
-
-## §1 `.` IS NOT `:` — AND A HOME IS NOT A SUBJECT
+| §1 `.` IS NOT `:` — AND A HOME IS NOT A SUBJECT |
 
 | # | directive |
 |---|---|
@@ -55,7 +56,9 @@
 | 2 | There is no import/module/package object. |
 | 3 | After resolution, path is provenance only. |
 
-## §2 SUBJECT-ONE — `self` is migration debt
+| section |
+|---|---|
+| §2 SUBJECT-ONE — `self` is migration debt |
 
 | # | directive |
 |---|---|
@@ -63,7 +66,9 @@
 | 2 | Canonical graph records `application --subject--> value`; canonical source writes `value:relation(...)`. |
 | 3 | An explicit `self` parameter that merely encodes relation orientation is debt, not design. |
 
-## §3 ITERATION-ONE — `for` does not mean `iter` then `next`
+| section |
+|---|---|
+| §3 ITERATION-ONE — `for` does not mean `iter` then `next` |
 
 | # | directive |
 |---|---|
@@ -92,7 +97,9 @@
 |---|---|
 | 1 | **This is the same reason high-level Idol can beat hand-written C: the source does not commit to iteration mechanics.** |
 
-### §3.1 Iteration is NOT "has a relation named `next`"
+| section |
+|---|---|
+| §3.1 Iteration is NOT "has a relation named `next`" |
 
 | # | directive |
 |---|---|
@@ -103,17 +110,18 @@
 | 1 | That makes the SPELLING `next` semantic authority — exactly what Idol exists to eliminate. |
 | 2 | Correct in both directions, neither depending on the string: |
 
-- **Facts prove the algebra.** A meaningful `cursor:next()` plus sufficient
-  transition, result and termination facts may PROVE iteration applicability.
-- **The algebra projects the face.** Where `iteration(D)` is already known, a
-  demand for one step resolves `next` as the **uniquely projected one-step face**
-  — no handwritten interface slot.
+| # | directive |
+|---|---|
+| 1 | **Facts prove the algebra.** A meaningful `cursor:next()` plus sufficient transition, result and termination facts may PROVE iteration applicability. |
+| 2 | **The algebra projects the face.** Where `iteration(D)` is already known, a demand for one step resolves `next` as the **uniquely projected one-step face** — no handwritten interface slot. |
 
 | # | directive |
 |---|---|
 | 1 | The second direction is the stronger one, and it reverses the usual dependency: `cursor` does not become iterable by implementing `next`; `cursor:next()` is a projection of the iteration algebra `cursor` already participates in. |
 
-### §3.2 Worked shapes
+| section |
+|---|---|
+| §3.2 Worked shapes |
 
 | # | directive |
 |---|---|
@@ -132,7 +140,9 @@
 | 1 | for(tokens) (token) tokenstream carries {result token, ordering source-order, termination end-of-input}. |
 | 2 | The programmer implements neither Iterator<Token> nor necessarily tokens:next(). |
 
-## §4 NO PROTOCOL REGISTRATION, AND NO PROTOCOL OBJECT
+| section |
+|---|---|
+| §4 NO PROTOCOL REGISTRATION, AND NO PROTOCOL OBJECT |
 
 | # | directive |
 |---|---|
@@ -146,7 +156,9 @@
 |---|---|
 | 1 | `able(r)` remains the rare explicit open-boundary requirement; it does **not** create a protocol object. **Relation is protocol** — use actual relations, never adjective interfaces. |
 
-## §5 THE ALGEBRA GENERALIZES FAR BEYOND ITERATION
+| section |
+|---|---|
+| §5 THE ALGEBRA GENERALIZES FAR BEYOND ITERATION |
 
 | # | directive |
 |---|---|
@@ -164,7 +176,9 @@
 |---|---|
 | 1 | **Inference must be EXACT and FAIL CLOSED on ambiguity.** If several incompatible laws could result, that is an ambiguity, and the programmer states only the smallest missing distinction — never a conformance declaration. |
 
-## §6 THIS MUST CREATE OPTIMIZATION INFORMATION, NEVER RUNTIME MACHINERY
+| section |
+|---|---|
+| §6 THIS MUST CREATE OPTIMIZATION INFORMATION, NEVER RUNTIME MACHINERY |
 
 | # | directive |
 |---|---|
@@ -206,29 +220,32 @@
 | 2 | A sequence with iteration + known cardinality + contiguous representation + pure body + associative reduction lets the graph conclude scalar, SIMD, parallel and tree reduction are ALL lawful, and pick the cheapest. |
 | 3 | The programmer never writes `RandomAccessIterator` / `ContiguousIterator` / `ParallelIterator` — **that would be exposing compiler facts as user taxonomy.** |
 
-## §7 MANDATORY NEGATIVE CONTROLS
+| section |
+|---|---|
+| §7 MANDATORY NEGATIVE CONTROLS |
 
 | # | directive |
 |---|---|
 | 1 | Each must be executable. |
 | 2 | A protocol-inference system without these infers nothing trustworthy. |
 
-1. same relation name on two incompatible descriptors -> **ambiguity, never
-   first-match**
-2. a relation named `next` with NO iteration laws -> **must NOT become iterable**
-3. an iteration law with NO explicit `next` -> **`for` must still work**
-4. a static member named `next` that is not subject behavior -> **`.` stays a
-   static projection**
-5. remove the result/termination law -> **inferred iteration must disappear**
-6. move a relation to another home, identity preserved -> **semantics unchanged**
-7. same answer, altered application subject/relation graph -> **the
-   graph-equivalence gate must FAIL**
+| # | directive |
+|---|---|
+| 1 | same relation name on two incompatible descriptors -> **ambiguity, never first-match** |
+| 2 | a relation named `next` with NO iteration laws -> **must NOT become iterable** |
+| 3 | an iteration law with NO explicit `next` -> **`for` must still work** |
+| 4 | a static member named `next` that is not subject behavior -> **`.` stays a static projection** |
+| 5 | remove the result/termination law -> **inferred iteration must disappear** |
+| 6 | move a relation to another home, identity preserved -> **semantics unchanged** |
+| 7 | same answer, altered application subject/relation graph -> **the graph-equivalence gate must FAIL** |
 
 | # | directive |
 |---|---|
 | 1 | Control 7 is the link to SOURCE-CONTROL-ONE §8: identical answers from different graphs is still wrong. |
 
-## §8 IMPLEMENTATION DEBT — DO NOT CLAIM ANY OF THIS CLOSED
+| section |
+|---|---|
+| §8 IMPLEMENTATION DEBT — DO NOT CLAIM ANY OF THIS CLOSED |
 
 | # | directive |
 |---|---|
@@ -241,7 +258,9 @@
 | # | directive |
 |---|---|
 
-## §9 MEASURED BASELINE — 2026-08-16, idol `23a24179`, 1,015 tracked `.id`
+| section |
+|---|---|
+| §9 MEASURED BASELINE — 2026-08-16, idol `23a24179`, 1,015 tracked `.id` |
 
 | # | directive |
 |---|---|
@@ -273,7 +292,9 @@
 | # | directive |
 |---|---|
 
-## §10 GRAPH SUBSTRATE — VERIFIED IN CODE 2026-08-16, idol `2462ea29`
+| section |
+|---|---|
+| §10 GRAPH SUBSTRATE — VERIFIED IN CODE 2026-08-16, idol `2462ea29` |
 
 | # | directive |
 |---|---|
@@ -309,30 +330,25 @@
 |---|---|
 | 1 | Card = union { unknown, none, one: id } |
 
-### §10.1 THREE MEASURED GAPS — none of this is closed
+| section |
+|---|---|
+| §10.1 THREE MEASURED GAPS — none of this is closed |
 
-1. **THERE IS NO WORLD FIELD.** `grep -c world` over `ApplicationFact` returns
-   **0**. World ownership is still distributed and transitional, so **injection
-   algebra is NOT yet graph-bound at the application.** Until an exact world
-   fact/id reaches the application, `job@{ clock = fake }()` cannot be reasoned
-   about as a graph fact, and "protocol bound through projection and injection
-   world algebra" is a TARGET, not a current property. `authority` and `witness`
-   Cards do exist, which is the right split — world supplies facts, authority
-   supplies requirement, witness proves satisfaction.
+| # | directive |
+|---|---|
+| 1 | **THERE IS NO WORLD FIELD.** `grep -c world` over `ApplicationFact` returns **0**. World ownership is still distributed and transitional, so **injection algebra is NOT yet graph-bound at the application.** Until an exact world fact/id reaches the application, `job@{ clock = fake }()` cannot be reasoned about as a graph fact, and "protocol bound through projection and injection world algebra" is a TARGET, not a current property. `authority` and `witness` Cards do exist, which is the right split — world supplies facts, authority supplies requirement, witness proves satisfaction. |
 
-2. **BOOTSTRAP APPLICATIONS EMIT MACHINE CODE WITH NO PUBLISHED FACT.**
-   `src/native/bootstrap.zig` is **651 lines recognizing 36 SOURCE SPELLINGS** —
-   `len byte print read write match has to addr alloc free exit env line char
-   sub tail zero observe execute stdin stdout math mem os string test gatecap
-   read_byte remove sqrt sin cos fabs ceil floor` — that lower by SPELLING.
-   Behaviour therefore exists with no graph semantic identity behind it, and
-   demand, protocol closure and world algebra cannot reason about ANY of it.
-   **This must reach zero.** Note `match` and `has` are both on that list.
+| # | directive |
+|---|---|
+| 1 | **BOOTSTRAP APPLICATIONS EMIT MACHINE CODE WITH NO PUBLISHED FACT.** `src/native/bootstrap.zig` is **651 lines recognizing 36 SOURCE SPELLINGS** — `len byte print read write match has to addr alloc free exit env line char sub tail zero observe execute stdin stdout math mem os string test gatecap read_byte remove sqrt sin cos fabs ceil floor` — that lower by SPELLING. Behaviour therefore exists with no graph semantic identity behind it, and demand, protocol closure and world algebra cannot reason about ANY of it. **This must reach zero.** Note `match` and `has` are both on that list. |
 
-3. **`ast_ref` REMAINS — 21 sites in `semantic_graph.zig` alone.** Semantic AST
-   backedges are still live Phase-1 mirroring debt.
+| # | directive |
+|---|---|
+| 1 | **`ast_ref` REMAINS — 21 sites in `semantic_graph.zig` alone.** Semantic AST backedges are still live Phase-1 mirroring debt. |
 
-### §10.2 THE CONVERGENCE TARGET AT THE LANGUAGE BOUNDARY
+| section |
+|---|---|
+| §10.2 THE CONVERGENCE TARGET AT THE LANGUAGE BOUNDARY |
 
 | # | directive |
 |---|---|

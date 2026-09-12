@@ -1,18 +1,16 @@
-# Should the IR be Idol? — measured, and the answer relocates the problem
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | **The question:** if the semantic graph is already the most compact meaningful form, is DNIR a duplicate ontology that should be deleted? |
+| title | Should the IR be Idol? — measured, and the answer relocates the problem |
+| the question | if the semantic graph is already the most compact meaningful form, is DNIR a duplicate ontology that should be deleted? |
 
 | # | directive |
 |---|---|
 | 1 | **The instinct is right and the target is right. |
 | 2 | But DNIR is not the duplicate, and deleting it would not make the graph authoritative.** Measured at idol `5b5ef9dd`. |
 
-| # | directive |
+| section |
 |---|---|
-
-## §1 DNIR BARELY EXISTS AS AN IR
+| §1 DNIR BARELY EXISTS AS AN IR |
 
 | # | directive |
 |---|---|
@@ -23,7 +21,9 @@
 | 1 | **The IR is 618 lines.** It is not a parallel ontology by size — 16x smaller than the pass that writes it. |
 | 2 | Deleting it removes a data structure, not an authority. |
 
-## §2 THE SHADOW AUTHORITY IS THE AST, NOT THE IR
+| section |
+|---|---|
+| §2 THE SHADOW AUTHORITY IS THE AST, NOT THE IR |
 
 | # | directive |
 |---|---|
@@ -41,7 +41,9 @@
 |---|---|
 | 1 | **Therefore deleting DNIR yields `AST -> machine` with no name for the middle.** The duplicate ontology is the AST surviving as a semantic authority — which is exactly what `law C0 §19` forbids and what SOURCE-CONTROL-ONE §11 pins at 0 and finds TOTAL. |
 
-## §3 THE REAL DEFECT IS SMALL, AND IT IS IN THE IR'S CONTENT
+| section |
+|---|---|
+| §3 THE REAL DEFECT IS SMALL, AND IT IS IN THE IR'S CONTENT |
 
 | # | directive |
 |---|---|
@@ -60,7 +62,9 @@
 |---|---|
 | 1 | **The IR carries more semantic identity than realization facts.** That is the duplication — 19 mentions in 618 lines, not a 10,264-line subsystem. |
 
-## §4 DOES ELIMINATING IT SERVE FTCFTW? — NOT DIRECTLY
+| section |
+|---|---|
+| §4 DOES ELIMINATING IT SERVE FTCFTW? — NOT DIRECTLY |
 
 | # | directive |
 |---|---|
@@ -76,7 +80,9 @@
 | 1 | None of those is caused by having an IR. |
 | 2 | All are caused by a fact never reaching the lowering — or never existing in the graph to reach it. **A single form cannot lose facts at a boundary that does not exist, but the boundary losing them here is graph<->AST.** |
 
-## §5 THE RULING
+| section |
+|---|---|
+| §5 THE RULING |
 
 > **ONE SEMANTIC AUTHORITY — the graph. ONE REALIZATION FORM — holding ZERO
 > semantic identity. And a falsifiable test: NO SEMANTIC FACT MAY BE
@@ -91,16 +97,12 @@
 |---|---|
 | 1 | **The executable order, and it is NOT "delete the IR first":** |
 
-1. Give the graph what lowering currently gets from the AST — control regions,
-   iteration, exact exit targets, world, applied identity. **Until then the AST
-   cannot be demoted, and deleting the IR only hides the dependency.**
-2. Move the 19 semantic mentions out of `native_ir.zig`. Small and tractable.
-3. Re-point lowering at the graph, dispatch site by dispatch site, with the
-   corpus differential as the gate. `.if_stmt`/`.num_for`/`.gen_for`/`.brk` are
-   23 of the sites and are the ones that matter.
-4. **Then** ask whether the residual realization form deserves a name. By that
-   point the question answers itself, because what remains will hold nothing but
-   registers, slots and frames — and that is not Idol, it is a machine.
+| # | directive |
+|---|---|
+| 1 | Give the graph what lowering currently gets from the AST — control regions, iteration, exact exit targets, world, applied identity. **Until then the AST cannot be demoted, and deleting the IR only hides the dependency.** |
+| 2 | Move the 19 semantic mentions out of `native_ir.zig`. Small and tractable. |
+| 3 | Re-point lowering at the graph, dispatch site by dispatch site, with the corpus differential as the gate. `.if_stmt`/`.num_for`/`.gen_for`/`.brk` are 23 of the sites and are the ones that matter. |
+| 4 | **Then** ask whether the residual realization form deserves a name. By that point the question answers itself, because what remains will hold nothing but registers, slots and frames — and that is not Idol, it is a machine. |
 
 | # | directive |
 |---|---|
