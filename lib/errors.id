@@ -80,8 +80,8 @@ join: any = (...errs)
     return nil
   { message = parts:concat("; "), cause = nil, kind = "joined" }
 
-# to_string: convert an error to a human-readable string.
-to_string: str = (err: any)
+# to_str: convert an error to a human-readable string.
+to_str: str = (err: any)
   if err == nil
     return ""
   if type(err) == "string"
@@ -90,5 +90,5 @@ to_string: str = (err: any)
   if msg == nil
     msg = err:to(str)
   if has(.cause)(err)
-    msg = msg .. " -> " .. to_string(err.cause)
+    msg = msg .. " -> " .. to_str(err.cause)
   msg
