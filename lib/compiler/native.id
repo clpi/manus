@@ -1215,6 +1215,7 @@ cttry: str = (src: str, k: i64, lc: i64, ind: i64, lhs: str, rhs: str)
 
 main: i64 = ()
     src = stdin:read()
+    src = compiler.opt.zerotrip.zerotrip(src)
     src = compiler.opt.licm.licm(src)
     names = ""
     code = ""
