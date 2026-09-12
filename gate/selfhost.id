@@ -1,0 +1,59 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+cap: str = (shellline: str)
+  chomp(gatecap(shellline))
+
+hashof: str = (path: str)
+  out = cap("shasum -a 256 '{path}' 2>/dev/null")
+  if out == ""
+    return ""
+  out:sub(1, 64)
+
+regen: str = (src: str)
+  cap("zig-out/bin/idol dump-c '{src}' --lib 2>/dev/null | shasum -a 256")
+
+checkbridge: i64 = (root: str, src: str, gen: str, fail: i64)
+  want = hashof("{root}/{gen}")
+  if want == ""
+    print("selfhost gate: FAIL missing {gen}")
+    return fail + 1
+  got = regen("{root}/{src}")
+  if got == ""
+    print("selfhost gate: FAIL regen failed for {src}")
+    return fail + 1
+  if got:sub(1, 64) != want
+    print("selfhost gate: FAIL {gen} not deterministic")
+    return fail + 1
+  print("selfhost gate: PASS {gen} deterministic")
+  fail
+
+checkstage: i64 = (root: str, fail: i64)
+  doc = cap("grep -F 'No compiler B exists' '{root}/docs/bootstrap.md' 2>/dev/null")
+  if doc == ""
+    print("selfhost gate: FAIL docs/bootstrap.md lost S0 stage marker")
+    return fail + 1
+  print("selfhost gate: PASS stage S0 no B")
+  fail
+
+main: i64 = ()
+  root = os.env["SELFHOST_ROOT"]
+  if root == nil or root == ""
+    root = "."
+  fail = 0
+  fail = checkbridge(root, "lib/compiler/lexer.id", "src/lexer_tokenize.c", fail)
+  fail = checkbridge(root, "lib/compiler/parser.id", "src/parser/projection.c", fail)
+  fail = checkstage(root, fail)
+  if fail != 0
+    print("selfhost gate: FAIL {fail} checks")
+    return 1
+  print("selfhost gate: PASS all bridges deterministic stage S0")
+  return 0
