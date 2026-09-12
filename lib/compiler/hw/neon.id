@@ -502,6 +502,9 @@ shouldvec: i64 = (trip: i64, ty: str, ilp: i64)
 peelrule: str = ()
     "peel|first|when|alias,unaligned|count|0"
 
+tripmodel: str = ()
+    "loop|min|2*vf*ilp|red|min|2*vf|slp|min|vf|overhead|prologue+epilogue|tail|scalar-cbz"
+
 ops: str = ()
     "add|number|observe|graph|f32|1|add|number|observe|graph|f64|4|add|number|observe|graph|i32|6|add|number|observe|graph|i64|12|sub|number|observe|graph|f32|2|sub|number|observe|graph|f64|15|sub|number|observe|graph|i32|7|sub|number|observe|graph|i64|13|mul|number|observe|graph|f32|3|mul|number|observe|graph|f64|5|mul|number|observe|graph|i32|8|saxpy|number|observe|graph|f32|9|sum|number|observe|graph|f32|10|sum|number|observe|graph|i32|11|sum|number|observe|graph|i64|14|sum|number|observe|graph|f64|16|"
 
@@ -659,6 +662,8 @@ entry: str = (name: str)
         return "call|compiler.hw.neon.scost|(desc: str)|neon.main|straightline|slp-profitability"
     if name == "semit"
         return "call|compiler.hw.neon.semit|(desc: str)|neon.main|straightline|slp-emission"
+    if name == "tripmodel"
+        return "call|compiler.hw.neon.tripmodel|()|neon.main|cost|trip-thresholds"
     ""
 parsered: str = (s: str, rhs: str, v: str, bnd: str, ty: str)
     op = 0
