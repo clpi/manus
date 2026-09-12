@@ -54,16 +54,15 @@ message: any = (err: any)
 
 join: any = (...errs)
   parts = {}
-  i = 1
-  while i <= errs:len()
-    e = errs[i]
+  n = 0
+  for _, e in errs
     if e != nil
       msg = e.message
       if msg == nil
         msg = e:to(str)
-      parts[parts:len() + 1] = msg
-    i = i + 1
-  if parts:len() == 0
+      n = n + 1
+      parts[n] = msg
+  if n == 0
     return nil
   { message = parts:concat("; "), cause = nil, kind = "joined" }
 
