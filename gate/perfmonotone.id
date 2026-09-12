@@ -1,0 +1,142 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+indexof: i64 = (hay: str, needle: str, from: i64)
+  h = hay:len()
+  n = needle:len()
+  i = from
+  while i + n - 1 <= h
+    if hay:sub(i, i + n - 1) == needle
+      return i
+    i = i + 1
+  0
+
+strip: str = (s: str)
+  n = s:len()
+  i = 1
+  while i <= n
+    c = s:sub(i, i)
+    if c != " " and c != "\t"
+      break
+    i = i + 1
+  j = n
+  while j >= i
+    c = s:sub(j, j)
+    if c != " " and c != "\t"
+      break
+    j = j - 1
+  if j < i
+    return ""
+  s:sub(i, j)
+
+alldash: bool = (s: str)
+  if s == ""
+    return false
+  i = 1
+  n = s:len()
+  while i <= n
+    if s:sub(i, i) != "-"
+      return false
+    i = i + 1
+  true
+
+findlinemarker: i64 = (src: str, marker: str, from: i64)
+  pos = from
+  mlen = marker:len()
+  slen = src:len()
+  while true
+    i = indexof(src, marker, pos)
+    if i == 0
+      return 0
+    ls = i
+    while ls > 1
+      if src:sub(ls - 1, ls - 1) == "\n"
+        break
+      ls = ls - 1
+    le = i + mlen - 1
+    while le < slen
+      if src:sub(le + 1, le + 1) == "\n"
+        break
+      le = le + 1
+    if src:sub(ls, le) == marker
+      return i
+    pos = i + 1
+  0
+
+extractblock: str = (src: str, name: str)
+  bmark = "<!-- idol-perf-" .. name .. ":v1:begin -->"
+  emark = "<!-- idol-perf-" .. name .. ":v1:end -->"
+  bi = findlinemarker(src, bmark, 1)
+  if bi == 0
+    return ""
+  nl1 = indexof(src, "\n", bi)
+  if nl1 == 0
+    return ""
+  ei = findlinemarker(src, emark, nl1 + 1)
+  if ei == 0
+    return ""
+  if ei - 2 < nl1 + 1
+    return ""
+  src:sub(nl1 + 1, ei - 2)
+
+countrows: i64 = (blk: str, header: str)
+  count = 0
+  n = blk:len()
+  pos = 1
+  while pos <= n
+    nl = indexof(blk, "\n", pos)
+    lineend = n
+    if nl != 0
+      lineend = nl - 1
+    p1 = indexof(blk, "|", pos)
+    if p1 != 0 and p1 <= lineend
+      p2 = indexof(blk, "|", p1 + 1)
+      if p2 != 0 and p2 <= lineend
+        cell = strip(blk:sub(p1 + 1, p2 - 1))
+        if cell != "" and cell != header and !alldash(cell)
+          count = count + 1
+    if nl == 0
+      break
+    pos = nl + 1
+  count
+
+main: i64 = ()
+  prog = "docs/perf-monotone-program.md"
+  wantmatrix = 207
+  wantcontract = 16
+  findings = 0
+  total = wantmatrix + wantcontract
+  present = chomp(gatecap("test -f '" .. prog .. "' && echo yes || echo no"))
+  if present != "yes"
+    print("  FAIL " .. prog .. " is missing")
+    findings = 1
+    print("perfmonotone gate: (" .. total:to(str) .. " check(s)) " .. findings:to(str) .. " finding(s)")
+    return 1
+  src = gatecap("cat '" .. prog .. "'")
+  matrix = extractblock(src, "matrix")
+  contract = extractblock(src, "contract")
+  matrixn = countrows(matrix, "technique")
+  contractn = countrows(contract, "invariant")
+  if matrixn == wantmatrix
+    print("  ok   prior-art matrix: " .. matrixn:to(str) .. " rows")
+  else
+    print("  FAIL prior-art matrix: " .. matrixn:to(str) .. " rows, want " .. wantmatrix:to(str))
+    findings = findings + 1
+  if contractn == wantcontract
+    print("  ok   monotonicity contract: " .. contractn:to(str) .. " invariants")
+  else
+    print("  FAIL monotonicity contract: " .. contractn:to(str) .. " invariants, want " .. wantcontract:to(str))
+    findings = findings + 1
+  if findings == 0
+    print("perfmonotone gate: PASS (" .. total:to(str) .. " check(s)) " .. matrixn:to(str) .. " matrix rows, " .. contractn:to(str) .. " contract invariants")
+    return 0
+  print("perfmonotone gate: (" .. total:to(str) .. " check(s)) " .. findings:to(str) .. " finding(s)")
+  findings
