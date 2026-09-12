@@ -29,6 +29,7 @@ scenery     gate/
 scenery     scripts/
 scenery     tools/
 scenery     benchmarks/
+scenery     bench/
 scenery     explore/
 ```
 
