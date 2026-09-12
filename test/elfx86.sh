@@ -3,8 +3,8 @@
 # and lib/compiler/elfx86.id (x86_64 + ELF64/Linux direct backend).
 #
 # Part 1: idol check on both files.
-# Part 2: differential test of the 23 encoder vectors in x86.id's main
-# against the system assembler (clang -arch x86_64); every vector must
+# Part 2: differential test of the 43 encoder vectors in x86.id's main
+# against the system assembler (clang -arch x86_64 -mavx2 -mbmi2); every vector must
 # match byte-for-byte (same oracle strategy as lib/compiler/arm64check.id).
 # Part 3: build the elfx86 emitter (--backend native) and compile four
 # demo programs to ELF64; python3 validates ELF structure (magic, class,
@@ -44,7 +44,7 @@ echo "== build backends =="
 [ -x "$WORK/elfx86bin" ] || fail "elfx86bin not executable"
 pass "compile --backend native"
 
-echo "== differential: 23 encoder vectors vs clang =="
+echo "== differential: 43 encoder vectors vs clang =="
 "$WORK/x86vec" > "$WORK/vec.txt" || fail "run x86vec"
 n=0
 bad=0
@@ -55,7 +55,7 @@ while IFS= read -r line; do
   asm=$(printf '%s' "$asm" | sed 's/^ *//;s/ *$//')
   want=$(printf '%s' "$want" | sed 's/^ *//;s/ *$//' | tr 'A-F' 'a-f')
   printf '.text\n.globl _f\n_f:\n%s\n' "$asm" > "$WORK/v.s"
-  if ! clang -arch x86_64 -c "$WORK/v.s" -o "$WORK/v.o" 2>/dev/null; then
+  if ! clang -arch x86_64 -mavx2 -mbmi2 -c "$WORK/v.s" -o "$WORK/v.o" 2>/dev/null; then
     echo "ASM-FAIL [$n]: $asm"; bad=$((bad + 1)); continue
   fi
   got=$(otool -t "$WORK/v.o" | awk 'NR>2{for(i=2;i<=NF;i++) printf "%s",$i}')
@@ -65,9 +65,9 @@ while IFS= read -r line; do
     echo "MISMATCH [$n]: $asm (want $want got $got)"; bad=$((bad + 1))
   fi
 done < "$WORK/vec.txt"
-[ "$n" = "23" ] || fail "expected 23 vectors, got $n"
+[ "$n" = "43" ] || fail "expected 43 vectors, got $n"
 [ "$bad" = "0" ] || fail "$bad/$n vector mismatches"
-pass "23/23 encoder vectors match clang byte-for-byte"
+pass "43/43 encoder vectors match clang byte-for-byte"
 
 echo "== emit ELF64 demos =="
 printf 'x = 40 + 2\nx\n' | "$WORK/elfx86bin" | xxd -r -p > "$WORK/p1.elf" || fail "emit p1"
