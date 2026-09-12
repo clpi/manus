@@ -1,0 +1,564 @@
+isdig: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+parsenum: i64 = (s: str)
+    v = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    v
+
+decnum: str = (v: i64)
+    if v == 0
+        return "0"
+    out = ""
+    x = v
+    while x > 0
+        d = x - (x // 10) * 10
+        out = "0123456789":sub(d + 1, d + 1) .. out
+        x = x // 10
+    out
+
+oknamechar: i64 = (c: i64)
+    if c >= 65 and c <= 90
+        return 1
+    if c >= 97 and c <= 122
+        return 1
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+okname: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    c = s:byte(1)
+    if c < 65 or c > 122
+        return 0
+    if c > 90 and c < 97
+        return 0
+    i = 2
+    while i <= n
+        if oknamechar(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+oknum: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    i = 1
+    while i <= n
+        if isdig(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+unpad: str = (s: str)
+    a = 1
+    n = s:len()
+    while a <= n and s:byte(a) == 32
+        a = a + 1
+    b = n
+    while b >= a and s:byte(b) == 32
+        b = b - 1
+    if b < a
+        return ""
+    s:sub(a, b)
+
+indof: i64 = (s: str)
+    n = s:len()
+    i = 1
+    while i <= n and s:byte(i) == 32
+        i = i + 1
+    i - 1
+
+linecount: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            n = n + 1
+        i = i + 1
+    if s:len() > 0 and s:byte(s:len()) != 10
+        n = n + 1
+    n
+
+lineat: str = (s: str, k: i64)
+    n = s:len()
+    i = 1
+    cur = 0
+    a = 1
+    while i <= n + 1
+        if i > n or s:byte(i) == 10
+            if cur == k
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+cut: str = (s: str, a: i64, b: i64)
+    out = ""
+    k = a
+    while k <= b
+        out = out .. lineat(s, k) .. "\n"
+        k = k + 1
+    out
+
+spaces: str = (n: i64)
+    out = ""
+    i = 0
+    while i < n
+        out = out .. " "
+        i = i + 1
+    out
+
+wordhit: i64 = (hay: str, key: str, i: i64)
+    n = hay:len()
+    m = key:len()
+    if i + m - 1 > n
+        return 0
+    if hay:sub(i, i + m - 1) != key
+        return 0
+    if i > 1 and oknamechar(hay:byte(i - 1)) == 1
+        return 0
+    if i + m - 1 < n and oknamechar(hay:byte(i + m)) == 1
+        return 0
+    1
+
+hasword: i64 = (hay: str, key: str)
+    i = 1
+    while i <= hay:len()
+        if wordhit(hay, key, i) == 1
+            return 1
+        i = i + 1
+    0
+
+countocc: i64 = (hay: str, key: str)
+    c = 0
+    i = 1
+    while i <= hay:len()
+        if wordhit(hay, key, i) == 1
+            c = c + 1
+        i = i + 1
+    c
+
+iswhile: i64 = (t: str)
+    if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
+        return 1
+    0
+
+loopend: i64 = (src: str, k: i64, lc: i64, ind: i64)
+    e = k
+    j = k + 1
+    while j < lc
+        r = lineat(src, j)
+        if unpad(r):len() > 0 and indof(r) <= ind
+            return e
+        e = j
+        j = j + 1
+    e
+
+bodystep: i64 = (body: str, ind: i64)
+    bc = linecount(body)
+    j = 0
+    while j < bc
+        r = lineat(body, j)
+        if unpad(r):len() > 0
+            return indof(r) - ind
+        j = j + 1
+    1
+
+eqpos: i64 = (t: str)
+    i = 1
+    while i <= t:len()
+        if t:byte(i) == 61
+            return i
+        i = i + 1
+    0
+
+asgtgt: str = (t: str)
+    p = eqpos(t)
+    if p == 0
+        return ""
+    unpad(t:sub(1, p - 1))
+
+asgrhs: str = (t: str)
+    p = eqpos(t)
+    if p == 0
+        return ""
+    unpad(t:sub(p + 1, t:len()))
+
+oppos: i64 = (rhs: str)
+    i = 1
+    while i <= rhs:len()
+        c = rhs:byte(i)
+        if c == 43 or c == 45 or c == 42 or c == 47
+            return i
+        i = i + 1
+    0
+
+rhsop: i64 = (rhs: str)
+    p = oppos(rhs)
+    if p == 0
+        return 0
+    rhs:byte(p)
+
+rhsa: str = (rhs: str)
+    p = oppos(rhs)
+    if p == 0
+        return rhs
+    unpad(rhs:sub(1, p - 1))
+
+rhse: str = (rhs: str)
+    p = oppos(rhs)
+    if p == 0
+        return ""
+    unpad(rhs:sub(p + 1, rhs:len()))
+
+opchar: str = (op: i64)
+    if op == 43
+        return "+"
+    if op == 45
+        return "-"
+    "*"
+
+hascolon: i64 = (s: str)
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 58
+            return 1
+        i = i + 1
+    0
+
+okassign: i64 = (t: str)
+    n = t:len()
+    if n >= 6 and t:sub(1, 6) == "while "
+        return 0
+    if n >= 3 and t:sub(1, 3) == "if "
+        return 0
+    if n >= 7 and t:sub(1, 7) == "return "
+        return 0
+    p = eqpos(t)
+    if p == 0
+        return 0
+    left = unpad(t:sub(1, p - 1))
+    if okname(left) == 0
+        return 0
+    rhs = unpad(t:sub(p + 1, t:len()))
+    if rhs:len() == 0
+        return 0
+    if hascolon(rhs) == 1
+        return 0
+    if eqpos(rhs) > 0
+        return 0
+    if oknum(rhs) == 1
+        return 1
+    if okname(rhs) == 1
+        return 1
+    if rhsop(rhs) == 0
+        return 0
+    a = rhsa(rhs)
+    e = rhse(rhs)
+    if oknum(a) == 0 and okname(a) == 0
+        return 0
+    if oknum(e) == 0 and okname(e) == 0
+        return 0
+    1
+
+targets: str = (body: str)
+    out = ""
+    bc = linecount(body)
+    j = 0
+    while j < bc
+        t = unpad(lineat(body, j))
+        if t:len() > 0 and iswhile(t) == 0
+            p = eqpos(t)
+            if p > 0
+                left = unpad(t:sub(1, p - 1))
+                if okname(left) == 1
+                    out = out .. left .. "|"
+        j = j + 1
+    out
+
+powt: i64 = (v: i64)
+    if v < 2
+        return 0 - 1
+    sh = 0
+    p = 1
+    while p < v
+        p = p * 2
+        sh = sh + 1
+    if p == v
+        return sh
+    0 - 1
+
+splitconst: str = (rhs: str)
+    op = rhsop(rhs)
+    if op == 0
+        return ""
+    if op == 47
+        return ""
+    a = rhsa(rhs)
+    e = rhse(rhs)
+    k = ""
+    other = ""
+    if oknum(a) == 1 and okname(e) == 1
+        k = a
+        other = e
+    else
+        if oknum(e) == 1 and okname(a) == 1
+            k = e
+            other = a
+        else
+            return ""
+    kv = parsenum(k)
+    if op == 43
+        if kv >= 4096
+            return k
+        return ""
+    if op == 45
+        if other == a
+            if kv >= 4096
+                return k
+            return ""
+        return k
+    if kv < 2
+        return ""
+    if powt(kv) > 0
+        return ""
+    if kv == 3 or kv == 5 or kv == 7 or kv == 9
+        return ""
+    k
+
+canhoist: i64 = (tgt: str, rhs: str, defs: str, gain: str, cond: str, before: str, after: str)
+    if countocc(defs, tgt) != 1
+        return 0
+    if hasword(before .. "|" .. cond, tgt) == 1
+        return 0
+    op = rhsop(rhs)
+    if op == 47
+        return 0
+    if op == 0
+        if oknum(rhs) == 0 and okname(rhs) == 0
+            return 0
+        if okname(rhs) == 1 and hasword(defs, rhs) == 1 and hasword(gain, rhs) == 0
+            return 0
+    else
+        a = rhsa(rhs)
+        e = rhse(rhs)
+        if oknum(a) == 0 and okname(a) == 0
+            return 0
+        if oknum(e) == 0 and okname(e) == 0
+            return 0
+        if okname(a) == 1 and hasword(defs, a) == 1 and hasword(gain, a) == 0
+            return 0
+        if okname(e) == 1 and hasword(defs, e) == 1 and hasword(gain, e) == 0
+            return 0
+    if hasword(after, tgt) == 1
+        return 0
+    1
+
+cmapget: str = (cmap: str, k: str)
+    i = 1
+    n = cmap:len()
+    while i <= n
+        e = i
+        while e <= n and cmap:byte(e) != 124
+            e = e + 1
+        pair = cmap:sub(i, e - 1)
+        p = eqpos(pair)
+        if p > 0 and pair:sub(1, p - 1) == k
+            return pair:sub(p + 1, pair:len())
+        i = e + 1
+    ""
+
+newtemp: str = (loopkey: i64, wlist: str, taken: str)
+    m = 1
+    tn = "hh" .. decnum(loopkey) .. "t" .. decnum(m)
+    while hasword(wlist, tn) == 1 or hasword(taken, tn) == 1
+        m = m + 1
+        tn = "hh" .. decnum(loopkey) .. "t" .. decnum(m)
+    tn
+
+allcmap: str = (body: str, marks: str, loopkey: i64, wlist: str)
+    cmap = ""
+    taken = ""
+    bc = linecount(body)
+    j = 0
+    while j < bc
+        if marks:sub(j + 1, j + 1) == "s"
+            rhs = asgrhs(unpad(lineat(body, j)))
+            k = splitconst(rhs)
+            if cmapget(cmap, k) == ""
+                tn = newtemp(loopkey, wlist, taken)
+                taken = taken .. tn .. "|"
+                cmap = cmap .. k .. "=" .. tn .. "|"
+        j = j + 1
+    cmap
+
+decide: str = (body: str, ind: i64, cond: str, after: str)
+    marks = ""
+    defs = targets(body)
+    gain = ""
+    bc = linecount(body)
+    step = bodystep(body, ind)
+    j = 0
+    while j < bc
+        r = lineat(body, j)
+        t = unpad(r)
+        mk = "k"
+        if t:len() > 0 and indof(r) == ind + step and okassign(t) == 1
+            tgt = asgtgt(t)
+            rhs = asgrhs(t)
+            before = cut(body, 0, j - 1)
+            if canhoist(tgt, rhs, defs, gain, cond, before, after) == 1
+                mk = "h"
+                gain = gain .. tgt .. "|"
+            else
+                if splitconst(rhs) != ""
+                    mk = "s"
+        marks = marks .. mk
+        j = j + 1
+    marks
+
+prepass: str = (body: str, ind: i64, marks: str, loopkey: i64, wlist: str)
+    pre = ""
+    cmap = allcmap(body, marks, loopkey, wlist)
+    done = ""
+    bc = linecount(body)
+    j = 0
+    while j < bc
+        mk = marks:sub(j + 1, j + 1)
+        if mk == "h"
+            pre = pre .. spaces(ind) .. unpad(lineat(body, j)) .. "\n"
+        if mk == "s"
+            k = splitconst(asgrhs(unpad(lineat(body, j))))
+            if hasword(done, k) == 0
+                done = done .. k .. "|"
+                pre = pre .. spaces(ind) .. cmapget(cmap, k) .. " = " .. k .. "\n"
+        j = j + 1
+    pre
+
+keeppass: str = (body: str, marks: str, loopkey: i64, wlist: str)
+    out = ""
+    cmap = allcmap(body, marks, loopkey, wlist)
+    bc = linecount(body)
+    j = 0
+    while j < bc
+        mk = marks:sub(j + 1, j + 1)
+        if mk != "h"
+            r = lineat(body, j)
+            if mk == "s"
+                t = unpad(r)
+                tgt = asgtgt(t)
+                rhs = asgrhs(t)
+                op = rhsop(rhs)
+                a = rhsa(rhs)
+                e = rhse(rhs)
+                k = splitconst(rhs)
+                tn = cmapget(cmap, k)
+                nr = tgt .. " = "
+                if a == k
+                    nr = nr .. tn .. " " .. opchar(op) .. " " .. e
+                else
+                    nr = nr .. a .. " " .. opchar(op) .. " " .. tn
+                out = out .. spaces(indof(r)) .. nr .. "\n"
+            else
+                out = out .. r .. "\n"
+        j = j + 1
+    out
+
+lastnb: i64 = (s: str)
+    lc = linecount(s)
+    j = lc - 1
+    while j >= 0
+        if unpad(lineat(s, j)):len() > 0
+            return j
+        j = j - 1
+    0 - 1
+
+condlhs: str = (cond: str)
+    rest = cond:sub(7, cond:len())
+    i = 1
+    while i <= rest:len()
+        if rest:byte(i) == 60
+            return unpad(rest:sub(1, i - 1))
+        i = i + 1
+    ""
+
+condrhs: str = (cond: str)
+    rest = cond:sub(7, cond:len())
+    i = 1
+    while i <= rest:len()
+        if rest:byte(i) == 60
+            return unpad(rest:sub(i + 1, rest:len()))
+        i = i + 1
+    ""
+
+insertpre: str = (out: str, pre: str, ind: i64, cond: str)
+    if pre == ""
+        return out
+    lhs = condlhs(cond)
+    rhs = condrhs(cond)
+    if lhs != "" and oknum(rhs) == 1 and parsenum(rhs) != 0
+        li = lastnb(out)
+        if li >= 0
+            lr = lineat(out, li)
+            if indof(lr) == ind and unpad(lr) == lhs .. " = 0"
+                head = cut(out, 0, li - 1)
+                tail = cut(out, li, linecount(out) - 1)
+                return head .. pre .. tail
+    out .. pre
+
+words: str = (src: str)
+    out = ""
+    cur = ""
+    i = 1
+    n = src:len()
+    while i <= n + 1
+        c = 0
+        if i <= n
+            c = src:byte(i)
+        if oknamechar(c) == 1
+            cur = cur .. src:sub(i, i)
+        else
+            if cur != "" and okname(cur) == 1 and hasword(out, cur) == 0
+                out = out .. cur .. "|"
+            cur = ""
+        i = i + 1
+    out
+
+sweep: str = (src: str, base: i64, wlist: str)
+    out = ""
+    k = 0
+    lc = linecount(src)
+    while k < lc
+        r = lineat(src, k)
+        t = unpad(r)
+        if iswhile(t) == 1
+            ind = indof(r)
+            e = loopend(src, k, lc, ind)
+            nb = sweep(cut(src, k + 1, e), base + k + 1, wlist)
+            after = cut(src, e + 1, lc - 1)
+            marks = decide(nb, ind, t, after)
+            pre = prepass(nb, ind, marks, base + k, wlist)
+            kept = keeppass(nb, marks, base + k, wlist)
+            out = insertpre(out, pre, ind, t)
+            out = out .. r .. "\n" .. kept
+            k = e + 1
+        else
+            out = out .. r .. "\n"
+            k = k + 1
+    out
+
+licm: str = (src: str)
+    fix4 = "target=licm layer=stream invar=outside-or-hoisted never=div,trap,store zerotrip=dead-after-loop partial=leave constsplit=hoist-temp order=inside-out"
+    rules = "invar=operands-const-or-not-defined-in-loop-or-hoisted-earlier|singledef=target-defined-exactly-once-in-loop|domuse=target-not-used-before-stmt-and-not-in-loop-cond|pure=op-in-add-sub-mul-or-copy-no-div-no-calls|never=division-traps-stores-mutating-edges|zerotrip=target-not-used-after-loop-end|partial=leave-in-loop-no-peel|constsplit=invariant-const-operand-split-to-fresh-preheader-temp|order=innermost-first-cascade-outward|preheader=immediately-before-while-or-before-i-equals-0-preserving-countdown"
+    sweep(src, 0, words(src))
