@@ -5437,7 +5437,10 @@ const Arm64Compiler = struct {
                 const use_puts = ins.ty == .str and !nonl;
                 const has_value = ins.ty == .str or ins.ty == .i64 or ins.ty == .f64;
                 const stack_arg = has_value and !use_puts;
-                var fmt_sym: u32 = 0;
+                // 0 is a VALID interned-string symbol (the first one), so it cannot mean
+                // "no format": a program whose first print is numeric skipped its
+                // adrp x0 and trapped inside printf. null is the absence.
+                var fmt_sym: ?u32 = null;
                 // WHERE THE VALUE IS *NOW*, above the save. `value_home` is
                 // where it has to BE at the call; the move between them is
                 // emitted below the save.
@@ -5450,7 +5453,7 @@ const Arm64Compiler = struct {
                         const reg = try self.evalDnirValue(temps, ins.lhs);
                         value_reg = reg;
                         self.releaseDnirTemp(pinned, ins.lhs, reg);
-                        fmt_sym = if (use_puts) 0 else try self.internString("%s");
+                        fmt_sym = if (use_puts) null else try self.internString("%s");
                     },
                     .i64 => {
                         const reg = try self.evalDnirValue(temps, ins.lhs);
@@ -5470,7 +5473,7 @@ const Arm64Compiler = struct {
                     // A valueless `print` is a blank line. A valueless WRITE is
                     // nothing at all, and emitting `printf("")` for it would be
                     // a call with no effect rather than no call.
-                    else => fmt_sym = if (nonl) 0 else try self.internString("\n"),
+                    else => fmt_sym = if (nonl) null else try self.internString("\n"),
                 }
                 if (ins.ty == .f64) fmt_sym = try self.internString(if (nonl) "%f" else "%f\n");
                 // A valueless WRITE is nothing at all — no call, not an empty one.
@@ -5501,7 +5504,7 @@ const Arm64Compiler = struct {
                 } else if (value_imm) |bits| {
                     try self.emitMovImm(value_home, bits);
                 }
-                if (fmt_sym != 0) try self.emitAdrpAdd(0, fmt_sym);
+                if (fmt_sym) |sym| try self.emitAdrpAdd(0, sym);
                 if (stack_arg) {
                     // Reserve a 16-byte slot so sp stays 16-byte aligned at the
                     // call; the vararg goes at [sp,#0], [sp,#8] is padding.
@@ -16744,6 +16747,40 @@ test "native backend write egress guards the value register not the format" {
             try std.testing.expect(std.mem.indexOf(u8, window, move) != null);
         }
     }
+}
+
+// THE FIRST INTERNED STRING HAS SYMBOL INDEX 0, AND 0 IS NOT "NO FORMAT".
+//
+// `print_value` used 0 as the "no format string" sentinel for `fmt_sym`, but
+// `internString` returns 0 for the first interned string. A program whose
+// first print is numeric (`print(7)` with no earlier string literal) interned
+// "%lld\n" at index 0, the emitter skipped the `adrp x0`, and the binary
+// called printf with a garbage format pointer — a SEGV with empty output,
+// which the conversion gate's arm 8 read as `''` against oracle `'7'`.
+test "native backend numeric print interns its format at symbol zero" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const instructions = [_]dnir.Instr{
+        .{ .op = .print_value, .lhs = .{ .i64 = 7 }, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    const text = output.asm_text;
+
+    const call_at = std.mem.indexOf(u8, text, "\tbl _printf\n") orelse return error.NoEgressCall;
+    // The format is the first interned string: symbol zero is a real symbol,
+    // so its address is materialized into x0 ahead of the call.
+    _ = std.mem.indexOf(u8, text[0..call_at], "adrp x0, Lduo_str_0") orelse
+        return error.NoFormatAtSymbolZero;
 }
 
 // A WRITTEN MODULE-SCOPE BINDING IS ONE STORAGE LOCATION.
