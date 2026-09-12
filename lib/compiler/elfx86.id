@@ -1,0 +1,687 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = (v & 15) + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    hex(v >> 4) .. hex(v)
+
+word: str = (v: i64)
+    pair(v) .. pair(v >> 8) .. pair(v >> 16) .. pair(v >> 24)
+
+quad: str = (v: i64)
+    word(v) .. word(v >> 32)
+
+half: str = (v: i64)
+    pair(v) .. pair(v >> 8)
+
+rex: str = (w: i64, r: i64, b: i64)
+    v = 64 | (w << 3) | (r << 2) | b
+    if v == 64
+        return ""
+    pair(v)
+
+modrm: i64 = (m: i64, g: i64, o: i64)
+    (m << 6) | ((g & 7) << 3) | (o & 7)
+
+rbit: i64 = (r: i64)
+    (r >> 3) & 1
+
+low: i64 = (r: i64)
+    r & 7
+
+cqo: str = ()
+    pair(72) .. pair(153)
+
+movri: str = (d: i64, v: i64)
+    b = rbit(d)
+    o = 184 + low(d)
+    if v >= 0 and v < 4294967296
+        return rex(0, 0, b) .. pair(o) .. word(v)
+    rex(1, 0, b) .. pair(o) .. quad(v)
+
+movrr: str = (d: i64, s: i64)
+    rex(1, rbit(s), rbit(d)) .. pair(137) .. pair(modrm(3, s, d))
+
+addrr: str = (d: i64, s: i64)
+    rex(1, rbit(s), rbit(d)) .. pair(1) .. pair(modrm(3, s, d))
+
+addri: str = (d: i64, v: i64)
+    b = rbit(d)
+    m = modrm(3, 0, d)
+    if v >= 0 - 128 and v < 128
+        return rex(1, 0, b) .. pair(131) .. pair(m) .. pair(v)
+    rex(1, 0, b) .. pair(129) .. pair(m) .. word(v)
+
+subrr: str = (d: i64, s: i64)
+    rex(1, rbit(s), rbit(d)) .. pair(41) .. pair(modrm(3, s, d))
+
+subri: str = (d: i64, v: i64)
+    b = rbit(d)
+    m = modrm(3, 5, d)
+    if v >= 0 - 128 and v < 128
+        return rex(1, 0, b) .. pair(131) .. pair(m) .. pair(v)
+    rex(1, 0, b) .. pair(129) .. pair(m) .. word(v)
+
+mulrr: str = (d: i64, s: i64)
+    rex(1, rbit(d), rbit(s)) .. pair(15) .. pair(175) .. pair(modrm(3, d, s))
+
+mulri: str = (d: i64, v: i64)
+    b = rbit(d)
+    m = modrm(3, d, d)
+    if v >= 0 - 128 and v < 128
+        return rex(1, b, b) .. pair(107) .. pair(m) .. pair(v)
+    rex(1, b, b) .. pair(105) .. pair(m) .. word(v)
+
+shlri: str = (d: i64, v: i64)
+    rex(1, 0, rbit(d)) .. pair(193) .. pair(modrm(3, 4, d)) .. pair(v)
+
+div3: str = (d: i64, n: i64, s: i64)
+    pre = ""
+    if n != 0
+        pre = movrr(0, n)
+    post = ""
+    if d != 0
+        post = movrr(d, 0)
+    pre .. cqo() .. rex(1, 0, rbit(s)) .. pair(247) .. pair(modrm(3, 7, s)) .. post
+
+cmprr: str = (a: i64, b: i64)
+    rex(1, rbit(b), rbit(a)) .. pair(57) .. pair(modrm(3, b, a))
+
+cmpri: str = (a: i64, v: i64)
+    b = rbit(a)
+    m = modrm(3, 7, a)
+    if v >= 0 - 128 and v < 128
+        return rex(1, 0, b) .. pair(131) .. pair(m) .. pair(v)
+    if a == 0
+        return rex(1, 0, 0) .. pair(61) .. word(v)
+    rex(1, 0, b) .. pair(129) .. pair(m) .. word(v)
+
+jcc: str = (c: i64, off: i64)
+    if off >= 0 - 128 and off < 128
+        return pair(112 + c) .. pair(off)
+    pair(15) .. pair(128 + c) .. word(off)
+
+jccn: str = (c: i64, off: i64)
+    pair(15) .. pair(128 + c) .. word(off)
+
+jmp: str = (off: i64)
+    if off >= 0 - 128 and off < 128
+        return pair(235) .. pair(off)
+    pair(233) .. word(off)
+
+jmpn: str = (off: i64)
+    pair(233) .. word(off)
+
+ret: str = ()
+    pair(195)
+
+syscall: str = ()
+    pair(15) .. pair(5)
+
+shdr: str = (nm: i64, ty: i64, fl: i64, va: i64, of: i64, sz: i64, lk: i64, nf: i64, al: i64, es: i64)
+    word(nm) .. word(ty) .. quad(fl) .. quad(va) .. quad(of) .. quad(sz) .. word(lk) .. word(nf) .. quad(al) .. quad(es)
+
+elf: str = (code: str)
+    base = 4194304
+    ho = 120
+    cl = code:len() / 2
+    entry = base + ho
+    symoff = ho + cl
+    stroff = symoff + 48
+    shstroff = stroff + 8
+    shoff = shstroff + 33
+    total = shoff + 320
+    out = "7f454c46" .. pair(2) .. pair(1) .. pair(1) .. pair(0) .. pair(0)
+    out = out .. "00000000000000"
+    out = out .. half(2) .. half(62) .. word(1)
+    out = out .. quad(entry) .. quad(64) .. quad(shoff)
+    out = out .. word(0) .. half(64) .. half(56) .. half(1) .. half(64) .. half(5) .. half(4)
+    out = out .. word(1) .. word(5) .. quad(0) .. quad(base) .. quad(base)
+    out = out .. quad(total) .. quad(total) .. quad(4096)
+    out = out .. code
+    out = out .. quad(0) .. quad(0) .. quad(0)
+    out = out .. word(1) .. pair(18) .. pair(0) .. half(1) .. quad(entry) .. quad(cl)
+    out = out .. "005f737461727400"
+    out = out .. "002e74657874002e73796d746162002e737472746162002e736873747274616200"
+    out = out .. shdr(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    out = out .. shdr(1, 1, 6, entry, ho, cl, 0, 0, 16, 0)
+    out = out .. shdr(7, 2, 0, 0, symoff, 48, 3, 1, 8, 24)
+    out = out .. shdr(15, 3, 0, 0, stroff, 8, 0, 0, 1, 0)
+    out = out .. shdr(23, 3, 0, 0, shstroff, 33, 0, 0, 1, 0)
+    out
+
+digit: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+num: i64 = (s: str)
+    v = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    v
+
+dec: str = (v: i64)
+    if v == 0
+        return "0"
+    out = ""
+    x = v
+    while x > 0
+        out = hex(x - (x / 10) * 10) .. out
+        x = x / 10
+    out
+
+trim: str = (s: str)
+    n = s:len()
+    a = 1
+    while a <= n and s:byte(a) == 32
+        a = a + 1
+    b = n
+    while b >= a and s:byte(b) == 32
+        b = b - 1
+    if b < a
+        return ""
+    s:sub(a, b)
+
+find: i64 = (hay: str, key: str)
+    pat = key .. "|"
+    n = hay:len()
+    m = pat:len()
+    i = 1
+    idx = 0
+    while i + m - 1 <= n
+        if hay:sub(i, i + m - 1) == pat
+            return idx
+        if hay:byte(i) == 124
+            idx = idx + 1
+        i = i + 1
+    0 - 1
+
+at: i64 = (vals: str, idx: i64)
+    cur = 0
+    i = 1
+    n = vals:len()
+    while i <= n
+        if cur == idx
+            j = i
+            while j <= n and vals:byte(j) != 124
+                j = j + 1
+            return num(vals:sub(i, j - 1))
+        if vals:byte(i) == 124
+            cur = cur + 1
+        i = i + 1
+    0
+
+reg: i64 = (names: str, name: str)
+    i = find(names, name)
+    if i < 4
+        return 12 + i
+    if i == 4
+        return 3
+    if i == 5
+        return 5
+    if i == 6
+        return 6
+    7
+
+breg: i64 = (w: i64)
+    if w == 0
+        return 8
+    if w == 1
+        return 9
+    1
+
+patch: str = (c: str, p: i64, w: str)
+    a = p * 2
+    n = w:len()
+    pre = ""
+    if a > 0
+        pre = c:sub(1, a)
+    post = ""
+    e = a + n + 1
+    if e <= c:len()
+        post = c:sub(e, c:len())
+    pre .. w .. post
+
+imm: str = (c: str, r: i64, v: i64)
+    c .. movri(r, v)
+
+term: str = (c: str, t: str, r: i64, names: str)
+    if digit(t:byte(1)) == 1
+        return imm(c, r, num(t))
+    c .. movrr(r, reg(names, t))
+
+foldop: i64 = (a: i64, o: i64, b: i64)
+    if o == 43
+        return a + b
+    if o == 45
+        return a - b
+    if o == 42
+        return a * b
+    0
+
+simpadd: i64 = (a: i64, isa: i64, b: i64, isb: i64)
+    if isa == 1 and a == 0
+        return 1
+    if isb == 1 and b == 0
+        return 2
+    0
+
+simpmul: i64 = (a: i64, isa: i64, b: i64, isb: i64)
+    if isa == 1 and a == 0
+        return 3
+    if isb == 1 and b == 0
+        return 3
+    if isa == 1 and a == 1
+        return 2
+    if isb == 1 and b == 1
+        return 1
+    0
+
+powtwo: i64 = (v: i64)
+    if v < 2
+        return 0 - 1
+    sh = 0
+    p = 1
+    while p < v
+        p = p * 2
+        sh = sh + 1
+    if p == v
+        return sh
+    0 - 1
+
+mulred: str = (c: str, rd: i64, n: str, v: i64, names: str)
+    rn = reg(names, n)
+    sh = powtwo(v)
+    if sh > 0
+        t = c .. movrr(rd, rn)
+        return t .. shlri(rd, sh)
+    if v == 3
+        t = c .. movrr(rd, rn)
+        t = t .. shlri(rd, 1)
+        return t .. addrr(rd, rn)
+    if v == 5
+        t = c .. movrr(rd, rn)
+        t = t .. shlri(rd, 2)
+        return t .. addrr(rd, rn)
+    if v == 7
+        t = c .. movrr(10, rn)
+        t = t .. shlri(10, 3)
+        t = t .. movrr(rd, 10)
+        return t .. subrr(rd, rn)
+    if v == 9
+        t = c .. movrr(rd, rn)
+        t = t .. shlri(rd, 3)
+        return t .. addrr(rd, rn)
+    ""
+
+add3: str = (c: str, rd: i64, rn: i64, v: i64)
+    if rd == rn
+        return c .. addri(rd, v)
+    c .. movrr(rd, rn) .. addri(rd, v)
+
+sub3: str = (c: str, rd: i64, rn: i64, v: i64)
+    if rd == rn
+        return c .. subri(rd, v)
+    c .. movrr(rd, rn) .. subri(rd, v)
+
+add2: str = (c: str, rd: i64, ra: i64, rb: i64)
+    if rd == ra
+        return c .. addrr(rd, rb)
+    c .. movrr(rd, ra) .. addrr(rd, rb)
+
+sub2: str = (c: str, rd: i64, ra: i64, rb: i64)
+    if rd == ra
+        return c .. subrr(rd, rb)
+    c .. movrr(rd, ra) .. subrr(rd, rb)
+
+mul2: str = (c: str, rd: i64, ra: i64, rb: i64)
+    if rd == ra
+        return c .. mulrr(rd, rb)
+    c .. movrr(rd, ra) .. mulrr(rd, rb)
+
+hassub: i64 = (hay: str, key: str)
+    n = hay:len()
+    m = key:len()
+    i = 1
+    while i + m - 1 <= n
+        if hay:sub(i, i + m - 1) == key
+            return 1
+        i = i + 1
+    0
+
+purecount: i64 = (src: str, k: i64, lc: i64, ind: i64, lhs: str)
+    bind = 0
+    k2 = k + 1
+    while k2 < lc and bind == 0
+        r2 = row(src, k2)
+        t2 = trim(r2)
+        if t2:len() > 0
+            if indent(r2) > ind
+                bind = indent(r2)
+            else
+                k2 = lc
+        if k2 < lc
+            k2 = k2 + 1
+    if bind == 0
+        return 0
+    p = 1
+    found = 0
+    inc = lhs .. " = " .. lhs .. " + 1"
+    k2 = k + 1
+    while k2 < lc and p == 1
+        r2 = row(src, k2)
+        t2 = trim(r2)
+        if t2:len() > 0
+            if indent(r2) > ind
+                if indent(r2) == bind and t2 == inc
+                    found = 1
+                else
+                    if hassub(t2, lhs) == 1
+                        p = 0
+            else
+                k2 = lc
+        if k2 < lc
+            k2 = k2 + 1
+    if found == 0
+        p = 0
+    p
+
+calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
+    aconst = digit(a:byte(1))
+    econst = digit(e:byte(1))
+    av = 0
+    ev = 0
+    if aconst == 1
+        av = num(a)
+    if econst == 1
+        ev = num(e)
+    if aconst == 1 and econst == 1 and o != 47
+        return imm(c, rd, foldop(av, o, ev))
+    skip = 0
+    if o == 43
+        s = simpadd(av, aconst, ev, econst)
+        if s == 1
+            return term(c, e, rd, names)
+        if s == 2
+            return term(c, a, rd, names)
+    if o == 42
+        s = simpmul(av, aconst, ev, econst)
+        if s == 1
+            return term(c, a, rd, names)
+        if s == 2
+            return term(c, e, rd, names)
+        if s == 3
+            return imm(c, rd, 0)
+    if o == 45
+        if econst == 1 and ev == 0
+            return term(c, a, rd, names)
+        if aconst == 0 and econst == 0 and a == e
+            return imm(c, rd, 0)
+    if o == 43 and aconst == 1 and econst == 0 and av < 4096
+        return add3(c, rd, reg(names, e), av)
+    if o == 43 and aconst == 0 and econst == 1 and ev < 4096
+        return add3(c, rd, reg(names, a), ev)
+    if o == 45 and aconst == 0 and econst == 1 and ev < 4096
+        return sub3(c, rd, reg(names, a), ev)
+    if o == 42 and aconst == 0 and econst == 1
+        m = mulred(c, rd, a, ev, names)
+        if m:len() > 0
+            return m
+    if o == 42 and aconst == 1 and econst == 0
+        m = mulred(c, rd, e, av, names)
+        if m:len() > 0
+            return m
+    ra = 0
+    rb = 0
+    if aconst == 1
+        c = imm(c, 10, av)
+        ra = 10
+    else
+        ra = reg(names, a)
+    if econst == 1
+        c = imm(c, 11, ev)
+        rb = 11
+    else
+        rb = reg(names, e)
+    if o == 43
+        return add2(c, rd, ra, rb)
+    if o == 45
+        return sub2(c, rd, ra, rb)
+    if o == 42
+        return mul2(c, rd, ra, rb)
+    c .. div3(rd, ra, rb)
+
+indent: i64 = (s: str)
+    n = s:len()
+    i = 1
+    while i <= n and s:byte(i) == 32
+        i = i + 1
+    i - 1
+
+rows: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            n = n + 1
+        i = i + 1
+    if s:len() > 0 and s:byte(s:len()) != 10
+        n = n + 1
+    n
+
+row: str = (s: str, k: i64)
+    n = s:len()
+    i = 1
+    cur = 0
+    a = 1
+    while i <= n + 1
+        if i > n or s:byte(i) == 10
+            if cur == k
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+pop: str = (s: str, n: i64)
+    out = ""
+    i = 0
+    while i < n - 1
+        out = out .. dec(at(s, i)) .. "|"
+        i = i + 1
+    out
+
+main: i64 = ()
+    src = stdin:read()
+    names = ""
+    code = ""
+    wjmp = ""
+    wrl = ""
+    wrr = ""
+    wind = ""
+    wcd = ""
+    wopen = 0
+    lc = rows(src)
+    k = 0
+    while k <= lc
+        raw = row(src, k)
+        t = trim(raw)
+        if t:len() == 0
+            if k == lc
+                ind = 0 - 1
+                while wopen > 0 and at(wind, wopen - 1) >= ind
+                    jp = at(wjmp, wopen - 1)
+                    rl = at(wrl, wopen - 1)
+                    rr = at(wrr, wopen - 1)
+                    cd = at(wcd, wopen - 1)
+                    here = code:len() / 2
+                    if cd == 1
+                        code = code .. subri(rr, 1)
+                        back = jp - (here + 6)
+                        neg = 0 - 128
+                        if back < neg or back > 127
+                            back = jp - (here + 10)
+                            code = code .. jccn(5, back)
+                        else
+                            code = code .. jcc(5, back)
+                    else
+                        top = jp + 5
+                        cm = cmprr(rl, rr)
+                        cl = cm:len() / 2
+                        back = top - (here + cl + 2)
+                        neg = 0 - 128
+                        if back < neg or back > 127
+                            back = top - (here + cl + 6)
+                            code = code .. cm .. jccn(12, back)
+                        else
+                            code = code .. cm .. jcc(12, back)
+                        fin = code:len() / 2
+                        rel = fin - (jp + 5)
+                        code = patch(code, jp, jmpn(rel))
+                    wjmp = pop(wjmp, wopen)
+                    wrl = pop(wrl, wopen)
+                    wrr = pop(wrr, wopen)
+                    wind = pop(wind, wopen)
+                    wcd = pop(wcd, wopen)
+                    wopen = wopen - 1
+            k = k + 1
+        else
+            ind = indent(raw)
+            while wopen > 0 and at(wind, wopen - 1) >= ind
+                jp = at(wjmp, wopen - 1)
+                rl = at(wrl, wopen - 1)
+                rr = at(wrr, wopen - 1)
+                cd = at(wcd, wopen - 1)
+                here = code:len() / 2
+                if cd == 1
+                    code = code .. subri(rr, 1)
+                    back = jp - (here + 6)
+                    neg = 0 - 128
+                    if back < neg or back > 127
+                        back = jp - (here + 10)
+                        code = code .. jccn(5, back)
+                    else
+                        code = code .. jcc(5, back)
+                else
+                    top = jp + 5
+                    cm = cmprr(rl, rr)
+                    cl = cm:len() / 2
+                    back = top - (here + cl + 2)
+                    neg = 0 - 128
+                    if back < neg or back > 127
+                        back = top - (here + cl + 6)
+                        code = code .. cm .. jccn(12, back)
+                    else
+                        code = code .. cm .. jcc(12, back)
+                    fin = code:len() / 2
+                    rel = fin - (jp + 5)
+                    code = patch(code, jp, jmpn(rel))
+                wjmp = pop(wjmp, wopen)
+                wrl = pop(wrl, wopen)
+                wrr = pop(wrr, wopen)
+                wind = pop(wind, wopen)
+                wcd = pop(wcd, wopen)
+                wopen = wopen - 1
+            if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
+                rest = t:sub(7, t:len())
+                lt = 0
+                q = 1
+                while q <= rest:len()
+                    if rest:byte(q) == 60 and lt == 0
+                        lt = q
+                    q = q + 1
+                lhs = trim(rest:sub(1, lt - 1))
+                rhs = trim(rest:sub(lt + 1, rest:len()))
+                rl = reg(names, lhs)
+                rr = 0
+                cd = 0
+                if digit(rhs:byte(1)) == 1
+                    br = breg(wopen)
+                    code = imm(code, breg(wopen), num(rhs))
+                    rr = br
+                    if num(rhs) != 0 and purecount(src, k, lc, ind, lhs) == 1
+                        pk = k - 1
+                        while pk >= 0 and trim(row(src, pk)):len() == 0
+                            pk = pk - 1
+                        if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
+                            cd = 1
+                else
+                    rr = reg(names, rhs)
+                jp = code:len() / 2
+                if cd == 0
+                    code = code .. jmpn(0)
+                wjmp = wjmp .. dec(jp) .. "|"
+                wrl = wrl .. dec(rl) .. "|"
+                wrr = wrr .. dec(rr) .. "|"
+                wind = wind .. dec(ind) .. "|"
+                wcd = wcd .. dec(cd) .. "|"
+                wopen = wopen + 1
+            else
+                eq = 0
+                q = 1
+                while q <= t:len()
+                    if t:byte(q) == 61 and eq == 0
+                        eq = q
+                    q = q + 1
+                if eq > 0
+                    name = trim(t:sub(1, eq - 1))
+                    rhs = trim(t:sub(eq + 1, t:len()))
+                    hascolon = 0
+                    cn = 1
+                    while cn <= name:len()
+                        if name:byte(cn) == 58
+                            hascolon = 1
+                        cn = cn + 1
+                    if hascolon == 0
+                        if find(names, name) == 0 - 1
+                            names = names .. name .. "|"
+                        rd = reg(names, name)
+                        skip = 0
+                        if wopen > 0 and at(wcd, wopen - 1) == 1 and rd == at(wrl, wopen - 1)
+                            skip = 1
+                        if skip == 0
+                            oppos = 0
+                            op = 0
+                            q = 1
+                            while q <= rhs:len()
+                                oc = rhs:byte(q)
+                                if oc == 43 or oc == 45 or oc == 42 or oc == 47
+                                    if oppos == 0
+                                        oppos = q
+                                        op = oc
+                                q = q + 1
+                            if oppos == 0
+                                code = term(code, rhs, rd, names)
+                            else
+                                a = trim(rhs:sub(1, oppos - 1))
+                                e = trim(rhs:sub(oppos + 1, rhs:len()))
+                                code = calc(code, rd, a, op, e, names)
+                else
+                    oppos = 0
+                    op = 0
+                    q = 1
+                    while q <= t:len()
+                        oc = t:byte(q)
+                        if oc == 43 or oc == 45 or oc == 42 or oc == 47
+                            if oppos == 0
+                                oppos = q
+                                op = oc
+                        q = q + 1
+                    if oppos == 0
+                        code = term(code, t, 0, names)
+                    else
+                        a = trim(t:sub(1, oppos - 1))
+                        e = trim(t:sub(oppos + 1, t:len()))
+                        code = calc(code, 0, a, op, e, names)
+                    k = lc
+            k = k + 1
+    code = code .. movrr(7, 0)
+    code = code .. movri(0, 60)
+    code = code .. syscall()
+    stdout:write(elf(code))
+    0

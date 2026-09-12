@@ -1,0 +1,152 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = (v & 15) + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    hex(v >> 4) .. hex(v)
+
+word: str = (v: i64)
+    pair(v) .. pair(v >> 8) .. pair(v >> 16) .. pair(v >> 24)
+
+quad: str = (v: i64)
+    word(v) .. word(v >> 32)
+
+half: str = (v: i64)
+    pair(v) .. pair(v >> 8)
+
+rex: str = (w: i64, r: i64, b: i64)
+    v = 64 | (w << 3) | (r << 2) | b
+    if v == 64
+        return ""
+    pair(v)
+
+modrm: i64 = (m: i64, g: i64, o: i64)
+    (m << 6) | ((g & 7) << 3) | (o & 7)
+
+rbit: i64 = (r: i64)
+    (r >> 3) & 1
+
+low: i64 = (r: i64)
+    r & 7
+
+cqo: str = ()
+    pair(72) .. pair(153)
+
+movri: str = (d: i64, v: i64)
+    b = rbit(d)
+    o = 184 + low(d)
+    if v >= 0 and v < 4294967296
+        return rex(0, 0, b) .. pair(o) .. word(v)
+    rex(1, 0, b) .. pair(o) .. quad(v)
+
+movrr: str = (d: i64, s: i64)
+    rex(1, rbit(s), rbit(d)) .. pair(137) .. pair(modrm(3, s, d))
+
+addrr: str = (d: i64, s: i64)
+    rex(1, rbit(s), rbit(d)) .. pair(1) .. pair(modrm(3, s, d))
+
+addri: str = (d: i64, v: i64)
+    b = rbit(d)
+    m = modrm(3, 0, d)
+    if v >= 0 - 128 and v < 128
+        return rex(1, 0, b) .. pair(131) .. pair(m) .. pair(v)
+    rex(1, 0, b) .. pair(129) .. pair(m) .. word(v)
+
+subrr: str = (d: i64, s: i64)
+    rex(1, rbit(s), rbit(d)) .. pair(41) .. pair(modrm(3, s, d))
+
+subri: str = (d: i64, v: i64)
+    b = rbit(d)
+    m = modrm(3, 5, d)
+    if v >= 0 - 128 and v < 128
+        return rex(1, 0, b) .. pair(131) .. pair(m) .. pair(v)
+    rex(1, 0, b) .. pair(129) .. pair(m) .. word(v)
+
+mulrr: str = (d: i64, s: i64)
+    rex(1, rbit(d), rbit(s)) .. pair(15) .. pair(175) .. pair(modrm(3, d, s))
+
+mulri: str = (d: i64, v: i64)
+    b = rbit(d)
+    m = modrm(3, d, d)
+    if v >= 0 - 128 and v < 128
+        return rex(1, b, b) .. pair(107) .. pair(m) .. pair(v)
+    rex(1, b, b) .. pair(105) .. pair(m) .. word(v)
+
+shlri: str = (d: i64, v: i64)
+    rex(1, 0, rbit(d)) .. pair(193) .. pair(modrm(3, 4, d)) .. pair(v)
+
+divrr: str = (d: i64, s: i64)
+    pre = ""
+    if d != 0
+        pre = movrr(0, d)
+    post = ""
+    if d != 0
+        post = movrr(d, 0)
+    pre .. cqo() .. rex(1, 0, rbit(s)) .. pair(247) .. pair(modrm(3, 7, s)) .. post
+
+cmprr: str = (a: i64, b: i64)
+    rex(1, rbit(b), rbit(a)) .. pair(57) .. pair(modrm(3, b, a))
+
+cmpri: str = (a: i64, v: i64)
+    b = rbit(a)
+    m = modrm(3, 7, a)
+    if v >= 0 - 128 and v < 128
+        return rex(1, 0, b) .. pair(131) .. pair(m) .. pair(v)
+    if a == 0
+        return rex(1, 0, 0) .. pair(61) .. word(v)
+    rex(1, 0, b) .. pair(129) .. pair(m) .. word(v)
+
+jcc: str = (c: i64, off: i64)
+    if off >= 0 - 128 and off < 128
+        return pair(112 + c) .. pair(off)
+    pair(15) .. pair(128 + c) .. word(off)
+
+jccn: str = (c: i64, off: i64)
+    pair(15) .. pair(128 + c) .. word(off)
+
+jmp: str = (off: i64)
+    if off >= 0 - 128 and off < 128
+        return pair(235) .. pair(off)
+    pair(233) .. word(off)
+
+jmpn: str = (off: i64)
+    pair(233) .. word(off)
+
+ret: str = ()
+    pair(195)
+
+syscall: str = ()
+    pair(15) .. pair(5)
+
+vec: str = (a: str, h: str)
+    a .. " | " .. h .. "\n"
+
+main: i64 = ()
+    neg5 = 0 - 5
+    neg1 = 0 - 1
+    out = vec("movl $60, %eax", movri(0, 60))
+    out = out .. vec("movabsq $1234605616436508552, %r9", movri(9, 1234605616436508552))
+    out = out .. vec("movq %r12, %r13", movrr(13, 12))
+    out = out .. vec("addq %rsi, %rdi", addrr(7, 6))
+    out = out .. vec("addq $5, %rax", addri(0, 5))
+    out = out .. vec("addq $1000, %rbx", addri(3, 1000))
+    out = out .. vec("addq $-5, %r14", addri(14, neg5))
+    out = out .. vec("subq %rcx, %rdx", subrr(2, 1))
+    out = out .. vec("subq $300, %r8", subri(8, 300))
+    out = out .. vec("imulq %r10, %r11", mulrr(11, 10))
+    out = out .. vec("imulq $7, %r12, %r12", mulri(12, 7))
+    out = out .. vec("imulq $100000, %rax, %rax", mulri(0, 100000))
+    out = out .. vec("shlq $3, %rdi", shlri(7, 3))
+    out = out .. vec("movq %rbx, %rax; cqo; idivq %r10; movq %rax, %rbx", divrr(3, 10))
+    out = out .. vec("cmpq %rdi, %rsi", cmprr(6, 7))
+    out = out .. vec("cmpq $100000, %rax", cmpri(0, 100000))
+    out = out .. vec("cmpq $-1, %r15", cmpri(15, neg1))
+    out = out .. vec("jne 1f; 1:", jcc(5, 0))
+    out = out .. vec("jl 1f; .rept 200; nop; .endr; 1:", jcc(12, 200))
+    out = out .. vec("jmp 1f; 1:", jmp(0))
+    out = out .. vec("jmp 1f; .rept 300; nop; .endr; 1:", jmp(300))
+    out = out .. vec("ret", ret())
+    out = out .. vec("syscall", syscall())
+    stdout:write(out)
+    0
