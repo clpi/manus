@@ -1,8 +1,11 @@
-# RESEARCH-SPINE — C0 alignment of the research GAP set
-
-| # | directive |
+| field | value |
 |---|---|
-| 1 | **Status:** OPEN · **Filed:** 2026-08-18 **Kind:** research_gap projection · **Normative for:** nothing — this is a projection of C0 **Enforced by:** `tools/node/dev/gapc0` (fails closed) |
+| title | RESEARCH-SPINE — C0 alignment of the research GAP set |
+| status | OPEN |
+| filed | 2026-08-18 |
+| kind | research_gap projection |
+| normative for | nothing — this is a projection of C0 |
+| enforced by | (fails closed) |
 
 | # | directive |
 |---|---|
@@ -20,7 +23,9 @@
 | 1 | **The subject is the declared kind, not a number range.** A GAP is in this census exactly when it declares `**Kind:** research_gap`. |
 | 2 | GAP numbering is shared with defect reports (`wrong_answer`, `crash`, `regression`, `evidence_gap`, ...), which carry no C0 admission obligation and must not be convicted of one; a GAP numbered >= 175 that declares no kind at all IS a violation, because then the census cannot select its subject. |
 
-## The admission test
+| section |
+|---|---|
+| The admission test |
 
 | # | directive |
 |---|---|
@@ -29,7 +34,9 @@
 > Which **existing** semantic identities and facts already express the
 > underlying meaning, and which **physical mechanism** realizes it?
 
-## Structural mapping
+| section |
+|---|---|
+| Structural mapping |
 
 | # | directive |
 |---|---|
@@ -95,33 +102,30 @@
 | 14 | Complexity theory is evidence about the reachable floor. |
 | 15 | Agents are untrusted producers of candidate facts/witnesses — never authorities. |
 
-## Schema fields (defined once; instantiated per GAP)
+| section |
+|---|---|
+| Schema fields (defined once; instantiated per GAP) |
 
-- **constitutional owners** — the existing C0 kinds that own the meaning.
-- **kind delta** — must be `0`. A nonzero value is a constitutional amendment
-  request and fails `gapc0` until C0 itself is amended.
-- **registry delta** — must be `0`. Physical `index`/`cache` roles are lawful;
-  semantic registries are not.
-- **source syntax delta** — `0` by default. If a face is genuinely needed, name
-  the existing face it reuses.
-- **semantic invariant** — the new fact/law that becomes expressible, stated
-  over existing kinds.
-- **physical mechanism** — candidate implementation only; never semantic
-  authority.
-- **prerequisites** — exact upstream GAPs.
-- **foreign implication** — which boundary this can erase or constrain, and
-  under what witness.
-- **world implication** — authority/context impact.
-- **projection implication** — impact on projection/injection/interjection/
-  update.
-- **demand implication** — new quotient/cardinality behavior.
-- **realization implication** — the candidate-set expansion or deletion. This is
-  the performance consequence; a reconciliation with none is scenery.
-- **evidence** — the measurement, proof, or refusal that closes or refutes.
-- **deletion witness** — the old subsystem, bridge, or spelling that disappears
-  when this lands.
+| # | directive |
+|---|---|
+| 1 | **constitutional owners** — the existing C0 kinds that own the meaning. |
+| 2 | **kind delta** — must be `0`. A nonzero value is a constitutional amendment request and fails `gapc0` until C0 itself is amended. |
+| 3 | **registry delta** — must be `0`. Physical `index`/`cache` roles are lawful; semantic registries are not. |
+| 4 | **source syntax delta** — `0` by default. If a face is genuinely needed, name the existing face it reuses. |
+| 5 | **semantic invariant** — the new fact/law that becomes expressible, stated over existing kinds. |
+| 6 | **physical mechanism** — candidate implementation only; never semantic authority. |
+| 7 | **prerequisites** — exact upstream GAPs. |
+| 8 | **foreign implication** — which boundary this can erase or constrain, and under what witness. |
+| 9 | **world implication** — authority/context impact. |
+| 10 | **projection implication** — impact on projection/injection/interjection/ update. |
+| 11 | **demand implication** — new quotient/cardinality behavior. |
+| 12 | **realization implication** — the candidate-set expansion or deletion. This is the performance consequence; a reconciliation with none is scenery. |
+| 13 | **evidence** — the measurement, proof, or refusal that closes or refutes. |
+| 14 | **deletion witness** — the old subsystem, bridge, or spelling that disappears when this lands. |
 
-## Dependency architecture
+| section |
+|---|---|
+| Dependency architecture |
 
 ```
                  P0 SEMANTIC SPINE
@@ -179,17 +183,16 @@
 | 1 | GAP-179 (observer quotient) is the compilation-phase face of GAP-176 and sits beside it. |
 | 2 | No new research GAP is filed until its block exists and its place in this graph is stated. |
 
-## Horizons
+| section |
+|---|---|
+| Horizons |
 
-- **H0 — authority repair.** C0 internal contradictions; GAP wording that
-  violates §14/§15; this spine. Landed 2026-08-18.
-- **H1 — compiler B critical path.** GAP-145 → GAP-134 → parser authority
-  transfer → binding → exact graph → demand → one representation decision →
-  realization → B. Research architecture must never substitute for this path.
-- **H2 — semantic substrate.** GAP-187 + 175 + 176 + 177 + 178; the algebra
-  later research depends on.
-- **H3 — exploitation frontier.** GAP-179–200 + foreign fusion + complexity /
-  lower bounds + hardware, solver, and search research.
+| # | directive |
+|---|---|
+| 1 | **H0 — authority repair.** C0 internal contradictions; GAP wording that violates §14/§15; this spine. Landed 2026-08-18. |
+| 2 | **H1 — compiler B critical path.** GAP-145 → GAP-134 → parser authority transfer → binding → exact graph → demand → one representation decision → realization → B. Research architecture must never substitute for this path. |
+| 3 | **H2 — semantic substrate.** GAP-187 + 175 + 176 + 177 + 178; the algebra later research depends on. |
+| 4 | **H3 — exploitation frontier.** GAP-179–200 + foreign fusion + complexity / lower bounds + hardware, solver, and search research. |
 
 | # | directive |
 |---|---|

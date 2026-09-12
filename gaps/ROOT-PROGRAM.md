@@ -1,13 +1,21 @@
-# ROOT-PROGRAM — the active-P0 surface collapsed onto eight programs
+| field | value |
+|---|---|
+| title | ROOT-PROGRAM — the active-P0 surface collapsed onto eight programs |
+| status | OPEN |
+| filed | 2026-08-23 |
+| kind | projection |
+| normative for | nothing — this is a projection of |
+| derived, not authored | the membership below is a reading of the gaps; the gaps are the authority. **Not the per-gap frontier.** Each gap states its own machine-read frontier in an  block that  validates and fails closed on. |
 
 | # | directive |
 |---|---|
-| 1 | **Status:** OPEN · **Filed:** 2026-08-23 **Kind:** projection · **Normative for:** nothing — this is a projection of `gaps/GAP-*.md` **Derived, not authored:** the membership below is a reading of the gaps; the gaps are the authority. **Not the per-gap frontier.** Each gap states its own machine-read frontier in an `idol.gap.frontier.v1` block that `gate/frontier.sh` validates and fails closed on. |
 | 2 | This file is a reading ACROSS gaps, which is why it carries a derivation command instead of a census, and why it must never be cited where a gap's own frontier block answers the question. **The membership is checked against the gaps, not trusted.** `gate/frontier.sh` reads this file's program rosters and its reclassification table and compares both against the live `GAP-*.md` headers on disk: a gap named here must exist; a gap listed under a program must still be selected by the active-P0 census unless the line marks it `(not P0)`; and a gap in the reclassification table must NOT be selected. |
 | 3 | So dispatch cannot silently point at closed or reopened work — that is a gate failure, not a stale paragraph. |
 | 4 | What the gate does NOT check, and what therefore remains a reading, is WHICH program a gap belongs to and the narrative under each heading. |
 
-## Why this exists
+| section |
+|---|---|
+| Why this exists |
 
 | # | directive |
 |---|---|
@@ -25,7 +33,7 @@ done
 |---|---|
 | 1 | Do not read a count out of this file — that is the rule this whole pass exists to enforce, and the number moved twice while the pass was being written. |
 
-## The two chokepoints
+<!-- idol-projection-roster:v1:begin -->
 
 | # | directive |
 |---|---|
@@ -45,7 +53,9 @@ done
 |---|---|
 | 1 | Close those two and the dispatchable surface shrinks more than any other pair. |
 
-## The eight programs
+| section |
+|---|---|
+| The eight programs |
 
 | # | directive |
 |---|---|
@@ -90,7 +100,9 @@ done
 |---|---|
 | 1 | **8 Bootstrap/Evidence** — `GAP-050`, `GAP-127`, `GAP-136`, `GAP-139`, `GAP-152`, `GAP-172`. `GAP-152`'s aggregate FTCFTW pass EXISTS and is green, and correctly prints `complete FTCFTW proof: NOT PROVEN` — its honesty defect is that it indexes `scripts/runtime_bench.id`, which `GAP-128` proves measures nothing. `GAP-172` is the frontier machinery that `GAP-152` is one row of. |
 
-## What resists
+| section |
+|---|---|
+| What resists |
 
 | # | directive |
 |---|---|
@@ -109,7 +121,7 @@ done
 | 1 | **`GAP-151`** is a coordination request between two owners rather than a defect, and its own text says so. |
 | 2 | It is parked under Realization One because the interface it asks for (`semantic application -> selected realization -> machine range`) is a realization-side export, but nothing in it will move until someone owns that export. |
 
-## Findings that outrank the classification
+<!-- idol-projection-roster:v1:end -->
 
 | # | directive |
 |---|---|
@@ -129,23 +141,10 @@ done
 |---|---|
 | 1 | **Four gaps state something about `HEAD` that is false in the dangerous direction** — believing them produces a wrong CLOSED: |
 
-- ~~`GAP-127` declares `scripts/shcledger.id` and `scripts/selfhost_manifest.id`
-  deleted. Both are tracked; `shcledger.id:17` still calls `io.popen`. Three SHC
-  ledgers with contradicting counts coexist, which IS the contract drift the gap
-  is named for, live and worse than filed.~~ **RESOLVED 2026-08-24 by deleting
-  the files rather than the claim.** One SHC ledger remains,
-  `scripts/ledger/shc.id`. The deciding measurement: `selfhost_manifest.id` does
-  not compile (`idol check` refuses `_row` at `1:1`), and `shcledger.id`
-  consumed it by `grep -c` rather than by running it, so its counts were a
-  substring tally over a file the compiler rejects. See `gaps/GAP-127.md`
-  § 2026-08-24.
-- `GAP-128` was said here to cite `tools/wasm/src/ward.id` as the environment
-  reader. **Re-read 2026-08-24: it does not.** The gap's `**Files:**` line and
-  its body both name `tools/wasm/src/engine.id`, and the only `ward` tokens in it
-  are the two ENV VARIABLE names `WARD_WASM`/`WARD_INVOKE`, which are what the
-  gap is about. The stale `ward.id` path was in the SCRIPTS: a paragraph in
-  `scripts/runtime_bench.id` asserting that `ward.id` reads those two names, and
-  comment rows in `scripts/audit100.id`.
+| # | directive |
+|---|---|
+| 1 | ~~`GAP-127` declares `scripts/shcledger.id` and `scripts/selfhost_manifest.id` deleted. Both are tracked; `shcledger.id:17` still calls `io.popen`. Three SHC ledgers with contradicting counts coexist, which IS the contract drift the gap is named for, live and worse than filed.~~ **RESOLVED 2026-08-24 by deleting the files rather than the claim.** One SHC ledger remains, `scripts/ledger/shc.id`. The deciding measurement: `selfhost_manifest.id` does not compile (`idol check` refuses `_row` at `1:1`), and `shcledger.id` consumed it by `grep -c` rather than by running it, so its counts were a substring tally over a file the compiler rejects. See `gaps/GAP-127.md` § 2026-08-24. |
+| 2 | `GAP-128` was said here to cite `tools/wasm/src/ward.id` as the environment reader. **Re-read 2026-08-24: it does not.** The gap's `**Files:**` line and its body both name `tools/wasm/src/engine.id`, and the only `ward` tokens in it are the two ENV VARIABLE names `WARD_WASM`/`WARD_INVOKE`, which are what the gap is about. The stale `ward.id` path was in the SCRIPTS: a paragraph in `scripts/runtime_bench.id` asserting that `ward.id` reads those two names, and comment rows in `scripts/audit100.id`. |
 
 | # | directive |
 |---|---|
@@ -160,11 +159,10 @@ done
 | 2 | So the ward axis has no in-tree producer for either the binary or the variable names. |
 | 3 | It refuses honestly at its `exists(wardbin)` check; restoring it means naming a producer, which is `GAP-128`'s actual remaining work. |
 
-- `GAP-168` asserts `gate/path.id` `list(staged)` rejects plural roots via
-  `plural(root(...))`. No such check exists, and `scripts/ledger/perf.id` is a
-  positive control the gate must ACCEPT.
-- `GAP-203`'s "Crossed 2026-08-21" credits `at_is_glued_world_face` in
-  `src/parser.zig`. Only `at_is_glued_anchor` exists here.
+| # | directive |
+|---|---|
+| 1 | `GAP-168` asserts `gate/path.id` `list(staged)` rejects plural roots via `plural(root(...))`. No such check exists, and `scripts/ledger/perf.id` is a positive control the gate must ACCEPT. |
+| 2 | `GAP-203`'s "Crossed 2026-08-21" credits `at_is_glued_world_face` in `src/parser.zig`. Only `at_is_glued_anchor` exists here. |
 
 | # | directive |
 |---|---|
@@ -172,7 +170,9 @@ done
 | 2 | Both had a named, plausible superseding commit. |
 | 3 | Neither was superseded. |
 
-## Reclassified in this pass, with the superseding commit named
+| section |
+|---|---|
+| Reclassified in this pass, with the superseding commit named |
 
 | gap | verdict | superseded by |
 | --- | --- | --- |
@@ -193,56 +193,27 @@ done
 | 1 | Each carries its evidence in its own file. |
 | 2 | No gap was reclassified on the strength of its own prose. |
 
-## Two proposed reclassifications withdrawn, and why
+| section |
+|---|---|
+| Two proposed reclassifications withdrawn, and why |
 
 | # | directive |
 |---|---|
 | 1 | `GAP-144` and `GAP-221` were proposed for SUPERSEDED in this pass and are NOT. |
 | 2 | Both proposals had a true measurement under them and drew the wrong verdict from it, in the same way: **a gap's headline going quiet is not its closure condition.** |
 
-- `GAP-144` — the rejected branch really is out of the tree
-  (`git grep -n 'collectIndexedNames' -- src/` is empty). But rejecting a
-  name-selected implementation is not supplying a graph-authoritative one, and
-  the receiving owner named in the proposal, `GAP-148`, is register spilling and
-  fixed-frame value locations. It carries none of `GAP-144`'s eight
-  required-boundary items and none of its six negative controls, and
-  `gaps/GAP-169.md` routes "runtime-sized table realization" AT `GAP-144` by
-  name. Superseding it would have dropped a P0 obligation and dangled that
-  pointer.
-- `GAP-221` — `examples/shadowstore.id` really does answer `7 99 7` on a fresh
-  build. But this gap's stated deletion witness is unmet, and NOTHING pins the
-  answer: `git grep -n shadowstore -- gate/ build.zig tests/ tools/ scripts/` is
-  empty, so a re-regression would be silent. One manual run at one revision is
-  the evidentiary shape that produced the false SUPERSEDED reading of `GAP-207`,
-  which is the live wrong answer this same pass found. **Half crossed, then
-  reopened:** the withdrawal named two missing things and `aa936dfa` supplied
-  one. The deletion witness is met. The pin is not a pin — `gate/gap-221-shadowstore.sh`
-  made that `git grep` non-empty with four `grep`s over `src/dnir_lower.zig` and
-  no program, so the answer stayed exactly as unpinned as the withdrawal found
-  it, and the repair certified by it was landed with "Fixture execution requires
-  backend support" in its own commit message. `2954038e` and `29d77ed0` both
-  measure the guard that repair installed to be dead. The gap is OPEN. The
-  withdrawal stands as the RULING it was, and reads further than it was written:
-  a quiet headline is
-  not a closure, and neither is a met deletion witness when the acceptance it
-  was supposed to unblock was never run. **And the reopening's own first draft
-  made the same mistake one layer out:** it quoted a compile diagnostic that had
-  been read off a corpus file `idol fmt` had silently rewritten, not off the
-  file in Git. `idol fmt` ends in an unconditional `writeFile` with no
-  `--check`, so on a mid-transfer grammar it exits 0 having written a DIFFERENT
-  legal program — seven of the first sixty `examples/*.id` and this gap's own
-  acceptance fixture, reproduced deterministically. `GAP-223` closed this
-  corruption mode for its specific cause and its "Blast radius" predicted this
-  recurrence verbatim; the hazard is live and is now the quieter shape, since
-  the rewrite parses. The eight files are reverted and
-  `gate/gap-221-shadowstore.sh` arm 0 now refuses to report an answer about a
-  fixture that does not match HEAD.
+| # | directive |
+|---|---|
+| 1 | `GAP-144` — the rejected branch really is out of the tree (`git grep -n 'collectIndexedNames' -- src/` is empty). But rejecting a name-selected implementation is not supplying a graph-authoritative one, and the receiving owner named in the proposal, `GAP-148`, is register spilling and fixed-frame value locations. It carries none of `GAP-144`'s eight required-boundary items and none of its six negative controls, and `gaps/GAP-169.md` routes "runtime-sized table realization" AT `GAP-144` by name. Superseding it would have dropped a P0 obligation and dangled that pointer. |
+| 2 | `GAP-221` — `examples/shadowstore.id` really does answer `7 99 7` on a fresh build. But this gap's stated deletion witness is unmet, and NOTHING pins the answer: `git grep -n shadowstore -- gate/ build.zig tests/ tools/ scripts/` is empty, so a re-regression would be silent. One manual run at one revision is the evidentiary shape that produced the false SUPERSEDED reading of `GAP-207`, which is the live wrong answer this same pass found. **Half crossed, then reopened:** the withdrawal named two missing things and `aa936dfa` supplied one. The deletion witness is met. The pin is not a pin — `gate/gap-221-shadowstore.sh` made that `git grep` non-empty with four `grep`s over `src/dnir_lower.zig` and no program, so the answer stayed exactly as unpinned as the withdrawal found it, and the repair certified by it was landed with "Fixture execution requires backend support" in its own commit message. `2954038e` and `29d77ed0` both measure the guard that repair installed to be dead. The gap is OPEN. The withdrawal stands as the RULING it was, and reads further than it was written: a quiet headline is not a closure, and neither is a met deletion witness when the acceptance it was supposed to unblock was never run. **And the reopening's own first draft made the same mistake one layer out:** it quoted a compile diagnostic that had been read off a corpus file `idol fmt` had silently rewritten, not off the file in Git. `idol fmt` ends in an unconditional `writeFile` with no `--check`, so on a mid-transfer grammar it exits 0 having written a DIFFERENT legal program — seven of the first sixty `examples/*.id` and this gap's own acceptance fixture, reproduced deterministically. `GAP-223` closed this corruption mode for its specific cause and its "Blast radius" predicted this recurrence verbatim; the hazard is live and is now the quieter shape, since the rewrite parses. The eight files are reverted and `gate/gap-221-shadowstore.sh` arm 0 now refuses to report an answer about a fixture that does not match HEAD. |
 
 | # | directive |
 |---|---|
 | 1 | Both now carry gated `idol.gap.frontier.v1` blocks that say which half is crossed, so the measurement is kept and the obligation is not. |
 
-## Everything else stays OPEN
+| section |
+|---|---|
+| Everything else stays OPEN |
 
 | # | directive |
 |---|---|
