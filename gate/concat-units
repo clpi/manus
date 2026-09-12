@@ -1,0 +1,17 @@
+# gate/concat-units — concatenation units for the vocabulary gate.
+#
+# One unit per line: <unit-name>: <member> <member> ...
+# A relation declared in a unit member is witnessed by gate/vocabulary.sh
+# against `idol graph` run over the concatenated member sources, in the
+# listed order, so cross-file references inside a multi-file kernel resolve
+# exactly as the compiler sees them. Blank lines and #-comments are ignored.
+#
+# Shape rules (fail-closed): the unit name is one lowercase word; every
+# member is a repository-relative .id path with no `..`; a file belongs to
+# at most one unit. Members are re-checked as repository-contained files at
+# analysis time; a missing member fails the witness rather than weakening it.
+# Units never fabricate facts: the witness still requires compiler-produced
+# body and linkage facts, and a name declared twice in one unit is refused
+# as ambiguous.
+
+proofkernel: lib/proof/prop.id lib/proof/check.id lib/proof/tac.id test/proofunity.id

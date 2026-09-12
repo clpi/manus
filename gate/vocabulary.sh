@@ -8,6 +8,16 @@
 # current source-law edition. Removing any one of those facts is a planted
 # negative control and must make the witness disappear.
 #
+# CONCATENATION UNITS. A kernel whose relations span several files is declared
+# as a unit in gate/concat-units (`unit-name: file file ...`). A relation in a
+# unit member is witnessed against `idol graph` run over the concatenated
+# member sources, so cross-file references resolve exactly as the compiler
+# sees the kernel. The manifest is shape-validated on every run and each
+# member is re-validated as repository-contained at analysis time; a missing
+# member fails the witness closed. Units never fabricate facts: every witness
+# still requires compiler-produced body and linkage facts, and a name
+# declared twice in one unit is ambiguous and refused.
+#
 # Cases, descriptors, and value bindings remain fail-closed: their corresponding
 # graph reach/cardinality projection is not exported yet. This gate keeps no
 # admitted-word list, never treats source spelling as identity, and never reads
@@ -172,7 +182,7 @@ n_lines=$(LC_ALL=C awk 'END { print NR + 0 }' "$cand")
 if [ "$n_new" -gt 0 ]; then
     [ -x "$idol" ] || die "graph witness needs an executable compiler: $idol"
     witness="$tmp/witness"
-    if python3 - "$new" "$root" "$idol" >"$witness" 2>&1 <<'PY'
+    if python3 - "$new" "$root" "$idol" "$tmp" >"$witness" 2>&1 <<'PY'
 from copy import deepcopy
 from pathlib import Path
 import json
@@ -180,7 +190,7 @@ import re
 import subprocess
 import sys
 
-rows_path, root_text, idol = sys.argv[1:]
+rows_path, root_text, idol, tmpdir = sys.argv[1:]
 root = Path(root_text).resolve()
 rows = []
 for raw in Path(rows_path).read_text().splitlines():
@@ -189,7 +199,55 @@ for raw in Path(rows_path).read_text().splitlines():
     kind, name, file = raw.split("\t", 2)
     rows.append((kind, name, file))
 
+UNIT_NAME_RE = re.compile(r"[a-z][a-z0-9]*")
+UNIT_MEMBER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./-]*\.id")
+
+
+def load_units():
+    """Shape-validate gate/concat-units. Fail-closed: any malformed line
+    refuses the manifest and therefore the whole gate run."""
+    units = {}
+    file_to_unit = {}
+    manifest = root / "gate" / "concat-units"
+    if not manifest.is_file():
+        return units, file_to_unit
+    for lineno, raw in enumerate(manifest.read_text().splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            raise ValueError(f"gate/concat-units:{lineno}: missing ':' separator")
+        uname, members = line.split(":", 1)
+        uname = uname.strip()
+        if UNIT_NAME_RE.fullmatch(uname) is None:
+            raise ValueError(f"gate/concat-units:{lineno}: bad unit name {uname!r}")
+        if uname in units:
+            raise ValueError(f"gate/concat-units:{lineno}: duplicate unit {uname!r}")
+        files = members.split()
+        if not files:
+            raise ValueError(f"gate/concat-units:{lineno}: unit {uname!r} lists no members")
+        seen = set()
+        for m in files:
+            if UNIT_MEMBER_RE.fullmatch(m) is None or ".." in m.split("/"):
+                raise ValueError(f"gate/concat-units:{lineno}: bad member path {m!r}")
+            if m in seen:
+                raise ValueError(f"gate/concat-units:{lineno}: duplicate member {m!r} in unit {uname!r}")
+            seen.add(m)
+            if m in file_to_unit:
+                raise ValueError(f"gate/concat-units:{lineno}: {m!r} is already in unit {file_to_unit[m]!r}")
+            file_to_unit[m] = uname
+        units[uname] = files
+    return units, file_to_unit
+
+
+try:
+    units, file_to_unit = load_units()
+except ValueError as exc:
+    print(f"concat-units manifest refused: {exc}")
+    raise SystemExit(1)
+
 graphs = {}
+unit_graphs = {}
 proven = []
 unproven = []
 
@@ -299,7 +357,57 @@ def graph_for(file):
     graphs[file] = graph
     return graph
 
+
+def graph_for_unit(uname):
+    """Witness a unit member against the concatenated member sources, in
+    manifest order. Each member is re-validated as repository-contained; the
+    resulting graph faces the same schema, source-law, body, linkage, and
+    identity controls as a single-file graph."""
+    if uname in unit_graphs:
+        return unit_graphs[uname]
+    members = units[uname]
+    blob = []
+    for m in members:
+        path = (root / m).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"unit {uname}: member escapes repository: {m}")
+        if not path.is_file():
+            raise ValueError(f"unit {uname}: member missing from worktree: {m}")
+        text = path.read_text()
+        if not text.endswith("\n"):
+            text += "\n"
+        blob.append(text)
+    tmpf = Path(tmpdir) / ("unit-" + uname + ".id")
+    tmpf.write_text("".join(blob))
+    run = subprocess.run([idol, "graph", str(tmpf)], capture_output=True, text=True)
+    if run.returncode != 0:
+        first = run.stderr.splitlines()[0] if run.stderr.splitlines() else "no diagnostic"
+        raise ValueError(f"unit {uname}: graph refused the concatenation: rc={run.returncode}: {first}")
+    try:
+        graph = json.loads(run.stdout)
+    except Exception as exc:
+        raise ValueError(f"unit {uname}: graph JSON refused: {type(exc).__name__}") from exc
+    validate_graph(graph)
+    unit_graphs[uname] = graph
+    return graph
+
 for kind, name, file in rows:
+    uname = file_to_unit.get(file)
+    if uname is not None:
+        if kind != "relation":
+            unproven.append((kind, name, file, f"unit {uname}: no graph-backed admission for this declaration kind"))
+            continue
+        try:
+            graph = graph_for_unit(uname)
+            entity, why = relation_witness(graph, name)
+        except Exception as exc:
+            unproven.append((kind, name, file, str(exc)))
+            continue
+        if entity is None:
+            unproven.append((kind, name, file, f"unit {uname}: {why}"))
+        else:
+            proven.append((kind, name, file, entity, graph))
+        continue
     if kind != "relation":
         unproven.append((kind, name, file, "no graph-backed admission for this declaration kind"))
         continue
@@ -320,90 +428,92 @@ if unproven:
         print(f"  {kind:12} {name:28} {file} — {why}")
     raise SystemExit(1)
 
-# Non-vacuity controls over the first real witness. Each damaged graph must lose
-# the witness; otherwise a missing semantic column could still pass this gate.
-kind, name, file, entity, graph = proven[0]
-for label, damage in (
-    ("body", lambda g: g.__setitem__("bodies", [x for x in g["bodies"] if x.get("relation") != entity])),
-    ("linkage", lambda g: g.__setitem__("callable_linkages", [x for x in g["callable_linkages"] if x.get("callable") != entity])),
-    ("exposure", lambda g: [x.__setitem__("exposure", "unknown") for x in g["callable_linkages"] if x.get("callable") == entity]),
-    ("root-scope", lambda g: [n.__setitem__("scope", entity) for n in g["nodes"] if n.get("id") == entity]),
-):
+if proven:
+    # Non-vacuity controls over the first real witness. Each damaged graph must lose
+    # the witness; otherwise a missing semantic column could still pass this gate.
+    kind, name, file, entity, graph = proven[0]
+    for label, damage in (
+        ("body", lambda g: g.__setitem__("bodies", [x for x in g["bodies"] if x.get("relation") != entity])),
+        ("linkage", lambda g: g.__setitem__("callable_linkages", [x for x in g["callable_linkages"] if x.get("callable") != entity])),
+        ("exposure", lambda g: [x.__setitem__("exposure", "unknown") for x in g["callable_linkages"] if x.get("callable") == entity]),
+        ("root-scope", lambda g: [n.__setitem__("scope", entity) for n in g["nodes"] if n.get("id") == entity]),
+    ):
+        damaged = deepcopy(graph)
+        damage(damaged)
+        if relation_witness(damaged, name)[0] is not None:
+            print(f"control failed: damaged {label} still witnesses {name}")
+            raise SystemExit(1)
     damaged = deepcopy(graph)
-    damage(damaged)
-    if relation_witness(damaged, name)[0] is not None:
-        print(f"control failed: damaged {label} still witnesses {name}")
+    damaged["version"] = 16
+    try:
+        validate_graph(damaged)
+    except ValueError:
+        pass
+    else:
+        print("control failed: future graph schema version was accepted")
         raise SystemExit(1)
-damaged = deepcopy(graph)
-damaged["version"] = 16
-try:
-    validate_graph(damaged)
-except ValueError:
-    pass
-else:
-    print("control failed: future graph schema version was accepted")
-    raise SystemExit(1)
-damaged = deepcopy(graph)
-damaged["root_source_law"]["card"] = "unknown"
-try:
-    validate_graph(damaged)
-except ValueError:
-    pass
-else:
-    print("control failed: damaged source-law cardinality was accepted")
-    raise SystemExit(1)
-
-# IDENTITY CONTROLS over the same first witness. The four above prove a missing
-# semantic column loses the witness; these prove a spelling cannot borrow one.
-# `seam` and `mash` are two byte-different neighbours of the proven name, and
-# the pair is the counterexample this gate exists for: one carries foreign
-# bytes, the other does not, and neither is the other.
-seam = name + "_x"
-mash = seam.replace("_", "")
-
-
-def respell(g, spelling, **linkage):
-    out = deepcopy(g)
-    for node in out["nodes"]:
-        if node.get("id") == entity:
-            node["name"] = spelling
-    for row in out["callable_linkages"]:
-        if row.get("callable") == entity:
-            row.update(linkage)
-    return out
-
-
-renamed = respell(graph, seam)
-for borrower in (name, mash):
-    if relation_witness(renamed, borrower)[0] is not None:
-        print(f"control failed: {seam} witnessed the different identity {borrower}")
+    damaged = deepcopy(graph)
+    damaged["root_source_law"]["card"] = "unknown"
+    try:
+        validate_graph(damaged)
+    except ValueError:
+        pass
+    else:
+        print("control failed: damaged source-law cardinality was accepted")
         raise SystemExit(1)
-if relation_witness(renamed, seam)[0] is not None:
-    print(f"control failed: foreign exact bytes {seam} were admitted with no foreign binding")
-    raise SystemExit(1)
-bound = respell(graph, seam, origin="c", exposure="c_import", symbol=seam)
-if relation_witness(bound, seam)[0] is None:
-    print(f"control failed: a real foreign binding did not admit its own bytes {seam}")
-    raise SystemExit(1)
-for other in (name, mash):
-    if relation_witness(bound, other)[0] is not None:
-        print(f"control failed: the foreign binding for {seam} also witnessed {other}")
+
+    # IDENTITY CONTROLS over the same first witness. The four above prove a missing
+    # semantic column loses the witness; these prove a spelling cannot borrow one.
+    # `seam` and `mash` are two byte-different neighbours of the proven name, and
+    # the pair is the counterexample this gate exists for: one carries foreign
+    # bytes, the other does not, and neither is the other.
+    seam = name + "_x"
+    mash = seam.replace("_", "")
+
+
+    def respell(g, spelling, **linkage):
+        out = deepcopy(g)
+        for node in out["nodes"]:
+            if node.get("id") == entity:
+                node["name"] = spelling
+        for row in out["callable_linkages"]:
+            if row.get("callable") == entity:
+                row.update(linkage)
+        return out
+
+
+    renamed = respell(graph, seam)
+    for borrower in (name, mash):
+        if relation_witness(renamed, borrower)[0] is not None:
+            print(f"control failed: {seam} witnessed the different identity {borrower}")
+            raise SystemExit(1)
+    if relation_witness(renamed, seam)[0] is not None:
+        print(f"control failed: foreign exact bytes {seam} were admitted with no foreign binding")
         raise SystemExit(1)
-aliased = respell(graph, seam, origin="c", exposure="c_import", symbol=mash)
-if relation_witness(aliased, seam)[0] is not None:
-    print(f"control failed: foreign bytes {seam} were admitted against the symbol {mash}")
-    raise SystemExit(1)
+    bound = respell(graph, seam, origin="c", exposure="c_import", symbol=seam)
+    if relation_witness(bound, seam)[0] is None:
+        print(f"control failed: a real foreign binding did not admit its own bytes {seam}")
+        raise SystemExit(1)
+    for other in (name, mash):
+        if relation_witness(bound, other)[0] is not None:
+            print(f"control failed: the foreign binding for {seam} also witnessed {other}")
+            raise SystemExit(1)
+    aliased = respell(graph, seam, origin="c", exposure="c_import", symbol=mash)
+    if relation_witness(aliased, seam)[0] is not None:
+        print(f"control failed: foreign bytes {seam} were admitted against the symbol {mash}")
+        raise SystemExit(1)
 
 for kind, name, file, entity, _ in proven:
     print(f"graph-proven {kind:12} {name:28} {file} id={entity}")
-print("vocabulary graph controls: PASS (body, linkage, exposure, root scope, schema version, source law)")
-print("vocabulary identity controls: PASS (no normalization, foreign bytes need a binding, binding admits only its own bytes)")
+if proven:
+    print("vocabulary graph controls: PASS (body, linkage, exposure, root scope, schema version, source law)")
+    print("vocabulary identity controls: PASS (no normalization, foreign bytes need a binding, binding admits only its own bytes)")
 PY
     then
         cat "$witness" >&2
     else
         cat "$witness" >&2
-        die "SEMANTIC-VOCABULARY-BLOCKED: $n_new declaration(s); only exact graph-proven module relations are admitted. Cases, descriptors, bindings, missing/ambiguous linkage, missing body, invalid source-law evidence, and foreign exact bytes without a real foreign binding remain refused."
+        die "SEMANTIC-VOCABULARY-BLOCKED: $n_new declaration(s); only exact graph-proven module relations are admitted (single-file, or over the declared concatenation unit's sources). Cases, descriptors, bindings, missing/ambiguous linkage, missing body, invalid source-law evidence, and foreign exact bytes without a real foreign binding remain refused."
     fi
 fi
 

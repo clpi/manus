@@ -138,6 +138,80 @@ expect_pass "foreign exact bytes carried by a real foreign binding" "$gate" --di
 tree_diff aliased vendor/mathc.id 'sin_c: f64 = (x: f64)'
 expect_fail "a foreign spelling that is not the symbol it binds" "$gate" --diff "$tmp/aliased.diff"
 
+
+# CONCATENATION UNITS. A relation whose body bare-calls a name from another
+# file cannot be witnessed per-file; without a declared unit it stays refused.
+cat >"$tmp/xref.diff" <<'EOF'
+--- a/lib/compiler/parser.id
++++ b/lib/compiler/parser.id
+@@ -1,0 +2 @@
++xrefprobe: i64 = (src: str)
++  eval(src)
+EOF
+expect_fail "cross-file bare call without a declared unit stays refused" "$gate" --diff "$tmp/xref.diff"
+
+# Unit behavior is exercised in throwaway Git trees so the real repo's
+# manifest is never mutated by a control run. IDOL points at the real
+# compiler; root resolves to the throwaway tree.
+REALIDOL="$here/../zig-out/bin/idol"
+mkunitrepo() {
+    dest=$1
+    mkdir -p "$dest/gate"
+    cp "$gate" "$dest/gate/vocabulary.sh"
+    cp "$here/vocab-extract.awk" "$dest/gate/vocab-extract.awk"
+    cp "$here/subject.sh" "$dest/gate/subject.sh"
+    git -C "$dest" init -q
+    git -C "$dest" add -A
+    git -C "$dest" -c user.email=t@t -c user.name=t commit -qm init
+}
+
+# Positive: the unit's concatenated sources witness a cross-file relation
+# that per-file analysis cannot see.
+urepok="$tmp/unitrepo-ok"
+mkdir -p "$urepok/gate"
+printf 'u: a.id b.id\n' > "$urepok/gate/concat-units"
+printf 'one: i64 = ()\n  1\n' > "$urepok/a.id"
+printf 'two: i64 = ()\n  one()\n' > "$urepok/b.id"
+cp "$gate" "$urepok/gate/vocabulary.sh"
+cp "$here/vocab-extract.awk" "$urepok/gate/vocab-extract.awk"
+cp "$here/subject.sh" "$urepok/gate/subject.sh"
+mkunitrepo "$urepok"
+cat >"$tmp/unit.diff" <<'EOF'
+--- a/b.id
++++ b/b.id
+@@ -1,0 +2 @@
++two: i64 = ()
+EOF
+expect_pass "concatenation unit witnesses a cross-file relation" env "IDOL=$REALIDOL" "$urepok/gate/vocabulary.sh" --diff "$tmp/unit.diff"
+
+# Negative: a unit member escaping the repository fails the gate loudly.
+urepobad="$tmp/unitrepo-bad"
+mkdir -p "$urepobad/gate"
+printf 'evil: ../escape.id\n' > "$urepobad/gate/concat-units"
+printf 'x = 1\n' > "$urepobad/probe.id"
+cp "$gate" "$urepobad/gate/vocabulary.sh"
+cp "$here/vocab-extract.awk" "$urepobad/gate/vocab-extract.awk"
+cp "$here/subject.sh" "$urepobad/gate/subject.sh"
+mkunitrepo "$urepobad"
+cat >"$tmp/unitbad.diff" <<'EOF'
+--- a/probe.id
++++ b/probe.id
+@@ -1,0 +2 @@
++badrel: i64 = ()
+EOF
+expect_fail "unit member escaping the repository" env "IDOL=$REALIDOL" "$urepobad/gate/vocabulary.sh" --diff "$tmp/unitbad.diff"
+
+# Negative: a non-word unit name is refused.
+ureponame="$tmp/unitrepo-name"
+mkdir -p "$ureponame/gate"
+printf 'bad_name: a.id\n' > "$ureponame/gate/concat-units"
+printf 'x = 1\n' > "$ureponame/probe.id"
+cp "$gate" "$ureponame/gate/vocabulary.sh"
+cp "$here/vocab-extract.awk" "$ureponame/gate/vocab-extract.awk"
+cp "$here/subject.sh" "$ureponame/gate/subject.sh"
+mkunitrepo "$ureponame"
+expect_fail "non-word unit name" env "IDOL=$REALIDOL" "$ureponame/gate/vocabulary.sh" --diff "$tmp/unitbad.diff"
+
 # The selftest carries the in-graph damage controls (no normalization; foreign
 # bytes need a binding; a binding admits only its own bytes) and nothing else
 # runs it, so `--controls` would otherwise never reach them.
