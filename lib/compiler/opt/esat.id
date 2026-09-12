@@ -1,0 +1,833 @@
+
+hx: i64 = (s: str, p: i64)
+    v = 0
+    i = 0
+    while i < 8
+        c = s:byte(p + i)
+        d = c - 48
+        if c >= 97
+            d = c - 87
+        else
+            if c >= 65
+                d = c - 55
+        v = v * 16 + d
+        i = i + 1
+    v
+
+px: str = (v: i64)
+    dg = "0123456789abcdef"
+    o = ""
+    i = 0
+    while i < 8
+        o = dg:sub((v & 15) + 1, (v & 15) + 1) .. o
+        v = v >> 4
+        i = i + 1
+    o
+
+seg: str = (s: str, p: i64, n: i64)
+    if n <= 0
+        return ""
+    s:sub(p, p + n - 1)
+
+putw: str = (g: str, p: i64, w: str)
+    seg(g, 1, p - 1) .. w .. seg(g, p + 8, g:len() - p - 7)
+
+hd: str = (s: str)
+    i = 1
+    n = s:len()
+    while i <= n and s:byte(i) != 59
+        i = i + 1
+    s:sub(1, i - 1)
+
+tl: str = (s: str)
+    i = 1
+    n = s:len()
+    while i <= n and s:byte(i) != 59
+        i = i + 1
+    s:sub(i + 1, n)
+
+nn: i64 = (g: str)
+    hx(g, 1)
+
+pb: i64 = (g: str)
+    9 + nn(g) * 24
+
+sb: i64 = (g: str)
+    9 + nn(g) * 32
+
+hb: i64 = (g: str)
+    9 + nn(g) * 40
+
+vb: i64 = (g: str)
+    9 + nn(g) * 40 + 8192
+
+opof: i64 = (g: str, i: i64)
+    hx(g, 9 + i * 24)
+
+lfof: i64 = (g: str, i: i64)
+    hx(g, 9 + i * 24 + 8)
+
+rtof: i64 = (g: str, i: i64)
+    hx(g, 9 + i * 24 + 16)
+
+parof: i64 = (g: str, i: i64)
+    hx(g, pb(g) + i * 8)
+
+szof: i64 = (g: str, i: i64)
+    hx(g, sb(g) + i * 8)
+
+vnames: str = (g: str)
+    v = vb(g)
+    seg(g, v, g:len() - v + 1)
+
+efind: i64 = (g: str, x: i64)
+    p = parof(g, x)
+    while p != x
+        x = p
+        p = parof(g, x)
+    x
+
+union: str = (g: str, a: i64, b: i64)
+    ra = efind(g, a)
+    rb = efind(g, b)
+    if ra == rb
+        return g
+    sa = szof(g, ra)
+    sb2 = szof(g, rb)
+    if sa < sb2
+        t = ra
+        ra = rb
+        rb = t
+        t = sa
+        sa = sb2
+        sb2 = t
+    g = putw(g, pb(g) + rb * 8, px(ra))
+    putw(g, sb(g) + ra * 8, px(sa + sb2))
+
+hhash: i64 = (op: i64, l: i64, r: i64)
+    (op * 31 + l * 131 + r * 13131) & 4294967295
+
+hfindb: i64 = (hc: str, base: i64, op: i64, l: i64, r: i64)
+    s = hhash(op, l, r) & 255
+    i = 0
+    while i < 256
+        p = base + s * 32
+        id = hx(hc, p + 24)
+        if id == 4294967295
+            return 4294967295
+        if hx(hc, p) == op and hx(hc, p + 8) == l and hx(hc, p + 16) == r
+            return id
+        s = (s + 1) & 255
+        i = i + 1
+    4294967295
+
+hputb: str = (hc: str, base: i64, op: i64, l: i64, r: i64, id: i64)
+    s = hhash(op, l, r) & 255
+    i = 0
+    while i < 256
+        p = base + s * 32
+        if hx(hc, p + 24) == 4294967295
+            return seg(hc, 1, p - 1) .. px(op) .. px(l) .. px(r) .. px(id) .. seg(hc, p + 32, hc:len() - p - 31)
+        s = (s + 1) & 255
+        i = i + 1
+    hc
+
+mkg: str = (d: i64)
+    hc = ""
+    i = 0
+    while i < 256
+        hc = hc .. "ffffffffffffffffffffffffffffffff"
+        i = i + 1
+    px(0) .. hc
+
+mknode: str = (g: str, op: i64, l: i64, r: i64)
+    if op != 108 and op != 118
+        l = efind(g, l)
+        r = efind(g, r)
+    e = hfindb(g, hb(g), op, l, r)
+    if e != 4294967295
+        return px(e) .. ";" .. g
+    n = nn(g)
+    nodes = seg(g, 9, n * 24) .. px(op) .. px(l) .. px(r)
+    pars = seg(g, pb(g), n * 8) .. px(n)
+    szs = seg(g, sb(g), n * 8) .. px(1)
+    tail = seg(g, hb(g), g:len() - hb(g) + 1)
+    g = px(n + 1) .. nodes .. pars .. szs .. tail
+    g = hputb(g, hb(g), op, l, r, n)
+    px(n) .. ";" .. g
+
+vindex: i64 = (vn: str, name: str)
+    idx = 0
+    a = 1
+    i = 1
+    n = vn:len()
+    while i <= n + 1
+        if i > n or vn:byte(i) == 124
+            if vn:sub(a, i - 1) == name
+                return idx
+            idx = idx + 1
+            a = i + 1
+        i = i + 1
+    0 - 1
+
+vcount: i64 = (vn: str)
+    if vn:len() == 0
+        return 0
+    n = 1
+    i = 1
+    while i <= vn:len()
+        if vn:byte(i) == 124
+            n = n + 1
+        i = i + 1
+    n
+
+vadd: str = (g: str, name: str)
+    vn = vnames(g)
+    idx = vindex(vn, name)
+    if idx < 0
+        idx = vcount(vn)
+        if vn == ""
+            vn = name
+        else
+            vn = vn .. "|" .. name
+        g = seg(g, 1, vb(g) - 1) .. vn
+    mknode(g, 118, idx, 0)
+
+ladd: str = (g: str, v: i64)
+    lo = v & 4294967295
+    hi = (v >> 32) & 4294967295
+    mknode(g, 108, lo, hi)
+
+lval: i64 = (lo: i64, hi: i64)
+    if hi >= 2147483648
+        return (hi - 4294967296) * 4294967296 + lo
+    hi * 4294967296 + lo
+
+samesig: i64 = (g: str, i: i64, j: i64)
+    if opof(g, i) != opof(g, j)
+        return 0
+    op = opof(g, i)
+    if op == 108 or op == 118
+        if lfof(g, i) != lfof(g, j)
+            return 0
+        if rtof(g, i) != rtof(g, j)
+            return 0
+        return 1
+    if efind(g, lfof(g, i)) != efind(g, lfof(g, j))
+        return 0
+    if efind(g, rtof(g, i)) != efind(g, rtof(g, j))
+        return 0
+    1
+
+compress: str = (g: str)
+    n = nn(g)
+    p = ""
+    i = 0
+    while i < n
+        p = p .. px(efind(g, i))
+        i = i + 1
+    seg(g, 1, pb(g) - 1) .. p .. seg(g, sb(g), g:len() - sb(g) + 1)
+
+congr: str = (g: str)
+    ch = 0
+    ag = 1
+    while ag == 1
+        ag = 0
+        hc = ""
+        i = 0
+        while i < 256
+            hc = hc .. "ffffffffffffffffffffffffffffffff"
+            i = i + 1
+        n = nn(g)
+        i = 0
+        while i < n
+            op = opof(g, i)
+            l = lfof(g, i)
+            r = rtof(g, i)
+            if op != 108 and op != 118
+                l = efind(g, l)
+                r = efind(g, r)
+            e = hfindb(hc, 1, op, l, r)
+            if e != 4294967295
+                if efind(g, i) != efind(g, e)
+                    g = union(g, i, e)
+                    ag = 1
+                    ch = 1
+            else
+                hc = hputb(hc, 1, op, l, r, i)
+            i = i + 1
+    g = compress(g)
+    g .. ";" .. px(ch)
+
+dec: str = (v: i64)
+    if v == 0
+        return "0"
+    neg = 0
+    if v < 0
+        neg = 1
+        v = 0 - v
+    o = ""
+    while v > 0
+        o = "0123456789":sub((v % 10) + 1, (v % 10) + 1) .. o
+        v = v / 10
+    if neg == 1
+        o = "-" .. o
+    o
+
+psubstput: str = (subst: str, v: i64, eid: i64)
+    subst .. dec(v) .. ":" .. dec(eid) .. ";"
+
+pnum: i64 = (pat: str, pos: i64)
+    v = 0
+    i = pos
+    n = pat:len()
+    while i <= n
+        c = pat:byte(i)
+        if c < 48 or c > 57
+            break
+        v = v * 10 + (c - 48)
+        i = i + 1
+    v
+
+psubstget: i64 = (subst: str, v: i64)
+    i = 1
+    n = subst:len()
+    while i <= n
+        j = i
+        while j <= n and subst:byte(j) != 58
+            j = j + 1
+        vv = pnum(subst:sub(i, j - 1), 1)
+        k = j + 1
+        while k <= n and subst:byte(k) != 59
+            k = k + 1
+        if vv == v
+            return pnum(subst:sub(j + 1, k - 1), 1)
+        i = k + 1
+    0 - 1
+
+
+pfindparen: i64 = (pat: str, pos: i64)
+    depth = 0
+    i = pos
+    n = pat:len()
+    while i <= n
+        c = pat:byte(i)
+        if c == 40
+            depth = depth + 1
+        if c == 41
+            depth = depth - 1
+            if depth == 0
+                return i
+        i = i + 1
+    0
+
+psplitargs: str = (pat: str, l: i64, r: i64)
+    depth = 0
+    i = l
+    while i <= r
+        c = pat:byte(i)
+        if c == 40
+            depth = depth + 1
+        if c == 41
+            depth = depth - 1
+        if c == 44 and depth == 0
+            return px(i) .. ";" .. px(l) .. ";" .. px(r)
+        i = i + 1
+    ""
+
+popof: i64 = (pat: str)
+    c = pat:byte(1)
+    if c == 43
+        return 43
+    if c == 45
+        return 45
+    if c == 42
+        return 42
+    if c == 47
+        return 47
+    if c == 38
+        return 38
+    0
+
+pmatch: str = (g: str, eid: i64, pat: str, subst: str)
+    eid = efind(g, eid)
+    c = pat:byte(1)
+    if c == 63
+        v = pnum(pat, 2)
+        e = psubstget(subst, v)
+        if e < 0
+            return psubstput(subst, v, eid)
+        if efind(g, e) == eid
+            return subst
+        return ""
+    if c == 35
+        v = pnum(pat, 2)
+        n = nn(g)
+        i = 0
+        while i < n
+            if efind(g, i) == eid and opof(g, i) == 108
+                if lval(lfof(g, i), rtof(g, i)) == v
+                    return subst
+            i = i + 1
+        return ""
+    op = popof(pat)
+    if op == 0
+        return ""
+    lp = pfindparen(pat, 1)
+    if lp == 0
+        return ""
+    sp = psplitargs(pat, 3, lp - 1)
+    if sp == ""
+        return ""
+    comma = hx(hd(sp), 1)
+    a1 = tl(sp)
+    l1 = hx(hd(a1), 1)
+    r1 = hx(tl(a1), 1)
+    left = pat:sub(3, comma - 1)
+    right = pat:sub(comma + 1, lp - 1)
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == eid and opof(g, i) == op
+            s1 = pmatch(g, lfof(g, i), left, subst)
+            if s1 != ""
+                s2 = pmatch(g, rtof(g, i), right, s1)
+                if s2 != ""
+                    return s2
+        i = i + 1
+    ""
+
+pbuild: str = (g: str, tmpl: str, subst: str)
+    c = tmpl:byte(1)
+    if c == 63
+        v = pnum(tmpl, 2)
+        e = psubstget(subst, v)
+        return px(e) .. ";" .. g
+    if c == 35
+        v = pnum(tmpl, 2)
+        return ladd(g, v)
+    op = popof(tmpl)
+    lp = pfindparen(tmpl, 1)
+    sp = psplitargs(tmpl, 3, lp - 1)
+    comma = hx(hd(sp), 1)
+    left = tmpl:sub(3, comma - 1)
+    right = tmpl:sub(comma + 1, lp - 1)
+    r1 = pbuild(g, left, subst)
+    e1 = hx(hd(r1), 1)
+    g = tl(r1)
+    r2 = pbuild(g, right, subst)
+    e2 = hx(hd(r2), 1)
+    g = tl(r2)
+    mknode(g, op, e1, e2)
+
+eclasses: str = (g: str)
+    out = ";"
+    n = nn(g)
+    i = 0
+    while i < n
+        r = efind(g, i)
+        tag = ";" .. dec(r) .. ";"
+        found = 0
+        k = 1
+        m = out:len()
+        while k <= m
+            if out:sub(k, k + tag:len() - 1) == tag
+                found = 1
+                break
+            k = k + 1
+        if found == 0
+            out = out .. dec(r) .. ";"
+        i = i + 1
+    out
+
+applypat: str = (g: str, pat: str, tmpl: str)
+    ch = 0
+    cls = eclasses(g)
+    i = 2
+    n = cls:len()
+    while i <= n
+        j = i
+        while j <= n and cls:byte(j) != 59
+            j = j + 1
+        c = pnum(cls:sub(i, j - 1), 1)
+        s = pmatch(g, c, pat, "")
+        if s != ""
+            r = pbuild(g, tmpl, s)
+            e = hx(hd(r), 1)
+            g = tl(r)
+            if efind(g, c) != efind(g, e)
+                g = union(g, c, e)
+                ch = 1
+        i = j + 1
+    g .. ";" .. px(ch)
+
+dorule: str = (g: str, pat: str, tmpl: str)
+    applypat(g, pat, tmpl)
+
+rewrite1: str = (g: str)
+    ch = 0
+    r = dorule(g, "+(?0,#0)", "?0")
+    g = hd(r)
+    if hx(tl(r), 1) == 1
+        ch = 1
+    r = dorule(g, "*(?0,#1)", "?0")
+    g = hd(r)
+    if hx(tl(r), 1) == 1
+        ch = 1
+    r = dorule(g, "*(?0,#0)", "#0")
+    g = hd(r)
+    if hx(tl(r), 1) == 1
+        ch = 1
+    r = dorule(g, "-(?0,?0)", "#0")
+    g = hd(r)
+    if hx(tl(r), 1) == 1
+        ch = 1
+    r = dorule(g, "+(?0,?1)", "+(?1,?0)")
+    g = hd(r)
+    if hx(tl(r), 1) == 1
+        ch = 1
+    r = dorule(g, "*(?0,?1)", "*(?1,?0)")
+    g = hd(r)
+    if hx(tl(r), 1) == 1
+        ch = 1
+    r = dorule(g, "+(*(?0,?2),*(?1,?2))", "*(+(?0,?1),?2)")
+    g = hd(r)
+    if hx(tl(r), 1) == 1
+        ch = 1
+    r = dorule(g, "*(?0,+(?1,?2))", "+(*(?0,?1),*(?0,?2))")
+    g = hd(r)
+    if hx(tl(r), 1) == 1
+        ch = 1
+    g .. ";" .. px(ch)
+
+saturate: str = (g: str, maxiter: i64, maxnodes: i64)
+    it = 0
+    while it < maxiter
+        if nn(g) >= maxnodes
+            break
+        r = rewrite1(g)
+        g = hd(r)
+        ch1 = hx(tl(r), 1)
+        r = congr(g)
+        g = hd(r)
+        ch2 = hx(tl(r), 1)
+        if ch1 == 0 and ch2 == 0
+            break
+        it = it + 1
+    g .. ";" .. px(it)
+
+maddbest: str = (g: str, mulclass: i64, othercost: i64, depth: i64, forbid: i64)
+    if depth <= 0
+        return px(1000000) .. ";" .. px(0 - 1)
+    best = 1000000
+    bn = 0 - 1
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == mulclass and opof(g, i) == 42
+            l = efind(g, lfof(g, i))
+            r = efind(g, rtof(g, i))
+            if l == forbid or r == forbid
+                i = i + 1
+                continue
+            c = 1 + ecost4(g, l, depth - 1, forbid) + ecost4(g, r, depth - 1, forbid) + othercost
+            if c < best
+                best = c
+                bn = i
+        i = i + 1
+    px(best) .. ";" .. px(bn)
+
+maddcost4: i64 = (g: str, mulclass: i64, othercost: i64, depth: i64, forbid: i64)
+    hx(hd(maddbest(g, mulclass, othercost, depth, forbid)), 1)
+
+msubbest: str = (g: str, subcls: i64, minucost: i64, depth: i64, forbid: i64)
+    if depth <= 0
+        return px(1000000) .. ";" .. px(0 - 1)
+    best = 1000000
+    bn = 0 - 1
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == subcls and opof(g, i) == 42
+            l = efind(g, lfof(g, i))
+            r = efind(g, rtof(g, i))
+            if l == forbid or r == forbid
+                i = i + 1
+                continue
+            c = 1 + minucost + ecost4(g, l, depth - 1, forbid) + ecost4(g, r, depth - 1, forbid)
+            if c < best
+                best = c
+                bn = i
+        i = i + 1
+    px(best) .. ";" .. px(bn)
+
+msubcost4: i64 = (g: str, subcls: i64, minucost: i64, depth: i64, forbid: i64)
+    hx(hd(msubbest(g, subcls, minucost, depth, forbid)), 1)
+
+ncost4: i64 = (g: str, i: i64, depth: i64, forbid: i64)
+    if depth <= 0
+        return 1000000
+    op = opof(g, i)
+    if op == 108
+        return 0
+    if op == 118
+        return 0
+    l = efind(g, lfof(g, i))
+    r = efind(g, rtof(g, i))
+    if l == forbid or r == forbid
+        return 1000000
+    lc = ecost4(g, l, depth - 1, forbid)
+    rc = ecost4(g, r, depth - 1, forbid)
+    if op == 43
+        base = 1 + lc + rc
+        mc = maddcost4(g, l, rc, depth - 1, forbid)
+        if mc < base
+            base = mc
+        mc = maddcost4(g, r, lc, depth - 1, forbid)
+        if mc < base
+            base = mc
+        return base
+    if op == 45
+        base = 1 + lc + rc
+        mc = msubcost4(g, r, lc, depth - 1, forbid)
+        if mc < base
+            base = mc
+        return base
+    if op == 42
+        return 3 + lc + rc
+    if op == 47
+        return 10 + lc + rc
+    if op == 38
+        return 1 + lc + rc
+    1000000
+
+ecost4: i64 = (g: str, eid: i64, depth: i64, forbid: i64)
+    if depth <= 0
+        return 1000000
+    eid = efind(g, eid)
+    best = 1000000
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == eid
+            c = ncost4(g, i, depth - 1, eid)
+            if c < best
+                best = c
+        i = i + 1
+    best
+
+ecost: i64 = (g: str, eid: i64)
+    ecost4(g, eid, 20, efind(g, eid))
+
+ebest: i64 = (g: str, eid: i64)
+    eid = efind(g, eid)
+    best = 1000000
+    bn = 0 - 1
+    n = nn(g)
+    i = 0
+    while i < n
+        if efind(g, i) == eid
+            c = ncost4(g, i, 20, eid)
+            if c < best
+                best = c
+                bn = i
+        i = i + 1
+    bn
+
+vname: str = (g: str, idx: i64)
+    vn = vnames(g)
+    c = 0
+    a = 1
+    i = 1
+    n = vn:len()
+    while i <= n + 1
+        if i > n or vn:byte(i) == 124
+            if c == idx
+                return vn:sub(a, i - 1)
+            c = c + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+opchar: str = (op: i64)
+    if op == 43
+        return "+"
+    if op == 45
+        return "-"
+    if op == 42
+        return "*"
+    if op == 47
+        return "/"
+    if op == 38
+        return "&"
+    "?"
+
+efuse: str = (g: str, eid: i64, bn: i64)
+    eid = efind(g, eid)
+    op = opof(g, bn)
+    if op == 43
+        l = efind(g, lfof(g, bn))
+        r = efind(g, rtof(g, bn))
+        lc = ecost4(g, l, 19, eid)
+        rc = ecost4(g, r, 19, eid)
+        base = 1 + lc + rc
+        b1 = maddbest(g, l, rc, 19, eid)
+        b2 = maddbest(g, r, lc, 19, eid)
+        c1 = hx(hd(b1), 1)
+        c2 = hx(hd(b2), 1)
+        n1 = hx(tl(b1), 1)
+        n2 = hx(tl(b2), 1)
+        if c1 < base and c1 <= c2 and n1 != 4294967295
+            return "madd;" .. px(n1) .. ";" .. px(r)
+        if c2 < base and n2 != 4294967295
+            return "madd;" .. px(n2) .. ";" .. px(l)
+        return ""
+    if op == 45
+        l = efind(g, lfof(g, bn))
+        r = efind(g, rtof(g, bn))
+        lc = ecost4(g, l, 19, eid)
+        rc = ecost4(g, r, 19, eid)
+        base = 1 + lc + rc
+        b = msubbest(g, r, lc, 19, eid)
+        c = hx(hd(b), 1)
+        mn = hx(tl(b), 1)
+        if c < base and mn != 4294967295
+            return "msub;" .. px(mn) .. ";" .. px(l)
+        return ""
+    ""
+
+e2s: str = (g: str, eid: i64)
+    bn = ebest(g, eid)
+    if bn < 0
+        return ""
+    fz = efuse(g, eid, bn)
+    if fz != ""
+        kind = hd(fz)
+        rest = tl(fz)
+        mn = hx(hd(rest), 1)
+        oc = hx(tl(rest), 1)
+        ml = e2s(g, lfof(g, mn))
+        mr = e2s(g, rtof(g, mn))
+        oo = e2s(g, oc)
+        return "(" .. kind .. " " .. ml .. "," .. mr .. "," .. oo .. ")"
+    op = opof(g, bn)
+    if op == 108
+        return dec(lval(lfof(g, bn), rtof(g, bn)))
+    if op == 118
+        return vname(g, lfof(g, bn))
+    l = e2s(g, lfof(g, bn))
+    r = e2s(g, rtof(g, bn))
+    "(" .. l .. opchar(op) .. r .. ")"
+optblock: str = (g: str, eid: i64)
+    r = saturate(g, 8, 200)
+    g2 = hd(r)
+    c = ecost(g2, eid)
+    s = e2s(g2, eid)
+    px(c) .. ";" .. s
+
+global _ebsrc: str = ""
+global _ebpos: i64 = 1
+
+ebskip: i64 = ()
+    n = _ebsrc:len()
+    while _ebpos <= n and _ebsrc:byte(_ebpos) == 32
+        _ebpos = _ebpos + 1
+    _ebpos
+
+ebprec: i64 = (c: i64)
+    if c == 38
+        return 1
+    if c == 43 or c == 45
+        return 2
+    if c == 42 or c == 47
+        return 3
+    0
+
+ebprimary: str = (g: str)
+    _ebpos = ebskip()
+    c = 0
+    if _ebpos <= _ebsrc:len()
+        c = _ebsrc:byte(_ebpos)
+    if c == 40
+        _ebpos = _ebpos + 1
+        r = ebexpr(g, 1)
+        if r == ""
+            return ""
+        eid = hx(hd(r), 1)
+        g = tl(r)
+        _ebpos = ebskip()
+        if _ebpos > _ebsrc:len()
+            return ""
+        if _ebsrc:byte(_ebpos) != 41
+            return ""
+        _ebpos = _ebpos + 1
+        return px(eid) .. ";" .. g
+    if c == 45
+        _ebpos = _ebpos + 1
+        r = ebprimary(g)
+        if r == ""
+            return ""
+        eid = hx(hd(r), 1)
+        g = tl(r)
+        z = ladd(g, 0)
+        ze = hx(hd(z), 1)
+        g = tl(z)
+        return mknode(g, 45, ze, eid)
+    if c >= 48 and c <= 57
+        v = 0
+        while _ebpos <= _ebsrc:len()
+            d = _ebsrc:byte(_ebpos)
+            if d < 48 or d > 57
+                break
+            v = v * 10 + (d - 48)
+            _ebpos = _ebpos + 1
+        return ladd(g, v)
+    if c == 95 or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+        a = _ebpos
+        while _ebpos <= _ebsrc:len()
+            d = _ebsrc:byte(_ebpos)
+            if d == 95 or (d >= 65 and d <= 90) or (d >= 97 and d <= 122) or (d >= 48 and d <= 57)
+                _ebpos = _ebpos + 1
+            else
+                break
+        return vadd(g, _ebsrc:sub(a, _ebpos - 1))
+    ""
+
+ebexpr: str = (g: str, minp: i64)
+    r = ebprimary(g)
+    if r == ""
+        return ""
+    eid = hx(hd(r), 1)
+    g = tl(r)
+    cont = 1
+    while cont == 1
+        _ebpos = ebskip()
+        c = 0
+        if _ebpos <= _ebsrc:len()
+            c = _ebsrc:byte(_ebpos)
+        pp = ebprec(c)
+        if pp == 0 or pp < minp
+            cont = 0
+        else
+            _ebpos = _ebpos + 1
+            r2 = ebexpr(g, pp + 1)
+            if r2 == ""
+                return ""
+            e2 = hx(hd(r2), 1)
+            g = tl(r2)
+            r3 = mknode(g, c, eid, e2)
+            eid = hx(hd(r3), 1)
+            g = tl(r3)
+    px(eid) .. ";" .. g
+
+ebuild: str = (src: str)
+    _ebsrc = src
+    _ebpos = 1
+    g = mkg(0)
+    r = ebexpr(g, 1)
+    if r == ""
+        return ""
+    _ebpos = ebskip()
+    if _ebpos <= _ebsrc:len()
+        return ""
+    r

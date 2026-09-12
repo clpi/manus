@@ -44,6 +44,12 @@ minus: i64 = (rd: i64, rn: i64, rm: i64)
 mul: i64 = (rd: i64, rn: i64, rm: i64)
     2600468480 | (rm << 16) | (31 << 10) | (rn << 5) | rd
 
+madd: i64 = (rd: i64, rn: i64, rm: i64, ra: i64)
+    2600468480 | (rm << 16) | (ra << 10) | (rn << 5) | rd
+
+msub: i64 = (rd: i64, rn: i64, rm: i64, ra: i64)
+    2600501248 | (rm << 16) | (ra << 10) | (rn << 5) | rd
+
 div: i64 = (rd: i64, rn: i64, rm: i64)
     2596277248 | (rm << 16) | (rn << 5) | rd
 
@@ -568,10 +574,135 @@ hassub: i64 = (hay: str, key: str)
         i = i + 1
     0
 
+global _esatdepth: i64 = 0
+
+esatopch: str = (o: i64)
+    if o == 43
+        return "+"
+    "-"
+
+esattopmul: i64 = (t: str)
+    t = trim(strip(t))
+    if hasop(t) == 0
+        return 0
+    sp = splitop(t)
+    if at(sp, 1) == 42
+        return 1
+    0
+
+esatlit: i64 = (t: str)
+    n = t:len()
+    if n == 0
+        return 0
+    i = 1
+    if t:byte(1) == 45
+        i = 2
+    if i > n
+        return 0
+    while i <= n
+        if digit(t:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+esatmulred: i64 = (t: str)
+    if esatlit(t) == 0
+        return 0
+    v = num(t)
+    if v == 0 or v == 1
+        return 1
+    if v == 3 or v == 5 or v == 7 or v == 9
+        return 1
+    if powtwo(v) > 0
+        return 1
+    0
+
+esatsplit3: str = (form: str)
+    n = form:len()
+    i = 7
+    d = 1
+    p1 = 0
+    p2 = 0
+    while i <= n
+        b = form:byte(i)
+        if b == 40
+            d = d + 1
+        else
+            if b == 41
+                d = d - 1
+            else
+                if b == 44 and d == 1
+                    if p1 == 0
+                        p1 = i
+                    else
+                        p2 = i
+        i = i + 1
+    if p1 == 0 or p2 == 0
+        return ""
+    form:sub(7, p1 - 1) .. ";" .. form:sub(p1 + 1, p2 - 1) .. ";" .. form:sub(p2 + 1, n - 1)
+
+esatemitexpr: str = (c: str, t: str, r: i64, base: i64, names: str)
+    tt = trim(t)
+    if esatlit(tt) == 1
+        return imm(c, r, num(tt))
+    expr(c, tt, r, base, names)
+
+esatfuse: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
+    if _esatdepth > 0
+        return ""
+    if o != 43 and o != 45
+        return ""
+    a = trim(a)
+    e = trim(e)
+    if esattopmul(a) == 0 and esattopmul(e) == 0
+        return ""
+    opc = esatopch(o)
+    src = "(" .. a .. ")" .. opc .. "(" .. e .. ")"
+    b = compiler.opt.esat.ebuild(src)
+    if b == ""
+        return ""
+    eid = compiler.opt.esat.hx(compiler.opt.esat.hd(b), 1)
+    g = compiler.opt.esat.tl(b)
+    r = compiler.opt.esat.optblock(g, eid)
+    form = compiler.opt.esat.tl(r)
+    if form:len() > 7 and (form:sub(1, 6) == "(madd " or form:sub(1, 6) == "(msub ")
+        issub = 0
+        if form:sub(2, 5) == "msub"
+            issub = 1
+        parts = esatsplit3(form)
+        if parts == ""
+            return ""
+        mx = compiler.opt.esat.hd(parts)
+        rest = compiler.opt.esat.tl(parts)
+        my = compiler.opt.esat.hd(rest)
+        mz = compiler.opt.esat.tl(rest)
+        if base > 15
+            return ""
+        if simple(mx) == 0 or simple(my) == 0 or simple(mz) == 0
+            return ""
+        if esatmulred(mx) == 1 or esatmulred(my) == 1
+            return ""
+        c = esatemitexpr(c, mx, base, base + 3, names)
+        c = esatemitexpr(c, my, base + 1, base + 3, names)
+        c = esatemitexpr(c, mz, base + 2, base + 3, names)
+        if issub == 1
+            return c .. word(msub(rd, base, base + 1, base + 2))
+        return c .. word(madd(rd, base, base + 1, base + 2))
+    if form != src and form:len() < src:len()
+        _esatdepth = _esatdepth + 1
+        c = expr(c, form, rd, base, names)
+        _esatdepth = _esatdepth - 1
+        return c
+    ""
+
 calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
     sa = simple(a)
     se = simple(e)
     if sa == 0 or se == 0
+        if o == 43 or o == 45
+            ef = esatfuse(c, rd, a, o, e, base, names)
+            if ef != ""
+                return ef
         c = expr(c, a, base, base + 2, names)
         c = expr(c, e, base + 1, base + 2, names)
         if o == 43
