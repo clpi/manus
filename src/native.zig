@@ -1689,7 +1689,16 @@ const Arm64Compiler = struct {
         });
         const owned_bytes = try self.alloc.dupe(u8, content);
         errdefer self.alloc.free(owned_bytes);
-        try self.strings.append(self.alloc, .{ .bytes = owned_bytes, .name = owned_name, .symbol_index = idx });
+        // The strings table owns its OWN copy of the label. `finish` moves
+        // `symbols` into the emitted output while `strings` stays with the
+        // compiler, so sharing one allocation dangles the output's symbol
+        // name the moment `deinit` frees the strings table — a use-after-free
+        // that surfaced as garbage local-symbol names in the object file and,
+        // nondeterministically, in the linked binary's LINKEDIT (extra bytes
+        // ld could otherwise strip as an `L`-local).
+        const string_name = try self.alloc.dupe(u8, owned_name);
+        errdefer self.alloc.free(string_name);
+        try self.strings.append(self.alloc, .{ .bytes = owned_bytes, .name = string_name, .symbol_index = idx });
         try self.string_map.put(self.alloc, owned_bytes, idx);
         return idx;
     }
@@ -16998,6 +17007,41 @@ test "native backend: graph linkage owns source C string import" {
     defer alloc.free(object);
     try std.testing.expect(std.mem.indexOf(u8, object, "__cstring") != null);
     try std.testing.expect(std.mem.indexOf(u8, object, "_puts") != null);
+}
+
+test "interned string label is not aliased between symbol and string tables" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+
+    _ = try compiler.internString("Hello");
+    // The strings table must own its OWN copy of the label. `finish` moves
+    // the symbol table into the output while the strings table stays with
+    // the compiler, so a shared allocation is a use-after-free of the
+    // output's symbol name the moment `deinit` frees the strings table —
+    // it surfaced as garbage local-symbol names in emitted objects.
+    try std.testing.expect(compiler.strings.items[0].name.ptr != compiler.symbols.items[0].name.ptr);
+    try std.testing.expectEqualStrings("Lduo_str_0", compiler.strings.items[0].name);
+
+    var output = try compiler.finish();
+    compiler.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), output.symbols.len);
+    try std.testing.expectEqualStrings("Lduo_str_0", output.symbols[0].name);
+    output.deinit(alloc);
 }
 
 test "native backend: C import cannot be captured by a local export" {
