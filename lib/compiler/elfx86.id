@@ -332,6 +332,8 @@ simpmul: i64 = (a: i64, isa: i64, b: i64, isb: i64)
 powtwo: i64 = (v: i64)
     if v < 2
         return 0 - 1
+    if v > 4611686018427387904
+        return 0 - 1
     sh = 0
     p = 1
     while p < v

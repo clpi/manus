@@ -65,6 +65,8 @@ lsl: i64 = (rd: i64, rn: i64, s: i64)
 powtwo: i64 = (v: i64)
     if v < 2
         return 0 - 1
+    if v > 4611686018427387904
+        return 0 - 1
     sh = 0
     p = 1
     while p < v
