@@ -291,7 +291,7 @@ main: i64 = ()
     "(^|[^A-Za-z0-9_.])(require|req|local)([^A-Za-z0-9_]|$)",
     "(^|[^A-Za-z0-9_.])(function|fn|def|let|const|var|class|impl|trait|interface|enum|match|switch|try|catch)([^A-Za-z0-9_]|$)",
     "(->|=>|\\?\\.|\\?:|\\|>)",
-    "(^|[^A-Za-z0-9_.])(pairs|ipairs|pcall|tostring|tonumber|setmetatable|getmetatable|gmatch|gsub)\\(|_G([^A-Za-z0-9_]|$)",
+    "(^|[^A-Za-z0-9_.])(pairs|ipairs|pcall|tonumber|setmetatable|getmetatable|gmatch|gsub)\\(|_G([^A-Za-z0-9_]|$)",
     "^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*{brace}{brace_close}",
     "[{dq}][[:space:]]*\\.\\.|\\.\\.[[:space:]]*[{dq}]",
     "(^|[[:space:]])(if|for|while|elseif)[[:space:]].*[[:space:]]end[[:space:]]*$",

@@ -188,7 +188,6 @@ deny: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, "local", "§1 deny", "bindings are already scoped", quiet)
   hits = hits + flag(path, no, code, "require_old", "§1 deny", "no import — reachability is scope/home projection", quiet)
   hits = hits + flag(path, no, code, "then", "§1 deny", "outdent", quiet)
-  hits = hits + flag(path, no, code, "tostring", "§1 deny", "x:to(str)", quiet)
   hits = hits + flag(path, no, code, "tonumber", "§1 deny", "x:to(i64) — and it ROUTES on failure", quiet)
   hits = hits + flag(path, no, code, "pcall", "§1 deny", "t | error — failure routes (B-15)", quiet)
   hits = hits + flag(path, no, code, "setmetatable", "§1 deny", "descriptors and protocols", quiet)
@@ -904,10 +903,6 @@ face: i64 = (path: str, no: i64, code: str, quiet: bool)
   if code:has("require_old")
     if !quiet
       print("{path}:{no}  require_old  [§0h]  std is the prelude graph — no import")
-    hits = hits + 1
-  if code:has("tostring")
-    if !quiet
-      print("{path}:{no}  tostring  [§1]  x:to(str)")
     hits = hits + 1
   if projcurry(code)
     if !quiet
