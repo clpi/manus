@@ -172,8 +172,73 @@ at: i64 = (vals: str, idx: i64)
         i = i + 1
     0
 
-reg: i64 = (names: str, name: str)
-    19 + find(names, name)
+vgeti: str = (c: str, t: i64, names: str, idx: i64)
+    if idx < 9
+        return c .. word(mov(t, 19 + idx))
+    c .. word(ldx(t, 28, (idx - 9) * 8))
+
+vseti: str = (c: str, t: i64, names: str, idx: i64)
+    if idx < 9
+        return c .. word(mov(19 + idx, t))
+    c .. word(stx(t, 28, (idx - 9) * 8))
+
+vget: str = (c: str, t: i64, names: str, name: str)
+    vgeti(c, t, names, find(names, name))
+
+vset: str = (c: str, t: i64, names: str, name: str)
+    vseti(c, t, names, find(names, name))
+
+nvars: i64 = (names: str)
+    n = 0
+    i = 1
+    while i <= names:len()
+        if names:byte(i) == 124
+            n = n + 1
+        i = i + 1
+    n
+
+flushpend: str = (c: str, names: str, pn: str, pk: i64, pv: i64)
+    if pn == ""
+        return c
+    if pk == 0 and pv == 0
+        return c
+    if find(names, pn) >= 9
+        c = vget(c, 9, names, pn)
+        if pk == 0
+            if pv > 0 and pv < 4096
+                c = c .. word(addi(9, 9, pv))
+            else
+                if pv < 0 and pv > 0 - 4096
+                    c = c .. word(subi(9, 9, 0 - pv))
+                else
+                    c = imm(c, 10, pv)
+                    c = c .. word(add(9, 9, 10))
+        else
+            pm = mulred(c, 9, pn, pv, names)
+            if pm:len() > 0
+                c = pm
+            else
+                c = imm(c, 10, pv)
+                c = c .. word(mul(9, 9, 10))
+        return vset(c, 9, names, pn)
+    prd = 19 + find(names, pn)
+    if pk == 0
+        if pv > 0 and pv < 4096
+            c = c .. word(addi(prd, prd, pv))
+        else
+            if pv < 0 and pv > 0 - 4096
+                c = c .. word(subi(prd, prd, 0 - pv))
+            else
+                c = imm(c, 9, pv)
+                c = c .. word(add(prd, prd, 9))
+    else
+        pm = mulred(c, prd, pn, pv, names)
+        if pm:len() > 0
+            c = pm
+        else
+            c = imm(c, 10, pv)
+            c = c .. word(mul(prd, prd, 10))
+    c
 
 put: str = (c: str, w: i64)
     c .. word(w)
@@ -327,7 +392,7 @@ expr: str = (c: str, t: str, r: i64, base: i64, names: str)
     if s != t
         return expr(c, s, r, base, names)
     if hasop(t) == 0
-        return c .. word(mov(r, reg(names, t)))
+        return vget(c, r, names, t)
     sp = splitop(t)
     oppos = at(sp, 0)
     op = at(sp, 1)
@@ -368,17 +433,19 @@ simpmul: i64 = (a: i64, isa: i64, b: i64, isb: i64)
 
 mulred: str = (c: str, rd: i64, n: str, v: i64, names: str)
     sh = powtwo(v)
+    if sh > 0 or v == 3 or v == 5 or v == 7 or v == 9
+        c = vget(c, 9, names, n)
     if sh > 0
-        return c .. word(lsl(rd, reg(names, n), sh))
+        return c .. word(lsl(rd, 9, sh))
     if v == 3
-        return c .. word(addsh(rd, reg(names, n), reg(names, n), 1))
+        return c .. word(addsh(rd, 9, 9, 1))
     if v == 5
-        return c .. word(addsh(rd, reg(names, n), reg(names, n), 2))
+        return c .. word(addsh(rd, 9, 9, 2))
     if v == 7
-        t = c .. word(lsl(10, reg(names, n), 3))
-        return t .. word(minus(rd, 10, reg(names, n)))
+        t = c .. word(lsl(10, 9, 3))
+        return t .. word(minus(rd, 10, 9))
     if v == 9
-        return c .. word(addsh(rd, reg(names, n), reg(names, n), 3))
+        return c .. word(addsh(rd, 9, 9, 3))
     ""
 
 divmagic: str = (dd: i64)
@@ -547,11 +614,14 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
         if an == 0 and en == 0 and a == e
             return imm(c, rd, 0)
     if o == 43 and an == 1 and en == 0 and av < 4096
-        return c .. word(addi(rd, reg(names, e), av))
+        c = vget(c, 9, names, e)
+        return c .. word(addi(rd, 9, av))
     if o == 43 and an == 0 and en == 1 and ev < 4096
-        return c .. word(addi(rd, reg(names, a), ev))
+        c = vget(c, 9, names, a)
+        return c .. word(addi(rd, 9, ev))
     if o == 45 and an == 0 and en == 1 and ev < 4096
-        return c .. word(subi(rd, reg(names, a), ev))
+        c = vget(c, 9, names, a)
+        return c .. word(subi(rd, 9, ev))
     if o == 42 and an == 0 and en == 1
         m = mulred(c, rd, a, ev, names)
         if m:len() > 0
@@ -562,7 +632,8 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
             return m
     if o == 47 and en == 1 and an == 0
         dd = ev
-        ra = reg(names, a)
+        c = vget(c, 8, names, a)
+        ra = 8
         if dd == 1
             return c .. word(mov(rd, ra))
         if dd == 0 - 1
@@ -585,7 +656,8 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
             sh = at(ms, 1)
             mgnm = "divmg:" .. dec(dd)
             if hasname(names, mgnm) == 1
-                mr = reg(names, mgnm)
+                c = vget(c, 9, names, mgnm)
+                mr = 9
                 c = c .. word(2604662784 | (ra << 16) | (mr << 5) | rd)
                 if mg < 0
                     c = c .. word(add(rd, rd, ra))
@@ -611,12 +683,14 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
         c = imm(c, 9, av)
         ra = 9
     else
-        ra = reg(names, a)
+        c = vget(c, 9, names, a)
+        ra = 9
     if en == 1
         c = imm(c, 10, ev)
         rb = 10
     else
-        rb = reg(names, e)
+        c = vget(c, 10, names, e)
+        rb = 10
     if o == 43
         return c .. word(add(rd, ra, rb))
     if o == 45
@@ -1220,6 +1294,8 @@ main: i64 = ()
     src = compiler.opt.poly.poly(src)
     names = ""
     code = ""
+    code = code .. word(subi(31, 31, 2048))
+    code = code .. word(addi(28, 31, 0))
     mgs = divscan(src)
     mp = 1
     while mp <= mgs:len()
@@ -1230,7 +1306,7 @@ main: i64 = ()
             ds = mgs:sub(mp, mq - 1)
             nm = "divmg:" .. ds
             names = names .. nm .. "|"
-            code = imm(code, reg(names, nm), at(divmagic(num(ds)), 0))
+            code = vset(imm(code, 9, at(divmagic(num(ds)), 0)), 9, names, nm)
         mp = mq + 1
     wjmp = ""
     wrl = ""
@@ -1253,39 +1329,34 @@ main: i64 = ()
         else
             ind = indent(raw)
             while wopen > 0 and at(wind, wopen - 1) >= ind
-                if pendname != ""
-                    prd = reg(names, pendname)
-                    if pendkind == 0
-                        pv = pendval
-                        if pv != 0
-                            if pv > 0 and pv < 4096
-                                code = code .. word(addi(prd, prd, pv))
-                            else
-                                if pv < 0 and pv > 0 - 4096
-                                    code = code .. word(subi(prd, prd, 0 - pv))
-                                else
-                                    code = imm(code, 9, pv)
-                                    code = code .. word(add(prd, prd, 9))
-                    else
-                        pv = pendval
-                        pm = mulred(code, prd, pendname, pv, names)
-                        if pm:len() > 0
-                            code = pm
-                        else
-                            code = imm(code, 10, pv)
-                            code = code .. word(mul(prd, prd, 10))
+                code = flushpend(code, names, pendname, pendkind, pendval)
                 pendname = ""
                 jp = at(wjmp, wopen - 1)
-                rl = at(wrl, wopen - 1)
-                rr = at(wrr, wopen - 1)
+                ri = at(wrl, wopen - 1)
+                qi = at(wrr, wopen - 1)
                 cd = at(wcd, wopen - 1)
                 tp = code:len() / 8
                 if cd == 1
-                    code = code .. word(subs(rr, rr, 1))
+                    if qi < 9
+                        code = code .. word(subs(19 + qi, 19 + qi, 1))
+                    else
+                        code = vgeti(code, 9, names, qi)
+                        code = code .. word(subs(9, 9, 1))
+                        code = vseti(code, 9, names, qi)
                     code = code .. word(bcond(1, jp - (tp + 1)))
                 else
                     bp = jp + 1
                     code = patch(code, jp, jump(tp - jp))
+                    if ri < 9
+                        rl = 19 + ri
+                    else
+                        code = vgeti(code, 9, names, ri)
+                        rl = 9
+                    if qi < 9
+                        rr = 19 + qi
+                    else
+                        code = vgeti(code, 10, names, qi)
+                        rr = 10
                     code = code .. word(cmp(rl, rr))
                     code = code .. word(bcond(11, bp - (tp + 1)))
                 wjmp = pop(wjmp, wopen)
@@ -1316,20 +1387,20 @@ main: i64 = ()
                         vv = at(cts, f + 1)
                         if hasname(names, nm) == 0
                             names = names .. nm .. "|"
-                        code = imm(code, reg(names, nm), vv)
+                        code = vset(imm(code, 9, vv), 9, names, nm)
                         f = f + 2
                     k = ej - 1
                 else
-                    rl = reg(names, lhs)
-                    rr = 0
+                    li = find(names, lhs)
+                    qi = 0
                     cd = 0
                     if digit(rhs:byte(1)) == 1
                         bn = "loopbd:" .. dec(wopen)
                         if hasname(names, bn) == 0
                             names = names .. bn .. "|"
-                        br = reg(names, bn)
-                        code = imm(code, br, num(rhs))
-                        rr = br
+                        bi = find(names, bn)
+                        code = vseti(imm(code, 9, num(rhs)), 9, names, bi)
+                        qi = bi
                         if num(rhs) != 0 and purecount(src, k, lc, ind, lhs) == 1
                             pk = k - 1
                             while pk >= 0 and trim(row(src, pk)):len() == 0
@@ -1337,13 +1408,13 @@ main: i64 = ()
                             if pk >= 0 and trim(row(src, pk)) == lhs .. " = 0"
                                 cd = 1
                     else
-                        rr = reg(names, rhs)
+                        qi = find(names, rhs)
                     jp = code:len() / 8
                     if cd == 0
                         code = code .. word(jump(0))
                     wjmp = wjmp .. dec(jp) .. "|"
-                    wrl = wrl .. dec(rl) .. "|"
-                    wrr = wrr .. dec(rr) .. "|"
+                    wrl = wrl .. dec(li) .. "|"
+                    wrr = wrr .. dec(qi) .. "|"
                     wind = wind .. dec(ind) .. "|"
                     wcd = wcd .. dec(cd) .. "|"
                     wopen = wopen + 1
@@ -1366,38 +1437,26 @@ main: i64 = ()
                     if hascolon == 0
                         if find(names, name) == 0 - 1
                             names = names .. name .. "|"
-                        rd = reg(names, name)
+                        ni = find(names, name)
+                        if ni < 9
+                            rd = 19 + ni
+                            spilldst = 0
+                        else
+                            rd = 9
+                            spilldst = 1
                         skip = 0
-                        if wopen > 0 and at(wcd, wopen - 1) == 1 and rd == at(wrl, wopen - 1)
+                        if wopen > 0 and at(wcd, wopen - 1) == 1 and ni == at(wrl, wopen - 1)
                             skip = 1
                         if skip == 0
                             sp = splitop(rhs)
                             oppos = at(sp, 0)
                             op = at(sp, 1)
                             if oppos == 0
-                                if pendname != ""
-                                    prd = reg(names, pendname)
-                                    if pendkind == 0
-                                        pv = pendval
-                                        if pv != 0
-                                            if pv > 0 and pv < 4096
-                                                code = code .. word(addi(prd, prd, pv))
-                                            else
-                                                if pv < 0 and pv > 0 - 4096
-                                                    code = code .. word(subi(prd, prd, 0 - pv))
-                                                else
-                                                    code = imm(code, 9, pv)
-                                                    code = code .. word(add(prd, prd, 9))
-                                    else
-                                        pv = pendval
-                                        pm = mulred(code, prd, pendname, pv, names)
-                                        if pm:len() > 0
-                                            code = pm
-                                        else
-                                            code = imm(code, 10, pv)
-                                            code = code .. word(mul(prd, prd, 10))
+                                code = flushpend(code, names, pendname, pendkind, pendval)
                                 pendname = ""
                                 code = term(code, rhs, rd, names)
+                                if spilldst == 1
+                                    code = vseti(code, 9, names, ni)
                             else
                             a = trim(rhs:sub(1, oppos - 1))
                             e = trim(rhs:sub(oppos + 1, rhs:len()))
@@ -1425,29 +1484,11 @@ main: i64 = ()
                                             skind = 1
                                             sval = num(a)
                             if skind < 0
-                                if pendname != ""
-                                    prd = reg(names, pendname)
-                                    if pendkind == 0
-                                        pv = pendval
-                                        if pv != 0
-                                            if pv > 0 and pv < 4096
-                                                code = code .. word(addi(prd, prd, pv))
-                                            else
-                                                if pv < 0 and pv > 0 - 4096
-                                                    code = code .. word(subi(prd, prd, 0 - pv))
-                                                else
-                                                    code = imm(code, 9, pv)
-                                                    code = code .. word(add(prd, prd, 9))
-                                    else
-                                        pv = pendval
-                                        pm = mulred(code, prd, pendname, pv, names)
-                                        if pm:len() > 0
-                                            code = pm
-                                        else
-                                            code = imm(code, 10, pv)
-                                            code = code .. word(mul(prd, prd, 10))
+                                code = flushpend(code, names, pendname, pendkind, pendval)
                                 pendname = ""
                                 code = calc(code, rd, a, op, e, 11, names)
+                                if spilldst == 1
+                                    code = vseti(code, 9, names, ni)
                             else
                                 if skind == 0 and sval == 0
                                     nop = 1
@@ -1465,27 +1506,7 @@ main: i64 = ()
                                                 if pendval == 1
                                                     pendname = ""
                                         else
-                                            if pendname != ""
-                                                prd = reg(names, pendname)
-                                                if pendkind == 0
-                                                    pv = pendval
-                                                    if pv != 0
-                                                        if pv > 0 and pv < 4096
-                                                            code = code .. word(addi(prd, prd, pv))
-                                                        else
-                                                            if pv < 0 and pv > 0 - 4096
-                                                                code = code .. word(subi(prd, prd, 0 - pv))
-                                                            else
-                                                                code = imm(code, 9, pv)
-                                                                code = code .. word(add(prd, prd, 9))
-                                                else
-                                                    pv = pendval
-                                                    pm = mulred(code, prd, pendname, pv, names)
-                                                    if pm:len() > 0
-                                                        code = pm
-                                                    else
-                                                        code = imm(code, 10, pv)
-                                                        code = code .. word(mul(prd, prd, 10))
+                                            code = flushpend(code, names, pendname, pendkind, pendval)
                                             pendname = ""
                                             pendname = name
                                             pendkind = skind
@@ -1494,27 +1515,7 @@ main: i64 = ()
                     sp = splitop(t)
                     oppos = at(sp, 0)
                     op = at(sp, 1)
-                    if pendname != ""
-                        prd = reg(names, pendname)
-                        if pendkind == 0
-                            pv = pendval
-                            if pv != 0
-                                if pv > 0 and pv < 4096
-                                    code = code .. word(addi(prd, prd, pv))
-                                else
-                                    if pv < 0 and pv > 0 - 4096
-                                        code = code .. word(subi(prd, prd, 0 - pv))
-                                    else
-                                        code = imm(code, 9, pv)
-                                        code = code .. word(add(prd, prd, 9))
-                        else
-                            pv = pendval
-                            pm = mulred(code, prd, pendname, pv, names)
-                            if pm:len() > 0
-                                code = pm
-                            else
-                                code = imm(code, 10, pv)
-                                code = code .. word(mul(prd, prd, 10))
+                    code = flushpend(code, names, pendname, pendkind, pendval)
                     pendname = ""
                     if oppos == 0
                         code = term(code, t, 0, names)
@@ -1522,9 +1523,12 @@ main: i64 = ()
                         a = trim(t:sub(1, oppos - 1))
                         e = trim(t:sub(oppos + 1, t:len()))
                         code = calc(code, 0, a, op, e, 11, names)
+                    code = code .. word(addi(31, 31, 2048))
                     code = code .. word(ret())
                     k = lc
             k = k + 1
+    if nvars(names) > 265
+        return 1
     codesize = code:len() / 2
     symoff = 208 + codesize
     stroff = symoff + 16
