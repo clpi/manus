@@ -1,0 +1,11 @@
+names: str = ()
+    "|premain|loophead|loopclose|"
+
+entry: str = (name: str)
+    if name == "premain"
+        return "call|compiler.opt.licm.licm|(src: str)|native.main|after-stdin-read|before-rowscan-stream-rewrite"
+    if name == "loophead"
+        return "note|compiler.opt.licm.decide|(body: str, ind: i64, cond: str, after: str)|native.main|while-branch|after-cond-parse-per-loop-plan"
+    if name == "loopclose"
+        return "note|compiler.opt.licm.prepass|(body: str, ind: i64, marks: str, loopkey: i64, wlist: str)|native.main|dedent-close|before-jump-patch-preheader-emit"
+    ""
