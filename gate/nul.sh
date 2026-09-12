@@ -19,7 +19,7 @@
 # Two distinct C representation leaks, one shared and one not:
 #
 #   * `:len()` lowered unconditionally to `str_len`, which is a SCAN TO THE
-#     FIRST NUL in both realizations — an inline loop in `native_backend.zig`
+#     FIRST NUL in both realizations — an inline loop in `native.zig`
 #     and `helperStrlen` in `wasm_backend.zig`. Nothing about the value was
 #     unknown; the length was simply never carried, so a C string terminator
 #     answered a semantic question. Both backends, same wrong answer.

@@ -10,7 +10,7 @@ Measurable checkboxes: `WORKSTREAM_DEBT_REGISTER.md` (BA–BH). Lane owners:
 
 Executed frontier remains S0. No compiler B. Complete FTCFTW is **not** proven.
 P1 items do not authorize host lowering patches that re-decide representation
-(`src/dnir_lower.zig`, `src/native_backend.zig`) before the single realization
+(`src/dnir_lower.zig`, `src/native.zig`) before the single realization
 owner exists.
 
 Evidence subject `29f62035` · evidence revision `59093d7b`. Live Git HEAD is

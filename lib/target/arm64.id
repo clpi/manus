@@ -12,7 +12,7 @@
 # that consumes the layout fact. Adding an instruction is adding a line of
 # data. There is no per-instruction code.
 #
-# THE INVENTORY THIS WAS DERIVED FROM. `src/native_backend.zig` funnels every
+# THE INVENTORY THIS WAS DERIVED FROM. `src/native.zig` funnels every
 # machine word through `emit`/`emitFmt`, at 56 call sites reaching 50 distinct
 # instruction FORMS. 45 of those 50 are here. The five that are not are the
 # ones whose word is not a function of its operands:
@@ -55,7 +55,7 @@
 # TWO ROWS DISAGREED WITH THE SHIPPING EMITTER, and the disagreement was the
 # emitter's:
 #
-#   rbit   `src/native_backend.zig` emitted 0x5ac00000, which is RBIT **32**.
+#   rbit   `src/native.zig` emitted 0x5ac00000, which is RBIT **32**.
 #          The ctz lowering is rbit-then-clz, and a 32-bit reverse zero-fills
 #          the top half, so `clz x` counted those 32 zeros too: `@ctz(8)`
 #          answered 35 under #backend=direct against 3 from the C backend.

@@ -4067,7 +4067,7 @@ pub const CodeGen = struct {
         // have real storage on the direct path. `ModuleGlobals` in
         // `dnir_lower.zig` interns one `__DATA,__bss` word per written field key
         // (`Lduo_g_M.x`), the module body runs the literal and every keyed write
-        // as stores into it, and `native_backend.zig`'s `globals` map answers
+        // as stores into it, and `native.zig`'s `globals` map answers
         // every read — so module scope and a relation body name ONE location and
         // cannot disagree. The refusal that stood here was the honest guard
         // while the write landed nowhere; the storage landed, so it is deleted.
@@ -4102,7 +4102,7 @@ pub const CodeGen = struct {
         // gap[066]/gap[108] CLOSED 2026-08-18: a file-scope binding a function
         // writes now has real storage on the direct path — `ModuleGlobals` in
         // `dnir_lower.zig` interns one `__DATA,__bss` word per name and emits
-        // the initializers as entry-prologue stores, and `native_backend.zig`'s
+        // the initializers as entry-prologue stores, and `native.zig`'s
         // `globals` map answers every read. The `mod-global-written:` refusal
         // below was the honest guard while the write landed nowhere; the storage
         // landed, so the guard is deleted and both fixtures are promoted into

@@ -203,7 +203,7 @@ done
 # §1-§5 prove the obligation is COLLECTED. They cannot see whether it is
 # collected in one place or five, and five is how it broke: the membership set
 # `{/, //, %}` was spelled independently at the guard site, three times in
-# `native_backend.zig`, and once in `demand.zig`. Adding `.idiv` to ONE of those
+# `native.zig`, and once in `demand.zig`. Adding `.idiv` to ONE of those
 # five repairs the wrong answer and leaves the condition that produced it, so a
 # gate that stops at §1 would go green on a tree that is still one enum-split
 # away from the same defect.

@@ -9,7 +9,7 @@ guard is now the only thing refusing two programs that answer correctly.
 
 `--backend=direct` now gives a written module-scope binding real storage: one
 8-byte `__DATA,__bss` word per name, module-wide, in
-`src/native_backend.zig` (`Arm64Compiler.globals`, `internGlobal`, `bssBaseAddr`,
+`src/native.zig` (`Arm64Compiler.globals`, `internGlobal`, `bssBaseAddr`,
 the `load_global` / `store_global` arms) and `src/dnir_lower.zig`
 (`collectModuleGlobals`, the `.name` read arm, the `lowerAssignTarget` write arm,
 and the entry's initializer prologue). `store_global` is new in

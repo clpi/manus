@@ -340,7 +340,7 @@ quoted from generated output are **C**, not Duo.
   before the jump. Over the 257 corpus programs that compile to assembly the
   emitted instruction count falls by 751 (-1.19%) and **no program grows**.
 
-  The transform is PHYSICAL and lives in `native_backend.zig`, not in lowering:
+  The transform is PHYSICAL and lives in `native.zig`, not in lowering:
   the application is still realized, still names the same target, and still
   publishes its machine-lineage row; only the stack discipline changes. (The
   DNIR-level rewrite `dnir_lower.tryEmitSelfTail` predates it, declines every
@@ -460,7 +460,7 @@ quoted from generated output are **C**, not Duo.
   unmetered; that frame is metered by nobody and still exhausts unnamed.
 - **The direct ARM64 backend has no heap opcode.** Its only allocation
   instruction is `alloc_slots`, and that arm lowers to a stack-pointer offset
-  (`src/native_backend.zig`). The only fixed runtime symbols it can branch to
+  (`src/native.zig`). The only fixed runtime symbols it can branch to
   are `printf` and `puts`; every other branch target is a user callee name, so
   a program that reaches an allocator does so by calling one, never implicitly.
   Read the result carefully: the backend's allocation-freedom is **partly

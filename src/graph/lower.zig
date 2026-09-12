@@ -7921,7 +7921,7 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
 // ---------------------------------------------------------------------------
 
 /// Marks a DNIR `hw_unary` as a VECTOR REDUCTION rather than a scalar bit
-/// intrinsic. `native_backend.zig` reads the same constant.
+/// intrinsic. `native.zig` reads the same constant.
 ///
 /// This rides `hw_unary` + `.field` because a vector op is not expressible in
 /// `native/ir.zig`'s `Op` set and that file is not this pass's to change. The
@@ -9795,7 +9795,7 @@ fn lowerTestRelation(ctx: *LowerCtx, method: []const u8, args: []const *const as
 }
 
 /// Marks a DNIR `hw_unary` as a TERMINATING TRAP rather than a scalar bit
-/// intrinsic. `native_backend.zig` reads the same constant and expands it to an
+/// intrinsic. `native.zig` reads the same constant and expands it to an
 /// inline instruction sequence that raises SIGABRT.
 ///
 /// TRAP, DON'T CALL. This used to be `call_extern abort`, and the cost of that

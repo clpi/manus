@@ -11,7 +11,7 @@
 # test that agrees with a wrong descriptor proves nothing, and two of these
 # rows were wrong when the file was written.
 #
-# WHAT IT CAUGHT ON ITS FIRST RUN, both in `src/native_backend.zig`:
+# WHAT IT CAUGHT ON ITS FIRST RUN, both in `src/native.zig`:
 #
 #   rbit   the emitter had 0x5ac00000 — RBIT **32-bit** — under a ctz lowering
 #          that is rbit-then-clz. A 32-bit reverse zero-fills the top half, so

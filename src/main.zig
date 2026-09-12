@@ -513,11 +513,11 @@ var global_unmodelled_behaviour_env: bool = false;
 ///
 ///     dnir_lower.zig:11832  getenv("IDOL_DIVZERO_GUARD_ALWAYS") != null
 ///     dnir_lower.zig:11776  getenv("IDOL_FLOOR_FIXUP_ALWAYS")   != null
-///     native_backend.zig:5551 getenv("IDOL_UNSAFE_TRUNC_DIVREM")  != null
-///     native_backend.zig:5573 getenv("IDOL_PROBE_NONNEG_DIVISOR") != null
+///     native.zig:5551 getenv("IDOL_UNSAFE_TRUNC_DIVREM")  != null
+///     native.zig:5573 getenv("IDOL_PROBE_NONNEG_DIVISOR") != null
 ///
 /// and `IDOL_HOME_BUDGET` parses its value, where `0` is the most meaningful
-/// setting it has (native_backend.zig:1616 — the zero-budget rung is the exact
+/// setting it has (native.zig:1616 — the zero-budget rung is the exact
 /// pre-homing behaviour, the whole point of the handle). So for every one of
 /// those, `V=0` CHANGES THE ARTIFACT and the old filter classified it false and
 /// kept the cache. MEASURED on `a // b` with a runtime divisor, one compiler

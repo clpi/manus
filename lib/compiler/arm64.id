@@ -1,7 +1,7 @@
 # SH-11 — the ARM64 encoder.
 #
 # SH-11 is the direct native backend row, host-implemented in
-# src/native_backend.zig. This is its Duo side.
+# src/native.zig. This is its Duo side.
 #
 # This header used to say SH-11 "has no Duo implementation" and that ward's
 # encoder "is not reusable from here". Both were wrong, and the second one was

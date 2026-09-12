@@ -16,7 +16,7 @@ pub const Backend = enum {
     auto,
     /// Explicit graph-observed DNIR to C99 source; orthogonal to direct and auto.
     c,
-    /// ARM64 Mach-O machine code via `native_backend.zig` (canonical when eligible).
+    /// ARM64 Mach-O machine code via `native.zig` (canonical when eligible).
     direct,
     wasm,
 

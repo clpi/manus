@@ -33,7 +33,7 @@
 #   src/dnir_lower.zig:5945   `unrollRangeIsCopyable` refuses any EMITTED
 #                             instruction with .relation/.application/.value/
 #                             .subject/.aggregate/.target/.realization_start
-#   src/native_backend.zig:9181  `validateDnirApplications` refuses the whole
+#   src/native.zig:9181  `validateDnirApplications` refuses the whole
 #                             module with `application-realization-count`
 #
 # MEASURED FAIL-CLOSED, not assumed. With BOTH `dnir_lower` refusals destroyed
@@ -41,7 +41,7 @@
 # produce a wrong answer — it refuses:
 #
 #   DNB011 application: 8 missing: application-realization-count
-#   bail site: validateDnirApplications() at native_backend.zig:9181
+#   bail site: validateDnirApplications() at native.zig:9181
 #
 # ═══ WHAT IT ASSERTS ═══════════════════════════════════════════════════════
 #

@@ -2,7 +2,7 @@
 #
 # gate/layering.sh enforces dependency DIRECTION from this file. Classification
 # is checked in, not inferred from filenames: `native/ir.zig` and
-# `native_backend.zig` share a prefix and sit in different layers, and
+# `native.zig` share a prefix and sit in different layers, and
 # `wasm_semantic.zig` is a backend opcode table while `semantic_graph.zig` is
 # sema. A prefix rule would get both wrong.
 #

@@ -7,7 +7,7 @@
 # quietly given back.
 #
 # Read the shape of it before adding anything: the backend reaches into AST 20
-# times and into SEMA 39 times. `native_backend.zig:6` imports `Sema` itself
+# times and into SEMA 39 times. `native.zig:6` imports `Sema` itself
 # and `codegen.zig` constructs a `Parser` at six live call sites. That is the
 # backend recovering meaning it should have been handed. Nothing here is
 # endorsed; it is measured so it cannot grow.

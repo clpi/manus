@@ -597,7 +597,7 @@ test "home_resolve: only a declared foreign boundary escapes home identity here"
     // is the process is a fact about its MODULE, not about `(home, name)`, so
     // `ast.Module.sourceProcessEntry` decides it and
     // `semantic_graph.publishCallableLinkage` applies it — see
-    // `native_backend.zig`, "the process entry owns the C runtime name".
+    // `native.zig`, "the process entry owns the C runtime name".
     const named_main = try relationSymbol(alloc, "compiler.host", "main", null);
     defer alloc.free(named_main);
     try std.testing.expectEqualStrings("idol_compiler_host__main", named_main);

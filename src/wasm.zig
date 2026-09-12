@@ -1,7 +1,7 @@
 //! NATIVE WEBASSEMBLY EMISSION FROM DNIR.
 //!
 //! THE SEAM IS THE IR, NOT THE AST. `dnir_lower.zig` already turns a checked
-//! module into `native_ir.Module`; `native_backend.zig` turns that into AArch64
+//! module into `native_ir.Module`; `native.zig` turns that into AArch64
 //! Mach-O. This file is the SECOND consumer of the same lowering, so both
 //! realizations consume one fact stream. Every new DNIR fact still needs an
 //! explicit consumer here: sharing the producer prevents semantic
@@ -880,7 +880,7 @@ pub fn emitFromDnir(
     defer e.deinit();
     // The severing control, read as a VALUE and not a presence, so both arms of
     // a measurement can carry the name and both decline each other's build
-    // cache — the same rule `IDOL_NO_TAILCALL` obeys in `native_backend.zig`.
+    // cache — the same rule `IDOL_NO_TAILCALL` obeys in `native.zig`.
     if (std.c.getenv("IDOL_WASM_TAILCALL")) |raw| {
         if (std.mem.eql(u8, std.mem.span(raw), "1")) e.wasm_tailcall = true;
     }

@@ -16,7 +16,7 @@
 # engine (`tools/wasm/src/engine.id`) has exactly two realizations today and
 # both are narrower than this fixture's oracle:
 #
-#   direct-native   macOS/aarch64 only (`src/native_backend.zig` refuses DNB004
+#   direct-native   macOS/aarch64 only (`src/native.zig` refuses DNB004
 #                   elsewhere), and the engine's own JIT is an ARM64 emitter
 #                   behind `jit_is_arm64`
 #   C99 slice       refuses `engine.id` at `req` (GraphFactsInvalid,

@@ -67,7 +67,7 @@
 //!                     unless the divisor is a non-zero literal — this backend's
 //!                     `sdiv` happens not to fault on zero TODAY, which is
 //!                     exactly why the exclusion must survive a future divide
-//!                     check (`native_backend.zig` states the same rule for
+//!                     check (`native.zig` states the same rule for
 //!                     if-conversion, and this module reuses its whitelist).
 //!                     Indexing is bounds-checked and a failed check ends in
 //!                     `brk`, so `a(i)` is trap-carrying.

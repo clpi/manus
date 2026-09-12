@@ -128,7 +128,7 @@ refuse=$((total - clean - tmo - unc - nap))   # UNNAMED stays inside refuse; UNC
     grep '\tUNCLASSIFIED' "$tmp.rec" | head -10 | sed 's/^/    /'
   fi
   echo
-  # NOT AN INDEPENDENT OBSERVATION. src/native_backend.zig:242 reads
+  # NOT AN INDEPENDENT OBSERVATION. src/native.zig:242 reads
   #   const producer = if (err == error.SemanticFactsInvalid) "graph"
   #                    else "dnir lower";
   # so this column RESTATES the error code and adds nothing to it. Measured:

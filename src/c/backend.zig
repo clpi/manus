@@ -623,7 +623,7 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             // conversion, not the bit transfer the dnir slot convention
             // means — `("1.5"):to(f64)` would materialize 1 at exit 0 with
             // no diagnostic — while the direct backend takes the same
-            // call's result from d0 (`src/native_backend.zig`). This slice
+            // call's result from d0 (`src/native.zig`). This slice
             // carries no float ABI witness, so refuse before source exists,
             // exactly as `print_value` refuses its f64 arm. A DISCARDED f64
             // call writes no slot and stays emitted.
