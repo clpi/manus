@@ -18,72 +18,82 @@ fail() { printf 'grammar spec generator: %s\n' "$*" >&2; exit 3; }
 [ -s "$bridge" ] || fail "missing owner bridge $bridge"
 [ -s "$md" ] || fail "missing projection target $md"
 
-# ── extract rows from the generated bridge ────────────────────────────────
 rows=$(awk '
   /^    \.\{ \.kind = \./ {
-    line=$0; sub(/^    \.\{ /,"",line); sub(/ \},\$/,"",line)
+    line=$0; sub(/^    \.\{ /,"",line); sub(/ \},$/,"",line)
     print line
   }
 ' "$bridge")
 [ -n "$rows" ] || fail "owner bridge carries no role rows"
 
-# ── the generated region ──────────────────────────────────────────────────
-# Field order in a row is not guaranteed: the owner emits facts
-# conditionally (`.precedence` only when nonzero). Scan fields, never
-# assume positions.
-fullgen=$(printf '%s\n' "$rows" | awk -F', ' '
-  function emit_header() {
-    print "## Grammar facts (generated)"
-    brk()
-    print "<!-- Generated from lib/compiler/token.id via src/grammar_role_table.zig."
-    print "     Regenerate: idol run lib/compiler/token.id, then sh gate/grammar/spec.sh."
-    print "     Every row is an owner fact; the prose around it is authored law. -->"
-    brk()
-    print "One grammar-fact owner (law.grammar.one): lib/compiler/token.id."
-    brk()
-  }
-  function brk() { print "" }
-  BEGIN { emit_header(); n=0 }
+region=$(printf '%s\n' "$rows" | awk -F', ' '
+  function esc(s) { gsub(/\|/, "\\|", s); return s }
+  BEGIN { n = 0; ids = ""; nprec = 0 }
   {
-    kind=""; spell=""; be=0
-    for (i=1; i<=NF; i++) {
-      if ($i ~ /^\.kind = /) { kind=$i; sub(/^\.kind = \./,"",kind) }
-      if ($i ~ /^\.spell = /) { spell=$i; sub(/^\.spell = "/,"",spell); sub(/"$/,"",spell) }
-      if ($i == ".begin_expr = true") be=1
-    }
-    if (be) { printf "  %s %s\n", kind, spell; n++ }
-  }
-  END {
-    print ""
-    printf "Total: %d identities.\n", n
-  }
-')
-precgen=$(printf '%s\n' "$rows" | awk -F', ' '
-  BEGIN {
-    print ""
-    print "### Operator precedence and associativity"
-    print ""
-    print "Highest number binds tightest (Pratt binding power from the owner):"
-    print ""
-    print "```text"
-  }
-  {
-    kind=""; spell=""; prec=""; assoc="none"
+    kind=""; spell=""; prec=""; assoc="none"; be=0
     for (i=1; i<=NF; i++) {
       if ($i ~ /^\.kind = /) { kind=$i; sub(/^\.kind = \./,"",kind) }
       if ($i ~ /^\.spell = /) { spell=$i; sub(/^\.spell = "/,"",spell); sub(/"$/,"",spell) }
       if ($i ~ /^\.precedence = /) { prec=$i; sub(/^\.precedence = /,"",prec) }
       if ($i ~ /^\.assoc = \./) { assoc=$i; sub(/^\.assoc = \./,"",assoc) }
+      if ($i == ".begin_expr = true") be=1
     }
-    if (prec != "") printf "  %-4s %-14s %s\n", prec, spell, assoc
+    if (be) {
+      if (ids != "") ids = ids " "
+      ids = ids kind " " esc(spell)
+      n++
+    }
+    if (prec != "") {
+      nprec++
+      precline[nprec] = sprintf("  %-4s %-14s %s", prec, spell, assoc)
+    }
   }
-  END { print "```" }
+  END {
+    print "| 1 | <!-- grammar:begin --> |"
+    print ""
+    print "| section |"
+    print "|---|---|"
+    print "| Grammar facts (generated) |"
+    print ""
+    print "| # | directive |"
+    print "|---|---|"
+    print "| 1 | <!-- Generated from lib/compiler/token.id via src/grammar_role_table.zig. |"
+    print "| 2 | Regenerate: idol run lib/compiler/token.id, then sh gate/grammar/spec.sh. |"
+    print "| 3 | Every row is an owner fact; the prose around it is authored law. --> |"
+    print ""
+    print "| # | directive |"
+    print "|---|---|"
+    print "| 1 | One grammar-fact owner (law.grammar.one): lib/compiler/token.id. |"
+    print ""
+    print "| # | directive |"
+    print "|---|---|"
+    print "| 1 | " ids " |"
+    print ""
+    print "| # | directive |"
+    print "|---|---|"
+    printf "| 1 | Total: %d identities. |\n", n
+    print ""
+    print "| section |"
+    print "|---|---|"
+    print "| Operator precedence and associativity |"
+    print ""
+    print "| # | directive |"
+    print "|---|---|"
+    print "| 1 | Highest number binds tightest (Pratt binding power from the owner): |"
+    print ""
+    print "```text"
+    for (i=1; i<=nprec; i++) print precline[i]
+    print "```"
+    print "| # | directive |"
+    print "|---|---|"
+    print "| 1 | <!-- grammar:end --> |"
+  }
 ')
-fullgen=$(printf '%s%s\n' "$fullgen" "$precgen")
+[ -n "$region" ] || fail "owner bridge projected to an empty region"
 
-# ── splice into the tracked markdown between markers ─────────────────────
-awk -v gen="$fullgen" -v mb="<!-- grammar:begin -->" -v me="<!-- grammar:end -->" '
-  index($0, mb) == 1 { print; inregion=1; if (!done) { print gen; done=1 }; next }
-  index($0, me) == 1 { inregion=0; print; next }
-  !inregion { print }
+GEN_CONTENT="$region" awk '
+  BEGIN { gen=ENVIRON["GEN_CONTENT"]; mb="<!-- grammar:begin -->"; me="<!-- grammar:end -->" }
+  index($0, mb) { skipping=1; if (!done) { print gen; done=1 }; next }
+  index($0, me) { skipping=0; next }
+  !skipping { print }
 ' "$md"
