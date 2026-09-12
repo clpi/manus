@@ -1,0 +1,115 @@
+lit: i64 = ()
+  108
+
+var: i64 = ()
+  118
+
+shl: i64 = ()
+  115
+
+val: i64 = (s: str)
+  n = s:len()
+  neg = 0
+  i = 1
+  if n > 0 and s:byte(1) == 45
+    neg = 1
+    i = 2
+  v = 0
+  while i <= n
+    v = v * 10 + s:byte(i) - 48
+    i = i + 1
+  neg == 1 and 0 - v or v
+
+cut: str = (s: str, sep: i64, idx: i64)
+  cur = 0
+  i = 1
+  a = 1
+  n = s:len()
+  while i <= n + 1
+    hit = 0
+    if i > n or s:byte(i) == sep
+      hit = 1
+    if hit == 1 and cur == idx
+      return s:sub(a, i - 1)
+    if hit == 1
+      cur = cur + 1
+      a = i + 1
+    i = i + 1
+  ""
+
+apply: i64 = (op: i64, a: i64, b: i64)
+  if op == 43
+    return a + b
+  if op == 45
+    return a - b
+  a * b
+
+shamt: i64 = (v: i64)
+  p = 1
+  k = 0
+  while p < v
+    p = p + p
+    k = k + 1
+  p == v and k or 0
+
+step: str = (op: i64, l: str, r: str, lb: str, rb: str)
+  lid = val(cut(l, 124, 0))
+  lop = val(cut(l, 124, 1))
+  la = val(cut(l, 124, 2))
+  rid = val(cut(r, 124, 0))
+  rop = val(cut(r, 124, 1))
+  ra = val(cut(r, 124, 2))
+  lbop = val(cut(lb, 124, 1))
+  lbv = val(cut(lb, 124, 2))
+  rbop = val(cut(rb, 124, 1))
+  rbv = val(cut(rb, 124, 2))
+  islit = lit()
+  if lop == islit and rop == islit and (op == 43 or op == 45 or op == 42)
+    v = apply(op, la, ra)
+    return "lit|{v}"
+  if op == 43 and rop == islit and ra == 0
+    return "ref|{lid}"
+  if op == 43 and lop == islit and la == 0
+    return "ref|{rid}"
+  if op == 45 and rop == islit and ra == 0
+    return "ref|{lid}"
+  if op == 42 and rop == islit and ra == 0
+    return "lit|0"
+  if op == 42 and lop == islit and la == 0
+    return "lit|0"
+  if op == 42 and rop == islit and ra == 1
+    return "ref|{lid}"
+  if op == 42 and lop == islit and la == 1
+    return "ref|{rid}"
+  if op == 47 and rop == islit and ra == 1
+    return "ref|{lid}"
+  if op == 45 and lid == rid
+    return "lit|0"
+  if op == 43 and lop == 43 and lbop == islit and rop == islit
+    return "nodel|43|{la}|{lbv + ra}"
+  if op == 42 and lop == 42 and lbop == islit and rop == islit
+    return "nodel|42|{la}|{lbv * ra}"
+  if op == 45 and lop == 43 and lbop == islit and rop == islit
+    d = lbv - ra
+    if d < 0
+      return "nodel|45|{la}|{0 - d}"
+    return "nodel|43|{la}|{d}"
+  if op == 45 and lop == 45 and lbop == islit and rop == islit
+    return "nodel|45|{la}|{lbv + ra}"
+  if op == 45 and rop == 43 and rbop == islit and lop == islit
+    return "noder|45|{la - rbv}|{ra}"
+  if op == 45 and rop == 45 and rbop == islit and lop == islit
+    return "noder|45|{la + rbv}|{ra}"
+  if op == 42 and rop == islit and ra > 1
+    k = shamt(ra)
+    if k > 0
+      return "nodel|115|{lid}|{k}"
+  if op == 42 and lop == islit and la > 1
+    k = shamt(la)
+    if k > 0
+      return "nodel|115|{rid}|{k}"
+  if op == 115 and lop == 115 and lbop == islit and rop == islit
+    return "nodel|115|{la}|{lbv + ra}"
+  if (op == 43 or op == 42) and lop == islit and rop != islit
+    return "node|{op}|{rid}|{lid}"
+  "same"

@@ -1,0 +1,217 @@
+val: i64 = (s: str)
+  n = s:len()
+  neg = 0
+  i = 1
+  if n > 0 and s:byte(1) == 45
+    neg = 1
+    i = 2
+  v = 0
+  while i <= n
+    v = v * 10 + s:byte(i) - 48
+    i = i + 1
+  neg == 1 and 0 - v or v
+
+cut: str = (s: str, sep: i64, idx: i64)
+  cur = 0
+  i = 1
+  a = 1
+  n = s:len()
+  while i <= n + 1
+    hit = 0
+    if i > n or s:byte(i) == sep
+      hit = 1
+    if hit == 1 and cur == idx
+      return s:sub(a, i - 1)
+    if hit == 1
+      cur = cur + 1
+      a = i + 1
+    i = i + 1
+  ""
+
+fields: i64 = (s: str)
+  n = 0
+  i = 1
+  while i <= s:len()
+    if s:byte(i) == 124
+      n = n + 1
+    i = i + 1
+  n
+
+set: str = (s: str, idx: i64, v: i64)
+  out = ""
+  cur = 0
+  i = 1
+  a = 1
+  n = s:len()
+  while i <= n
+    if s:byte(i) == 124
+      if cur == idx
+        out = out .. "{v}|"
+      else
+        out = out .. s:sub(a, i)
+      cur = cur + 1
+      a = i + 1
+    i = i + 1
+  out
+
+part: str = (g: str, i: i64)
+  cut(g, 59, i)
+
+mk: str = ()
+  ";"
+
+count: i64 = (g: str)
+  fields(part(g, 0)) // 3
+
+root: i64 = (g: str, x: i64)
+  par = part(g, 1)
+  r = x
+  while val(cut(par, 124, r + r)) != r
+    r = val(cut(par, 124, r + r))
+  r
+
+op: i64 = (g: str, id: i64)
+  val(cut(part(g, 0), 124, id * 3))
+
+left: i64 = (g: str, id: i64)
+  val(cut(part(g, 0), 124, id * 3 + 1))
+
+right: i64 = (g: str, id: i64)
+  val(cut(part(g, 0), 124, id * 3 + 2))
+
+describe: str = (g: str, id: i64)
+  nodes = part(g, 0)
+  "{id}|{cut(nodes, 124, id * 3)}|{cut(nodes, 124, id * 3 + 1)}|{cut(nodes, 124, id * 3 + 2)}"
+
+lookup: i64 = (g: str, op: i64, l: i64, r: i64)
+  nodes = part(g, 0)
+  n = fields(nodes) // 3
+  i = 0
+  while i < n
+    a = i * 3
+    if cut(nodes, 124, a) == "{op}" and cut(nodes, 124, a + 1) == "{l}" and cut(nodes, 124, a + 2) == "{r}"
+      return i
+    i = i + 1
+  n
+
+intern: str = (g: str, op: i64, l: i64, r: i64)
+  id = lookup(g, op, l, r)
+  if id == count(g)
+    nodes = part(g, 0) .. "{op}|{l}|{r}|"
+    par = part(g, 1) .. "{id}|1|"
+    return nodes .. ";" .. par
+  g
+
+union: str = (g: str, a: i64, b: i64)
+  ra = root(g, a)
+  rb = root(g, b)
+  if ra == rb
+    return g
+  par = part(g, 1)
+  sa = val(cut(par, 124, ra + ra + 1))
+  sb = val(cut(par, 124, rb + rb + 1))
+  if sa < sb
+    t = ra
+    ra = rb
+    rb = t
+    t = sa
+    sa = sb
+    sb = t
+  par = set(par, rb + rb, ra)
+  par = set(par, ra + ra + 1, sa + sb)
+  part(g, 0) .. ";" .. par
+
+sig: str = (g: str, id: i64)
+  nodes = part(g, 0)
+  a = id * 3
+  o = cut(nodes, 124, a)
+  l = cut(nodes, 124, a + 1)
+  r = cut(nodes, 124, a + 2)
+  if o == "108" or o == "118"
+    return "{o}|{l}|{r}"
+  "{o}|{root(g, val(l))}|{root(g, val(r))}"
+
+close: str = (g: str)
+  n = count(g)
+  round = 0
+  while round < n
+    changed = 0
+    i = 0
+    while i < n
+      si = sig(g, i)
+      j = i + 1
+      while j < n
+        if sig(g, j) == si
+          g = union(g, i, j)
+          changed = 1
+        j = j + 1
+      i = i + 1
+    if changed == 0
+      return g
+    round = round + 1
+  g
+
+make: str = (g: str, op: i64, l: i64, r: i64)
+  litop = compiler.opt.canon.lit()
+  if op == litop or op == compiler.opt.canon.var()
+    g = intern(g, op, l, r)
+    id = lookup(g, op, l, r)
+    return "{id};" .. g
+  cop = op
+  cc1 = root(g, l)
+  cc2 = root(g, r)
+  id = 0
+  fin = 0
+  round = 0
+  while round < 8 and fin == 0
+    lstr = describe(g, cc1)
+    rstr = describe(g, cc2)
+    lop = val(cut(lstr, 124, 1))
+    rop = val(cut(rstr, 124, 1))
+    lb = ""
+    rb = ""
+    if lop == 43 or lop == 45 or lop == 42 or lop == 115
+      lb = describe(g, right(g, cc1))
+    if rop == 43 or rop == 45 or rop == 42
+      rb = describe(g, right(g, cc2))
+    o = compiler.opt.canon.step(cop, lstr, rstr, lb, rb)
+    kind = cut(o, 124, 0)
+    p1 = val(cut(o, 124, 1))
+    p2 = val(cut(o, 124, 2))
+    p3 = val(cut(o, 124, 3))
+    if kind == "same"
+      fin = 1
+    if kind == "lit"
+      g = intern(g, litop, p1, 0)
+      id = lookup(g, litop, p1, 0)
+      fin = 2
+    if kind == "ref"
+      id = p1
+      fin = 2
+    if kind == "nodel"
+      cop = p1
+      cc1 = p2
+      g = intern(g, litop, p3, 0)
+      cc2 = lookup(g, litop, p3, 0)
+    if kind == "node"
+      cop = p1
+      cc1 = p2
+      cc2 = p3
+    if kind == "noder"
+      cop = p1
+      g = intern(g, litop, p2, 0)
+      cc1 = lookup(g, litop, p2, 0)
+      cc2 = p3
+    round = round + 1
+  if fin == 0
+    fin = 1
+  if fin == 1
+    g = intern(g, cop, cc1, cc2)
+    id = lookup(g, cop, cc1, cc2)
+  "{id};" .. g
+
+tag: i64 = (b: str)
+  val(cut(b, 59, 0))
+
+graph: str = (b: str)
+  cut(b, 59, 1) .. ";" .. cut(b, 59, 2)

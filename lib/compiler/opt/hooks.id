@@ -1,0 +1,17 @@
+names: str = ()
+  "|mknode|canon|vmap|strength|emit|close|"
+
+entry: str = (name: str)
+  if name == "mknode"
+    return "call|compiler.opt.egraph.make|(g: str, op: i64, l: i64, r: i64)|native.calc|entry|canon-at-creation"
+  if name == "canon"
+    return "call|compiler.opt.canon.step|(op: i64, l: str, r: str, lb: str, rb: str)|compiler.opt.egraph.make|loop|one-rule-per-call"
+  if name == "vmap"
+    return "thread|vmap: str|native.main|assign|var-to-class-beside-names"
+  if name == "strength"
+    return "call|compiler.opt.canon.shamt|(v: i64)|native.mulred|entry|pow2-query"
+  if name == "emit"
+    return "fold|pending-addi|native.main|assign|immediate-foldback"
+  if name == "close"
+    return "call|compiler.opt.egraph.close|(g: str)|offline|function|fixpoint-merge"
+  ""
