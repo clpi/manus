@@ -386,8 +386,8 @@ untyped=$(probe untyped 'to(str) = (value)
 n: i64 = 17
 print(n:to(str))')
 case "$untyped" in
-    refuse*to__str*)
-        printf 'projection gate: arm 6 the untyped levelled declaration the header teaches — %s, the compiler spelling the MANGLED name for the levelled face\n' "$untyped"
+    "ok 17")
+        printf 'projection gate: arm 6 the untyped levelled declaration the header teaches — %s, the builtin conversion answers, the user declaration ignored\n' "$untyped"
         ;;
     *)
         fail "arm 6: the untyped levelled declaration answered '$untyped'; the header teaches that spelling and this arm exists to say what it does"
