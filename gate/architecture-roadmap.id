@@ -1,0 +1,6 @@
+manifest: str = ()
+  "architecture-roadmap: planned behavioral gates (not yet blocking)\n\n  GRAPH-ONLY-REALIZATION     poison AST after graph closure; supported path emits\n  HOME-MOVE                  move relation file; semantic application unchanged\n  MODULE-TOPOLOGY            perturb filesystem layout after ingress; ids stable\n  REPRESENTATION-HISTORY       exploded locals vs aggregate; same realization set\n  ZERO-TEXT-SEMANTICS        rename locals post-resolution; machine unchanged\n  EFFECT-NO-RESULT           unused result + required effect; call remains\n  RESULT-NO-EFFECT           unused result + pure; call may disappear\n\nManifest: docs/architecture-negative-controls.md\nStatic/debt gates: sh gate/architecture-negative.sh"
+
+main: i64 = ()
+  print(manifest())
+  0

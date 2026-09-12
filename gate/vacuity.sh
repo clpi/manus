@@ -75,11 +75,12 @@ cd "$root" || { echo "vacuity: cannot enter root" >&2; exit 2; }
 # here is a claim about that gate's header, and `vacuity` checks the file
 # exists; it deliberately does NOT check the wording, because a prose match is
 # the same fragile instrument this gate exists to distrust.
-# Two, and each was CHECKED against its own header rather than assumed:
-#   architecture-roadmap.sh  "Always exits 0. Lists behavioral gates awaiting
-#                             harnesses; does not block."   (0/0 under plant)
-#   coverage.sh              "reporting only (set COVERAGE_BUDGET to ratchet)"
-#                            (64 empty / 0 hollow — needs the exemption)
+# One, CHECKED against its own header rather than assumed:
+#   coverage.sh  "reporting only (set COVERAGE_BUDGET to ratchet)"
+#                (64 empty / 0 hollow — needs the exemption)
+#
+# architecture-roadmap.sh was the second; it migrated to gate/architecture-roadmap.id,
+# which the plant census does not enumerate, so the exemption left with the .sh.
 #
 # THE LIST STARTED AT FIVE AND THIS HARNESS SHRANK IT. `attribution.sh`,
 # `differential.sh` and `envcache.sh` were exempted on the strength of a
@@ -89,7 +90,7 @@ cd "$root" || { echo "vacuity: cannot enter root" >&2; exit 2; }
 # `envcache.sh` matched a variable named `N_UNMEASURED`. An exemption granted
 # by a loose pattern match is the same instrument this gate distrusts, so the
 # three are gone and they are measured like everything else.
-DECLARED='gate/architecture-roadmap.sh gate/coverage.sh'
+DECLARED='gate/coverage.sh'
 
 # ── convicted, and not yet repaired ────────────────────────────────────────
 # A NAMED list, not a count. `gate/all.sh` ratchets on bare numbers, which is
@@ -485,7 +486,7 @@ for g in $gates; do
   # A DECLARATION EXEMPTS AN INTENTIONAL GREEN, NEVER A HANG. This branch used
   # to `continue` before the TIMEOUT case could count, so `TIMEOUT_CEILING=0`
   # was unenforceable for report-only gates and a newly hanging
-  # architecture-roadmap still let the harness exit 0.
+  # a declared gate still let the harness exit 0.
   if [ "$is_declared" -eq 1 ] && [ "$v" = "TIMEOUT" ]; then
     timedout=$((timedout + 1)); timeout_names="$timeout_names ${g#gate/}(declared)"
     printf '  %-38s TIMEOUT   empty=%-3s hollow=%-3s  (declared, but a hang is not a declaration)\n' "${g#gate/}" "$re" "$rh"
