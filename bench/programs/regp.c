@@ -1,0 +1,1 @@
+int main(void){unsigned long long a=1ULL,b=2ULL,c=3ULL,d=4ULL,e=5ULL,f=6ULL,g=7ULL,i=0;while(i<1000000ULL){a+=1ULL;b+=2ULL;c+=3ULL;d+=4ULL;e+=5ULL;f+=6ULL;g+=7ULL;i+=1;}unsigned long long t=a+b;t+=c;t+=d;t+=e;t+=f;t+=g;t+=i;return (int)(t&255);}

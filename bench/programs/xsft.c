@@ -1,0 +1,1 @@
+int main(void){unsigned long long t=0,x=88172645463325252ULL,o=0;while(o<10000000ULL){unsigned long long y=x*8192ULL;y&=9223372036854775807ULL;x=x+y-2ULL*(x&y);y=x/32ULL;x=x+y-2ULL*(x&y);y=x*134217728ULL;y&=9223372036854775807ULL;x=x+y-2ULL*(x&y);x&=9223372036854775807ULL;t+=x;o+=1;}return (int)(t&255);}

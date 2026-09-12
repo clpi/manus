@@ -1,0 +1,1 @@
+int main(void){unsigned long long t=0,a=0;while(a<500ULL){unsigned long long m=(a&63ULL)+1ULL;unsigned long long b=0;while(b<m){unsigned long long c=0;while(c<500ULL){t+=1;c+=1;}b+=1;}a+=1;}return (int)(t&255);}

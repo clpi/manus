@@ -1,0 +1,1 @@
+int main(void){unsigned long long x=1000000000ULL,i=0;while(i<30000000ULL){x=x/16ULL;x+=1000ULL;i+=1;}return (int)(x&255);}
