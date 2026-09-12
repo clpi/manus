@@ -1,0 +1,38 @@
+score: i64 = (done: i64, total: i64, plat: i64)
+    if total == 0
+        return 0
+    p = plat
+    if p < 1
+        p = 1
+    done * 1000000 // total // p
+
+pick: i64 = (ta: i64, sa: i64, tb: i64, sb: i64)
+    ha = 0
+    if ta > 0
+        ha = 1
+    hb = 0
+    if tb > 0
+        hb = 1
+    if ha == 1 and hb == 0
+        return 0
+    if hb == 1 and ha == 0
+        return 1
+    if sa >= sb
+        return 0
+    1
+
+lcg: i64 = (seed: i64)
+    seed * 1103515245 + 12345
+
+explore: i64 = (seed: i64)
+    m = lcg(seed)
+    if m < 0
+        m = 0 - m
+    if m % 100 < 5
+        return 1
+    0
+
+routeopen: i64 = (n: i64)
+    if n > 0
+        return 1
+    0

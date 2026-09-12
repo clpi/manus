@@ -1,0 +1,26 @@
+fpeq: i64 = (a: i64, b: i64)
+    if a == b
+        return 1
+    0
+
+near: i64 = (inter: i64, union: i64)
+    if union == 0
+        return 1
+    if inter * 10 >= union * 9
+        return 1
+    0
+
+wasted: i64 = (n: i64)
+    if n > 1
+        return n - 1
+    0
+
+popcount: i64 = (w: i64)
+    r = 0
+    v = w
+    if v < 0
+        v = 0 - v
+    while v > 0
+        r = r + (v % 2)
+        v = v // 2
+    r
