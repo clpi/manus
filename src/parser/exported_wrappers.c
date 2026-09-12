@@ -1,4 +1,6 @@
-#include <stdint.h>\n#include <stdbool.h>\n// Exported wrapper functions for lexer internals expected by test harness
+#include <stdint.h>
+#include <stdbool.h>
+// Exported wrapper functions for lexer internals expected by test harness
 // These wrappers expose the static inline functions defined in projection.c
 // as external symbols with the names used by the Zig extern declarations.
 
@@ -49,7 +51,6 @@ extern const char* compiler_lexer__kindname(int64_t i);
 
 __attribute__((visibility("default"))) int64_t _fieldcol(void) { return compiler_lexer__fieldcol(); }
 __attribute__((visibility("default"))) int64_t _fieldint(void) { return compiler_lexer__fieldint(); }
-__attribute__((visibility("default"))) int64_t _fieldintclass(void) { return compiler_lexer___fieldintclass(); }
 __attribute__((visibility("default"))) int64_t _fieldlen(void) { return compiler_lexer__fieldlen(); }
 __attribute__((visibility("default"))) int64_t _fieldline(void) { return compiler_lexer__fieldline(); }
 __attribute__((visibility("default"))) int64_t _fieldoff(void) { return compiler_lexer__fieldoff(); }
@@ -78,14 +79,6 @@ __attribute__((visibility("default"))) const char* _sourcepathformprovenance(con
 __attribute__((visibility("default"))) const char* _sourcefactlaw(const char* path, const char* role) { return compiler_lexer__sourcefactlaw(path, role); }
 __attribute__((visibility("default"))) const char* _sourcefactprovenance(const char* path, const char* role) { return compiler_lexer__sourcefactprovenance(path, role); }
 __attribute__((visibility("default"))) int64_t _recordslots(void) { return compiler_lexer__recordslots(); }
-__attribute__((visibility("default"))) int64_t _fieldkind(void) { return compiler_lexer__fieldkind(); }
-__attribute__((visibility("default"))) int64_t _fieldline(void) { return compiler_lexer__fieldline(); }
-__attribute__((visibility("default"))) int64_t _fieldcol(void) { return compiler_lexer__fieldcol(); }
-__attribute__((visibility("default"))) int64_t _fieldint(void) { return compiler_lexer__fieldint(); }
-__attribute__((visibility("default"))) int64_t _fieldoff(void) { return compiler_lexer__fieldoff(); }
-__attribute__((visibility("default"))) int64_t _fieldlen(void) { return compiler_lexer__fieldlen(); }
-__attribute__((visibility("default"))) int64_t _fieldfloat(void) { return compiler_lexer__fieldfloat(); }
-__attribute__((visibility("default"))) int64_t _fieldintclass(void) { return compiler_lexer___fieldintclass(); }
 __attribute__((visibility("default"))) int64_t _rejectioncount(void) { return compiler_lexer__rejectioncount(); }
 __attribute__((visibility("default"))) int64_t _rejectioncode(int64_t i) { return compiler_lexer__rejectioncode(i); }
 __attribute__((visibility("default"))) const char* _rejectionname(int64_t code) { return compiler_lexer__rejectionname(code); }
