@@ -89,6 +89,12 @@ ret: i64 = ()
 udf: i64 = ()
     3556769792
 
+stx: i64 = (rt: i64, rn: i64, off: i64)
+    4177526784 | ((off >> 3) << 10) | (rn << 5) | rt
+
+ldx: i64 = (rt: i64, rn: i64, off: i64)
+    4185915392 | ((off >> 3) << 10) | (rn << 5) | rt
+
 digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
@@ -279,6 +285,40 @@ splitop: str = (t: str)
         q = q + 1
     dec(oppos) .. "|" .. dec(op)
 
+spilln: i64 = (base: i64)
+    (base - 11) >> 1
+
+spillb: i64 = (n: i64)
+    b = (n + 1) * 8
+    b + ((16 - (b & 15)) & 15)
+
+spillpush: str = (c: str, base: i64)
+    n = spilln(base)
+    b = spillb(n)
+    c = c .. word(subi(31, 31, b))
+    i = 0
+    while i < n
+        c = c .. word(stx(11 + (i * 2), 31, 8 + (i * 8)))
+        i = i + 1
+    c
+
+spillpop: str = (c: str, base: i64, r: i64)
+    n = spilln(base)
+    b = spillb(n)
+    i = 0
+    while i < n
+        c = c .. word(ldx(11 + (i * 2), 31, 8 + (i * 8)))
+        i = i + 1
+    c = c .. word(ldx(r, 31, 0))
+    c .. word(addi(31, 31, b))
+
+deepexpr: str = (c: str, r: i64, a: str, o: i64, e: str, base: i64, names: str)
+    c = spillpush(c, base)
+    c = calc(c, 11, a, o, e, 11, names)
+    c = c .. word(stx(11, 31, 0))
+    c = spillpop(c, base, r)
+    c
+
 expr: str = (c: str, t: str, r: i64, base: i64, names: str)
     t = trim(t)
     if isnum(t) == 1
@@ -288,13 +328,13 @@ expr: str = (c: str, t: str, r: i64, base: i64, names: str)
         return expr(c, s, r, base, names)
     if hasop(t) == 0
         return c .. word(mov(r, reg(names, t)))
-    if base > 17
-        return c .. word(udf())
     sp = splitop(t)
     oppos = at(sp, 0)
     op = at(sp, 1)
     a = trim(t:sub(1, oppos - 1))
     e = trim(t:sub(oppos + 1, t:len()))
+    if base > 17
+        return deepexpr(c, r, a, op, e, base, names)
     calc(c, r, a, op, e, base, names)
 
 foldop: i64 = (a: i64, o: i64, b: i64)
