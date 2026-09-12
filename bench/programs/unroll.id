@@ -1,0 +1,11 @@
+t = 0
+o = 0
+while o < 5000000
+  s = 0
+  i = 0
+  while i < 8
+    s = s + i * o
+    i = i + 1
+  t = t + s
+  o = o + 1
+t

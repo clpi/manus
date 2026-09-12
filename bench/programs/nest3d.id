@@ -1,0 +1,13 @@
+t = 0
+a = 0
+while a < 500
+  m = (a & 63) + 1
+  b = 0
+  while b < m
+    c = 0
+    while c < 500
+      t = t + 1
+      c = c + 1
+    b = b + 1
+  a = a + 1
+t
