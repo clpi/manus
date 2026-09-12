@@ -821,6 +821,23 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
     }
 }
 
+/// Constant words for an `alloc_slots` region bound to an immutable
+/// aggregate, resolved from the module's dense tables — the same rows the
+/// Wasm backend places in linear memory and AArch64 places in
+/// `__TEXT,__const`. The lowering emits no `store_index` for these
+/// regions, so without this the C array would read as zeros. Null when
+/// the region has no immutable contents: a mutable table's initial values
+/// arrive as `store_index` instructions and unwritten words read as 0.
+fn denseValues(e: *Emitter, instruction: dnir.Instr) Error!?[]const i64 {
+    const aggregate = instruction.aggregate orelse return null;
+    for (e.module.dense_tables) |table| {
+        if (table.value != aggregate) continue;
+        if (table.elem_ty != .i64) return e.refuse("slots-dense-elem-not-i64");
+        return table.values;
+    }
+    return null;
+}
+
 fn emitFunction(e: *Emitter, function: dnir.Function, is_entry: bool) Error!void {
     e.current_function = function.name;
     defer e.args_this_call = 0;
@@ -885,7 +902,17 @@ fn emitFunction(e: *Emitter, function: dnir.Function, is_entry: bool) Error!void
                 else => return e.refuse("slots-extent-not-static"),
             };
             if (words < 1 or words > 4096) return e.refuse("slots-extent-out-of-range");
-            try w.print("  int64_t m{d}[{d}] = {{0}};\n", .{ regions, words });
+            if (try denseValues(e, instruction)) |values| {
+                if (values.len != @as(usize, @intCast(words))) return e.refuse("slots-dense-extent-mismatch");
+                try w.print("  int64_t m{d}[{d}] = {{", .{ regions, words });
+                for (values, 0..) |element, i| {
+                    if (i != 0) try w.writeAll(", ");
+                    try emitValue(e, .{ .i64 = element });
+                }
+                try w.writeAll("};\n");
+            } else {
+                try w.print("  int64_t m{d}[{d}] = {{0}};\n", .{ regions, words });
+            }
             regions += 1;
         }
     }
@@ -1417,4 +1444,26 @@ test "C backend splits the parameter refusal: record shape vs slot type" {
         .functions = &.{.{ .name = "takesf64", .ret = .i64, .params = &float_param, .blocks = &.{.{ .instrs = &body }} }},
     }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("parameter-not-i64", diagnostic.note().?);
+}
+
+test "C backend initializes immutable aggregate regions from dense tables" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .alloc_slots, .result = 0, .lhs = .{ .i64 = 4 }, .aggregate = 7, .ty = .i64 },
+        .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 2 } },
+        .{ .op = .load_index, .result = 2, .ty = .i64, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 } },
+        .{ .op = .ret, .lhs = .{ .temp = 2 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "main", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    const tables = [_]dnir.DenseTable{
+        .{ .value = 7, .elem_ty = .i64, .values = &.{ 10, 20, 30, 40 } },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions, .dense_tables = &tables }, "", "main", &diagnostic);
+    defer std.testing.allocator.free(source);
+    try std.testing.expect(std.mem.indexOf(u8, source, "int64_t m0[4] = {") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "idol_bits_i64(UINT64_C(0xa))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "idol_bits_i64(UINT64_C(0x28))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "int64_t m0[4] = {0};") == null);
 }
