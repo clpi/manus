@@ -128,6 +128,9 @@ rexx: str = (w: i64, r: i64, x: i64, b: i64)
 imul1: str = (s: i64)
     rex(1, 0, rbit(s)) .. pair(247) .. pair(modrm(3, 5, s))
 
+negrr: str = (d: i64)
+    rex(1, 0, rbit(d)) .. pair(247) .. pair(modrm(3, 3, d))
+
 sarri: str = (d: i64, v: i64)
     rex(1, 0, rbit(d)) .. pair(193) .. pair(modrm(3, 7, d)) .. pair(v)
 
@@ -244,6 +247,7 @@ main: i64 = ()
     out = out .. vec("ret", ret())
     out = out .. vec("syscall", syscall())
     out = out .. vec("imulq %r11", imul1(11))
+    out = out .. vec("negq %r8", negrr(8))
     out = out .. vec("sarq $3, %rdx", sarri(2, 3))
     out = out .. vec("shrq $63, %r10", shrri(10, 63))
     out = out .. vec("leaq (%r12,%r12,2), %r13", leasib(13, 12, 12, 2))

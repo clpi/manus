@@ -76,6 +76,18 @@ mulri: str = (d: i64, v: i64)
 shlri: str = (d: i64, v: i64)
     rex(1, 0, rbit(d)) .. pair(193) .. pair(modrm(3, 4, d)) .. pair(v)
 
+sarri: str = (d: i64, v: i64)
+    rex(1, 0, rbit(d)) .. pair(193) .. pair(modrm(3, 7, d)) .. pair(v)
+
+shrri: str = (d: i64, v: i64)
+    rex(1, 0, rbit(d)) .. pair(193) .. pair(modrm(3, 5, d)) .. pair(v)
+
+imul1: str = (s: i64)
+    rex(1, 0, rbit(s)) .. pair(247) .. pair(modrm(3, 5, s))
+
+negrr: str = (d: i64)
+    rex(1, 0, rbit(d)) .. pair(247) .. pair(modrm(3, 3, d))
+
 div3: str = (d: i64, n: i64, s: i64)
     pre = ""
     if n != 0
@@ -160,19 +172,31 @@ num: i64 = (s: str)
     v = 0
     i = 1
     n = s:len()
+    neg = 0
+    if n > 0 and s:byte(1) == 45
+        neg = 1
+        i = 2
     while i <= n
         v = v * 10 + s:byte(i) - 48
         i = i + 1
+    if neg == 1
+        return 0 - v
     v
 
 dec: str = (v: i64)
     if v == 0
         return "0"
+    neg = 0
+    if v < 0
+        neg = 1
+        v = 0 - v
     out = ""
     x = v
     while x > 0
         out = hex(x - (x / 10) * 10) .. out
         x = x / 10
+    if neg == 1
+        return "-" .. out
     out
 
 trim: str = (s: str)
@@ -391,6 +415,123 @@ purecount: i64 = (src: str, k: i64, lc: i64, ind: i64, lhs: str)
         p = 0
     p
 
+divmagic: str = (dd: i64)
+    ad = dd
+    if ad < 0
+        ad = 0 - ad
+    tw = 0 - 9223372036854775807 - 1
+    tm = tw - 1
+    qd = tm / ad
+    pr = qd * ad
+    rm = tm - pr
+    an = tm - rm
+    p = 63
+    t1 = tw / an
+    q1 = 0 - t1
+    pr = q1 * an
+    r1 = tw - pr
+    t2 = tw / ad
+    q2 = 0 - t2
+    pr = q2 * ad
+    r2 = tw - pr
+    fin = 0
+    while fin == 0
+        p = p + 1
+        q1 = q1 * 2
+        r1d = an - r1
+        if r1 >= r1d
+            q1 = q1 + 1
+            r1 = r1 - r1d
+        else
+            r1 = r1 * 2
+        q2 = q2 * 2
+        r2 = r2 * 2
+        if r2 >= ad
+            q2 = q2 + 1
+            r2 = r2 - ad
+        dl = ad - r2
+        if q1 < dl
+            fin = 0
+        else
+            if q1 == dl and r1 == 0
+                fin = 0
+            else
+                fin = 1
+    mg = q2 + 1
+    sh = p - 64
+    dec(mg) .. "|" .. dec(sh)
+
+divscan: str = (src: str)
+    out = ""
+    lc = rows(src)
+    k = 0
+    while k < lc
+        t = row(src, k)
+        q = 1
+        while q <= t:len()
+            if t:byte(q) == 47
+                r = q + 1
+                while r <= t:len() and t:byte(r) == 32
+                    r = r + 1
+                d0 = r
+                while r <= t:len() and digit(t:byte(r)) == 1
+                    r = r + 1
+                if r > d0
+                    v = num(t:sub(d0, r - 1))
+                    if v > 1 and v < 4294967296 and powtwo(v) == 0 - 1
+                        ds = dec(v)
+                        if hassub("|" .. out, "|" .. ds .. "|") == 0
+                            out = out .. ds .. "|"
+                q = r
+            else
+                q = q + 1
+        k = k + 1
+    out
+
+divconst: str = (c: str, rd: i64, a: str, dd: i64, names: str)
+    ra = reg(names, a)
+    if dd == 1
+        if rd == ra
+            return c
+        return c .. movrr(rd, ra)
+    if dd == 0 - 1
+        return c .. movrr(rd, ra) .. negrr(rd)
+    ad = dd
+    if ad < 0
+        ad = 0 - ad
+    pw = powtwo(ad)
+    if pw > 0
+        t = c .. movrr(2, ra)
+        t = t .. sarri(2, 63)
+        t = t .. shrri(2, 64 - pw)
+        t = t .. addrr(2, ra)
+        t = t .. sarri(2, pw)
+        if dd < 0
+            t = t .. negrr(2)
+        return t .. movrr(rd, 2)
+    ms = divmagic(dd)
+    mg = at(ms, 0)
+    sh = at(ms, 1)
+    mgnm = "divmg:" .. dec(dd)
+    mr = 10
+    if find(names, mgnm) != 0 - 1
+        mr = reg(names, mgnm)
+    else
+        c = imm(c, 10, mg)
+    t = c .. movrr(0, ra)
+    t = t .. imul1(mr)
+    if mg < 0
+        t = t .. addrr(2, ra)
+    if sh > 0
+        t = t .. sarri(2, sh)
+    t = t .. movrr(rd, 2)
+    t = t .. movrr(2, rd)
+    t = t .. shrri(2, 63)
+    t = t .. addrr(rd, 2)
+    if dd < 0
+        return t .. negrr(rd)
+    t
+
 calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
     aconst = digit(a:byte(1))
     econst = digit(e:byte(1))
@@ -436,6 +577,8 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, names: str)
         m = mulred(c, rd, e, av, names)
         if m:len() > 0
             return m
+    if o == 47 and econst == 1 and aconst == 0 and ev > 0 and ev < 4294967296
+        return divconst(c, rd, a, ev, names)
     ra = 0
     rb = 0
     if aconst == 1
@@ -500,6 +643,18 @@ main: i64 = ()
     src = stdin:read()
     names = ""
     code = ""
+    mgs = divscan(src)
+    mp = 1
+    while mp <= mgs:len()
+        mq = mp
+        while mq <= mgs:len() and mgs:byte(mq) != 124
+            mq = mq + 1
+        if mq > mp
+            ds = mgs:sub(mp, mq - 1)
+            nm = "divmg:" .. ds
+            names = names .. nm .. "|"
+            code = imm(code, reg(names, nm), at(divmagic(num(ds)), 0))
+        mp = mq + 1
     wjmp = ""
     wrl = ""
     wrr = ""
