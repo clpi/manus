@@ -193,12 +193,12 @@ P4 = re.compile(r'This is the \*\*sole supreme compact law\*\*')
 # `[]` in ROLE POSITION: head of a line, or head of a list item. Anywhere else
 # it is being quoted, not declared -- `## 8. `.get` / `[]` host rule` is a
 # heading and `reinterpret `()` as `[]`` is a prohibition.
-BRACKET_ROLE = re.compile(r'^\s{0,4}(?:[-*]\s+)?(?:`\[\]`|\[\])\s+(?:is\s+)?\**([A-Za-z][A-Za-z/ -]{2,44})')
+BRACKET_ROLE = re.compile(r'^\s{0,4}(?:[-*]\s+)?(?:\|\s*\d+\s*\|\s*)?(?:`\[\]`|\[\])\s+(?:is\s+)?\**([A-Za-z][A-Za-z/ -]{2,44})')
 # ... but a COUNT is not a ROLE. `[] indexing: 15+ violations` is a census row
 # in an evidence bundle; the word after the delimiter is the thing being
 # counted, not the role being declared. Out of the declared scope today, and
 # declined here so widening the scope does not manufacture a finding.
-BRACKET_CENSUS = re.compile(r'^\s{0,4}(?:[-*]\s+)?(?:`\[\]`|\[\])\s+[A-Za-z][A-Za-z/ -]{0,44}:\s*\d')
+BRACKET_CENSUS = re.compile(r'^\s{0,4}(?:[-*]\s+)?(?:\|\s*\d+\s*\|\s*)?(?:`\[\]`|\[\])\s+[A-Za-z][A-Za-z/ -]{0,44}:\s*\d')
 # The predicate form, which states the delimiter rather than the role.
 PRED = re.compile(
     r'computed(?:/indexed| or indexed| and indexed)?\s+(?:aggregate\s+)?'
