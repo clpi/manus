@@ -1,0 +1,185 @@
+nyb: str = (v: i64)
+    ds = "0123456789abcdef"
+    d = (v & 15) + 1
+    ds:sub(d, d)
+
+oct: str = (v: i64)
+    nyb(v >> 4) .. nyb(v)
+
+enc: str = (v: i64)
+    oct(v) .. oct(v >> 8) .. oct(v >> 16) .. oct(v >> 24)
+
+emit: str = (c: str, w: i64)
+    c .. enc(w)
+
+wcount: i64 = (c: str)
+    c:len() >> 3
+
+fix: str = (c: str, pos: i64, w: i64)
+    h = pos * 8
+    c:sub(1, h) .. enc(w) .. c:sub(h + 9, c:len())
+
+smstartsm: i64 = ()
+    3573760895
+
+smstartza: i64 = ()
+    3573761407
+
+smstopza: i64 = ()
+    3573761151
+
+smstopsm: i64 = ()
+    3573760639
+
+nopx: i64 = ()
+    3573753631
+
+zeroall: i64 = ()
+    3221750015
+
+ptrueall: i64 = ()
+    630776800
+
+fmopa: i64 = (za: i64, pn: i64, pm: i64, zn: i64, zm: i64)
+    2155872256 | (zm << 16) | (pm << 13) | (pn << 10) | (zn << 5) | za
+
+movtov: i64 = (zd: i64, pg: i64, tile: i64, wv: i64, sl: i64)
+    3229745152 | ((wv - 12) << 13) | (pg << 10) | (tile << 7) | (sl << 5) | zd
+
+ldrz: i64 = (zt: i64, rn: i64, off: i64)
+    2239774720 | (off << 10) | (rn << 5) | zt
+
+strz: i64 = (zt: i64, rn: i64, off: i64)
+    3850387456 | (off << 10) | (rn << 5) | zt
+
+ld1w: i64 = (zt: i64, pg: i64, rn: i64)
+    2772475904 | (pg << 10) | (rn << 5) | zt
+
+st1w: i64 = (zt: i64, pg: i64, rn: i64)
+    3846234112 | (pg << 10) | (rn << 5) | zt
+
+addx: i64 = (rd: i64, rn: i64, im: i64)
+    2432696320 | (im << 10) | (rn << 5) | rd
+
+subx: i64 = (rd: i64, rn: i64, im: i64)
+    4043309056 | (im << 10) | (rn << 5) | rd
+
+bif: i64 = (cc: i64, off: i64)
+    1409286144 | ((off & 524287) << 5) | cc
+
+cbz: i64 = (rt: i64, off: i64)
+    872415232 | ((off & 524287) << 5) | rt
+
+br: i64 = (off: i64)
+    335544320 | (off & 67108863)
+
+bl: i64 = (off: i64)
+    2483027968 | (off & 67108863)
+
+retx: i64 = ()
+    3596551104
+
+ldrqpost: i64 = (rt: i64, rn: i64, im: i64)
+    1019216896 | ((im & 511) << 12) | (rn << 5) | rt
+
+strqpost: i64 = (rt: i64, rn: i64, im: i64)
+    1015022592 | ((im & 511) << 12) | (rn << 5) | rt
+
+fmlav: i64 = (rd: i64, rn: i64, rm: i64)
+    1310772224 | (rm << 16) | (rn << 5) | rd
+
+movizero: i64 = (rd: i64)
+    1325401088 | rd
+
+dupw: i64 = (rd: i64, rn: i64)
+    1308888064 | (rn << 5) | rd
+
+ldrspost: i64 = (rt: i64, rn: i64, im: i64)
+    3091203072 | ((im & 511) << 12) | (rn << 5) | rt
+
+smkernel: str = (c: str)
+    c = emit(c, smstartsm())
+    c = emit(c, smstartza())
+    c = emit(c, zeroall())
+    c = emit(c, ptrueall())
+    c = emit(c, addx(4, 0, 64))
+    c = emit(c, addx(5, 0, 128))
+    c = emit(c, addx(6, 0, 192))
+    loop = wcount(c)
+    c = emit(c, ldrz(0, 0, 0))
+    c = emit(c, ldrz(1, 4, 0))
+    c = emit(c, ldrz(2, 5, 0))
+    c = emit(c, ldrz(3, 6, 0))
+    c = emit(c, ldrz(4, 1, 0))
+    c = emit(c, fmopa(0, 0, 0, 0, 4))
+    c = emit(c, fmopa(1, 0, 0, 1, 4))
+    c = emit(c, fmopa(2, 0, 0, 2, 4))
+    c = emit(c, fmopa(3, 0, 0, 3, 4))
+    c = emit(c, addx(0, 0, 256))
+    c = emit(c, addx(4, 4, 256))
+    c = emit(c, addx(5, 5, 256))
+    c = emit(c, addx(6, 6, 256))
+    c = emit(c, addx(1, 1, 64))
+    c = emit(c, subx(3, 3, 1))
+    c = emit(c, bif(1, loop - wcount(c)))
+    c = emit(c, addx(12, 31, 0))
+    g = 0
+    while g < 4
+        s = 0
+        while s < 4
+            c = emit(c, movtov(7, 0, g, 12, s))
+            c = emit(c, strz(7, 2, 0))
+            c = emit(c, addx(2, 2, 64))
+            s = s + 1
+        g = g + 1
+    c = emit(c, smstopza())
+    c = emit(c, smstopsm())
+    c = emit(c, retx())
+    c
+
+smfallback: str = (c: str)
+    c = emit(c, addx(8, 1, 0))
+    c = emit(c, addx(5, 3, 0))
+    i = 0
+    while i < 16
+        c = emit(c, movizero(0))
+        c = emit(c, movizero(1))
+        c = emit(c, movizero(2))
+        c = emit(c, movizero(3))
+        c = emit(c, addx(3, 5, 0))
+        c = emit(c, addx(1, 8, 0))
+        c = emit(c, addx(4, 0, i * 4))
+        loop = wcount(c)
+        c = emit(c, ldrspost(9, 4, 64))
+        c = emit(c, dupw(4, 9))
+        c = emit(c, ldrqpost(5, 1, 16))
+        c = emit(c, ldrqpost(6, 1, 16))
+        c = emit(c, ldrqpost(7, 1, 16))
+        c = emit(c, ldrqpost(8, 1, 16))
+        c = emit(c, fmlav(0, 4, 5))
+        c = emit(c, fmlav(1, 4, 6))
+        c = emit(c, fmlav(2, 4, 7))
+        c = emit(c, fmlav(3, 4, 8))
+        c = emit(c, subx(3, 3, 1))
+        c = emit(c, bif(1, loop - wcount(c)))
+        c = emit(c, strqpost(0, 2, 16))
+        c = emit(c, strqpost(1, 2, 16))
+        c = emit(c, strqpost(2, 2, 16))
+        c = emit(c, strqpost(3, 2, 16))
+        i = i + 1
+    c = emit(c, retx())
+    c
+
+smedispatch: str = (c: str)
+    c = emit(c, nopx())
+    p1 = wcount(c)
+    c = emit(c, cbz(0, 0))
+    c = smkernel(c)
+    p2 = wcount(c)
+    c = emit(c, br(0))
+    fl = wcount(c)
+    c = smfallback(c)
+    dn = wcount(c)
+    c = fix(c, p1, cbz(0, fl - p1))
+    c = fix(c, p2, br(dn - p2))
+    c
