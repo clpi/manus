@@ -1,1 +1,46 @@
-{"directives":[{"id":"route","text":"Route labeling: the \"idol\" binaries in every section below were compiled by the RESTRICTED route (`idol compile lib/compiler/native.id --backend native --no-cache -o nativebench`, then `nativebench < P.id` piped through `xxd -r -p`, then `ld -arch arm64 -e _idolmain`), not by the production compiler (zig-out/bin/idol) compiling the programs. The production route (src/native.zig) does not consume the .id optimizer passes (opt/licm.id, opt/poly.id, opt/zerotrip.id); restricted-route wins are not production progress until the production route consumes the technique with its own equivalence + cost evidence."},{"id":"oracle-identity","text":"Comparator identity is established at run time via `clang --version` and `gcc --version`, and the discovered version strings are recorded per run in this report; identity is never assumed from command names. On the Mac mini both report Apple clang 21.0.0 (clang-2100.1.1.101), Target: arm64-apple-darwin25.5.0 -- no GNU GCC is measured here, so the \"gcc\" column is an Apple-clang alias of the \"clang\" column, not an independent oracle."},{"id":"compile-time-scope","text":"Compile-time rows (\"Compile time, source to executable\") use the same restricted route + `ld` vs the run-time-discovered comparators. A duration counts as a successful compilation only after every required stage succeeded and the artifact was validated (exists, nonzero size). Failed attempts are recorded as FAILED work and are never mixed into success medians. Faster compile time does not offset slower output, extra allocation, larger code, or wrong answers; no faster-compile-time claim may be presented as compensating for those."},{"id":"reverted-narrowed-spill","text":"RETRACTED: claim \"narrowed spill 2.11x faster\" (commit e35a6c36: \"mixop 0.0442s -> 0.0209s, 2.11x faster\", marked provisional, load ~12) was REVERTED by 59a7b26b (\"native.deepexpr: revert narrowed spill, restore full spill\"). Not a retained gain; it survives only in the immutable commit message."},{"id":"mask-hoisting","text":"NOT REPRODUCED: claim \"mask hoisting 70->50 instructions\" (commit 471a40c9). Independent re-measurement 2026-09-12 (nativebench built before/after the commit, --no-cache; popc.id compiled; otool disassembly): loop 88 -> 73 instructions (4 big masks hoisted to prologue; exit code identical, 196); runtime median -1.9% (noise) at 1-min load ~7.4. Restricted-route technique (lib/compiler/opt/licm.id) only; the production route has no nestedband big-mask equivalent."},{"id":"unproved-way-fastest","text":"UNPROVED: the standing \"way fastest\" target. No clean idle-machine benchmark window has yet been achieved; every speed figure to date is loaded-machine (indicative only, never conclusive)."},{"id":"unreplicated-upbranch-audit","text":"UNREPLICATED: the external audit's published upbranch -8.05% significant loss contradicts the post-mul-chain-fix parity measurement (commit 99ab0a0f, statistical tie vs clang). Neither value is established; the case must be re-measured with the fixed methodology (significance-gated verdicts, byte-identical correctness gate, run-time oracle identity). Do not present either number as the current result."},{"id":"methodology-rule","text":"Going-forward rule: compile-time claims must use the production compiler route on real programs with run-time-verified comparators; the record must carry both --version identities and the load window. Loaded-machine figures are indicative only, never conclusive."},{"id":"durability","text":"These corrections are emitted by the report generator from bench/corrections.json on every run. A report regeneration cannot delete them; amend them only by committing a change to the producer data."}],"note":"Standing corrections owned by the EVIDENCE PRODUCER. bench/run.sh emits this section into bench/RESULTS.md on every run from this data. No hand-edit to RESULTS.md and no report regeneration can remove or alter it: amend corrections only by committing a change to this file.","version":1}
+{
+ "directives": [
+  {
+   "id": "route",
+   "text": "Route labeling: the \"idol\" binaries in every section below were compiled by the RESTRICTED route (`idol compile lib/compiler/native.id --backend native --no-cache -o nativebench`, then `nativebench < P.id` piped through `xxd -r -p`, then `ld -arch arm64 -e _idolmain`), not by the production compiler (zig-out/bin/idol) compiling the programs. The production route (src/native.zig) does not consume the .id optimizer passes (opt/licm.id, opt/poly.id, opt/zerotrip.id); restricted-route wins are not production progress until the production route consumes the technique with its own equivalence + cost evidence."
+  },
+  {
+   "id": "oracle-identity",
+   "text": "Comparator identity is established at run time via `clang --version` and `gcc --version`, and the discovered version strings are recorded per run in this report; identity is never assumed from command names. On the Mac mini both report Apple clang 21.0.0 (clang-2100.1.1.101), Target: arm64-apple-darwin25.5.0 -- no GNU GCC is measured here, so the \"gcc\" column is an Apple-clang alias of the \"clang\" column, not an independent oracle."
+  },
+  {
+   "id": "compile-time-scope",
+   "text": "Compile-time rows (\"Compile time, source to executable\") use the same restricted route + `ld` vs the run-time-discovered comparators. A duration counts as a successful compilation only after every required stage succeeded and the artifact was validated (exists, nonzero size). Failed attempts are recorded as FAILED work and are never mixed into success medians. Faster compile time does not offset slower output, extra allocation, larger code, or wrong answers; no faster-compile-time claim may be presented as compensating for those."
+  },
+  {
+   "id": "reverted-narrowed-spill",
+   "text": "RETRACTED: claim \"narrowed spill 2.11x faster\" (commit e35a6c36: \"mixop 0.0442s -> 0.0209s, 2.11x faster\", marked provisional, load ~12) was REVERTED by 59a7b26b (\"native.deepexpr: revert narrowed spill, restore full spill\"). Not a retained gain; it survives only in the immutable commit message."
+  },
+  {
+   "id": "mask-hoisting",
+   "text": "NOT REPRODUCED: claim \"mask hoisting 70->50 instructions\" (commit 471a40c9). Independent re-measurement 2026-09-12 (nativebench built before/after the commit, --no-cache; popc.id compiled; otool disassembly): loop 88 -> 73 instructions (4 big masks hoisted to prologue; exit code identical, 196); runtime median -1.9% (noise) at 1-min load ~7.4. Restricted-route technique (lib/compiler/opt/licm.id) only; the production route has no nestedband big-mask equivalent."
+  },
+  {
+   "id": "unproved-way-fastest",
+   "text": "UNPROVED: the standing \"way fastest\" target. No clean idle-machine benchmark window has yet been achieved; every speed figure to date is loaded-machine (indicative only, never conclusive)."
+  },
+  {
+   "id": "unreplicated-upbranch-audit",
+   "text": "Upbranch: two observations exist with an UNRESOLVED relationship. (1) The retained report shows an upbranch RUNTIME slowdown vs the oracle. This observation is INCOMPLETELY ATTRIBUTABLE: the old measurement path did not record compiler-executable identity, generated-binary hash, compiler route, comparator versions, or load window, so it cannot be retroactively assigned to any revision. (2) A separate post-mul-chain-fix (commit 99ab0a0f) measurement reported a statistical tie vs clang. CORRECTION 2026-09-13: the reproduced compile-timer defect concerned the COMPILATION-TIME section of bench/run.sh, not the production of the runtime percentage. The timer defect is established but has NOT been shown to explain the runtime difference; it does not by itself invalidate observation (1). Neither observation establishes the current result; the case awaits re-measurement with the fixed methodology."
+  },
+  {
+   "id": "methodology-rule",
+   "text": "Going-forward rule: compile-time claims must use the production compiler route on real programs with run-time-verified comparators; the record must carry both --version identities and the load window. Loaded-machine figures are indicative only, never conclusive."
+  },
+  {
+   "id": "durability",
+   "text": "These corrections are emitted by the report generator from bench/corrections.json on every run. A report regeneration cannot delete them; amend them only by committing a change to the producer data."
+  },
+  {
+   "id": "parity-criterion",
+   "text": "Parity acceptance criterion, predeclared: 'parity' between idol and an oracle on a program requires abs(median runtime delta) <= 2 percent AND Welch p >= 0.05 on uncertainty-quantified samples (per-round raw samples, stated N, load window, run-time oracle --version identities). Failure to detect a difference is not parity; a verdict of parity, win, or loss without the tolerance band and the uncertainty behind it is inadmissible. Loaded-machine figures remain indicative only, never conclusive."
+  }
+ ],
+ "note": "Standing corrections owned by the EVIDENCE PRODUCER. bench/run.sh emits this section into bench/RESULTS.md on every run from this data. No hand-edit to RESULTS.md and no report regeneration can remove or alter it: amend corrections only by committing a change to this file.",
+ "version": 1
+}
