@@ -103,6 +103,77 @@ jobs:
       - name: Build
         run: zig build
 
+      - name: Native timing regression controls
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import math
+          import os
+          from pathlib import Path
+          import shutil
+          import statistics
+          import subprocess
+          import tempfile
+          
+          root = Path.cwd()
+          compiler = root / "zig-out/bin/idol"
+          source = root / "bench/timing.id"
+          
+          def require(condition, detail):
+              if not condition:
+                  raise RuntimeError(detail)
+          
+          def run(args, success=True):
+              result = subprocess.run(args, capture_output=True, timeout=120)
+              if success:
+                  require(result.returncode == 0, repr(args) + "\n" + result.stdout.decode(errors="replace") + "\n" + result.stderr.decode(errors="replace"))
+              return result
+          
+          with tempfile.TemporaryDirectory(prefix="timing-check-", dir=os.environ["RUNNER_TEMP"]) as directory:
+              work = Path(directory)
+              text = source.read_text()
+              helpers = text[:text.index("runone:")]
+              cases = [("10;20;30;", 3, 20), ("30;10;20;", 3, 20),
+                       ("10;20;30;40;", 4, 25), ("0;0;", 2, 0),
+                       ("9223372036854775806;9223372036854775807;", 2, 9223372036854775806)]
+              probe = work / "median.id"
+              probe.write_text(helpers + "\n" + "\n".join(f'print(medianstr("{samples}", {count}))' for samples, count, _ in cases) + "\n")
+              median = work / "median"
+              run([str(compiler), "compile", str(probe), "--backend", "native", "--no-cache", "-o", str(median)])
+              expected = "".join(str(value) + "\n" for _, _, value in cases).encode()
+              require(run([str(median)]).stdout == expected, "compiled median disagrees with independent expected values")
+              timer = work / "timing"
+              run([str(compiler), "compile", str(source), "--backend", "native", "--no-cache", "-o", str(timer)])
+              good = shutil.which("true")
+              bad = shutil.which("false")
+              require(good and bad, "positive and negative process controls unavailable")
+              args = [str(timer), good, good, "21", "3", "0", "", str(compiler), "native-no-cache", os.environ["GITHUB_SHA"], "200"]
+              result = run(args)
+              fields = {}
+              for line in result.stdout.decode().splitlines():
+                  key, sep, value = line.partition(": ")
+                  require(sep and key not in fields, "malformed or duplicate output: " + line)
+                  fields[key] = value
+              require(fields.get("status") == "ok", "timer did not complete successfully")
+              for face in ("candidate", "comparator"):
+                  raw = fields[face + "_samples_ns"]
+                  require(raw.endswith(";"), "missing sample terminator")
+                  samples = [int(value) for value in raw[:-1].split(";")]
+                  require(len(samples) == 21 and all(value >= 0 for value in samples), "invalid sample count or value")
+                  require(int(fields[face + "_median_ns"]) == sorted(samples)[10], "native median does not match its own raw samples")
+                  reference = statistics.variance([value / 1000.0 for value in samples])
+                  actual = float(fields[face + "_variance_us2"])
+                  require(math.isfinite(actual) and actual >= 0 and math.isclose(actual, reference, rel_tol=1e-7, abs_tol=1e-6), "native variance does not match independent reference")
+              require(fields.get("verdict") == "inconclusive" and fields.get("significant") == "unverified", "unqualified inference was promoted")
+              wrong = list(args)
+              wrong[1] = bad
+              rejected = run(wrong, success=False)
+              require(rejected.returncode == 1 and b"status: mismatch" in rejected.stdout, "wrong process result was not rejected at the requested boundary")
+              print(result.stdout.decode())
+              print(json.dumps({"outcome": "pass", "scope": "compiled median helpers and full native timer; not performance qualification", "median_controls": len(cases), "timed_invocations": 42, "wrong_exit": "rejected", "compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest(), "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(), "revision": os.environ["GITHUB_SHA"]}))
+          PY
+
       - name: Materialize pinned idol-native root
         # The MCP gate pairs against an exact, clean idol-native worktree at
         # the manifest-pinned revision (tools/node/dev/mcp.manifest.json),
