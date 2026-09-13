@@ -9,6 +9,9 @@
 | load_window | 1-min load 9.94 at start, 9.62 at end (publish gate < 10) |
 | prior_baseline | bench/results/RESULTS-v6.md at ae5532b2 |
 | raw | bench/results/compiletime-2026-09-12.json |
+| idol_route | RESTRICTED: nativebench compiled from lib/compiler/native.id; timed step is `nativebench < P.id` + hex-decode + `ld` (nativebench build time excluded); the production compiler (zig-out/bin/idol) never compiled P.id here |
+| comparator_identity | VERIFIED 2026-09-12: `gcc` and `clang` driver names both resolve to Apple clang 21.0.0 (clang-2100.1.1.101), Target: arm64-apple-darwin25.5.0 |
+
 
 | program | idol | clang | gcc | v6_idol | v6_clang | idol_win_pct |
 |---|---|---|---|---|---|---|
@@ -29,3 +32,14 @@
 | 2 | Idol wins 10/10 vs clang and 10/10 vs gcc; v6 was 10/10 vs clang. |
 | 3 | Absolute deltas vs v6 are within run-to-run machine variance per the v6 honesty note; the within-run idol-vs-clang win is the controlled comparison. |
 | 4 | Outlier: sum idol max 0.3313 on the first round (cold page cache); median unaffected. |
+
+| section |
+|---|
+| corrections |
+
+| # | directive |
+|---|---|
+| 1 | CORRECTION 2026-09-12 (honest-scoreboard audit): the "idol" column below is the RESTRICTED route, not the production compiler compiling real programs. |
+| 2 | "10/10 vs gcc" = wins vs a second Apple-clang driver invocation (same Apple clang 21.0.0 binary), not vs GNU GCC; no independent-comparator evidence. |
+| 3 | Load 9.94 at start, 9.62 at end sits at the publish-gate threshold (< 10): figures indicative, not conclusive. |
+| 4 | Going-forward rule: compile-time claims must use the PRODUCTION compiler route (zig-out/bin/idol compiling real programs) with verified-independent comparators; the record must carry both `--version` identities and the load window. |

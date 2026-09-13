@@ -13,6 +13,21 @@
 | 3 | A loss is a bug report against the compiler. |
 
 | section |
+|---|
+| corrections |
+
+| # | directive |
+|---|---|
+| 1 | CORRECTIONS APPLIED 2026-09-12 (honest-scoreboard audit, second external audit ~19:08 PDT). |
+| 2 | Route labeling: the "idol" binaries in every section below were compiled by the RESTRICTED route (`idol compile lib/compiler/native.id --backend native -o nativebench`, then `nativebench < P.id` + hex-decode + `ld`), not by the production compiler (zig-out/bin/idol) compiling the programs. The production route (src/native.zig) does not consume the .id optimizer passes (opt/licm.id, opt/poly.id, opt/zerotrip.id); restricted-route wins are not production progress until the production route consumes the technique with its own equivalence + cost evidence. |
+| 3 | Compile-time rows ("Compile time, source to executable"): same restricted route + `ld` vs `clang -O3` / `gcc -O3`. Comparator identity VERIFIED 2026-09-12: `gcc --version` and `clang --version` both report Apple clang 21.0.0 (clang-2100.1.1.101), Target: arm64-apple-darwin25.5.0 -- no GNU GCC was measured. Load context on the 2026-09-12 compile-time baseline: 1-min load 9.94 -> 9.62 (publish gate < 10; at threshold, indicative). |
+| 4 | The faster-compile-time figures stand alongside real output-runtime losses in the same runs (e.g. upbranch -19.86% vs clang, significant, p=0.0000; zerotrip -4.32%; nest -3.31%): compile-time speed does not offset slower output. No faster-compile-time claim may be presented as compensating for slower output, extra allocation, larger code, or wrong answers. |
+| 5 | Claim "narrowed spill 2.11x faster" (commit e35a6c36: "mixop 0.0442s -> 0.0209s, 2.11x faster", marked provisional, load ~12) was REVERTED by 59a7b26b ("native.deepexpr: revert narrowed spill, restore full spill"). Not a retained gain; it survives only in the immutable commit message. |
+| 6 | Claim "mask hoisting 70->50 instructions" (commit 471a40c9): independently re-measured 2026-09-12 -- nativebench built before/after the commit (--no-cache), popc.id compiled, otool disassembly: loop 88 -> 73 instructions (4 big masks hoisted to prologue; exit code identical, 196); runtime median -1.9% (noise) at 1-min load ~7.4. The claimed 70->50 figures are NOT reproduced. Restricted-route technique (lib/compiler/opt/licm.id); the production route has no nestedband big-mask equivalent. |
+| 7 | Going-forward rule: compile-time claims must use the PRODUCTION compiler route on real programs with verified-independent comparators; the record must carry both `--version` identities and the load window. Loaded-machine figures are indicative only, never conclusive. |
+
+
+| section |
 |---|---|
 | zerotrip |
 
