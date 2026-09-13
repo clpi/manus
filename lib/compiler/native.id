@@ -865,14 +865,31 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
             return dl
     ra = 0
     rb = 0
-    if o == 43 or o == 45
-        if hasname(names, a) == 1 and hasname(names, e) == 1
-            dai = find(names, a)
-            dei = find(names, e)
-            if dai >= 0 and dai < 9 and dei >= 0 and dei < 9
-                sff0 = shfold(c, rd, 19 + dai, 19 + dei, o)
+    if hasname(names, a) == 1 and hasname(names, e) == 1
+        dai = find(names, a)
+        dei = find(names, e)
+        if dai >= 0 and dai < 9 and dei >= 0 and dei < 9
+            ra = 19 + dai
+            rb = 19 + dei
+            if o == 43 or o == 45
+                sff0 = shfold(c, rd, ra, rb, o)
                 if sff0:len() > 0
                     return sff0
+            if an == 0 or en == 0
+                if o == 43
+                    return c .. word(add(rd, ra, rb))
+                if o == 45
+                    return c .. word(minus(rd, ra, rb))
+                if o == 42
+                    _lmulpos = c:len() / 8
+                    _lmulrd = rd
+                    _lmulrn = ra
+                    _lmulrm = rb
+                    return c .. word(mul(rd, ra, rb))
+                if o == 38
+                    return c .. word(band(rd, ra, rb))
+                if o == 47
+                    return c .. word(div(rd, ra, rb))
     if an == 1
         c = imm(c, 9, av)
         ra = 9
