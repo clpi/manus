@@ -1,0 +1,52 @@
+crypto = req "crypto"
+
+hashfile: str = (path: str)
+  gatecap("shasum -a 256 " .. path .. " 2>/dev/null | cut -d ' ' -f 1")
+
+hashstr: str = (s: str)
+  crypto.sha256(s)
+
+nodeidentity: str = (n: any, inputhashes: any)
+  sorted = {}
+  i = 1
+  while i <= inputhashes:len()
+    sorted[sorted:len() + 1] = inputhashes[i]
+    i = i + 1
+  table.sort(sorted)
+  combined = n.recipe
+  i = 1
+  while i <= sorted:len()
+    combined = combined .. sorted[i]
+    i = i + 1
+  crypto.sha256(combined)
+
+load: any = (path: str)
+  raw = gatecap("cat " .. path .. " 2>/dev/null")
+  if raw == ""
+    return {}
+  result = {}
+  lines = raw:lines()
+  i = 1
+  while i <= lines:len()
+    line = lines[i]
+    sep = line:find("|")
+    if sep != nil
+      k = line:sub(1, sep - 1)
+      v = line:sub(sep + 1)
+      result[k] = v
+    i = i + 1
+  result
+
+save: any = (path: str, m: any)
+  out = ""
+  for k, v in m
+    out = out .. k .. "|" .. v .. "\n"
+  gatecap("printf '%s' '" .. out .. "' > " .. path)
+  true
+
+isfresh: bool = (m: any, name: str, identity: str)
+  m[name] == identity
+
+record: any = (m: any, name: str, identity: str)
+  m[name] = identity
+  m
