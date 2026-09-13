@@ -46,3 +46,11 @@
 | 1 | The `frontier` tool queries the semantic frontier (GAP-181): `tools/mcp/frontier.id` via `tools/mcp/native.id` dispatch. |
 | 2 | Input schema is `{"file": "<subject .id>", "region": "<optional>"}`; output is `result.content [0].text` carrying known/unknown facts, blocker counts, highest value-of-information, and the acquire/decline decision, held by `gate/mcp-frontier.sh`. |
 | 3 | Value-of-information is `payoff_cents - acquisition_cost_cents`; the tool recommends the cheapest acquisition with positive VoI or `decline`/`nothing-to-learn`. |
+
+
+| # | directive |
+|---|---|
+| 1 | The `contrast` tool turns unresolved intent into a minimal behavioral question: `tools/mcp/contrast.id`, held by `gate/mcp-contrast.sh`; `native.id` dispatch wiring is pending. |
+| 2 | Question-mode input is `{"file": "<subject .id>", "ambiguity": {"kind": "tiebreak", "region": "<region>", "candidates": ["keep-first", "keep-last", "report-conflict"]}}`; answer-mode input is `{"file": "<subject .id>", "answer": {"question_id": "<hex>", "candidate": "<name>", "candidates": [...], "region": "<region>", "kind": "tiebreak"}}`; output is `result.content [0].text`. |
+| 3 | The tool is stateless: `question_id` is the SHA-256 of `subject_hash|region|kind|candidates`, recomputed on answer; a mismatch is the `subject-changed` refusal naming re-derivation as the next action. |
+| 4 | `unsupported-ambiguity` (any kind but `tiebreak`) is a tool limitation with next "supply kind tiebreak", not a user question; unreadable subjects and hash failures are refusals, never questions. |
