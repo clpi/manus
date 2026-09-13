@@ -764,6 +764,20 @@ pub const ApplicationFact = struct {
     operand_pack: id,
     result_pack: id,
     effect: Card = .unknown,
+    /// O4, per application. `.none` means the application provably completes:
+    /// its callee is not (transitively) recursive, its body holds no loop,
+    /// and every relation it applies completes. The sole producer is
+    /// `publishApplicationCompletion`. The default `.unknown` is absence of
+    /// proof, never a claim, and demand's call arm refuses on it — a hang
+    /// stays a hang.
+    completion: Card = .unknown,
+    /// O2, per application. `.none` means the application provably cannot
+    /// trap: its callee body holds no trapping operation and every relation
+    /// it applies is trap-free. The sole producer is
+    /// `publishApplicationCompletion`. The default `.unknown` is absence of
+    /// proof, never a claim, and demand's call arm refuses on it — a trap
+    /// stays a trap.
+    trap: Card = .unknown,
     authority: Card = .unknown,
     witness: Card = .unknown,
     target: Card = .unknown,
@@ -1302,6 +1316,13 @@ pub const SemanticGraph = struct {
     /// value id, at which point `exactI64(id)` is the only face needed and
     /// this index goes with the rest of the AST bridge.
     value_by_ast: std.AutoHashMapUnmanaged(usize, id) = .empty,
+    /// REVERSE OF `Node.ast_ref` FOR CALL NODES — the same derived physical
+    /// index `value_by_ast` is for value nodes. Written ONLY by `addNode`,
+    /// from the node's own `ast_ref`, first node wins, confirmed against the
+    /// node's own `kind` and `ast_ref` by `callByAst`, so a stale bucket
+    /// answers null rather than lying. Demand's call arm reads the occurrence
+    /// through this index instead of re-scanning the node list per lookup.
+    call_by_ast: std.AutoHashMapUnmanaged(usize, id) = .empty,
     /// §18 — PLACE, IN THE GRAPH.
     ///
     /// The graph MUST represent place: identity, determinacy, extent, mutation,
@@ -1437,6 +1458,7 @@ pub const SemanticGraph = struct {
         self.qualified.deinit(self.alloc);
         self.origin.deinit(self.alloc);
         self.value_by_ast.deinit(self.alloc);
+        self.call_by_ast.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
         if (self.static_places) |*set| set.deinit(self.alloc);
         for (self.bodies.items) |*body| {
@@ -1750,6 +1772,12 @@ pub const SemanticGraph = struct {
         if (node.kind == .value) {
             if (node.ast_ref) |raw| {
                 const slot = try self.value_by_ast.getOrPut(self.alloc, @intFromPtr(raw));
+                if (!slot.found_existing) slot.value_ptr.* = entity;
+            }
+        }
+        if (node.kind == .call) {
+            if (node.ast_ref) |raw| {
+                const slot = try self.call_by_ast.getOrPut(self.alloc, @intFromPtr(raw));
                 if (!slot.found_existing) slot.value_ptr.* = entity;
             }
         }
@@ -2460,6 +2488,23 @@ pub const SemanticGraph = struct {
         const candidate = self.value_by_ast.get(@intFromPtr(raw)) orelse return null;
         const node = self.get(candidate) orelse return null;
         if (node.kind != .value) return null;
+        if (node.ast_ref != raw) return null;
+        return candidate;
+    }
+
+    /// THE OCCURRENCE A CALL IS, asked with the call expression.
+    ///
+    /// The single route from a `.call`/`.method_call` `*const Expr` to the
+    /// graph entity minted for it. `call_by_ast` only accelerates it: the
+    /// answer is CONFIRMED against the node's own `kind` and `ast_ref` before
+    /// it is returned, so the index can be dropped or rebuilt at will and no
+    /// fact originates in it. First node wins, matching the linear scan this
+    /// index replaced.
+    pub fn callByAst(self: *const SemanticGraph, expr: *const Expr) ?id {
+        const raw: *const anyopaque = @ptrCast(@constCast(expr));
+        const candidate = self.call_by_ast.get(@intFromPtr(raw)) orelse return null;
+        const node = self.get(candidate) orelse return null;
+        if (node.kind != .call) return null;
         if (node.ast_ref != raw) return null;
         return candidate;
     }
@@ -7450,6 +7495,7 @@ pub const SemanticGraph = struct {
         // observation masquerading as a claim about observability.
         try self.publishApplicationMutations();
         try self.publishApplicationEffects();
+        try self.publishApplicationCompletion();
         try self.verifyCheckedApplicationOperandPacks(checked);
         // LAST, so every application operand has already claimed the literal
         // occurrence it names and this sweep reaches only what nothing else
@@ -8467,6 +8513,425 @@ pub const SemanticGraph = struct {
         }
     }
 
+    /// WHICH OPERATORS OWE A NON-ZERO DIVISOR, read from this side of the
+    /// layering firewall.
+    ///
+    /// The authority is `law.relation.property`, owned by
+    /// `demand_projection.lawsOf` — and this module cannot import that module
+    /// (import cycle: demand_projection → demand → graph). So the three
+    /// operators are named here a second time, and `test.zig`
+    /// "completion/trap: divisor set agrees with relation law" walks every
+    /// `ast.BinOp` and fails if the two declarations ever disagree. A second
+    /// declaration pinned by a runner is what `native/ir.zig`'s
+    /// `requiresNonzeroDivisor` already does for the same obligation.
+    pub fn binopOwesNonzeroDivisor(op: ast.BinOp) bool {
+        return op == .div or op == .idiv or op == .mod;
+    }
+
+    /// One relation's inputs to the completion/trap fixpoint: the local body
+    /// scan's verdict plus the callee list the fixpoint iterates. Kept at
+    /// struct level (not inside the pass) so `completionReachesSelf` can name
+    /// the row type.
+    const CompletionRow = struct {
+        relation: id,
+        /// The body holds a trapping operation: a division by a
+        /// not-proven-nonzero divisor, an index/field read, or a shape
+        /// the scan does not model.
+        local_trap: bool = false,
+        /// The body holds a loop or a shape the scan does not model, so
+        /// completion is unprovable from the body alone.
+        local_diverge: bool = false,
+        /// No scannable Idol body: foreign, synthetic, async, or missing
+        /// AST. Absence of a body is not evidence of anything.
+        no_body: bool = false,
+        /// The body applies something the graph could not resolve to a
+        /// relation. An unidentified call can do anything.
+        unresolved: bool = false,
+        callees_start: u32 = 0,
+        callees_len: u32 = 0,
+    };
+
+    /// THE PER-RELATION BODY SCAN behind `publishApplicationCompletion`.
+    ///
+    /// It reads one function body and records three things: whether the body
+    /// holds a trapping operation (`trap_found`), whether completion is
+    /// unprovable from the body alone (`diverge_found`), and which relations
+    /// the body applies (`callees`). It models the pure core — literals,
+    /// names, wrapping ALU, comparisons, `if`, `match`, and calls whose
+    /// callees the graph resolved. EVERYTHING ELSE fails closed: an unmodeled
+    /// statement or expression shape, a loop, an indexing or field read, a
+    /// division by a not-proven-nonzero divisor, an unresolved call, and a
+    /// missing or non-Idol body all mark the relation bad, and badness only
+    /// spreads to callers. The scan must never be less conservative than
+    /// `demand.inert`, which consumes its output; where they model the same
+    /// shape they refuse on the same evidence.
+    const CompletionScan = struct {
+        graph: *const SemanticGraph,
+        alloc: std.mem.Allocator,
+        trap_found: bool = false,
+        diverge_found: bool = false,
+        unresolved: bool = false,
+        callees: std.ArrayListUnmanaged(id) = .empty,
+
+        fn deinit(self: *CompletionScan) void {
+            self.callees.deinit(self.alloc);
+        }
+
+        /// An unmodeled shape: completion unprovable AND a possible trap.
+        /// The two failures are one call because every unmodeled shape is
+        /// both — the scan claims nothing about what it cannot see.
+        fn fail(self: *CompletionScan) void {
+            self.trap_found = true;
+            self.diverge_found = true;
+        }
+
+        fn scanBlock(self: *CompletionScan, b: *const ast.Block) error{OutOfMemory}!void {
+            for (b.stmts) |*s| try self.scanStmt(s);
+            // THE TAIL: a body that is a single expression (`f = () 100 // d`)
+            // carries it as `tail_expr`, not as a statement. Missing it
+            // is missing the whole body.
+            if (b.tail_expr) |t| try self.scanExpr(t);
+        }
+
+        fn scanStmt(self: *CompletionScan, s: *const ast.Stmt) error{OutOfMemory}!void {
+            switch (s.*) {
+                .local_decl => |d| for (d.inits) |e| try self.scanExpr(e),
+                .const_decl => |d| try self.scanExpr(d.val),
+                .global_decl => |d| for (d.inits) |e| try self.scanExpr(e),
+                .assign => |a| {
+                    for (a.targets) |t| try self.scanExpr(t);
+                    for (a.values) |v| try self.scanExpr(v);
+                },
+                .call_stmt => |c| try self.scanExpr(c.expr),
+                .expr_stmt => |c| try self.scanExpr(c.expr),
+                .do_block => |d| try self.scanBlock(&d.body),
+                .while_loop => |wl| {
+                    self.diverge_found = true;
+                    try self.scanExpr(wl.cond);
+                    try self.scanBlock(&wl.body);
+                },
+                .repeat_loop => |r| {
+                    self.diverge_found = true;
+                    try self.scanBlock(&r.body);
+                    try self.scanExpr(r.cond);
+                },
+                .num_for => |n| {
+                    self.diverge_found = true;
+                    try self.scanExpr(n.start);
+                    try self.scanExpr(n.stop);
+                    if (n.step) |st| try self.scanExpr(st);
+                    try self.scanBlock(&n.body);
+                },
+                .gen_for => |g| {
+                    self.diverge_found = true;
+                    for (g.iters) |it| try self.scanExpr(it);
+                    try self.scanBlock(&g.body);
+                },
+                .if_stmt => |f| {
+                    if (f.binding) |bnd| try self.scanExpr(bnd.expr);
+                    try self.scanExpr(f.cond);
+                    try self.scanBlock(&f.then);
+                    for (f.elseifs) |*ei| {
+                        try self.scanExpr(ei.cond);
+                        try self.scanBlock(&ei.body);
+                    }
+                    if (f.else_body) |*eb| try self.scanBlock(eb);
+                },
+                .func_decl => self.fail(),
+                .ret => |r| for (r.vals) |v| try self.scanExpr(v),
+                .brk => {},
+                .cont => {},
+                .goto_stmt => self.fail(),
+                .label_stmt => self.fail(),
+                .match_stmt => {
+                    const m = &s.match_stmt;
+                    try self.scanExpr(m.scrutinee);
+                    for (m.arms) |*arm| {
+                        try self.scanPattern(&arm.pattern);
+                        if (arm.guard) |gd| try self.scanExpr(gd);
+                        try self.scanBlock(&arm.body);
+                    }
+                },
+                .try_stmt => self.fail(),
+                .defer_stmt => self.fail(),
+                .enum_def => {},
+                .concept_def => {},
+                .alias_def => {},
+                .macro_def => self.fail(),
+                .cinclude => self.fail(),
+                .directive => self.fail(),
+            }
+        }
+
+        fn scanExpr(self: *CompletionScan, e: *const ast.Expr) error{OutOfMemory}!void {
+            switch (e.*) {
+                .nil => {},
+                .true_lit => {},
+                .false_lit => {},
+                .int_lit => {},
+                .float_lit => {},
+                .quoted => {},
+                .vararg => {},
+                .name => {},
+                .semantic => self.fail(),
+                .semantic_scope => self.fail(),
+                .index => |ix| {
+                    // Bounds-checked into `brk`; the graph cannot express a
+                    // place, and demand answers `.may_trap` here — so does
+                    // the producer.
+                    self.trap_found = true;
+                    try self.scanExpr(ix.obj);
+                    try self.scanExpr(ix.key);
+                },
+                .field => |f| {
+                    self.trap_found = true;
+                    try self.scanExpr(f.obj);
+                },
+                .call => |c| try self.scanCall(e, c.func, c.args),
+                .method_call => |m| try self.scanCall(e, m.obj, m.args),
+                .binop => |b| {
+                    if (binopOwesNonzeroDivisor(b.op)) {
+                        // Exactly demand's divisor obligation: the divisor
+                        // must be a provably non-zero integer literal.
+                        const nonzero = if (ast.intLiteralValue(b.rhs)) |d| d != 0 else false;
+                        if (!nonzero) self.trap_found = true;
+                    }
+                    try self.scanExpr(b.lhs);
+                    try self.scanExpr(b.rhs);
+                },
+                .unop => |u| switch (u.op) {
+                    .neg, .not, .bnot => try self.scanExpr(u.operand),
+                    .len, .compile => self.fail(),
+                },
+                .func_expr => self.fail(),
+                .table => self.fail(),
+                .list_comp => self.fail(),
+                .try_expr => self.fail(),
+                .unwrap_expr => self.fail(),
+                .await_expr => self.fail(),
+                .if_expr => |ie| {
+                    try self.scanExpr(ie.cond);
+                    try self.scanExpr(ie.then_expr);
+                    try self.scanExpr(ie.else_expr);
+                },
+                .match_expr => |m| {
+                    try self.scanExpr(m.scrutinee);
+                    for (m.arms) |*arm| {
+                        try self.scanPattern(&arm.pattern);
+                        if (arm.guard) |gd| try self.scanExpr(gd);
+                        try self.scanBlock(&arm.body);
+                    }
+                },
+                .contains_expr => self.fail(),
+                .quote => self.fail(),
+                .unquote => self.fail(),
+                .macro_call => self.fail(),
+                .sequence => |s| for (s.exprs) |x| try self.scanExpr(x),
+                .range => self.fail(),
+            }
+        }
+
+        /// The callee this application resolved to — or the admission that it
+        /// resolved to nothing. An unidentified call can do anything, so it
+        /// blocks both facts.
+        fn scanCall(
+            self: *CompletionScan,
+            e: *const ast.Expr,
+            func: *const ast.Expr,
+            args: []*ast.Expr,
+        ) error{OutOfMemory}!void {
+            if (self.graph.callByAst(e)) |occurrence| {
+                if (self.graph.applicationRelation(occurrence)) |callee| {
+                    try self.callees.append(self.alloc, callee);
+                } else {
+                    self.unresolved = true;
+                }
+            } else {
+                self.unresolved = true;
+            }
+            try self.scanExpr(func);
+            for (args) |a| try self.scanExpr(a);
+        }
+
+        fn scanPattern(self: *CompletionScan, p: *const ast.Pattern) error{OutOfMemory}!void {
+            switch (p.*) {
+                .literal => |e| try self.scanExpr(e),
+                .binding => {},
+                .wildcard => {},
+                .rest => {},
+                .variant => |v| {
+                    if (v.payload) |payload| {
+                        for (payload) |*sub| try self.scanPattern(sub);
+                    }
+                },
+                .table_destr => |entries| {
+                    for (entries) |*entry| try self.scanPattern(&entry.pat);
+                },
+                .array_destr => |subs| {
+                    for (subs) |*sub| try self.scanPattern(sub);
+                },
+            }
+        }
+    };
+
+    /// O2 AND O4, PER APPLICATION — the completion and trap facts demand's
+    /// call arm needs before it may delete a call.
+    ///
+    /// `publishApplicationEffects` proves "no world interaction". That is not
+    /// totality and not trap-freedom: a recursive relation with no world
+    /// interaction deliberately publishes `effect = .none`, and treating that
+    /// as a license to delete turned a hang into a return — the O4 audit
+    /// finding. This pass proves the two missing halves, per relation, then
+    /// copies them onto each application of that relation:
+    ///
+    ///   `completion = .none`  the callee provably completes: no loop in its
+    ///                         body, no call cycle through it, every applied
+    ///                         relation completes, and nothing it applies is
+    ///                         unresolved.
+    ///   `trap = .none`        the callee provably cannot trap: no trapping
+    ///                         operation in its body, every applied relation
+    ///                         is trap-free, and nothing it applies is
+    ///                         unresolved.
+    ///
+    /// Both are LEAST FIXPOINTS ON BADNESS, the same shape as the effect pass
+    /// for the same reason: the seed is the blocking evidence itself, so an
+    /// incomplete scan is wrong in exactly the old way and in no new way. A
+    /// relation with no Idol body (foreign, synthetic) is bad on both:
+    /// absence of a body is not evidence of anything.
+    ///
+    /// THE CYCLE RULE is the O4 negative control made structural: a call
+    /// cycle never completes, however clean the bodies are. The propagation
+    /// fixpoint alone cannot seed a cycle none of whose members is otherwise
+    /// bad — which is exactly the `spin` shape — so reachability back to self
+    /// is computed explicitly and seeds `completion_bad`.
+    fn publishApplicationCompletion(self: *SemanticGraph) !void {
+        const node_count = self.nodes.items.len;
+        if (node_count == 0) return;
+
+        var rows: std.ArrayListUnmanaged(CompletionRow) = .empty;
+        defer rows.deinit(self.alloc);
+        var callees: std.ArrayListUnmanaged(id) = .empty;
+        defer callees.deinit(self.alloc);
+        var row_of: std.AutoHashMapUnmanaged(id, u32) = .empty;
+        defer row_of.deinit(self.alloc);
+
+        var entity: usize = 0;
+        while (entity < node_count) : (entity += 1) {
+            const relation = std.math.cast(id, entity) orelse break;
+            if (!self.callable(relation)) continue;
+            try row_of.put(self.alloc, relation, @intCast(rows.items.len));
+            try rows.append(self.alloc, .{ .relation = relation });
+        }
+        if (rows.items.len == 0) return;
+
+        for (rows.items) |*row| {
+            const node = self.get(row.relation) orelse {
+                row.no_body = true;
+                continue;
+            };
+            if (node.kind != .func) {
+                row.no_body = true;
+                continue;
+            }
+            const raw = node.ast_ref orelse {
+                row.no_body = true;
+                continue;
+            };
+            const fd: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
+            if (fd.func.is_async) {
+                row.no_body = true;
+                continue;
+            }
+            var scan = CompletionScan{ .graph = self, .alloc = self.alloc };
+            defer scan.deinit();
+            try scan.scanBlock(&fd.func.body);
+            row.local_trap = scan.trap_found;
+            row.local_diverge = scan.diverge_found;
+            row.unresolved = scan.unresolved;
+            row.callees_start = @intCast(callees.items.len);
+            for (scan.callees.items) |c| try callees.append(self.alloc, c);
+            row.callees_len = @as(u32, @intCast(callees.items.len)) - row.callees_start;
+        }
+
+        var trap_bad = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, rows.items.len);
+        defer trap_bad.deinit(self.alloc);
+        var completion_bad = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, rows.items.len);
+        defer completion_bad.deinit(self.alloc);
+        for (rows.items, 0..) |row, i| {
+            if (row.no_body or row.local_trap or row.unresolved) trap_bad.set(i);
+            if (row.no_body or row.local_diverge or row.unresolved) completion_bad.set(i);
+        }
+        for (rows.items, 0..) |_, i| {
+            if (completion_bad.isSet(i)) continue;
+            if (try completionReachesSelf(self.alloc, rows.items, callees.items, &row_of, i))
+                completion_bad.set(i);
+        }
+        var spread = true;
+        while (spread) {
+            spread = false;
+            for (rows.items, 0..) |row, i| {
+                const start: usize = row.callees_start;
+                for (callees.items[start .. start + row.callees_len]) |callee| {
+                    const ci = row_of.get(callee) orelse continue;
+                    if (trap_bad.isSet(ci) and !trap_bad.isSet(i)) {
+                        trap_bad.set(i);
+                        spread = true;
+                    }
+                    if (completion_bad.isSet(ci) and !completion_bad.isSet(i)) {
+                        completion_bad.set(i);
+                        spread = true;
+                    }
+                }
+            }
+        }
+
+        for (self.application_facts.items) |*fact| {
+            const callee = self.applicationRelation(fact.application) orelse continue;
+            const ci = row_of.get(callee) orelse continue;
+            if (!trap_bad.isSet(ci)) fact.trap = .none;
+            if (!completion_bad.isSet(ci)) fact.completion = .none;
+        }
+    }
+
+    /// Whether relation row `start` reaches itself through the callee graph —
+    /// the O4 cycle rule. Iterative, so a deep call chain cannot overflow the
+    /// scan's own stack.
+    fn completionReachesSelf(
+        alloc: std.mem.Allocator,
+        rows: []const CompletionRow,
+        callees: []const id,
+        row_of: *const std.AutoHashMapUnmanaged(id, u32),
+        start: usize,
+    ) !bool {
+        var visited = try std.DynamicBitSetUnmanaged.initEmpty(alloc, rows.len);
+        defer visited.deinit(alloc);
+        var stack: std.ArrayListUnmanaged(u32) = .empty;
+        defer stack.deinit(alloc);
+        // Seed with the direct callees; `start` itself is not visited yet.
+        const first = rows[start];
+        const fs: usize = first.callees_start;
+        for (callees[fs .. fs + first.callees_len]) |c| {
+            const ci = row_of.get(c) orelse continue;
+            if (ci == start) return true;
+            if (!visited.isSet(ci)) {
+                visited.set(ci);
+                try stack.append(alloc, ci);
+            }
+        }
+        while (stack.pop()) |ci| {
+            const row = rows[ci];
+            const s: usize = row.callees_start;
+            for (callees[s .. s + row.callees_len]) |c| {
+                const ni = row_of.get(c) orelse continue;
+                if (ni == start) return true;
+                if (!visited.isSet(ni)) {
+                    visited.set(ni);
+                    try stack.append(alloc, ni);
+                }
+            }
+        }
+        return false;
+    }
     const DependencyFrame = struct {
         row: usize,
         next: usize,
