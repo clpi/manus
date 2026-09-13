@@ -211,8 +211,39 @@ pub const Verdict = union(enum) {
 /// Keyed by POINTER because a statement has no id in this tree and two textually
 /// identical statements are different work. The AST outlives lowering, so the
 /// pointers stay valid for exactly as long as the plan is consulted.
+/// Count the call expressions in `e`.
+/// Called when the enclosing statement is marked dead: the statement died
+/// only because every value expression proved inert, so every call it
+/// contains was proven deletable. Each one is an eliminated call.
+fn countCalls(e: *const ast.Expr) u32 {
+    var n: u32 = 0;
+    switch (e.*) {
+        .call => |c| {
+            n += 1;
+            n += countCalls(c.func);
+            for (c.args) |a| n += countCalls(a);
+        },
+        .method_call => |m| {
+            n += 1;
+            n += countCalls(m.obj);
+            for (m.args) |a| n += countCalls(a);
+        },
+        .binop => |b| {
+            n += countCalls(b.lhs);
+            n += countCalls(b.rhs);
+        },
+        .unop => |u| n += countCalls(u.operand),
+        else => {},
+    }
+    return n;
+}
+
 pub const Plan = struct {
     dead: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Calls proven inert and deleted. Distinct from `dead.count()`: a single
+    /// dead statement may hold several calls, and most dead statements hold
+    /// none. This is the eliminated-CALL counter the benchmark reports.
+    calls_eliminated: u32 = 0,
     /// Statements after which a `break` is lawful — the SECOND candidate this
     /// module generates. See `earlyExitSites`.
     break_after: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
@@ -272,6 +303,10 @@ pub const Plan = struct {
 
     pub fn count(self: *const Plan) u32 {
         return @intCast(self.dead.count());
+    }
+
+    pub fn eliminatedCalls(self: *const Plan) u32 {
+        return self.calls_eliminated;
     }
 
     fn mark(self: *Plan, stmt: *const ast.Stmt) !void {
@@ -1620,7 +1655,10 @@ fn transferStmt(w: *Walk, s: *const ast.Stmt, live: *Live) std.mem.Allocator.Err
                 }
             }
             if (w.deleting and all_dead and shaped and blocker == null) {
-                if (w.recording) try w.plan.mark(s);
+                if (w.recording) {
+                    try w.plan.mark(s);
+                    for (d.inits) |e| w.plan.calls_eliminated += countCalls(e);
+                }
                 return;
             }
             if (w.recording) {
@@ -1656,7 +1694,10 @@ fn transferStmt(w: *Walk, s: *const ast.Stmt, live: *Live) std.mem.Allocator.Err
             }
             const shaped = a.targets.len == a.values.len;
             if (w.deleting and plain and all_dead and shaped and blocker == null) {
-                if (w.recording) try w.plan.mark(s);
+                if (w.recording) {
+                    try w.plan.mark(s);
+                    for (a.values) |e| w.plan.calls_eliminated += countCalls(e);
+                }
                 return;
             }
             if (w.recording) {
@@ -1690,7 +1731,10 @@ fn transferStmt(w: *Walk, s: *const ast.Stmt, live: *Live) std.mem.Allocator.Err
                 try readsOf(live, x_expr);
                 return;
             }
-            if (w.recording) try w.plan.mark(s);
+            if (w.recording) {
+                try w.plan.mark(s);
+                w.plan.calls_eliminated += countCalls(x_expr);
+            }
         },
 
         .do_block => |d| try transferBlock(w, &d.body, live),
