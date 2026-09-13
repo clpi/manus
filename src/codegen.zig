@@ -2931,11 +2931,90 @@ pub const CodeGen = struct {
         }
     }
 
+    /// Infer a function's return descriptor from its body when the contract
+    /// is `.inferred`. Currently handles the direct table-literal case: if the
+    /// body's tail expression is a table literal with named fields, construct
+    /// the corresponding table descriptor. This preserves meaning that would
+    /// otherwise collapse to `.any`.
+    fn inferBodyReturnRT(self: *CodeGen, fb: *const ast.FuncBody) ?RT {
+        const tail = fb.body.tail_expr orelse return null;
+        if (tail.* != .table) return null;
+        const t = tail.table;
+        var fields: std.ArrayListUnmanaged(types.FieldType) = .empty;
+        defer fields.deinit(self.alloc);
+        for (t.fields) |fld| {
+            switch (fld) {
+                .named => |nmd| {
+                    const ftyp = self.inferFieldValueRT(nmd.val, fb) orelse return null;
+                    fields.append(self.alloc, .{ .name = nmd.key, .typ = ftyp }) catch return null;
+                },
+                else => return null,
+            }
+        }
+        const fields_slice = self.alloc.dupe(types.FieldType, fields.items) catch return null;
+        return RT{ .table_type = .{
+            .fields = fields_slice,
+            .is_packed = false,
+            .align_n = null,
+            .ffi_name = null,
+            .is_sealed = false,
+            .storage_class = .dynamic,
+        } };
+    }
+
+    /// Infer the RT of a table field value in the context of a function body.
+    /// Handles parameters, string/integer literals, and nested table literals.
+    fn inferFieldValueRT(self: *CodeGen, e: *const ast.Expr, fb: *const ast.FuncBody) ?RT {
+        switch (e.*) {
+            .name => |n| {
+                for (fb.params) |par| {
+                    if (std.mem.eql(u8, par.name, n.ident)) {
+                        return self.resolve_type(par.typ);
+                    }
+                }
+                return null;
+            },
+            .quoted => return .str,
+            .int_lit => return .i64,
+            .float_lit => return .f64,
+            .true_lit, .false_lit => return .bool,
+            .nil => return .nil,
+            .table => {
+                // Nested table literal: represent as an empty table descriptor.
+                // The exact fields are not tracked here, but the table-ness is
+                // preserved so indexing and field access don't collapse to any.
+                const empty_fields = self.alloc.alloc(types.FieldType, 0) catch return null;
+                return RT{ .table_type = .{
+                    .fields = empty_fields,
+                    .is_packed = false,
+                    .align_n = null,
+                    .ffi_name = null,
+                    .is_sealed = false,
+                    .storage_class = .dynamic,
+                } };
+            },
+            else => return null,
+        }
+    }
+
     fn func_expr_type(self: *CodeGen, fb: *const ast.FuncBody) RT {
         // Closures are always runtime `lua_Value`s, never native fn pointers.
         if (fb.closure_id != null or fb.upvalues.len > 0) return .any;
         const ret = self.alloc.create(RT) catch return .any;
-        ret.* = self.resolve_type(contract_ret(fb));
+        const contract = native_ret_contract(fb);
+        // When the contract is `.inferred` (including explicit `: any` folded
+        // to inferred), attempt to recover the body's actual return descriptor.
+        // A function returning a table literal has a known descriptor; using
+        // `.any` would be a collapse, not a genuine unknown.
+        if (contract == .inferred) {
+            if (self.inferBodyReturnRT(fb)) |inferred| {
+                ret.* = inferred;
+            } else {
+                ret.* = .any;
+            }
+        } else {
+            ret.* = self.resolve_type(contract);
+        }
         const params = self.alloc.alloc(RT, fb.params.len) catch {
             self.alloc.destroy(ret);
             return .any;
