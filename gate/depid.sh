@@ -17,12 +17,21 @@
 #
 # `stamp --bootstrap` records the current bytes without running the
 # producer, for producers unrunnable on this host. It is an explicit
-# operator attestation, not a verification; the basis belongs in the
-# commit message, and the next real regen restamps with verification.
+# operator attestation, not a verification: the row is marked
+# `attest=bootstrap`, and no touch-gate will ever admit it. Only a
+# real `stamp` (producer ran, determinism held, bytes installed)
+# produces a verifiable identity. The basis for a bootstrap belongs in
+# the commit message, and the next real regen restamps with
+# verification and drops the mark.
 #
 # Subcommands:
 #   stamp [--bootstrap] <generated>...   regenerate + verify + record
 #   check <generated>...                 recompute from the tree, compare
+#   verify <generated>...                live-rerun the producer in a
+#                                        scratch candidate tree and demand
+#                                        byte equality with the candidate
+#                                        bytes; fails closed on unrunnable
+#                                        producers and bootstrap rows
 #   show <generated>                      print recorded vs recomputed rows
 #
 # Environment:
@@ -177,42 +186,74 @@ tool_version() { # <name> : version string or fails
     esac
 }
 
-# extra_cell <inputs-cell> <prevhash> <mode:stamp|check>
-# carried k=v pairs, comma-joined and sorted, or '-'.
+# extra_cell <inputs-cell> <prevhash> <mode:stamp|check|verify>
+# carried k=v pairs, comma-joined and sorted, or '-'. stamp and verify
+# read the live world (tool versions, pre-regen bytes); check reads the
+# carried values from the recorded row. A bootstrap stamp appends
+# attest=bootstrap, which verify refuses: an attestation records bytes,
+# it never verifies them.
 extra_cell() {
     cell=$1; prev=$2; cmode=$3
-    [ "$cell" = "-" ] && { printf '-'; return 0; }
+    if [ "$cell" = "-" ]; then
+        if [ "$cmode" = stamp ] && [ "$bootstrap" = yes ]; then
+            printf 'attest=bootstrap'
+        else
+            case "$carried_extra" in
+                *attest=bootstrap*) printf 'attest=bootstrap' ;;
+                *) printf '-' ;;
+            esac
+        fi
+        return 0
+    fi
     : >"$tmp/extra.txt"
     for tok in $cell; do
         case "$tok" in
             self:prev)
-                if [ "$cmode" = stamp ]; then
-                    [ -n "$prev" ] || die "no pre-regen bytes for a self:prev input -- restamp"
-                    printf 'prev=%s\n' "$prev" >>"$tmp/extra.txt"
-                else
-                    v=$(printf '%s' "$carried_extra" | tr ',' '\n' | awk -F= '$1=="prev" { print $2; exit }')
-                    [ -n "$v" ] || die "no carried prev bytes recorded -- restamp"
-                    printf 'prev=%s\n' "$v" >>"$tmp/extra.txt"
-                fi
+                case "$cmode" in
+                    stamp|verify)
+                        [ -n "$prev" ] || die "no pre-regen bytes for a self:prev input -- restamp"
+                        printf 'prev=%s\n' "$prev" >>"$tmp/extra.txt"
+                        ;;
+                    *)
+                        v=$(printf '%s' "$carried_extra" | tr ',' '\n' | awk -F= '$1=="prev" { print $2; exit }')
+                        [ -n "$v" ] || die "no carried prev bytes recorded -- restamp"
+                        printf 'prev=%s\n' "$v" >>"$tmp/extra.txt"
+                        ;;
+                esac
                 ;;
             tool:*)
                 name=${tok#tool:}
-                if [ "$cmode" = stamp ]; then
-                    if [ "$bootstrap" = yes ]; then
-                        printf 'tool:%s=unknown\n' "$name" >>"$tmp/extra.txt"
-                    else
+                case "$cmode" in
+                    stamp)
+                        if [ "$bootstrap" = yes ]; then
+                            printf 'tool:%s=unknown\n' "$name" >>"$tmp/extra.txt"
+                        else
+                            v=$(tool_version "$name" 2>/dev/null || true)
+                            [ -n "$v" ] || die "cannot version toolchain '$name' -- install it or stamp --bootstrap"
+                            printf 'tool:%s=%s\n' "$name" "$v" >>"$tmp/extra.txt"
+                        fi
+                        ;;
+                    verify)
                         v=$(tool_version "$name" 2>/dev/null || true)
-                        [ -n "$v" ] || die "cannot version toolchain '$name' -- install it or stamp --bootstrap"
+                        [ -n "$v" ] || die "producer unrunnable: toolchain '$name' is not installed on this host"
                         printf 'tool:%s=%s\n' "$name" "$v" >>"$tmp/extra.txt"
-                    fi
-                else
-                    v=$(printf '%s' "$carried_extra" | tr ',' '\n' | awk -F= -v k="tool:$name" '$1==k { print $2; exit }')
-                    [ -n "$v" ] || die "no carried version recorded for $tok -- restamp"
-                    printf 'tool:%s=%s\n' "$name" "$v" >>"$tmp/extra.txt"
-                fi
+                        ;;
+                    *)
+                        v=$(printf '%s' "$carried_extra" | tr ',' '\n' | awk -F= -v k="tool:$name" '$1==k { print $2; exit }')
+                        [ -n "$v" ] || die "no carried version recorded for $tok -- restamp"
+                        printf 'tool:%s=%s\n' "$name" "$v" >>"$tmp/extra.txt"
+                        ;;
+                esac
                 ;;
         esac
     done
+    if [ "$cmode" = stamp ] && [ "$bootstrap" = yes ]; then
+        printf 'attest=bootstrap\n' >>"$tmp/extra.txt"
+    else
+        case "$carried_extra" in
+            *attest=bootstrap*) printf 'attest=bootstrap\n' >>"$tmp/extra.txt" ;;
+        esac
+    fi
     if [ -s "$tmp/extra.txt" ]; then
         LC_ALL=C sort -u "$tmp/extra.txt" | paste -sd, -
     else
@@ -220,7 +261,9 @@ extra_cell() {
     fi
 }
 
-# emit_cell <spec> <mode:stamp|check> : the recorded emit value.
+# emit_cell <spec> <mode:stamp|check|verify> : the recorded emit value.
+# verify versions toolchains live like stamp does, and fails closed when
+# the toolchain is absent: the producing computation must actually run.
 emit_cell() {
     spec=$1; cmode=$2
     case "$spec" in
@@ -231,26 +274,35 @@ emit_cell() {
             ;;
         tool:*)
             name=${spec#tool:}
-            if [ "$cmode" = stamp ]; then
-                if [ "$bootstrap" = yes ]; then
-                    printf 'tool:%s:unknown' "$name"; return 0
-                fi
-                v=$(tool_version "$name" 2>/dev/null || true)
-                [ -n "$v" ] || die "cannot version toolchain '$name' -- install it or stamp --bootstrap"
-                printf 'tool:%s:%s' "$name" "$v"
-            else
-                case "$carried_emit" in
-                    "tool:$name:"*) printf '%s' "$carried_emit" ;;
-                    *) die "recorded emitter '$carried_emit' mismatches producer spec '$spec' -- restamp" ;;
-                esac
-            fi
+            case "$cmode" in
+                stamp)
+                    if [ "$bootstrap" = yes ]; then
+                        printf 'tool:%s:unknown' "$name"; return 0
+                    fi
+                    v=$(tool_version "$name" 2>/dev/null || true)
+                    [ -n "$v" ] || die "cannot version toolchain '$name' -- install it or stamp --bootstrap"
+                    printf 'tool:%s:%s' "$name" "$v"
+                    ;;
+                verify)
+                    v=$(tool_version "$name" 2>/dev/null || true)
+                    [ -n "$v" ] || die "producer unrunnable: toolchain '$name' is not installed on this host"
+                    printf 'tool:%s:%s' "$name" "$v"
+                    ;;
+                *)
+                    case "$carried_emit" in
+                        "tool:$name:"*) printf '%s' "$carried_emit" ;;
+                        *) die "recorded emitter '$carried_emit' mismatches producer spec '$spec' -- restamp" ;;
+                    esac
+                    ;;
+            esac
             ;;
         *) die "unknown emitter spec '$spec'" ;;
     esac
 }
 
 # row_core <generated> <cmode> : the 9-col row. In check mode the carried
-# cells come from the recorded sidecar row (globals carried_emit/_extra).
+# cells come from the recorded sidecar row (globals carried_emit/_extra);
+# stamp and verify read the live tree and the live world instead.
 row_core() {
     g=$1; cmode=$2
     mrow=$(manrow "$g") || die "$g is not a declared projection in gate/generated.manifest"
@@ -324,6 +376,157 @@ cmd_show() {
         printf 'recorded:  %s\n' "$srow"
         printf 'computed:  %s\n' "$got"
     done
+}
+
+# verify_family <regen> : recompute the identity in the candidate tree,
+# rerun the producer, and demand byte equality with the candidate bytes.
+# The trust anchor is the live producer run, not the sidecar: a forged
+# row cannot bless bytes the producer would not emit.
+verify_family() {
+    regen=$1
+    : >"$tmp/members.txt"
+    LC_ALL=C awk -F'\t' -v r="$regen" '$1 == r { print $2 }' "$tmp/families.txt" >"$tmp/members.txt"
+    [ -s "$tmp/members.txt" ] || die "no members for producer '$regen'"
+    kind=${regen%%:*}
+    frag=${regen#*:}
+    case "$kind" in redir|run) ;; *) die "unknown regen kind '$kind' in '$regen'" ;; esac
+
+    i=0
+    while IFS= read -r m; do
+        i=$((i + 1))
+        srow=$(scarow "$m") || die "$m: no dependency identity recorded -- resync via gate/depid.sh stamp $m"
+        case "$srow" in
+            *attest=bootstrap*)
+                die "$m: unverified bootstrap attestation -- stamp without --bootstrap runs the real producer"
+                ;;
+        esac
+        carried_emit=$(printf '%s' "$srow" | awk -F'\t' '{ print $4 }')
+        carried_extra=$(printf '%s' "$srow" | awk -F'\t' '{ print $6 }')
+        want=$(printf '%s' "$srow" | awk -F'\t' '{ print $2 }')
+        mrow=$(manrow "$m") || die "$m vanished from the manifest"
+        inputs_cell=$(printf '%s' "$mrow" | awk -F'\t' '{ print $6 }')
+        case "$inputs_cell" in
+            *self:prev*)
+                prevhash=$(bhash <"$root/$m") \
+                    || die "$m has no bytes in the candidate tree"
+                ;;
+            *) prevhash= ;;
+        esac
+        got=$(row_core "$m" verify) || die "$m: identity recompute failed"
+        have=$(printf '%s' "$got" | awk -F'\t' '{ print $2 }')
+        if [ "$have" != "$want" ]; then
+            note "$m: DEPENDENCY IDENTITY MISMATCH"
+            report_diff "$srow" "$got"
+            die "$m: the candidate identity does not match the recorded producing computation"
+        fi
+        mkdir -p "$tmp/vorig"
+        cp "$root/$m" "$tmp/vorig/m$i.orig" \
+            || die "$m has no bytes in the candidate tree"
+    done <"$tmp/members.txt"
+
+    if [ "$kind" = redir ]; then
+        m1=$(head -n 1 "$tmp/members.txt")
+        b1=$(basename "$m1")
+        run_producer "$kind" "$frag" "$tmp/vrun1" "$m1" \
+            || die "producer failed for $m1 -- refusing to certify"
+        run_producer "$kind" "$frag" "$tmp/vrun2" "$m1" \
+            || die "producer failed on the determinism rerun for $m1 -- refusing to certify"
+        cmp -s "$tmp/vrun1/$b1.out" "$tmp/vrun2/$b1.out" \
+            || die "producer is nondeterministic for $m1 -- refusing to certify"
+        cmp -s "$tmp/vrun2/$b1.out" "$tmp/vorig/m1.orig" \
+            || die "$m1: live producer output differs from the candidate bytes -- hand edit or stale regeneration"
+    else
+        run_producer "$kind" "$frag" "$tmp/vrun1" "x" \
+            || die "producer failed for $regen -- refusing to certify"
+        mkdir -p "$tmp/vrun1snap"
+        i=0
+        while IFS= read -r m; do
+            i=$((i + 1))
+            [ -f "$root/$m" ] && cp "$root/$m" "$tmp/vrun1snap/m$i.run1"
+        done <"$tmp/members.txt"
+        run_producer "$kind" "$frag" "$tmp/vrun2" "x" \
+            || die "producer failed on the determinism rerun for $regen -- refusing to certify"
+        i=0
+        while IFS= read -r m; do
+            i=$((i + 1))
+            if [ -f "$tmp/vrun1snap/m$i.run1" ]; then
+                cmp -s "$tmp/vrun1snap/m$i.run1" "$root/$m" \
+                    || die "producer is nondeterministic for $m -- refusing to certify"
+                cmp -s "$tmp/vrun1snap/m$i.run1" "$tmp/vorig/m$i.orig" \
+                    || die "$m: live producer output differs from the candidate bytes -- hand edit or stale regeneration"
+            elif [ -f "$root/$m" ]; then
+                die "producer wrote $m only on the rerun -- refusing to certify"
+            fi
+        done <"$tmp/members.txt"
+    fi
+    note "verify: $regen -- live producer output matches the candidate bytes"
+}
+
+# cmd_verify <generated>...
+# The strong gate. The candidate tree (staged index, worktree, or an
+# already-materialized scratch) is copied to a disposable tree, the
+# emitter is staged beside that tree's lib/ (the binary resolves its
+# lib root from its own location), and every requested projection's
+# whole producer family is re-derived there: identity recomputed and
+# compared component by component, then the producer rerun with a
+# determinism check and its output byte-compared to the candidate.
+# Nothing is trusted from the sidecar beyond diagnostics.
+cmd_verify() {
+    [ $# -gt 0 ] || die "verify needs at least one generated path"
+    orig_root=$root
+    orig_idolbin=$idolbin
+    [ -f "$orig_idolbin" ] || die "emitter binary is missing: $orig_idolbin -- build it (zig build) or set IDOL_BIN"
+    case "$mode" in
+        scratch)
+            [ -n "$scratchdir" ] || die "DEPID_MODE=scratch needs DEPID_SCRATCH"
+            vs=$scratchdir
+            ;;
+        staged|worktree)
+            vs=$(mktemp -d "${TMPDIR:-/tmp}/idol-depid-verify.XXXXXX")
+            git -C "$orig_root" archive HEAD | tar -x -C "$vs" \
+                || die "could not materialize HEAD for verify"
+            case "$mode" in
+                staged) git -C "$orig_root" diff --cached >"$vs/cand.patch" ;;
+                *) git -C "$orig_root" diff HEAD >"$vs/cand.patch" ;;
+            esac
+            if [ -s "$vs/cand.patch" ]; then
+                (cd "$vs" && git apply "$vs/cand.patch") \
+                    || die "the candidate diff does not apply to a clean HEAD tree"
+            fi
+            rm -f "$vs/cand.patch"
+            ;;
+        *) die "unknown DEPID_MODE '$mode'" ;;
+    esac
+    mkdir -p "$vs/zig-out/bin"
+    cp "$orig_idolbin" "$vs/zig-out/bin/idol" \
+        || die "could not stage the emitter in the verify tree"
+    chmod +x "$vs/zig-out/bin/idol"
+    root=$vs
+    blobbase=$vs
+    scratchdir=$vs
+    mode=scratch
+    idolbin=$vs/zig-out/bin/idol
+    treefile gate/generated.manifest >"$tmp/manifest.txt" \
+        || die "gate/generated.manifest is missing from the candidate tree"
+    treefile gate/generated.depid >"$tmp/sidecar.txt" 2>/dev/null || : >"$tmp/sidecar.txt"
+    : >"$tmp/regens.req"
+    for g in "$@"; do
+        mrow=$(manrow "$g") || die "$g is not a declared projection in gate/generated.manifest"
+        regen=$(printf '%s' "$mrow" | awk -F'\t' '{ print $5 }')
+        printf '%s\n' "$regen" >>"$tmp/regens.req"
+    done
+    : >"$tmp/families.txt"
+    LC_ALL=C sort -u "$tmp/regens.req" | while IFS= read -r regen; do
+        LC_ALL=C awk -F'\t' -v r="$regen" '
+            /^[[:space:]]*(#|$)/ { next }
+            $5 == r { print r "\t" $1 }' "$tmp/manifest.txt"
+    done | LC_ALL=C sort -u >"$tmp/families.txt"
+    [ -s "$tmp/families.txt" ] || die "no producer families matched"
+    LC_ALL=C awk -F'\t' '{ print $1 }' "$tmp/families.txt" | LC_ALL=C sort -u >"$tmp/regens.txt"
+    while IFS= read -r regen; do
+        verify_family "$regen"
+    done <"$tmp/regens.txt"
+    note "verify complete: every requested projection reproduces from its producing computation"
 }
 
 # run_producer <kind> <frag> <outdir>
@@ -480,7 +683,7 @@ cmd_stamp() {
 }
 
 usage() {
-    printf 'usage: %s stamp [--bootstrap] <generated>... | check <generated>... | show <generated>\n' "$prog" >&2
+    printf 'usage: %s stamp [--bootstrap] <generated>... | check <generated>... | verify <generated>... | show <generated>\n' "$prog" >&2
     exit 2
 }
 
@@ -493,6 +696,7 @@ sub=$1; shift
 case "$sub" in
     stamp) cmd_stamp "$@" ;;
     check) cmd_check "$@" ;;
+    verify) cmd_verify "$@" ;;
     show) cmd_show "$@" ;;
     -h|--help) usage ;;
     *) usage ;;

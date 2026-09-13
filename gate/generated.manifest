@@ -1,7 +1,8 @@
 # gate/generated.manifest — every generated file and the computation that owns it.
-# L2b: a diff touching column 1 must carry a dependency identity matching the
-# producing computation (gate/depid.sh); the generator filename in column 2 is
-# neither required nor sufficient.
+# L2b: a diff touching column 1 must be reproducible by the producing
+# computation: gate/depid.sh verify reruns it and demands byte equality
+# with the candidate bytes. The generator filename in column 2 is neither
+# required nor sufficient.
 # Columns are TAB-separated:
 #   <generated> <generator> <marker> <emit> <regen> <inputs> <config> <target>
 # emit: idolbin | tool:<name>. regen: redir:<sh> | run:<sh> ($idolbin and $root
