@@ -1,0 +1,11 @@
+f: i64 = ()
+  x = 0.1
+  y = 0.2
+  if x + y == 0.3
+    return 0
+  return 1
+main: i64 = ()
+  if f() == 0
+    0
+  else
+    1

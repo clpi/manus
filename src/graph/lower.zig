@@ -4545,6 +4545,13 @@ pub const LowerCtx = struct {
     /// escape. `t(k)` on one of these with a compile-time `k` is the literal,
     /// AT ANY EXTENT — see `noteConstTable`. Owns both key and value.
     const_tables: std.StringHashMapUnmanaged([]i64) = .empty,
+    /// Function-body numeric constants, keyed by name. The function-body
+    /// analogue of `module_consts.nums`: names bound exactly once at the
+    /// body top level to a constant numeric initializer. Values come from
+    /// `comptime_eval` (the producer); a `: f64`/`: f32` annotation projects
+    /// through `applyFloatContract` at record time -- the annotation is the
+    /// sole projection site. Consumed by `foldNumericComparison`. Owns keys.
+    const_nums: std.StringHashMapUnmanaged(comptime_eval.Value) = .empty,
     /// The body being lowered, so a binding can ask what the REST of the
     /// function does with the name it is about to bind. `tables_in_memory`
     /// already establishes that a realization choice is allowed to read the
@@ -4698,6 +4705,9 @@ pub const LowerCtx = struct {
             self.alloc.free(e.value_ptr.*);
         }
         self.const_tables.deinit(self.alloc);
+        var cn = self.const_nums.iterator();
+        while (cn.next()) |e| self.alloc.free(e.key_ptr.*);
+        self.const_nums.deinit(self.alloc);
         var st = self.str_tables.iterator();
         while (st.next()) |e| self.alloc.free(e.key_ptr.*);
         self.str_tables.deinit(self.alloc);
@@ -6272,6 +6282,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 if (i < ld.inits.len) {
                     if (try skipStaticAggregateBinding(ctx, ln.ident)) continue;
                     try lowerAssignTarget(ctx, ln.ident, ld.inits[i]);
+                    try noteConstNum(ctx, stmt, ln.ident, ld.inits[i], ln.typ);
                 }
                 if (ln.typ != .inferred and isFloatType(ln.typ)) {
                     if (ctx.locals.get(ln.ident)) |slot| try ctx.f64_slots.put(ctx.alloc, slot, {});
@@ -6302,7 +6313,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                     continue;
                 }
                 switch (target.*) {
-                    .name => |n| try lowerAssignTarget(ctx, n.ident, value),
+                    .name => |n| {
+                        try lowerAssignTarget(ctx, n.ident, value);
+                        try noteConstNum(ctx, stmt, n.ident, value, .inferred);
+                    },
                     .field => |f| try lowerFieldAssignTarget(ctx, f.obj, f.field, value),
                     .index => |ix| try lowerIndexAssignTarget(ctx, ix.obj, ix.key, value),
                     else => return bail(ctx.diagnostic, @src()),
@@ -6312,6 +6326,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
         .if_stmt => |is| {
             if (is.binding) |b| {
                 try lowerAssignTarget(ctx, b.name, b.expr);
+                try noteConstNum(ctx, stmt, b.name, b.expr, .inferred);
             }
             // CONSTANT CONDITION: lower the arm that runs, and only it.
             //
@@ -11211,6 +11226,70 @@ fn noteConstTable(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Erro
     return use;
 }
 
+/// Decide, AT THE BINDING, what is known about `name`'s numeric value, and record it.
+/// Follows the `noteConstTable` pattern: the whole body is scanned; exactly one
+/// binding and no unmodeled statement shape, and the binding must be the
+/// top-level statement now being lowered. The initializer is evaluated by
+/// `comptime_eval` (the producer) with already-recorded constants in scope, so
+/// transitive constants (`y = x + 0.2` after `x = 0.1`) resolve. A `: f64`/`: f32`
+/// annotation projects through `applyFloatContract` at record time -- the
+/// annotation is the sole projection site; unannotated keeps the exact decimal.
+/// Anything not provably a constant numeric is not recorded (fail closed).
+fn noteConstNum(
+    ctx: *LowerCtx,
+    stmt: *const ast.Stmt,
+    name: []const u8,
+    init: *const ast.Expr,
+    typ: ast.TypeExpr,
+) Error!void {
+    if (ctx.module_root) return;
+    const body = ctx.body orelse return;
+    // The binding must be a top-level statement of the body being lowered: a
+    // conditional or loop-carried binding does not dominate its uses.
+    var is_top_level = false;
+    for (body.stmts) |*s| if (s == stmt) {
+        is_top_level = true;
+        break;
+    };
+    if (!is_top_level) return;
+    // Exactly one binding in the whole body, and no statement shape the scan
+    // does not model (which might bind the name unseen).
+    var tb: TextBind = .{};
+    textBindInBlock(body, name, &tb);
+    if (tb.writes != 1 or tb.opaque_bind) return;
+    // A module global of the same spelling is not this local.
+    if (ctx.module_globals.types.contains(name)) return;
+    // Evaluate with the producer. Module constants first, then already-recorded
+    // function constants (transitivity); the local shadows on collision.
+    var scope: std.StringHashMapUnmanaged(comptime_eval.Value) = .empty;
+    defer scope.deinit(ctx.alloc);
+    var mit = ctx.module_consts.nums.iterator();
+    while (mit.next()) |e| scope.put(ctx.alloc, e.key_ptr.*, e.value_ptr.*) catch return;
+    var cit = ctx.const_nums.iterator();
+    while (cit.next()) |e| scope.put(ctx.alloc, e.key_ptr.*, e.value_ptr.*) catch return;
+    const scopes = [_]std.StringHashMapUnmanaged(comptime_eval.Value){scope};
+    const opts = comptime_eval.Options{ .step_limit = 10_000, .alloc = ctx.alloc };
+    const v = comptime_eval.evalWithBindings(init, .{ .scopes = &scopes }, opts) catch return;
+    switch (v) {
+        .decimal, .float, .int => {},
+        else => return,
+    }
+    // THE SOLE PROJECTION SITE. A stated float type projects the value here;
+    // unannotated (`.inferred`) keeps the exact decimal.
+    const contracted = comptime_eval.Evaluator.applyFloatContract(
+        v,
+        comptime_eval.Evaluator.floatContractOfType(typ),
+    );
+    switch (contracted) {
+        .decimal, .float, .int => {},
+        else => return,
+    }
+    const key = try ctx.alloc.dupe(u8, name);
+    errdefer ctx.alloc.free(key);
+    // Cannot overwrite: the scan proved exactly one binding.
+    try ctx.const_nums.put(ctx.alloc, key, contracted);
+}
+
 /// `t(k)` where `t` was proved determined and `k` is compile-time — the element,
 /// as an immediate, at any extent.
 ///
@@ -15557,6 +15636,10 @@ fn foldNumericComparison(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rh
     defer scope.deinit(ctx.alloc);
     var it = ctx.module_consts.nums.iterator();
     while (it.next()) |e| scope.put(ctx.alloc, e.key_ptr.*, e.value_ptr.*) catch return null;
+    // Function-body constants recorded by `noteConstNum` shadow module
+    // bindings of the same spelling: the local is what the read answers.
+    var cit = ctx.const_nums.iterator();
+    while (cit.next()) |e| scope.put(ctx.alloc, e.key_ptr.*, e.value_ptr.*) catch return null;
     const scopes = [_]std.StringHashMapUnmanaged(comptime_eval.Value){scope};
     const opts = comptime_eval.Options{ .step_limit = 10_000, .alloc = ctx.alloc };
     const l = comptime_eval.evalWithBindings(lhs, .{ .scopes = &scopes }, opts) catch return null;
@@ -15564,14 +15647,15 @@ fn foldNumericComparison(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rh
     return comptime_eval.compareValues(op, l, r) catch return null;
 }
 
-/// True when any name inside the expression would NOT read the module binding
-/// at this lowering point: a fused literal, a stored module global, or --
-/// inside a relation body -- a shadowing local. The fold must decline there,
-/// because the value it would compare is not the one the read answers.
+/// True when any name inside the expression would NOT read a provably constant
+/// numeric at this lowering point: a fused literal, a stored module global, or --
+/// inside a relation body -- a shadowing local that `noteConstNum` did not prove
+/// constant. A name in `const_nums` is provably constant, so the fold may answer.
 fn comparisonNameShadowed(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     switch (expr.*) {
         .name => |nm| {
             const n = nm.ident;
+            if (ctx.const_nums.contains(n)) return false;
             if (ctx.fused_literals.contains(n)) return true;
             if (ctx.module_globals.types.contains(n)) return true;
             if (!ctx.module_root and ctx.locals.contains(n)) return true;
@@ -15585,9 +15669,10 @@ fn comparisonNameShadowed(ctx: *LowerCtx, expr: *const ast.Expr) bool {
 
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
     // Numeric comparison fold, answered by the one producer. Decides the
-    // comparison on the stable module numeric values the operand spellings
-    // name; declines (null) for anything else and the ordinary f64 path
-    // below runs unchanged.
+    // comparison on the stable numeric values the operand spellings name --
+    // module constants and function-body constants proved by `noteConstNum`;
+    // declines (null) for anything else and the ordinary f64 path below runs
+    // unchanged.
     if (foldNumericComparison(ctx, op, lhs, rhs)) |truth| return .{ .i64 = if (truth) 1 else 0 };
     if (op == .concat and concatOperandOk(ctx, lhs) and concatOperandOk(ctx, rhs) and
         (exprIsStr(ctx, lhs) or exprIsStr(ctx, rhs)))
