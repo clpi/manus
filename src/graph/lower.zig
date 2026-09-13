@@ -21799,17 +21799,11 @@ const Parameter = struct {
             const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
             if (declarations.get(declaration) != target) continue;
             if (!shouldIncludeFuncDecl(declaration, graph)) continue;
-            var untyped = false;
-            for (declaration.func.params) |parameter| {
-                // `specialized` marks a parameter sema inferred from the body:
-                // the spelling now looks declared, but the type is still a
-                // guess, so the call site must be verified against it.
-                if (isAnyType(parameter.typ) or
-                    (parameter.typ == .inferred and resolveType(parameter.typ) == .any) or
-                    parameter.specialized)
-                    untyped = true;
-            }
-            if (!untyped) continue;
+            // All params need domain verification: inferred/specialized params
+            // are checked against the compiler's guess, and declared params
+            // are checked against their declared type. An integer operand
+            // meeting a float parameter (or vice versa) would silently
+            // reinterpret bits, so it fails closed.
             bindOccurrence(diagnostic, graph, application.application);
             const subject = graph.applicationSubject(application.application);
             const arguments = graph.applicationArguments(application.application) orelse
@@ -21819,7 +21813,31 @@ const Parameter = struct {
                 return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
             for (declaration.func.params, 0..) |parameter, index| {
                 const inferred = isAnyType(parameter.typ) or parameter.typ == .inferred or parameter.specialized;
-                if (!inferred) continue;
+                if (!inferred) {
+                    const operand = if (index == 0 and subject != null) subject.? else arguments[index - offset];
+                    const value = graph.get(operand) orelse
+                        return invalidGraphFacts(diagnostic, @src(), "application-parameter-value");
+                    const descriptor = value.descriptor orelse
+                        return invalidGraphFacts(diagnostic, @src(), "application-parameter-descriptor");
+                    const declared = resolveType(parameter.typ);
+                    const want_f64 = declared == .f64;
+                    const got_f64 = descriptor == .f64;
+                    const got_int = switch (descriptor) {
+                        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => true,
+                        else => false,
+                    };
+                    const want_int = switch (declared) {
+                        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => true,
+                        else => false,
+                    };
+                    // Integer operand to f64 param: refuse. F64 operand to
+                    // integer param: refuse. Exact decimals are neither, so
+                    // they pass through to the unified producer.
+                    if ((want_f64 and got_int) or (want_int and got_f64)) {
+                        return invalidGraphFacts(diagnostic, @src(), "scalar-parameter-domain");
+                    }
+                    continue;
+                }
                 const operand = if (index == 0 and subject != null) subject.? else arguments[index - offset];
                 const value = graph.get(operand) orelse
                     return invalidGraphFacts(diagnostic, @src(), "application-parameter-value");
