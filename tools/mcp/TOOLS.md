@@ -61,3 +61,11 @@
 | 2 | Edit-mode input is `{"file": "<subject .id>", "projection": "frontier", "edit": {"kind": "acquire", "unknown": "<stable-id>", "decision": "acquire\|decline"}}`; identify-mode input is `{"file": "<subject .id>", "projection": "concept", "edit": {"kind": "identify", "a": "<rowkey>", "b": "<rowkey>"}}`; output is `result.content [0].text`. |
 | 3 | Acquire proposals re-derive the frontier and refuse `projection-stale` when the unknown is gone; identify proposals require explain/graph face agreement and emit `ambiguous` with differing facets and explicit options, or the `unknown-concept` / `contradictory` / `face-disagreement` refusals. |
 | 4 | Every proposal carries `checks`, `affected_region`, `voi_basis`, and `provenance` (subject SHA-256, world binary hash, revision); refusals carry `reason`, `next`, `producer`, `not-performed`. |
+
+| # | directive |
+|---|---|
+| 1 | The `recover` tool classifies recoverability of intermediate values or optimization decisions: `tools/mcp/recover.id` via `tools/mcp/native.id` dispatch, held by `gate/mcp-recover.sh`. |
+| 2 | Input is `{"file": "<subject .id>", "subject_hash": "<sha256>", "query": {"kind": "value\|decision", "target": "<binding>", "context": "<optional>"}}`; output is `result.content[0].text` with the classification and evidence. |
+| 3 | Exactly four classifications: `exactly-recoverable` (constant fold or LICM hoist with actual pass-stage delta), `partially-recoverable` (mask bound without exact value), `requires-additional-observation` (runtime-dependent with instrumentation cost), `not-recoverable-from-this-run` (eliminated with no witness, never guessed). |
+| 4 | Every answer carries `provenance` (subject SHA-256, world binary SHA-256, revision); identity/world/query failures are structured refusals with `reason`, `next`, `producer`, `not-performed`. |
+| 5 | Current explain provenance lacks binding-level fold/LICM/zero-trip witnesses; only retained bindings and actual pass-stage deltas justify exact answers. |
