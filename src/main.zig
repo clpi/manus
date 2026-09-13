@@ -336,12 +336,14 @@ const behaviour_env_table = [_]BehaviourEnvRow{
     // Census names. They PRINT and emit nothing, so they are inert for the
     // same reason `IDOL_IFCONV_REPORT` is, and must not decline the cache: a
     // measurement that cannot be taken warm is a measurement of the cold path.
-    // Their SEVERING siblings — `IDOL_NO_DEPTH`, `IDOL_WASM_TAILCALL` — are
-    // deliberately absent, so the fail-closed default classifies them
-    // `.affects` and the two arms decline each other's cache, exactly as
-    // `IDOL_NO_TAILCALL` does.
+    // Their SEVERING siblings are `.affects` rows below, listed explicitly:
+    // `gate/envcache.sh` section 1 requires every name the compiler reads to
+    // be classified, and an unclassified name is a hole in the registry even
+    // when the fail-closed default would have declined the cache.
     .{ "IDOL_DEPTH_REPORT", .inert },
     .{ "IDOL_WASM_TAILCALL_REPORT", .inert },
+    .{ "IDOL_PROBE_CENSUS", .inert },
+    .{ "IDOL_TAILCALL_REPORT", .inert },
     .{ "IDOL_TRACE", .inert },
     // Not read by the compiler at all — build harness and lock plumbing.
     // Listed so an ordinary gate run does not lose the cache to a name the
@@ -382,6 +384,11 @@ const behaviour_env_table = [_]BehaviourEnvRow{
     .{ "IDOL_UNSAFE_TRUNC_DIVREM", .affects },
     .{ "IDOL_HOME_BUDGET", .affects },
     .{ "IDOL_NO_TIGHTDEF", .affects },
+    // THE SEVERING SIBLINGS of the census names above. Each restores an
+    // older codegen path, so each changes the artifact: explicit `.affects`.
+    .{ "IDOL_NO_DEPTH", .affects },
+    .{ "IDOL_NO_TAILCALL", .affects },
+    .{ "IDOL_WASM_TAILCALL", .affects },
     // THE TERMINATION COUNTERFACTUAL, and it runs the OPPOSITE WAY to
     // `IDOL_EFFECT_SEVER` above. There is no termination producer to sever, so
     // the control ASSUMES the strongest answer the fact could give — every

@@ -260,8 +260,12 @@ grep -rhoE '(std\.c\.getenv|posix\.getenv|environ_map\.get|map\.get|env\.get|get
 # Names that appear in an env-read shape inside GENERATED C or inside a comment
 # quoting generated C, not in the compiler's own reads. Each is pinned with the
 # file that emits it so the exclusion is auditable rather than a denylist.
+# Pins: DUO, IDOLPROBE, K predate this comment; IDOL is read only inside the
+# C the compiler EMITS (src/codegen.zig idol_compiler_path), never by the
+# compiler itself, so classifying it in the registry would be the wrong fix.
 cat > "$work/notenv.txt" <<'NOTENV'
 DUO
+IDOL
 IDOLPROBE
 K
 NOTENV
