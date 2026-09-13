@@ -6458,6 +6458,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                         try finishWhileLowering(ctx, null, promo[0..promo_len], null);
                         break :ordinary;
                     }
+                    if (try lowerNestedDirectCountedWhile(ctx, ws, plan)) {
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null);
+                        break :ordinary;
+                    }
                     if (try lowerCountedWhile(ctx, ws, plan)) |cr| {
                         try finishWhileLowering(ctx, cr.latch_fail, promo[0..promo_len], cr.wb_idx);
                         break :ordinary;
@@ -8319,6 +8323,19 @@ fn loopUpperBound(graph: *const semantic_graph.SemanticGraph, cond: *const ast.E
 //   - `break`, `continue`, `return`, nested loops and tail expressions decline.
 // Any doubt declines to the ordinary loop: less knowledge emits more
 // instructions, never a different answer.
+//
+// NESTED DIRECT FORM. When the body is exactly
+//
+//     J = 0
+//     while J < B            (B provably non-negative)
+//         T = T + 1
+//         J = J + 1
+//     iv = iv + 1
+//
+// the inner loop is itself the direct form, so the whole nest folds to
+// `T = T + bound * B` with no loop at all (the inner induction variable is
+// written back only when the outer bound is nonzero, since its `J = 0` init
+// never runs on a zero trip). Every aliasing doubt declines.
 
 /// The plan the block prologue arms for the immediately following `while`.
 const CountedPlan = struct {
@@ -8336,6 +8353,13 @@ const CountedPlan = struct {
     /// the direct form must not fire. Settled here because promotion installs
     /// fresh unmarked slots before emission, so the markings are intact now.
     direct_acc: ?[]const u8,
+    /// Nested direct form, settled at arm time: the body is exactly
+    /// `J = 0; while J < B { T = T + 1; J = J + 1 }; iv = iv + 1` with the
+    /// inner loop's own direct form proven, so the nest folds to
+    /// `T = T + bound * B`. Null when the shape does not match. Settled here
+    /// because promotion installs fresh unmarked slots before emission, so
+    /// the markings are intact now.
+    nested_direct: ?NestedDirect = null,
     /// Self-map deletion, settled at arm time: the body is straight-line pure
     /// integer dataflow that reproduces the loop-entry state (proven by exact
     /// evaluation), so the loop is dead and the induction variable is bound
@@ -8369,6 +8393,143 @@ fn directAccIfPlainInt(ctx: *LowerCtx, ws: anytype, iv: []const u8, bound_name: 
     if (!unrollPlainIntSlot(ctx, iv_slot)) return null;
     if (!unrollPlainIntSlot(ctx, acc_slot)) return null;
     return acc_name;
+}
+
+/// The nested direct form's armed parts, settled at arm time: the outer
+/// counted loop's body is exactly
+///
+///     J = 0
+///     while J < B
+///         T = T + 1
+///         J = J + 1
+///     iv = iv + 1
+///
+/// with the inner loop's own direct form proven (B provably non-negative,
+/// the exact two increments, plain-integer slots). The nest then folds to
+/// `T = T + bound * B` with no loop at all. Two's-complement add and mul
+/// wrap, so regrouping `T + B + ... + B` (bound times) into `T + bound * B`
+/// is exact. Null when the shape does not match.
+const NestedDirect = struct {
+    /// Identity with the inner `while` statement, so the plan is never
+    /// consumed by a different loop.
+    inner_stmt: *const ast.Stmt,
+    /// The inner loop's induction variable; `J = 0` precedes it in the body.
+    inner_iv: []const u8,
+    /// Inner bound when it is a literal (proven >= 0 by the exact-i64 fact).
+    inner_bound_lit: ?i64,
+    /// Inner bound when it is a name (proven non-negative by the width transfer).
+    inner_bound_name: ?[]const u8,
+    /// The inner loop's accumulator (`T = T + 1`), settled at arm time.
+    acc: []const u8,
+};
+
+/// Plain-integer gate for a nested-direct name at the OUTER loop's arm time.
+/// The outer loop's own promotion has not run yet, so the name may not be in
+/// `ctx.locals` at all. A module global proves its type through the
+/// module-global type column (the same `.i64` gate promotion itself uses); a
+/// name already in `ctx.locals` (a true local, or an enclosing loop's shadow,
+/// itself `.i64`-gated) uses the intact slot markings; a name bound nowhere
+/// yet is first bound by the inner `J = 0` literal the shape match verified,
+/// so the source rebinds it to integer 0 on every taken path and the integer
+/// write-back is sound (its slot is materialized at emission).
+fn nestedPlainInt(ctx: *LowerCtx, name: []const u8) bool {
+    if (ctx.module_globals.types.get(name)) |ty| return ty == .i64;
+    if (ctx.locals.get(name)) |slot| return unrollPlainIntSlot(ctx, slot);
+    return true;
+}
+
+/// The inner loop's accumulator for the nested direct form, settled at the
+/// OUTER loop's arm time. Same shape proof as `directAccIfPlainInt` -- exactly
+/// the two increments, one stepping the inner iv -- but the plain-integer
+/// gate goes through `nestedPlainInt`: the outer loop's own promotion has not
+/// run yet, so the inner names may not be in `ctx.locals`. The accumulator
+/// must additionally be distinct from the outer induction variable and the
+/// outer bound (the fold reads the outer bound once, after the nest).
+fn nestedDirectAcc(
+    ctx: *LowerCtx,
+    ws: anytype,
+    iv: []const u8,
+    inner_bound_name: ?[]const u8,
+    outer_iv: []const u8,
+    outer_bound_name: ?[]const u8,
+) ?[]const u8 {
+    const body_n = ws.body.stmts.len;
+    if (body_n != 2 or ws.body.tail_expr != null) return null;
+    const s0 = &ws.body.stmts[0];
+    const s1 = &ws.body.stmts[1];
+    var acc: ?[]const u8 = null;
+    if (stepIsIncrementOfOne(ctx.graph, s0, iv)) {
+        acc = accNameOfIncrement(s1, iv);
+    } else if (stepIsIncrementOfOne(ctx.graph, s1, iv)) {
+        acc = accNameOfIncrement(s0, iv);
+    } else return null;
+    const acc_name = acc orelse return null;
+    if (std.mem.eql(u8, acc_name, iv)) return null;
+    if (std.mem.eql(u8, acc_name, outer_iv)) return null;
+    if (inner_bound_name) |bn| if (std.mem.eql(u8, acc_name, bn)) return null;
+    if (outer_bound_name) |bn| if (std.mem.eql(u8, acc_name, bn)) return null;
+    if (!nestedPlainInt(ctx, iv)) return null;
+    if (!nestedPlainInt(ctx, acc_name)) return null;
+    return acc_name;
+}
+
+/// Arm-time recognition of the nested direct form. `ws` is the outer `while`
+/// whose plan is being armed; the checks mirror the inner loop's own direct
+/// form (which is bypassed: the inner loop is never lowered). Every aliasing
+/// doubt declines: the inner bound must touch neither induction variable (a
+/// stale read, or a trip count that varies per outer iteration), the outer
+/// bound must not be the inner iv (the body's `J = 0` would make the trip
+/// count dynamic), and the accumulator must be distinct from both induction
+/// variables and both bounds.
+fn nestedDirectParts(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, ws: anytype, iv: []const u8, bound_name: ?[]const u8) ?NestedDirect {
+    const body = ws.body.stmts;
+    if (body.len != 3 or ws.body.tail_expr != null) return null;
+    // body[2] steps the outer iv: the caller verified that before this runs.
+    const s1 = &body[1];
+    const s_while = switch (s1.*) {
+        .while_loop => |w| w,
+        else => return null,
+    };
+    const b2 = switch (s_while.cond.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b2.op != .lt) return null;
+    const j = identOf(b2.lhs) orelse return null;
+    if (std.mem.eql(u8, j, iv)) return null;
+    // The inner induction variable starts at exactly 0 in the body's first
+    // statement. The emission skips that init, so the value read for the
+    // inner bound must not be either induction variable.
+    if (literalBindingOf(ctx.graph, &body[0], j) != @as(?i64, 0)) return null;
+    var inner_lit: ?i64 = null;
+    var inner_name: ?[]const u8 = null;
+    if (ctx.graph.exactI64OfExpr(b2.rhs)) |n2| {
+        if (n2 < 0) return null;
+        inner_lit = n2;
+    } else {
+        const bn2 = identOf(b2.rhs) orelse return null;
+        if (std.mem.eql(u8, bn2, j)) return null;
+        if (std.mem.eql(u8, bn2, iv)) return null;
+        if (!countedBoundNonNeg(ctx, stmts, at, bn2)) return null;
+        inner_name = bn2;
+    }
+    if (bound_name) |bn| {
+        if (std.mem.eql(u8, bn, j)) return null;
+        if (std.mem.eql(u8, bn, iv)) return null;
+    }
+    // The inner loop's own direct form, settled at arm time when the slot
+    // markings are intact: exactly the two increments, plain-integer slots,
+    // accumulator distinct from the inner iv and the inner bound.
+    // nestedDirectAcc already enforced acc distinct from the outer iv and the
+    // outer bound; the remaining alias doubts are settled above.
+    const acc = nestedDirectAcc(ctx, s_while, j, inner_name, iv, bound_name) orelse return null;
+    return .{
+        .inner_stmt = s1,
+        .inner_iv = j,
+        .inner_bound_lit = inner_lit,
+        .inner_bound_name = inner_name,
+        .acc = acc,
+    };
 }
 
 /// Block-level recognition: `stmts[at]` is `iv = 0` followed by
@@ -8405,6 +8566,9 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     if (n == 0 or ws.body.tail_expr != null) return;
     if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[n - 1], iv)) return;
     plan.direct_acc = directAccIfPlainInt(ctx, ws, iv, plan.bound_name);
+    if (plan.direct_acc == null) {
+        plan.nested_direct = nestedDirectParts(ctx, stmts, at, ws, iv, plan.bound_name);
+    }
     if (plan.bound_lit) |bl| {
         if (selfMapLoopProven(ctx, stmts, at, ws, iv, bl)) plan.self_map = true;
     }
@@ -8779,6 +8943,113 @@ fn lowerDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error
     try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = cur, .rhs = bound_v, .ty = .i64 });
     try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
     try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
+    return true;
+}
+
+/// Emit the nested direct form for an armed plan: the nest
+///
+///     iv = 0
+///     while iv < bound
+///         J = 0
+///         while J < B
+///             T = T + 1
+///             J = J + 1
+///         iv = iv + 1
+///
+/// becomes `T = T + bound * B; iv = bound` with no loop, and `J = B` on the
+/// taken path. The inner write-back is guarded: the source runs the inner
+/// `J = 0` init only when the outer loop trips, so on a zero trip J keeps
+/// its entry value. Returns true when the shape matched and the form was
+/// emitted, false to fall back to the countdown or the ordinary loop. Only
+/// the emission runs here; the proof settled at arm time and is re-verified
+/// below by structural identity only.
+fn lowerNestedDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    const nd = plan.nested_direct orelse return false;
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .lt) return false;
+    const iv = identOf(b.lhs) orelse return false;
+    if (!std.mem.eql(u8, iv, plan.iv)) return false;
+    if (plan.bound_lit) |n| {
+        if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return false;
+    } else if (plan.bound_name) |bn| {
+        const rhs_name = identOf(b.rhs) orelse return false;
+        if (!std.mem.eql(u8, rhs_name, bn)) return false;
+    } else return false;
+    const body = ws.body.stmts;
+    if (body.len != 3 or ws.body.tail_expr != null) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &body[2], plan.iv)) return false;
+    const s1 = &body[1];
+    if (nd.inner_stmt != @as(*const ast.Stmt, s1)) return false;
+    const s_while = switch (s1.*) {
+        .while_loop => |w| w,
+        else => return false,
+    };
+    const b2 = switch (s_while.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b2.op != .lt) return false;
+    const j = identOf(b2.lhs) orelse return false;
+    if (!std.mem.eql(u8, j, nd.inner_iv)) return false;
+    if (nd.inner_bound_lit) |n2| {
+        if (ctx.graph.exactI64OfExpr(b2.rhs) != @as(?i64, n2)) return false;
+    } else if (nd.inner_bound_name) |bn2| {
+        const rhs2 = identOf(b2.rhs) orelse return false;
+        if (!std.mem.eql(u8, rhs2, bn2)) return false;
+    } else return false;
+    if (literalBindingOf(ctx.graph, &body[0], nd.inner_iv) != @as(?i64, 0)) return false;
+    // Re-derive the accumulator structurally (slot markings are not intact at
+    // emission); it must be the armed one.
+    const ib = s_while.body.stmts;
+    if (ib.len != 2 or s_while.body.tail_expr != null) return false;
+    var acc: ?[]const u8 = null;
+    if (stepIsIncrementOfOne(ctx.graph, &ib[0], nd.inner_iv)) {
+        acc = accNameOfIncrement(&ib[1], nd.inner_iv);
+    } else if (stepIsIncrementOfOne(ctx.graph, &ib[1], nd.inner_iv)) {
+        acc = accNameOfIncrement(&ib[0], nd.inner_iv);
+    } else return false;
+    const acc_name = acc orelse return false;
+    if (!std.mem.eql(u8, acc_name, nd.acc)) return false;
+    if (std.mem.eql(u8, acc_name, iv)) return false;
+    if (std.mem.eql(u8, acc_name, j)) return false;
+    if (plan.bound_name) |bn| if (std.mem.eql(u8, acc_name, bn)) return false;
+    if (nd.inner_bound_name) |bn2| if (std.mem.eql(u8, acc_name, bn2)) return false;
+    const iv_slot = ctx.locals.get(plan.iv) orelse return false;
+    const acc_slot = ctx.locals.get(acc_name) orelse return false;
+    // The inner iv's slot: the outer loop's promotion shadows it when it is
+    // a written `.i64` module global. Otherwise the name is first bound by
+    // the inner `J = 0` the shape match verified -- which this emission
+    // replaces -- so materialize the slot the source's init would have
+    // created. A module global that promotion did not shadow declines: a
+    // fresh local would diverge from the global later reads use.
+    const j_slot: u32 = if (ctx.locals.get(nd.inner_iv)) |s| s else blk: {
+        if (ctx.module_globals.types.get(nd.inner_iv) != null) return false;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, nd.inner_iv), s);
+        break :blk s;
+    };
+    // ALL CHECKS PASSED - emit the folded nest, no loop.
+    // Push an empty break list so finishWhileLowering's pop balances.
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    const bound_v = try lowerExpr(ctx, b.rhs);
+    const inner_bound_v = try lowerExpr(ctx, b2.rhs);
+    const prod = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = prod, .binop = .mul, .lhs = bound_v, .rhs = inner_bound_v, .ty = .i64 });
+    const sum = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = .{ .local = acc_slot }, .rhs = .{ .temp = prod }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
+    // Cold guard for the inner write-back: the source runs the inner `J = 0`
+    // init only when the outer loop trips at least once.
+    const guard_t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = guard_t, .binop = .neq, .lhs = bound_v, .rhs = .{ .i64 = 0 }, .ty = .i64 });
+    const guard_fail = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = guard_t }, .branch_target = 0, .branch_condition = .when_false });
+    try ctx.emit(.{ .op = .store_local, .result = j_slot, .lhs = inner_bound_v, .ty = .i64 });
+    ctx.instrs.items[guard_fail].branch_target = @intCast(ctx.instrs.items.len);
     return true;
 }
 
