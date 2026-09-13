@@ -1,0 +1,99 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+tally: i64 = (listing: str)
+  count = 0
+  i = 1
+  n = listing:len()
+  start = 1
+  while i <= n
+    if listing:sub(i, i) == "\n"
+      num = digits(listing:sub(start, i - 1))
+      if num >= 170
+        count = count + 1
+      start = i + 1
+    i = i + 1
+  line = listing:sub(start, n)
+  if line != ""
+    num = digits(line)
+    if num >= 170
+      count = count + 1
+  count
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  else
+    if idol:sub(1, 1) != "/"
+      idol = "{root}/{idol}"
+  if gatecap("test -x '{idol}'; echo $?") != "0\n"
+    print("researchgap: FAIL compiler is not executable: {idol}")
+    return 2
+  census = "tools/node/dev/gapc0"
+  if gatecap("test -x '{census}'; echo $?") != "0\n"
+    print("researchgap: FAIL no executable census at {census} — the measurement cannot have happened")
+    return 2
+  if gatecap("test -d gaps; echo $?") != "0\n"
+    print("researchgap: FAIL no gaps/ directory — the census has no population")
+    return 2
+  if gatecap("test -f gaps/RESEARCH-SPINE.md; echo $?") != "0\n"
+    print("researchgap: FAIL gaps/RESEARCH-SPINE.md absent — the schema home is itself part of the census")
+    return 2
+  listing = chomp(gatecap("ls gaps/GAP-*.md 2>/dev/null | sed -n 's|.*/GAP-0*\\([0-9][0-9]*\\)\\.md$|\\1|p'"))
+  scope = tally(listing)
+  if scope <= 0
+    print("researchgap: FAIL zero GAP-*.md at or above 170 — the census selects an empty set")
+    return 2
+  out = chomp(gatecap("mktemp /tmp/idol-researchgap.XXXXXX"))
+  err = chomp(gatecap("mktemp /tmp/idol-researchgap.XXXXXX"))
+  rc = digits(chomp(gatecap("timeout 300 '{census}' >'{out}' 2>'{err}'; echo $?")))
+  shown = gatecap("cat '{out}'")
+  if shown != ""
+    print(chomp(shown))
+  drain = gatecap("if [ -s '{err}' ]; then cat '{err}' >&2; fi")
+  report = chomp(gatecap("grep -E '^gapc0: [0-9]+ GAPs in range, [0-9]+ research GAPs C0-checked, [0-9]+ violations$' '{out}' | tail -1"))
+  wiped = gatecap("rm -f '{out}' '{err}'")
+  if rc == 0 and report == ""
+    print("researchgap: FAIL {census} exited 0 without printing its census report — a silent delegate is not a clean sweep")
+    return 2
+  if rc != 0
+    return rc
+  checked = digits(chomp(gatecap("printf '%s' '{report}' | sed -E 's/^gapc0: ([0-9]+) GAPs in range.*/\\1/'")))
+  research = digits(chomp(gatecap("printf '%s' '{report}' | sed -E 's/.*, ([0-9]+) research GAPs C0-checked.*/\\1/'")))
+  violations = digits(chomp(gatecap("printf '%s' '{report}' | sed -E 's/.*, ([0-9]+) violations$/\\1/'")))
+  if violations != 0
+    print("researchgap: FAIL {census} reported {violations} violations and still exited 0 — report and status disagree")
+    return 2
+  if checked < scope
+    print("researchgap: FAIL {census} reported {checked} GAPs in range; {scope} are on disk at or above 170")
+    return 2
+  if research <= 0
+    print("researchgap: FAIL {census} C0-checked 0 research GAPs — the admission census selected an empty subject")
+    return 2
+  print("researchgap: PASS {checked} GAPs in range ({scope} counted here), {research} research GAPs C0-checked, {violations} violations")
+  0
