@@ -1,0 +1,10 @@
+y: i8 = 200
+j = 0
+t = 0
+while j < y
+  t = t + 1
+  j = j + 1
+if t == 0
+  0
+else
+  1

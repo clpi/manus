@@ -1,0 +1,6 @@
+t = true
+j = 0
+while j < 10
+  t = t + 1
+  j = j + 1
+t

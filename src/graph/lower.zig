@@ -8317,7 +8317,40 @@ const CountedPlan = struct {
     bound_lit: ?i64,
     /// Bound when it is a name (proven non-negative by the width transfer).
     bound_name: ?[]const u8,
+    /// Accumulator name for the direct form, settled at arm time: the body is
+    /// the exact two increments and both slots are plain integers. Null when
+    /// the direct form must not fire. Settled here because promotion installs
+    /// fresh unmarked slots before emission, so the markings are intact now.
+    direct_acc: ?[]const u8,
 };
+
+/// The direct form's accumulator, settled at ARM time. The body must be
+/// exactly the two increments, and the induction variable and accumulator
+/// slots must both be plain integers: the emitted form is integer arithmetic
+/// on both, so a secret f64, str, bool, pointer or declared-narrow binding
+/// would have its bit pattern reinterpreted. Settled here and not at emission
+/// because promotion installs fresh unmarked slots before the emission site
+/// runs; the markings this gate reads are only intact now.
+fn directAccIfPlainInt(ctx: *LowerCtx, ws: anytype, iv: []const u8, bound_name: ?[]const u8) ?[]const u8 {
+    const body_n = ws.body.stmts.len;
+    if (body_n != 2 or ws.body.tail_expr != null) return null;
+    const s0 = &ws.body.stmts[0];
+    const s1 = &ws.body.stmts[1];
+    var acc: ?[]const u8 = null;
+    if (stepIsIncrementOfOne(ctx.graph, s0, iv)) {
+        acc = accNameOfIncrement(s1, iv);
+    } else if (stepIsIncrementOfOne(ctx.graph, s1, iv)) {
+        acc = accNameOfIncrement(s0, iv);
+    } else return null;
+    const acc_name = acc orelse return null;
+    if (std.mem.eql(u8, acc_name, iv)) return null;
+    if (bound_name) |bn| if (std.mem.eql(u8, acc_name, bn)) return null;
+    const iv_slot = ctx.locals.get(iv) orelse return null;
+    const acc_slot = ctx.locals.get(acc_name) orelse return null;
+    if (!unrollPlainIntSlot(ctx, iv_slot)) return null;
+    if (!unrollPlainIntSlot(ctx, acc_slot)) return null;
+    return acc_name;
+}
 
 /// Block-level recognition: `stmts[at]` is `iv = 0` followed by
 /// `while iv < bound` with a provably non-negative bound and a trailing
@@ -8339,7 +8372,7 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     // statement.
     if (at == 0) return;
     if (literalBindingOf(ctx.graph, &stmts[at - 1], iv) != @as(?i64, 0)) return;
-    var plan = CountedPlan{ .stmt = st, .iv = iv, .bound_lit = null, .bound_name = null };
+    var plan = CountedPlan{ .stmt = st, .iv = iv, .bound_lit = null, .bound_name = null, .direct_acc = null };
     if (ctx.graph.exactI64OfExpr(b.rhs)) |n| {
         if (n < 0) return;
         plan.bound_lit = n;
@@ -8352,6 +8385,7 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     const n = ws.body.stmts.len;
     if (n == 0 or ws.body.tail_expr != null) return;
     if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[n - 1], iv)) return;
+    plan.direct_acc = directAccIfPlainInt(ctx, ws, iv, plan.bound_name);
     ctx.counted_plan = plan;
 }
 
@@ -8364,6 +8398,18 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
 ///     flight answers unknown, exactly as the producer's in-flight lattice
 ///     does. Absence of a proof declines; it never admits.
 fn countedBoundNonNeg(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, bound_name: []const u8) bool {
+    // A declared-narrow bound is stored truncated: `y: i8 = 200` keeps -56
+    // while the width transfer sees the literal 200. The proof is about the
+    // initializer, not the stored value the loop reads, so the bound must not
+    // be narrow. Both the declared global type and the slot marking are
+    // consulted; the slot check runs at arm time, when markings are intact.
+    if (ctx.module_globals.types.get(bound_name)) |rt| switch (rt) {
+        .i8, .i16, .i32, .u8, .u16, .u32 => return false,
+        else => {},
+    };
+    if (ctx.locals.get(bound_name)) |slot| {
+        if (ctx.narrow_slots.contains(slot)) return false;
+    }
     // Inside a relation the graph's own range column answers. ctx.function is
     // not the discriminator: at module scope it may still carry the root id,
     // while the graph publishes no ranges outside relations.
@@ -8509,6 +8555,11 @@ fn lowerDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error
     if (stmtMentionsIdent(acc_stmt.?, iv)) return false;
     const iv_slot = ctx.locals.get(plan.iv) orelse return false;
     const acc_slot = ctx.locals.get(acc_name) orelse return false;
+    // The type gate was settled at arm time, when the slot markings were
+    // intact. The re-derived accumulator must be the armed one; anything else
+    // means the loop changed under the plan.
+    const armed_acc = plan.direct_acc orelse return false;
+    if (!std.mem.eql(u8, acc_name, armed_acc)) return false;
     // ALL CHECKS PASSED - emit the direct form, no loop.
     // Push an empty break list so finishWhileLowering's pop balances.
     try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);

@@ -4857,6 +4857,10 @@ pub const SemanticGraph = struct {
     }
 
     /// Collect every name assigned in a block (for module-foreign detection).
+    /// The switch is exhaustive over `ast.Stmt` with no `else` arm: a future
+    /// statement variant fails compilation here instead of silently leaving a
+    /// relation write uncollected, which would let a false module-binding
+    /// width be published.
     fn collectAssignedNames(alloc: std.mem.Allocator, out: *std.ArrayListUnmanaged([]const u8), body: *const ast.Block) !void {
         for (body.stmts) |*stmt| {
             switch (stmt.*) {
@@ -4866,13 +4870,42 @@ pub const SemanticGraph = struct {
                         else => {},
                     }
                 },
+                // A `global` declaration inside a relation body writes a
+                // module binding; a `local`/`const` declaration does not.
+                .global_decl => |g| for (g.names) |n| try out.append(alloc, n.ident),
+                .local_decl => {},
+                .const_decl => {},
+                .call_stmt => {},
+                .expr_stmt => {},
+                .do_block => |d| try collectAssignedNames(alloc, out, &d.body),
                 .while_loop => |w| try collectAssignedNames(alloc, out, &w.body),
+                .repeat_loop => |r| try collectAssignedNames(alloc, out, &r.body),
                 .if_stmt => |c| {
                     try collectAssignedNames(alloc, out, &c.then);
+                    for (c.elseifs) |*e| try collectAssignedNames(alloc, out, &e.body);
                     if (c.else_body) |*e| try collectAssignedNames(alloc, out, e);
                 },
                 .num_for => |f| try collectAssignedNames(alloc, out, &f.body),
-                else => {},
+                .gen_for => |f| try collectAssignedNames(alloc, out, &f.body),
+                .func_decl => |fd| try collectAssignedNames(alloc, out, &fd.func.body),
+                .ret => {},
+                .brk => {},
+                .cont => {},
+                .goto_stmt => {},
+                .label_stmt => {},
+                .match_stmt => |m| for (m.arms) |*a| try collectAssignedNames(alloc, out, &a.body),
+                .try_stmt => |t| {
+                    try collectAssignedNames(alloc, out, &t.body);
+                    for (t.catches) |*c| try collectAssignedNames(alloc, out, &c.body);
+                    for (t.defers) |*d| try collectAssignedNames(alloc, out, &d.body);
+                },
+                .defer_stmt => |d| try collectAssignedNames(alloc, out, &d.body),
+                .enum_def => {},
+                .concept_def => {},
+                .alias_def => {},
+                .macro_def => {},
+                .cinclude => {},
+                .directive => {},
             }
         }
     }
