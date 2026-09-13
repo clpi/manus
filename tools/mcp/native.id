@@ -55,6 +55,10 @@ while true
         1
     else
         0
+    isrecover: i64 = if line:has("\"method\":\"tools/call\"") and line:has("\"name\":\"recover\"")
+        1
+    else
+        0
     argsep: str = string.char(31)
     toolname: str = if isworld == 1
         "world"
@@ -68,7 +72,10 @@ while true
                 if ispreview == 1
                     "preview"
                 else
-                    ""
+                    if isrecover == 1
+                        "recover"
+                    else
+                        ""
     toolargs: str = "run" .. argsep .. "--backend=native" .. argsep .. "tools/mcp/" .. toolname .. ".id"
 
     command: str = if line:has("\"name\":\"status\"")
@@ -117,7 +124,7 @@ while true
                 "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{gatecap(command)}\}"
             else
                 if line:has("\"method\":\"tools/list\"")
-                    "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"tools\":[\{\"name\":\"status\",\"description\":\"git status --short --branch\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"head\",\"description\":\"current HEAD commit id\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"orient\",\"description\":\"Idol orientation snapshot\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"concept\",\"description\":\"render the produced concept verdict (REFUSED or HELD) for a subject .id file\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\}\}\},\{\"name\":\"world\",\"description\":\"bind one request to its actual execution world: world-bound concept verdict or structured refusal\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"subject\":\{\"type\":\"string\"\},\"file\":\{\"type\":\"string\"\}\}\}\},\{\"name\":\"frontier\",\"description\":\"query the semantic frontier: known/unknown facts, blockers, and highest value-of-information\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\},\"region\":\{\"type\":\"string\"\}\}\}\},\{\"name\":\"contrast\",\"description\":\"ask the minimal behavioral question for unresolved intent\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\},\"ambiguity\":\{\"type\":\"object\"\},\"answer\":\{\"type\":\"object\"\}\}\}\},\{\"name\":\"preview\",\"description\":\"produce a checked semantic-change proposal for a projection edit\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\},\"projection\":\{\"type\":\"string\"\},\"edit\":\{\"type\":\"object\"\}\}\}\}\}]\}\}"
+                    "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"tools\":[\{\"name\":\"status\",\"description\":\"git status --short --branch\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"head\",\"description\":\"current HEAD commit id\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"orient\",\"description\":\"Idol orientation snapshot\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"concept\",\"description\":\"render the produced concept verdict (REFUSED or HELD) for a subject .id file\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\}\}\},\{\"name\":\"world\",\"description\":\"bind one request to its actual execution world: world-bound concept verdict or structured refusal\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"subject\":\{\"type\":\"string\"\},\"file\":\{\"type\":\"string\"\}\}\}\},\{\"name\":\"frontier\",\"description\":\"query the semantic frontier: known/unknown facts, blockers, and highest value-of-information\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\},\"region\":\{\"type\":\"string\"\}\}\}\},\{\"name\":\"contrast\",\"description\":\"ask the minimal behavioral question for unresolved intent\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\},\"ambiguity\":\{\"type\":\"object\"\},\"answer\":\{\"type\":\"object\"\}\}\}\},\{\"name\":\"preview\",\"description\":\"produce a checked semantic-change proposal for a projection edit\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\},\"projection\":\{\"type\":\"string\"\},\"edit\":\{\"type\":\"object\"\}\}\}\}\},\{\"name\":\"recover\",\"description\":\"classify recoverability of an intermediate value or optimization decision with evidence\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\},\"subject_hash\":\{\"type\":\"string\"\},\"query\":\{\"type\":\"object\"\}\}\}\}]\}\}"
                 else
                     if line:has("\"method\":\"initialize\"")
                         "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"protocolVersion\":\"2024-11-05\",\"capabilities\":\{\"tools\":\{\"listChanged\":false\}\},\"serverInfo\":\{\"name\":\"idol\",\"version\":\"0.0.0\"\}\}\}"
