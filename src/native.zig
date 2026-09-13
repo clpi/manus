@@ -4601,6 +4601,30 @@ const Arm64Compiler = struct {
                     }
                 }
             },
+            .conv => {
+                // THE explicit numeric conversion: the one place
+                // float<->int conversion happens. f64->i64 truncates
+                // toward zero (fcvtzs; NaN -> 0, out-of-range ->
+                // INT64_MIN, exactly the folder's total law). i64->f64
+                // widens (scvtf). The crossFile fmov in evalDnirValue is
+                // bit transport for spill/ABI and is never consulted
+                // here; a conversion that arrived as transport was the
+                // f2i miscompile (2.7 -> 4613262278296967578).
+                if (ins.ty == .i64) {
+                    const d = try self.evalDnirValueFp(temps, ins.lhs);
+                    const x = try self.allocReg();
+                    try self.emitFcvtzsFromFp(x, d);
+                    self.releaseFpReg(d);
+                    if (ins.result) |t| try temps.put(self.alloc, t, x);
+                } else if (ins.ty == .f64) {
+                    const x = try self.evalDnirValue(temps, ins.lhs);
+                    const d = try self.allocFpReg();
+                    try self.emitScvtfFromGpr(d, x);
+                    if (!Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
+                    if (ins.result) |t| try temps.put(self.alloc, t, d);
+                    try self.markFpTemp(ins.result);
+                } else return self.refuseWith(@src(), "conv-ty");
+            },
             .binop => blk: {
                 // Both operands are integer literals: answer at compile time.
                 // `1000000 / 7` becomes a mov of 142857, never an `sdiv`.
@@ -6138,7 +6162,15 @@ const Arm64Compiler = struct {
     /// location is carried by the assignment rather than restated by a map each
     /// reader has to remember to check against a second one.
     fn evalDnirValue(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
-        if (self.crossFile(v, false)) return self.refuse(@src());
+        // FP temp on GP path: convert via fmov instead of refusing.
+        // Under high register pressure, spill/reload can leave an FP-marked
+        // temp reaching a GP consumer; the bits conversion is lossless.
+        if (self.crossFile(v, false)) {
+            const d = try self.evalDnirValueFp(temps, v);
+            const bits = try self.allocReg();
+            try self.emitFmovToGpr(bits, d);
+            return bits;
+        }
         return switch (v) {
             .void => try self.allocReg(),
             .i64 => |n| blk: {

@@ -5782,7 +5782,11 @@ pub const SemanticGraph = struct {
                 for (c.args) |arg| try self.liftExprsFromExpr(arg, file, parent, .single);
             },
             .method_call => |mc| {
-                try self.liftCallFromExpr(expr, file, parent, consumption);
+                // BYPASS: f64:from(x) is a special form, not a graph application.
+                const is_from_tn = std.mem.eql(u8, mc.method, "from") and mc.args.len == 1 and
+                    mc.obj.* == .name and (std.mem.eql(u8, mc.obj.name.ident, "f64") or
+                    std.mem.eql(u8, mc.obj.name.ident, "i64"));
+                if (!is_from_tn) try self.liftCallFromExpr(expr, file, parent, consumption);
                 try self.liftExprsFromExpr(mc.obj, file, parent, .single);
                 for (mc.args) |arg| try self.liftExprsFromExpr(arg, file, parent, .single);
             },

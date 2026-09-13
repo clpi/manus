@@ -5080,6 +5080,10 @@ fn lowerFunction(
         // A `str` parameter is a `const char*`, so `#p` inside the body can use
         // strlen just like a str local.
         if (resolveType(par.typ) == .str) try ctx.str_slots.put(alloc, param_slot_cursor, {});
+        // An `f64` parameter arrives in a double register; without this
+        // the body sees a GP slot and a conversion of the parameter
+        // moves its BITS (the f2i miscompile) instead of converting.
+        if (resolveType(par.typ) == .f64) try ctx.f64_slots.put(alloc, param_slot_cursor, {});
         // A `bool` parameter is an integer register the printer must not read as
         // a number.
         if (isBoolType(par.typ)) try ctx.bool_slots.put(alloc, param_slot_cursor, {});
@@ -7830,6 +7834,19 @@ fn exprIsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return switch (expr.*) {
         .float_lit => true,
         .call => exprReturnsF64(ctx, expr),
+        .method_call => |m| blk: {
+            if (std.mem.eql(u8, m.method, "to") and m.args.len == 1) {
+                if (m.args[0].* == .name and std.mem.eql(u8, m.args[0].name.ident, "f64")) {
+                    break :blk true;
+                }
+            }
+            if (std.mem.eql(u8, m.method, "from") and m.args.len == 1) {
+                if (m.obj.* == .name and std.mem.eql(u8, m.obj.name.ident, "f64")) {
+                    break :blk true;
+                }
+            }
+            break :blk false;
+        },
         // Arithmetic promotes: if either operand is f64, the result is f64.
         // Without this, `x = 0.1 + 0.2` leaves the binop unrecognized, the
         // binding never marks the slot, and a later concat prints the
@@ -10684,6 +10701,7 @@ fn holds(ctx: *const LowerCtx, v: dnir.Value) bool {
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (!ctx.require_graph_facts) return false;
     if (expr.* != .call and expr.* != .method_call) return false;
+    if (expr.* == .method_call and std.mem.eql(u8, expr.method_call.method, "from")) return false;
     if (ctx.occurrences.get(expr) != null) return false;
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
@@ -15275,7 +15293,11 @@ fn lowerSubjectCall(
                 bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
             }
+            // BYPASS: f64:from(x) is a special form, not a checked call.
+            const is_from_tn = expr.* == .method_call and std.mem.eql(u8, expr.method_call.method, "from");
+            if (!is_from_tn) {
             return lowerCheckedScalarCall(ctx, application, consumption);
+            }
         }
     }
     if (expr.* == .method_call) {
@@ -15376,6 +15398,24 @@ fn lowerSubjectCall(
                 }
             }
             return lowerSubjectTail(ctx, expr, consumption);
+        }
+        if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1) {
+            if (mc.args[0].* == .name) {
+                const target = mc.args[0].name.ident;
+                if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "i64")) {
+                    if (exprIsIntegral(ctx, mc.obj) or exprIsF64(ctx, mc.obj)) {
+                        return lowerNumericConvert(ctx, mc.obj, target, consumption);
+                    }
+                }
+            }
+        }
+        if (std.mem.eql(u8, mc.method, "from") and mc.args.len == 1) {
+            if (mc.obj.* == .name) {
+                const target = mc.obj.name.ident;
+                if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "i64")) {
+                    return lowerNumericConvert(ctx, mc.args[0], target, consumption);
+                }
+            }
         }
         if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and ctx.graph.bootstrapApplicationExpr(expr)) {
             return lowerSubjectTo(ctx, mc.obj, mc.args[0], consumption);
@@ -16605,6 +16645,89 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     };
 }
 
+/// THE f64->i64 conversion law, total. Truncation toward zero; NaN
+/// answers 0; out-of-range saturates the way the hardware does:
+/// positive (including +inf) answers INT64_MAX, negative (including
+/// -inf) answers INT64_MIN. This is exactly what ARM64 fcvtzs
+/// computes — measured against the instruction itself — and the
+/// constant folder must answer identically: Zig `@intFromFloat` is
+/// undefined on nonfinite/out-of-range inputs, so a folder that calls
+/// it directly is not a law but a host accident. One law, two
+/// realizations — the folder here and the `.conv` instruction the
+/// dynamic arm emits.
+fn foldF64ToI64(x: f64) i64 {
+    if (std.math.isNan(x)) return 0;
+    const two63: f64 = 9.223372036854776e18;
+    if (x >= two63) return std.math.maxInt(i64);
+    if (x < -two63) return std.math.minInt(i64);
+    return @intFromFloat(@trunc(x));
+}
+
+/// Numeric type conversion for `:to` and `:from`.
+/// `x:to(f64)` converts numeric x to f64; `f64:from(x)` does the same.
+/// Pure value conversion, not bootstrap-gated.
+fn lowerNumericConvert(
+    ctx: *LowerCtx,
+    value_expr: *const ast.Expr,
+    target_name: []const u8,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    const v = try lowerExpr(ctx, value_expr);
+    if (std.mem.eql(u8, target_name, "f64")) {
+        switch (v) {
+            .i64 => |n| {
+                if (consumption == .discard) return .void;
+                return dnir.Value{ .f64 = @floatFromInt(n) };
+            },
+            .f64 => {
+                if (consumption == .discard) return .void;
+                return v;
+            },
+            else => {
+                if (consumption == .discard) return .void;
+                // A dynamic i64->f64 is a conversion, not an addition:
+                // the old `v + 0.0` binop only converted by accident,
+                // on its way to an fadd the law never asked for.
+                if (exprIsIntegral(ctx, value_expr)) {
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .conv, .result = t, .lhs = v, .ty = .f64 });
+                    return dnir.Value{ .temp = t };
+                }
+                const t = try binopTemp(ctx, .add, v, .{ .f64 = 0.0 });
+                return dnir.Value{ .temp = t };
+            },
+        }
+    }
+    if (std.mem.eql(u8, target_name, "i64")) {
+        switch (v) {
+            .f64 => |x| {
+                if (consumption == .discard) return .void;
+                return dnir.Value{ .i64 = foldF64ToI64(x) };
+            },
+            .i64 => {
+                if (consumption == .discard) return .void;
+                return v;
+            },
+            else => {
+                if (consumption == .discard) return .void;
+                // A dynamic f64->i64 must CONVERT (fcvtzs). Returning
+                // the f64 temp unchanged left the consumer's crossFile
+                // fmov to move the BITS into a GP register: a silent
+                // wrong answer (2.7 -> 4613262278296967578). Non-f64
+                // subjects keep the old shape; they are not numeric
+                // conversions and must not reach the converter.
+                if (exprIsF64(ctx, value_expr)) {
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .conv, .result = t, .lhs = v, .ty = .i64 });
+                    return dnir.Value{ .temp = t };
+                }
+                return v;
+            },
+        }
+    }
+    return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
+}
+
 /// `value:to(i64)` — bootstrap text-to-integer edge for gate transport scripts.
 fn lowerSubjectTo(
     ctx: *LowerCtx,
@@ -16954,28 +17077,12 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
     if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__as") and c.args.len == 2) {
         if (c.args[0].* != .quoted) return invalidGraphFacts(ctx.diagnostic, @src(), "as-target-not-type");
         const target = c.args[0].quoted.val;
-        const v = try lowerExpr(ctx, c.args[1]);
-        if (std.mem.eql(u8, target, "f64")) {
-            switch (v) {
-                .i64 => |n| return dnir.Value{ .f64 = @floatFromInt(n) },
-                // A non-constant i64 must become an f64-valued temp. Emit
-                // `v + 0.0`: the binop is recognized as f64 (via exprIsF64),
-                // the native backend lowers it with `scvtf` for the i64
-                // operand, and the result temp is marked FP. Returning `v`
-                // unchanged leaves an i64 where f64 is expected.
-                else => {
-                    const t = try binopTemp(ctx, .add, v, .{ .f64 = 0.0 });
-                    return dnir.Value{ .temp = t };
-                },
-            }
+        // The legacy magic spellings route to the same producer law as
+        // the canonical :to/:from faces: one law, every spelling.
+        if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "i64")) {
+            return lowerNumericConvert(ctx, c.args[1], target, consumption);
         }
-        if (std.mem.eql(u8, target, "i64")) {
-            switch (v) {
-                .f64 => |x| return dnir.Value{ .i64 = @intFromFloat(x) },
-                else => return v,
-            }
-        }
-        return v;
+        return try lowerExpr(ctx, c.args[1]);
     }
 
     // `tostring(n)` — the runtime/global-call spelling. Canonical Idol has no
@@ -17698,6 +17805,23 @@ fn lowerWrite(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
 fn exprIsF64Value(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return switch (expr.*) {
         .float_lit => true,
+        // The primitive numeric conversion faces prove f64 exactly as
+        // exprIsF64 already answers: the precheck admits print of these
+        // shapes as f64, so the egress selector must agree (gap[034]:
+        // the two must claim the same set).
+        .method_call => |m| blk: {
+            if (std.mem.eql(u8, m.method, "to") and m.args.len == 1 and
+                m.args[0].* == .name and std.mem.eql(u8, m.args[0].name.ident, "f64"))
+            {
+                break :blk true;
+            }
+            if (std.mem.eql(u8, m.method, "from") and m.args.len == 1 and
+                m.obj.* == .name and std.mem.eql(u8, m.obj.name.ident, "f64"))
+            {
+                break :blk true;
+            }
+            break :blk false;
+        },
         .name => |n| blk: {
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.f64_slots.contains(slot);
