@@ -1,0 +1,61 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+main: i64 = ()
+  if chomp(gatecap("uname -s")) != "Darwin"
+    print("machoexec: NOT MEASURED — the emitted arm64 Mach-O executes only on macOS")
+    return 0
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  else
+    if idol:sub(1, 1) != "/"
+      idol = "{root}/{idol}"
+  fail = 0
+  if gatecap("test -x \'{idol}\'; echo $?") != "0\n"
+    print("machoexec: FAIL compiler is not executable: {idol}")
+    return 1
+  work = chomp(gatecap("mktemp -d /tmp/idol-machoexec.XXXXXX"))
+  mk = gatecap("\'{idol}\' run --backend=direct \'{root}/lib/compiler/machoexe.id\' >\'{work}/hi.macho\' 2>\'{work}/emit.log\'; echo $?")
+  if mk != "0\n"
+    print("machoexec: FAIL emitter exited nonzero")
+    fail = 1
+  else
+    size = chomp(gatecap("wc -c <\'{work}/hi.macho\' | tr -d \' \'"))
+    if size != "16600"
+      print("machoexec: FAIL emitted {size} bytes, expected 16600")
+      fail = 1
+    else
+      magic = chomp(gatecap("xxd -p -l 4 \'{work}/hi.macho\'"))
+      if magic != "cffaedfe"
+        print("machoexec: FAIL bad magic {magic}, expected cffaedfe")
+        fail = 1
+      else
+        digest = chomp(gatecap("head -c 16384 \'{work}/hi.macho\' | shasum -a 256 | cut -d \' \' -f1"))
+        embedded = chomp(gatecap("dd if=\'{work}/hi.macho\' bs=1 skip=16548 count=32 2>/dev/null | xxd -p | tr -d \'\\n\'"))
+        if digest == "" or digest != embedded
+          print("machoexec: FAIL code-directory digest mismatch")
+          fail = 1
+        else
+          gatecap("chmod +x \'{work}/hi.macho\'")
+          rc = chomp(gatecap("timeout 10 \'{work}/hi.macho\' >/dev/null 2>&1; echo $?"))
+          if rc == "137"
+            print("machoexec: NOT MEASURED — kernel SIGKILLs the adhoc Mach-O on exec (documented platform blocker); structure verified: 16600 bytes, arm64, code-directory digest matches shasum")
+            fail = 1
+          else
+            if rc != "0"
+              print("machoexec: FAIL execution rc={rc}")
+              fail = 1
+  cleaned = gatecap("rm -rf \'{work}\'")
+  if fail == 0
+    print("machoexec: PASS Idol source emitted a 16600-byte arm64 Mach-O with matching code-directory digest that executed with rc=0")
+  fail

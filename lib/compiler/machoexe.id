@@ -1,0 +1,228 @@
+hexd: str = (v: i64)
+  digits = "0123456789abcdef"
+  digits:sub(v + 1, v + 1)
+
+b8: str = (v: i64)
+  hexd(v >> 4 & 15) .. hexd(v & 15)
+
+b16: str = (v: i64)
+  b8(v) .. b8(v >> 8)
+
+b32: str = (v: i64)
+  b16(v) .. b16(v >> 16)
+
+b64: str = (v: i64)
+  b32(v) .. b32(v >> 32)
+
+be16: str = (v: i64)
+  b8(v >> 8) .. b8(v)
+
+be32: str = (v: i64)
+  b8(v >> 24) .. b8(v >> 16) .. b8(v >> 8) .. b8(v)
+
+name16: str = (s: str)
+  out = ""
+  i = 1
+  while i <= s:len() and i <= 16
+    out = out .. b8(s:byte(i))
+    i = i + 1
+  while out:len() < 32
+    out = out .. "00"
+  out
+
+pad: str = (n: i64)
+  out = ""
+  i = 0
+  while i < n
+    out = out .. "00"
+    i = i + 1
+  out
+
+nib: i64 = (c: i64)
+  if c >= 48 and c <= 57
+    return c - 48
+  c - 87
+
+hexof: str = (s: str)
+  out = ""
+  i = 1
+  n = s:len()
+  while i <= n
+    out = out .. b8(s:byte(i))
+    i = i + 1
+  out
+
+patch: str = (h: str, off: i64, rep: str)
+  h:sub(1, off * 2) .. rep .. h:sub(off * 2 + rep:len() + 1, h:len())
+
+w: i64 = (b: i64)
+  stdout:write(string.char(b))
+  0
+
+emithex: i64 = (h: str)
+  i = 1
+  n = h:len()
+  while i < n
+    w(nib(h:byte(i)) * 16 + nib(h:byte(i + 1)))
+    i = i + 2
+  0
+
+hexword: i64 = (h: str, j: i64)
+  o = j * 8 + 1
+  nib(h:byte(o)) * 268435456 + nib(h:byte(o + 1)) * 16777216 + nib(h:byte(o + 2)) * 1048576 + nib(h:byte(o + 3)) * 65536 + nib(h:byte(o + 4)) * 4096 + nib(h:byte(o + 5)) * 256 + nib(h:byte(o + 6)) * 16 + nib(h:byte(o + 7))
+
+sethexword: str = (h: str, j: i64, v: str)
+  pre = ""
+  if j > 0
+    pre = h:sub(1, j * 8)
+  post = ""
+  if j < 63
+    post = h:sub(j * 8 + 9, h:len())
+  pre .. v .. post
+
+khex: str = ()
+  "428a2f9871374491b5c0fbcfe9b5dba53956c25b59f111f1923f82a4ab1c5ed5d807aa9812835b01243185be550c7dc372be5d7480deb1fe9bdc06a7c19bf174e49b69c1efbe47860fc19dc6240ca1cc2de92c6f4a7484aa5cb0a9dc76f988da983e5152a831c66db00327c8bf597fc7c6e00bf3d5a7914706ca63511429296727b70a852e1b21384d2c6dfc53380d13650a7354766a0abb81c2c92e92722c85a2bfe8a1a81a664bc24b8b70c76c51a3d192e819d6990624f40e3585106aa07019a4c1161e376c082748774c34b0bcb5391c0cb34ed8aa4a5b9cca4f682e6ff3748f82ee78a5636f84c878148cc7020890befffaa4506cebbef9a3f7c67178f2"
+
+shahashhex: str = (h: str)
+  blen = h:len() >> 1
+  msg = h .. "80"
+  while (msg:len() >> 1) % 64 != 56
+    msg = msg .. "00"
+  bits = blen * 8
+  msg = msg .. "00000000" .. be32(bits)
+  hv0 = 1779033703
+  hv1 = 3144134277
+  hv2 = 1013904242
+  hv3 = 2773480762
+  hv4 = 1359893119
+  hv5 = 2600822924
+  hv6 = 528734635
+  hv7 = 1541459225
+  block = 0
+  blocks = msg:len() >> 7
+  while block < blocks
+    sched = msg:sub(block * 128 + 1, block * 128 + 128) .. pad(192)
+    j = 16
+    while j < 64
+      u2 = hexword(sched, j - 2)
+      u7 = hexword(sched, j - 7)
+      u15 = hexword(sched, j - 15)
+      u16 = hexword(sched, j - 16)
+      s1 = ((u2 >> 17 | u2 << 15) % 4294967296) ~ ((u2 >> 19 | u2 << 13) % 4294967296) ~ (u2 >> 10)
+      s0 = ((u15 >> 7 | u15 << 25) % 4294967296) ~ ((u15 >> 18 | u15 << 14) % 4294967296) ~ (u15 >> 3)
+      sched = sethexword(sched, j, be32((u16 + s1 + u7 + s0) % 4294967296))
+      j = j + 1
+    a = hv0
+    b = hv1
+    c = hv2
+    d = hv3
+    e = hv4
+    f = hv5
+    g = hv6
+    hh = hv7
+    j = 0
+    while j < 64
+      wj = hexword(sched, j)
+      kj = hexword(khex(), j)
+      e1 = ((e >> 6 | e << 26) % 4294967296) ~ ((e >> 11 | e << 21) % 4294967296) ~ ((e >> 25 | e << 7) % 4294967296)
+      ch = (e & f) | ((~e) & g)
+      t1 = (hh + e1 + ch + kj + wj) % 4294967296
+      a0 = ((a >> 2 | a << 30) % 4294967296) ~ ((a >> 13 | a << 19) % 4294967296) ~ ((a >> 22 | a << 10) % 4294967296)
+      mj = (a & b) | (a & c) | (b & c)
+      t2 = (a0 + mj) % 4294967296
+      hh = g
+      g = f
+      f = e
+      e = (d + t1) % 4294967296
+      d = c
+      c = b
+      b = a
+      a = (t1 + t2) % 4294967296
+      j = j + 1
+    hv0 = (hv0 + a) % 4294967296
+    hv1 = (hv1 + b) % 4294967296
+    hv2 = (hv2 + c) % 4294967296
+    hv3 = (hv3 + d) % 4294967296
+    hv4 = (hv4 + e) % 4294967296
+    hv5 = (hv5 + f) % 4294967296
+    hv6 = (hv6 + g) % 4294967296
+    hv7 = (hv7 + hh) % 4294967296
+    block = block + 1
+  be32(hv0) .. be32(hv1) .. be32(hv2) .. be32(hv3) .. be32(hv4) .. be32(hv5) .. be32(hv6) .. be32(hv7)
+
+machoexe: str = (code: str)
+  codlen = code:len() >> 1
+  codeoff = 400
+  textsize = 16384
+  out = ""
+  out = out .. b32(4277009103)
+  out = out .. b32(16777228)
+  out = out .. b32(0)
+  out = out .. b32(2)
+  out = out .. b32(5)
+  out = out .. b32(352)
+  out = out .. b32(2097285)
+  out = out .. b32(0)
+  out = out .. b32(25) .. b32(72) .. name16("__PAGEZERO")
+  out = out .. b64(0) .. b64(4294967296) .. b64(0) .. b64(0)
+  out = out .. b32(0) .. b32(0) .. b32(0) .. b32(0)
+  out = out .. b32(25) .. b32(152) .. name16("__TEXT")
+  out = out .. b64(4294967296) .. b64(16384) .. b64(0) .. b64(16384)
+  out = out .. b32(5) .. b32(5) .. b32(1) .. b32(0)
+  out = out .. name16("__text") .. name16("__TEXT")
+  out = out .. b64(4294967296 + codeoff) .. b64(codlen)
+  out = out .. b32(codeoff) .. b32(2)
+  out = out .. b32(0) .. b32(0) .. b32(2147484672) .. b32(0) .. b32(0) .. b32(0)
+  out = out .. b32(25) .. b32(72) .. name16("__LINKEDIT")
+  out = out .. b64(4294967296 + 16384) .. b64(16384) .. b64(16384) .. b64(0)
+  out = out .. b32(1) .. b32(1) .. b32(0) .. b32(0)
+  out = out .. b32(14) .. b32(32) .. b32(12) .. "2f7573722f6c69622f64796c6400" .. pad(6)
+  out = out .. b32(2147483688) .. b32(24) .. b64(codeoff) .. b64(0)
+  out = out .. pad(16)
+  out = out .. code
+  out = out .. pad(textsize - codeoff - codlen)
+  out
+
+sigblob: str = (pagehex: str)
+  digest = shahashhex(pagehex)
+  reqhash = shahashhex("fade0c010000000c00000000")
+  cd = ""
+  cd = cd .. be32(4278255618)
+  cd = cd .. be32(160)
+  cd = cd .. be32(131328)
+  cd = cd .. be32(2)
+  cd = cd .. be32(64)
+  cd = cd .. be32(48)
+  cd = cd .. be32(2)
+  cd = cd .. be32(1)
+  cd = cd .. be32(16384)
+  cd = cd .. b8(32) .. b8(2) .. b8(0) .. b8(14)
+  cd = cd .. be32(0) .. be32(0)
+  cd = cd .. hexof("machoexe-hi") .. "00" .. pad(4)
+  cd = cd .. reqhash
+  cd = cd .. pad(32)
+  cd = cd .. digest
+  sb = ""
+  sb = sb .. be32(4278257088)
+  sb = sb .. be32(216)
+  sb = sb .. be32(3)
+  sb = sb .. be32(0) .. be32(36)
+  sb = sb .. be32(2) .. be32(196)
+  sb = sb .. be32(65536) .. be32(208)
+  sb = sb .. cd .. "fade0c010000000c00000000" .. "fade0b0100000008"
+  sb
+
+seal: str = (unsigned: str)
+  siglen = 216
+  patched = patch(unsigned, 16, b32(6))
+  patched = patch(patched, 20, b32(368))
+  patched = patch(patched, 384, b32(29) .. b32(16) .. b32(16384) .. b32(siglen))
+  patched = patch(patched, 304, b64(siglen))
+  patched .. sigblob(patched:sub(1, 32768))
+
+hicode: str = ()
+  "200080d2e1000010420080d2900080d2010000d4000080d2300080d2010000d46869"
+
+main: i64 = ()
+  emithex(seal(machoexe(hicode())))
+  0
