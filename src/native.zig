@@ -6138,7 +6138,15 @@ const Arm64Compiler = struct {
     /// location is carried by the assignment rather than restated by a map each
     /// reader has to remember to check against a second one.
     fn evalDnirValue(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
-        if (self.crossFile(v, false)) return self.refuse(@src());
+        // FP temp on GP path: convert via fmov instead of refusing.
+        // Under high register pressure, spill/reload can leave an FP-marked
+        // temp reaching a GP consumer; the bits conversion is lossless.
+        if (self.crossFile(v, false)) {
+            const d = try self.evalDnirValueFp(temps, v);
+            const bits = try self.allocReg();
+            try self.emitFmovToGpr(bits, d);
+            return bits;
+        }
         return switch (v) {
             .void => try self.allocReg(),
             .i64 => |n| blk: {
