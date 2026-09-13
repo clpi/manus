@@ -1,0 +1,561 @@
+ast: {
+    kind: str
+    loc: i64
+    ival: i64
+    fval: f64
+    sval: str
+    op: str
+}
+
+mkint: ast = (loc: i64, val: i64)
+    { kind = "int_lit", loc = loc, ival = val, fval = 0.0, sval = "", op = "" }
+
+mkfloat: ast = (loc: i64, val: f64)
+    { kind = "float_lit", loc = loc, ival = 0, fval = val, sval = "", op = "" }
+
+mkstr: ast = (loc: i64, val: str)
+    { kind = "str_lit", loc = loc, ival = 0, fval = 0.0, sval = val, op = "" }
+
+mkbool: ast = (loc: i64, val: i64)
+    { kind = "bool_lit", loc = loc, ival = val, fval = 0.0, sval = "", op = "" }
+
+mknil: ast = (loc: i64)
+    { kind = "nil_lit", loc = loc, ival = 0, fval = 0.0, sval = "", op = "" }
+
+mkname: ast = (loc: i64, ident: str)
+    { kind = "name", loc = loc, ival = 0, fval = 0.0, sval = ident, op = "" }
+
+precof: i64 = (op: str)
+    if op == "or"
+        return 2
+    if op == "and"
+        return 4
+    if op == "=="
+        return 6
+    if op == "!="
+        return 6
+    if op == "<"
+        return 6
+    if op == ">"
+        return 6
+    if op == "<="
+        return 6
+    if op == ">="
+        return 6
+    if op == "|"
+        return 7
+    if op == "&"
+        return 11
+    if op == "<<"
+        return 13
+    if op == ">>"
+        return 13
+    if op == ".."
+        return 16
+    if op == "+"
+        return 17
+    if op == "-"
+        return 17
+    if op == "*"
+        return 19
+    if op == "/"
+        return 19
+    if op == "%"
+        return 19
+    if op == "//"
+        return 19
+    if op == "^"
+        return 23
+    if op == "|>"
+        return 1
+    0
+
+isrightassoc: i64 = (op: str)
+    if op == "^"
+        return 1
+    if op == ".."
+        return 1
+    0
+
+isspace: i64 = (c: i64)
+    if c == 32
+        return 1
+    if c == 9
+        return 1
+    if c == 10
+        return 1
+    if c == 13
+        return 1
+    0
+
+isdig: i64 = (c: i64)
+    if c >= 48
+        if c <= 57
+            return 1
+    0
+
+isalpha: i64 = (c: i64)
+    if c >= 65
+        if c <= 90
+            return 1
+    if c >= 97
+        if c <= 122
+            return 1
+    if c == 95
+        return 1
+    0
+
+isalnum: i64 = (c: i64)
+    if isalpha(c) == 1
+        return 1
+    if isdig(c) == 1
+        return 1
+    0
+
+tok: {
+    kind: str
+    text: str
+    ival: i64
+}
+
+kwkind: str = (w: str)
+    if w == "if"
+        return "kw_if"
+    if w == "else"
+        return "kw_else"
+    if w == "while"
+        return "kw_while"
+    if w == "for"
+        return "kw_for"
+    if w == "return"
+        return "kw_return"
+    if w == "and"
+        return "kw_and"
+    if w == "or"
+        return "kw_or"
+    if w == "not"
+        return "kw_not"
+    if w == "true"
+        return "kw_true"
+    if w == "false"
+        return "kw_false"
+    if w == "nil"
+        return "kw_nil"
+    "ident"
+
+mktok: tok = (k: str, t: str, v: i64)
+    { kind = k, text = t, ival = v }
+
+tkz: {
+    src: str
+    n: i64
+    i: i64
+}
+
+tkznew: tkz = (s: str)
+    { src = s, n = s:len(), i = 1 }
+
+tkznext: tok = (z: tkz)
+    n = z.n
+    src = z.src
+    i = z.i
+    while i <= n
+        c = src:byte(i)
+        if isspace(c) == 1
+            i = i + 1
+        else
+            break
+    if i > n
+        z.i = i
+        return mktok("eof", "", 0)
+    c = src:byte(i)
+    if c == 45
+        if i < n
+            if src:byte(i + 1) == 45
+                while i <= n
+                    if src:byte(i) == 10
+                        break
+                    i = i + 1
+                z.i = i
+                return tkznext(z)
+    if isdig(c) == 1
+        j = i
+        while j <= n
+            if isdig(src:byte(j)) == 1
+                j = j + 1
+            else
+                break
+        txt = src:sub(i, j - 1)
+        v = 0
+        k = i
+        while k < j
+            v = v * 10 + src:byte(k) - 48
+            k = k + 1
+        z.i = j
+        return mktok("int", txt, v)
+    if isalpha(c) == 1
+        j = i
+        while j <= n
+            if isalnum(src:byte(j)) == 1
+                j = j + 1
+            else
+                break
+        w = src:sub(i, j - 1)
+        z.i = j
+        return mktok(kwkind(w), w, 0)
+    if c == 34
+        j = i + 1
+        while j <= n
+            if src:byte(j) == 34
+                break
+            j = j + 1
+        txt = src:sub(i + 1, j - 1)
+        z.i = j + 1
+        return mktok("str", txt, 0)
+    if c == 40
+        z.i = i + 1
+        return mktok("lparen", "(", 0)
+    if c == 41
+        z.i = i + 1
+        return mktok("rparen", ")", 0)
+    if c == 44
+        z.i = i + 1
+        return mktok("comma", ",", 0)
+    if c == 58
+        z.i = i + 1
+        return mktok("colon", ":", 0)
+    if c == 43
+        z.i = i + 1
+        return mktok("plus", "+", 0)
+    if c == 42
+        z.i = i + 1
+        return mktok("star", "*", 0)
+    if c == 47
+        if i + 1 <= n
+            if src:byte(i + 1) == 47
+                z.i = i + 2
+                return mktok("idiv", "//", 0)
+        z.i = i + 1
+        return mktok("slash", "/", 0)
+    if c == 37
+        z.i = i + 1
+        return mktok("percent", "%", 0)
+    if c == 94
+        z.i = i + 1
+        return mktok("caret", "^", 0)
+    if c == 38
+        z.i = i + 1
+        return mktok("amp", "&", 0)
+    if c == 124
+        z.i = i + 1
+        return mktok("pipe", "|", 0)
+    if c == 60
+        if i + 1 <= n
+            if src:byte(i + 1) == 61
+                z.i = i + 2
+                return mktok("leq", "<=", 0)
+        z.i = i + 1
+        return mktok("lt", "<", 0)
+    if c == 62
+        if i + 1 <= n
+            if src:byte(i + 1) == 61
+                z.i = i + 2
+                return mktok("geq", ">=", 0)
+        z.i = i + 1
+        return mktok("gt", ">", 0)
+    if c == 61
+        if i + 1 <= n
+            if src:byte(i + 1) == 61
+                z.i = i + 2
+                return mktok("eq", "==", 0)
+        z.i = i + 1
+        return mktok("assign", "=", 0)
+    if c == 33
+        if i + 1 <= n
+            if src:byte(i + 1) == 61
+                z.i = i + 2
+                return mktok("neq", "!=", 0)
+        z.i = i + 1
+        return mktok("bang", "!", 0)
+    if c == 45
+        z.i = i + 1
+        return mktok("minus", "-", 0)
+    if c == 46
+        if i + 1 <= n
+            if src:byte(i + 1) == 46
+                z.i = i + 2
+                return mktok("concat", "..", 0)
+        z.i = i + 1
+        return mktok("dot", ".", 0)
+    z.i = i + 1
+    mktok("unknown", "", 0)
+
+prs: {
+    z: tkz
+    cur: tok
+}
+
+prsnew: prs = (s: str)
+    z = tkznew(s)
+    p = { z = z, cur = mktok("eof", "", 0) }
+    p.cur = tkznext(p.z)
+    p
+
+prsadv: void = (p: prs)
+    p.cur = tkznext(p.z)
+
+prskind: str = (p: prs)
+    p.cur.kind
+
+isinfix: i64 = (k: str)
+    if k == "plus"
+        return 1
+    if k == "minus"
+        return 1
+    if k == "star"
+        return 1
+    if k == "slash"
+        return 1
+    if k == "percent"
+        return 1
+    if k == "idiv"
+        return 1
+    if k == "caret"
+        return 1
+    if k == "amp"
+        return 1
+    if k == "pipe"
+        return 1
+    if k == "lt"
+        return 1
+    if k == "gt"
+        return 1
+    if k == "eq"
+        return 1
+    if k == "neq"
+        return 1
+    if k == "leq"
+        return 1
+    if k == "geq"
+        return 1
+    if k == "concat"
+        return 1
+    if k == "kw_and"
+        return 1
+    if k == "kw_or"
+        return 1
+    0
+
+opspell: str = (k: str)
+    if k == "plus"
+        return "+"
+    if k == "minus"
+        return "-"
+    if k == "star"
+        return "*"
+    if k == "slash"
+        return "/"
+    if k == "percent"
+        return "%"
+    if k == "idiv"
+        return "//"
+    if k == "caret"
+        return "^"
+    if k == "amp"
+        return "&"
+    if k == "pipe"
+        return "|"
+    if k == "lt"
+        return "<"
+    if k == "gt"
+        return ">"
+    if k == "eq"
+        return "=="
+    if k == "neq"
+        return "!="
+    if k == "leq"
+        return "<="
+    if k == "geq"
+        return ">="
+    if k == "concat"
+        return ".."
+    if k == "kw_and"
+        return "and"
+    if k == "kw_or"
+        return "or"
+    k
+
+parseprimary: str = (p: prs)
+    k = p.cur.kind
+    t = p.cur.text
+    v = p.cur.ival
+    if k == "int"
+        prsadv(p)
+        return decnum(v)
+    if k == "str"
+        prsadv(p)
+        return "\"" .. t .. "\""
+    if k == "kw_true"
+        prsadv(p)
+        return "true"
+    if k == "kw_false"
+        prsadv(p)
+        return "false"
+    if k == "kw_nil"
+        prsadv(p)
+        return "nil"
+    if k == "ident"
+        prsadv(p)
+        return t
+    if k == "lparen"
+        prsadv(p)
+        e = parseexpr(p, 0)
+        if p.cur.kind == "rparen"
+            prsadv(p)
+        return e
+    if k == "minus"
+        prsadv(p)
+        o = parseprimary(p)
+        return "(neg " .. o .. ")"
+    if k == "bang"
+        prsadv(p)
+        o = parseprimary(p)
+        return "(not " .. o .. ")"
+    if k == "kw_not"
+        prsadv(p)
+        o = parseprimary(p)
+        return "(not " .. o .. ")"
+    "<?>"
+
+parseexpr: str = (p: prs, minprec: i64)
+    lhs = parseprimary(p)
+    lhs = parsesuffix(p, lhs)
+    while 1 == 1
+        k = p.cur.kind
+        if isinfix(k) == 0
+            break
+        op = opspell(k)
+        prec = precof(op)
+        if prec < minprec
+            break
+        prsadv(p)
+        np = prec + 1
+        if isrightassoc(op) == 1
+            np = prec
+        rhs = parseexpr(p, np)
+        rhs = parsesuffix(p, rhs)
+        lhs = "(" .. op .. " " .. lhs .. " " .. rhs .. ")"
+    lhs
+
+parsesuffix: str = (p: prs, e: str)
+    while 1 == 1
+        k = p.cur.kind
+        if k == "lparen"
+            prsadv(p)
+            args = ""
+            first = 1
+            while p.cur.kind != "rparen"
+                if p.cur.kind == "eof"
+                    break
+                a = parseexpr(p, 0)
+                if first == 1
+                    args = a
+                    first = 0
+                else
+                    args = args .. " " .. a
+                if p.cur.kind == "comma"
+                    prsadv(p)
+                else
+                    break
+            if p.cur.kind == "rparen"
+                prsadv(p)
+            e = "(call " .. e .. " " .. args .. ")"
+        else
+            if k == "dot"
+                prsadv(p)
+                m = p.cur.text
+                prsadv(p)
+                e = "(field " .. e .. " " .. m .. ")"
+            else
+                break
+    e
+
+decnum: str = (v: i64)
+    if v == 0
+        return "0"
+    neg = 0
+    x = v
+    if x < 0
+        neg = 1
+        x = 0 - x
+    out = ""
+    while x > 0
+        d = x - (x // 10) * 10
+        out = "0123456789":sub(d + 1, d + 1) .. out
+        x = x // 10
+    if neg == 1
+        return "-" .. out
+    out
+
+parseone: str = (src: str)
+    p = prsnew(src)
+    e = parseexpr(p, 0)
+    e
+
+main: i64 = ()
+    r1 = parseone("1 + 2 * 3")
+    print(r1)
+    r2 = parseone("(1 + 2) * 3")
+    print(r2)
+    r3 = parseone("2 ^ 3 ^ 2")
+    print(r3)
+    r4 = parseone("a + b * c")
+    print(r4)
+    0
+
+parsestmt: str = (p: prs)
+    k = p.cur.kind
+    if k == "kw_return"
+        prsadv(p)
+        v = parseexpr(p, 0)
+        return "(return " .. v .. ")"
+    if k == "kw_if"
+        prsadv(p)
+        c = parseexpr(p, 0)
+        return "(if " .. c .. " ...)"
+    if k == "kw_while"
+        prsadv(p)
+        c = parseexpr(p, 0)
+        return "(while " .. c .. " ...)"
+    if k == "ident"
+        nm = p.cur.text
+        prsadv(p)
+        if p.cur.kind == "assign"
+            prsadv(p)
+            v = parseexpr(p, 0)
+            return "(assign " .. nm .. " " .. v .. ")"
+        if p.cur.kind == "colon"
+            prsadv(p)
+            return "(decl " .. nm .. " ...)"
+        e = parsesuffix(p, nm)
+        e = parseexprrest(p, e, 0)
+        return e
+    parseexpr(p, 0)
+
+parseexprrest: str = (p: prs, lhs: str, minprec: i64)
+    while 1 == 1
+        k = p.cur.kind
+        if isinfix(k) == 0
+            break
+        op = opspell(k)
+        prec = precof(op)
+        if prec < minprec
+            break
+        prsadv(p)
+        np = prec + 1
+        if isrightassoc(op) == 1
+            np = prec
+        rhs = parseexpr(p, np)
+        rhs = parsesuffix(p, rhs)
+        lhs = "(" .. op .. " " .. lhs .. " " .. rhs .. ")"
+    lhs
