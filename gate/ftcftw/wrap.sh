@@ -131,19 +131,24 @@ done
 # earlier draft of this gate measured 3ms for 10^8 iterations and the assembly
 # was `xorl %eax, %eax; ret`.
 printf 'ftcftw/wrap: §1 the loop survives -O2\n'
+# THE DETECTOR READS TWO TOOLCHAINS. Linux assemblers label code
+# `.L1:` and leave C symbols bare (`idol_entry:`); Apple Clang
+# labels code `LBB0_1:` and prefixes C symbols (`_idol_entry:`).
+# Matching only the dotted form made every arm read 0 on macOS —
+# the loops survived, the detector was blind.
 backward_jumps() {
     asm=$1
     symbol=$2
     awk -v symbol="$symbol" '
         FNR == NR {
-            if ($1 ~ /^\.L[A-Za-z0-9_.$]*:$/) {
+            if ($1 ~ /^(\.L|L)[A-Za-z0-9_.$]*:$/) {
                 label=$1
                 sub(/:$/, "", label)
                 at[label]=FNR
             }
             next
         }
-        $1 == symbol ":" { inside=1; next }
+        ($1 == symbol ":") || ($1 == ("_" symbol ":")) { inside=1; next }
         inside && $1 == "ret" { inside=0; next }
         inside && $1 ~ /^(j|b|cb|tb)/ {
             for (i=2; i<=NF; i++) {

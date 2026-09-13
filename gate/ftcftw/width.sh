@@ -58,7 +58,10 @@ OUTER=4000000
 # The subject stays inside the C realizer's admitted slice — add, sub, mul and
 # comparison only, one stdin byte as the only runtime input. The triple loop
 # is a matmul-shaped dependency (row x col x k) without leaving the slice; the
-# multipliers vary with both loop indices so the product cannot fold.
+# multipliers vary with both loop indices so the product cannot fold, and the
+# accumulator feeds back through a multiply so the sum cannot fold either —
+# a separable r = r + f(i,j,k) lets the compiler replace the whole nest with
+# seed + a closed-form sum (observed on Apple Clang -O2).
 cat >"$work/mm.id" <<EOF
 mm: i64 = (n: i64, seed: i64)
   r: u32 = seed
@@ -70,7 +73,7 @@ mm: i64 = (n: i64, seed: i64)
       while k < 3
         x = (i + k + 1) * 3 + 1
         y = (k + j + 1) * 7 + 2
-        r = r + x * y
+        r = r * 31 + x * y
         k = k + 1
       j = j + 1
     i = i + 1
@@ -93,7 +96,7 @@ static int64_t mm(int64_t n, int64_t seed) {
             for (int64_t k = 0; k < 3; k++) {
                 int64_t x = (i + k + 1) * 3 + 1;
                 int64_t y = (k + j + 1) * 7 + 2;
-                r = (uint32_t)(r + x * y);
+                r = (uint32_t)(r * 31 + x * y);
             }
     return (int64_t)r;
 }
@@ -107,7 +110,7 @@ int main(void) {
 EOF
 
 # Width-widened control: identical shape, u64 accumulator.
-sed 's/uint32_t r = (uint32_t)seed;/uint64_t r = (uint64_t)seed;/; s/r = (uint32_t)(r + x \* y);/r = (uint64_t)(r + x * y);/; s/return (int64_t)r;/return (int64_t)r;/' \
+sed 's/uint32_t r = (uint32_t)seed;/uint64_t r = (uint64_t)seed;/; s/r = (uint32_t)(r \* 31 + x \* y);/r = (uint64_t)(r * 31 + x * y);/; s/return (int64_t)r;/return (int64_t)r;/' \
     "$work/hand32.c" >"$work/hand64.c"
 
 "$idol" compile --no-cache --backend=c --emit=c --target=c-source "$work/mm.id" -o "$work/idol.c" >"$work/emit.log" 2>&1 || {
@@ -133,19 +136,24 @@ done
 
 # ===================== §1 THE WORK SURVIVES THE OPTIMIZER ====================
 printf 'ftcftw/width: §1 the loop survives -O2\n'
+# THE DETECTOR READS TWO TOOLCHAINS. Linux assemblers label code
+# `.L1:` and leave C symbols bare (`idol_entry:`); Apple Clang
+# labels code `LBB0_1:` and prefixes C symbols (`_idol_entry:`).
+# Matching only the dotted form made every arm read 0 on macOS —
+# the loops survived, the detector was blind.
 backward_jumps() {
     asm=$1
     symbol=$2
     awk -v symbol="$symbol" '
         FNR == NR {
-            if ($1 ~ /^\.L[A-Za-z0-9_.$]*:$/) {
+            if ($1 ~ /^(\.L|L)[A-Za-z0-9_.$]*:$/) {
                 label=$1
                 sub(/:$/, "", label)
                 at[label]=FNR
             }
             next
         }
-        $1 == symbol ":" { inside=1; next }
+        ($1 == symbol ":") || ($1 == ("_" symbol ":")) { inside=1; next }
         inside && $1 == "ret" { inside=0; next }
         inside && $1 ~ /^(j|b|cb|tb)/ {
             for (i=2; i<=NF; i++) {
@@ -182,12 +190,13 @@ for i in range(4000000):
         for k in range(3):
             x = (i + k + 1) * 3 + 1
             y = (k + j + 1) * 7 + 2
-            r = (r + x * y) % M
+            r = (r * 31 + x * y) % M
 print(r)
 PYEOF
 ) || { printf 'ftcftw/width: CANNOT MEASURE — oracle failed\n' >&2; exit 2; }
 oracle64=$(python3 - "$work/seed" <<'PYEOF'
 import sys
+M64 = 1 << 64
 s = open(sys.argv[1], 'rb').read(1)[0]
 r = s
 for i in range(4000000):
@@ -195,7 +204,7 @@ for i in range(4000000):
         for k in range(3):
             x = (i + k + 1) * 3 + 1
             y = (k + j + 1) * 7 + 2
-            r = r + x * y
+            r = (r * 31 + x * y) % M64
 print(r)
 PYEOF
 ) || { printf 'ftcftw/width: CANNOT MEASURE — widened oracle failed\n' >&2; exit 2; }
