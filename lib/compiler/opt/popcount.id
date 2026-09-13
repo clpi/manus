@@ -44,13 +44,13 @@ contains: i64 = (s: str, pat: str)
         return 0
     i = 1
     while i <= n - m + 1
-        match = 1
+        found = 1
         j = 1
         while j <= m
             if s:byte(i + j - 1) != pat:byte(j)
-                match = 0
+                found = 0
             j = j + 1
-        if match == 1
+        if found == 1
             return 1
         i = i + 1
     0
@@ -86,7 +86,7 @@ popcount: str = (src: str)
         if matched == 1
             out = out .. varname .. " = __popcount_neon(" .. varname .. ")"
             out = out .. "\\n"
-            k = k + 6
+            k = k + 5
         else
             out = out .. lineat(src, k)
             out = out .. "\\n"
