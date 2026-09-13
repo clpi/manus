@@ -9224,13 +9224,25 @@ pub const SemanticGraph = struct {
             try buf.append(alloc, '}');
         }
         try buf.appendSlice(alloc, "],\"mutations\":[");
-        for (self.binding_mutations.items, 0..) |write, i| {
-            if (i > 0) try buf.append(alloc, ',');
-            try buf.appendSlice(alloc, "{\"relation\":");
-            try appendJsonInt(buf, alloc, write.relation);
-            try buf.appendSlice(alloc, ",\"binding\":");
-            try appendJsonInt(buf, alloc, write.binding);
-            try buf.append(alloc, '}');
+        // MODULE BINDINGS ONLY. The in-memory column also carries
+        // relation-scoped field-write rows that `mutates` needs for record
+        // parameters; every other consumer filters them, and the projection
+        // reader (gate/speculation.sh) joins this array against the source
+        // census of module-global writes. Exporting the raw column convicted
+        // the gate on a relation-local.
+        var first_mutation = true;
+        if (self.module_root) |module| {
+            for (self.binding_mutations.items) |write| {
+                const binding = self.get(write.binding) orelse continue;
+                if (binding.kind != .local or binding.scope != module) continue;
+                if (!first_mutation) try buf.append(alloc, ',');
+                first_mutation = false;
+                try buf.appendSlice(alloc, "{\"relation\":");
+                try appendJsonInt(buf, alloc, write.relation);
+                try buf.appendSlice(alloc, ",\"binding\":");
+                try appendJsonInt(buf, alloc, write.binding);
+                try buf.append(alloc, '}');
+            }
         }
         // THE READ HALF, RAW. A row says a relation's body names a module
         // binding in read position; whether that read is an observation is a
