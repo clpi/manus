@@ -1,0 +1,396 @@
+isdig: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+oknum: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    i = 1
+    while i <= n
+        if isdig(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+parsenum: i64 = (s: str)
+    v = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    v
+
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = (v & 15) + 1
+    digits:sub(d, d)
+
+dec: str = (v: i64)
+    if v == 0
+        return "0"
+    neg = 0
+    if v < 0
+        neg = 1
+        v = 0 - v
+    out = ""
+    x = v
+    while x > 0
+        out = hex(x - (x // 10) * 10) .. out
+        x = x // 10
+    if neg == 1
+        return "-" .. out
+    out
+
+unpad: str = (s: str)
+    a = 1
+    n = s:len()
+    while a <= n and s:byte(a) == 32
+        a = a + 1
+    b = n
+    while b >= a and s:byte(b) == 32
+        b = b - 1
+    if b < a
+        return ""
+    s:sub(a, b)
+
+indof: i64 = (s: str)
+    n = s:len()
+    i = 1
+    while i <= n and s:byte(i) == 32
+        i = i + 1
+    i - 1
+
+spaces: str = (n: i64)
+    out = ""
+    i = 0
+    while i < n
+        out = out .. " "
+        i = i + 1
+    out
+
+linecount: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            n = n + 1
+        i = i + 1
+    if s:len() > 0 and s:byte(s:len()) != 10
+        n = n + 1
+    n
+
+lineat: str = (s: str, k: i64)
+    n = s:len()
+    i = 1
+    cur = 0
+    a = 1
+    while i <= n + 1
+        if i > n or s:byte(i) == 10
+            if cur == k
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+cut: str = (s: str, a: i64, b: i64)
+    out = ""
+    k = a
+    while k <= b
+        out = out .. lineat(s, k) .. "\n"
+        k = k + 1
+    out
+
+iswhile: i64 = (t: str)
+    if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
+        return 1
+    0
+
+loopend: i64 = (src: str, k: i64, lc: i64, ind: i64)
+    e = k
+    j = k + 1
+    while j < lc
+        r = lineat(src, j)
+        if unpad(r):len() > 0 and indof(r) <= ind
+            return e
+        e = j
+        j = j + 1
+    e
+
+prevnb: i64 = (src: str, k: i64)
+    p = k - 1
+    while p >= 0
+        if unpad(lineat(src, p)):len() > 0
+            return p
+        p = p - 1
+    0 - 1
+
+oknamechar: i64 = (c: i64)
+    if c >= 65 and c <= 90
+        return 1
+    if c >= 97 and c <= 122
+        return 1
+    if c >= 48 and c <= 57
+        return 1
+    if c == 95
+        return 1
+    0
+
+okname: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    c = s:byte(1)
+    if c < 65 or c > 122
+        return 0
+    if c > 90 and c < 97
+        return 0
+    i = 2
+    while i <= n
+        if oknamechar(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+isnmc: i64 = (c: i64)
+    if c >= 65 and c <= 90
+        return 1
+    if c >= 97 and c <= 122
+        return 1
+    if c >= 48 and c <= 57
+        return 1
+    if c == 95
+        return 1
+    0
+
+eqpos: i64 = (t: str)
+    i = 1
+    while i <= t:len()
+        if t:byte(i) == 61
+            return i
+        i = i + 1
+    0
+
+asgtgt: str = (t: str)
+    p = eqpos(t)
+    if p == 0
+        return ""
+    unpad(t:sub(1, p - 1))
+
+asgrhs: str = (t: str)
+    p = eqpos(t)
+    if p == 0
+        return ""
+    unpad(t:sub(p + 1, t:len()))
+
+condparse: str = (t: str)
+    rest = unpad(t:sub(7, t:len()))
+    p = 0
+    i = 1
+    while i <= rest:len()
+        if rest:byte(i) == 60 and p == 0
+            p = i
+        i = i + 1
+    if p == 0
+        return ""
+    lhs = unpad(rest:sub(1, p - 1))
+    after = rest:sub(p + 1, rest:len())
+    op = "lt"
+    if after:len() > 0 and after:byte(1) == 61
+        op = "le"
+        after = after:sub(2, after:len())
+    rhs = unpad(after)
+    if okname(lhs) == 0 or oknum(rhs) == 0
+        return ""
+    lhs .. "|" .. op .. "|" .. rhs
+
+initval: str = (src: str, k: i64, ind: i64, iv: str)
+    p = prevnb(src, k)
+    if p < 0
+        return ""
+    r = lineat(src, p)
+    if indof(r) != ind
+        return ""
+    t = unpad(r)
+    e = eqpos(t)
+    if e == 0
+        return ""
+    if e < t:len() and t:byte(e + 1) == 61
+        return ""
+    if unpad(t:sub(1, e - 1)) != iv
+        return ""
+    rhs = unpad(t:sub(e + 1, t:len()))
+    if oknum(rhs) == 0
+        return ""
+    rhs
+
+incstep: str = (t: str, iv: str)
+    if asgtgt(t) != iv
+        return ""
+    rhs = asgrhs(t)
+    p = 0
+    i = 1
+    while i <= rhs:len()
+        if rhs:byte(i) == 43 and p == 0
+            p = i
+        i = i + 1
+    if p == 0
+        return ""
+    a = unpad(rhs:sub(1, p - 1))
+    b = unpad(rhs:sub(p + 1, rhs:len()))
+    if a == iv and oknum(b) == 1 and parsenum(b) > 0
+        return b
+    if b == iv and oknum(a) == 1 and parsenum(a) > 0
+        return a
+    ""
+
+bindentof: i64 = (body: str)
+    lc = linecount(body)
+    k = 0
+    while k < lc
+        r = lineat(body, k)
+        if unpad(r):len() > 0
+            return indof(r)
+        k = k + 1
+    0 - 1
+
+scanbody: str = (body: str, iv: str)
+    bi = bindentof(body)
+    if bi < 0
+        return ""
+    lc = linecount(body)
+    k = 0
+    st = ""
+    cnt = 0
+    while k < lc
+        r = lineat(body, k)
+        t = unpad(r)
+        if t:len() > 0
+            if t == "return"
+                return ""
+            if t:len() > 6 and t:sub(1, 6) == "return" and t:byte(7) == 32
+                return ""
+            if eqpos(t) > 0 and asgtgt(t) == iv
+                if indof(r) != bi
+                    return ""
+                s = incstep(t, iv)
+                if s == ""
+                    return ""
+                st = s
+                cnt = cnt + 1
+        k = k + 1
+    if cnt == 1
+        return st
+    ""
+
+tripn: i64 = (a: i64, op: str, b: i64, s: i64)
+    if op == "lt"
+        if b <= a
+            return 0
+        return (b - a + s - 1) // s
+    if b < a
+        return 0
+    (b - a) // s + 1
+
+subst: str = (line: str, iv: str, vstr: str)
+    out = ""
+    i = 1
+    n = line:len()
+    m = iv:len()
+    while i <= n
+        hit = 0
+        if i + m - 1 <= n and line:sub(i, i + m - 1) == iv
+            before = 1
+            after = 1
+            if i > 1 and isnmc(line:byte(i - 1)) == 1
+                before = 0
+            if i + m <= n and isnmc(line:byte(i + m)) == 1
+                after = 0
+            if before == 1 and after == 1
+                hit = 1
+        if hit == 1
+            out = out .. vstr
+            i = i + m
+        else
+            out = out .. line:sub(i, i)
+            i = i + 1
+    out
+
+expand: str = (body: str, iv: str, a: i64, s: i64, n: i64, ind: i64)
+    bi = bindentof(body)
+    out = ""
+    j = 0
+    while j < n
+        vs = dec(a + j * s)
+        lc = linecount(body)
+        k = 0
+        while k < lc
+            r = lineat(body, k)
+            t = unpad(r)
+            if t:len() > 0 and indof(r) == bi and incstep(t, iv) != ""
+                k = k + 1
+            else
+                if t:len() == 0
+                    out = out .. r .. "\n"
+                else
+                    out = out .. subst(r, iv, vs) .. "\n"
+                k = k + 1
+        j = j + 1
+    out = out .. spaces(ind) .. iv .. " = " .. dec(a + n * s) .. "\n"
+    out
+
+barpos: i64 = (s: str, start: i64)
+    i = start
+    while i <= s:len()
+        if s:byte(i) == 124
+            return i
+        i = i + 1
+    0
+
+tryunroll: str = (iv: str, op: str, b: i64, a: i64, body: str, ind: i64)
+    st = scanbody(body, iv)
+    if st == ""
+        return ""
+    n = tripn(a, op, b, parsenum(st))
+    if n < 1 or n > 16
+        return ""
+    expand(body, iv, a, parsenum(st), n, ind)
+
+sweep: str = (src: str)
+    out = ""
+    lc = linecount(src)
+    k = 0
+    while k < lc
+        r = lineat(src, k)
+        t = unpad(r)
+        if iswhile(t) == 1
+            ind = indof(r)
+            e = loopend(src, k, lc, ind)
+            inner = sweep(cut(src, k + 1, e))
+            cp = condparse(t)
+            done = 0
+            if cp != ""
+                p1 = barpos(cp, 1)
+                p2 = barpos(cp, p1 + 1)
+                iv = cp:sub(1, p1 - 1)
+                op = cp:sub(p1 + 1, p2 - 1)
+                b = parsenum(cp:sub(p2 + 1, cp:len()))
+                av = initval(src, k, ind, iv)
+                if av != ""
+                    ex = tryunroll(iv, op, b, parsenum(av), inner, ind)
+                    if ex != ""
+                        out = out .. ex
+                        done = 1
+            if done == 0
+                out = out .. r .. "\n" .. inner
+            k = e + 1
+        else
+            out = out .. r .. "\n"
+            k = k + 1
+    out
+
+unroll: str = (src: str)
+    sweep(src)

@@ -1579,6 +1579,7 @@ main: i64 = ()
     src = compiler.opt.indred.indred(src)
     src = compiler.opt.licm.licm(src)
     src = compiler.opt.poly.poly(src)
+    src = compiler.opt.unroll.unroll(src)
     names = ""
     code = ""
     code = code .. word(subi(31, 31, 2048))
