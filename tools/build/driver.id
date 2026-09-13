@@ -1,0 +1,52 @@
+graph = req "tools.build.graph"
+manifest = req "tools.build.manifest"
+
+collecthashes: any = (g: any, n: any)
+  hashes = {}
+  i = 1
+  while i <= n.inputs:len()
+    inp = n.inputs[i]
+    if g.nodes[inp] != nil
+      depnode = g.nodes[inp]
+      j = 1
+      while j <= depnode.outputs:len()
+        hashes[hashes:len() + 1] = manifest.hashfile(depnode.outputs[j])
+        j = j + 1
+    else
+      hashes[hashes:len() + 1] = manifest.hashfile(inp)
+    i = i + 1
+  hashes
+
+buildnode: bool = (g: any, m: any, n: any)
+  hashes = collecthashes(g, n)
+  identity = manifest.nodeidentity(n, hashes)
+  if manifest.isfresh(m, n.name, identity)
+    print("fresh " .. n.name)
+    return true
+  print("build " .. n.name)
+  rc = gatecap(n.recipe .. " >/dev/null 2>&1; echo $?")
+  if rc != "0"
+    print("failed " .. n.name)
+    return false
+  manifest.record(m, n.name, identity)
+  true
+
+build: bool = (g: any, manifestpath: str, target: str)
+  m = manifest.load(manifestpath)
+  needed = graph.closure(g, target)
+  targets = {}
+  for name, _ in needed
+    targets[targets:len() + 1] = name
+  order = graph.topsort(g, targets)
+  ok = true
+  i = 1
+  while i <= order:len()
+    n = g.nodes[order[i]]
+    if n != nil
+      if not buildnode(g, m, n)
+        ok = false
+        break
+    i = i + 1
+  if ok
+    manifest.save(manifestpath, m)
+  ok

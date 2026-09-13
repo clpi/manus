@@ -1,0 +1,56 @@
+node: any = (name: str, inputs: any, recipe: str, outputs: any)
+  { name = name, inputs = inputs, recipe = recipe, outputs = outputs }
+
+graph: any = ()
+  { nodes = {}, edges = {} }
+
+addnode: any = (g: any, n: any)
+  g.nodes[n.name] = n
+  g
+
+addedge: any = (g: any, from: str, to: str)
+  if g.edges[from] == nil
+    g.edges[from] = {}
+  e = g.edges[from]
+  e[e:len() + 1] = to
+  g
+
+closure: any = (g: any, target: str)
+  seen = {}
+  stack = { target }
+  while stack:len() > 0
+    cur = stack[stack:len()]
+    stack[stack:len()] = nil
+    if seen[cur] == nil
+      seen[cur] = true
+      deps = g.edges[cur]
+      if deps != nil
+        i = 1
+        while i <= deps:len()
+          d = deps[i]
+          if seen[d] == nil
+            stack[stack:len() + 1] = d
+          i = i + 1
+  seen
+
+topsortvisit: any = (g: any, name: str, visited: any, order: any)
+  if visited[name] != nil
+    return order
+  visited[name] = true
+  deps = g.edges[name]
+  if deps != nil
+    i = 1
+    while i <= deps:len()
+      order = topsortvisit(g, deps[i], visited, order)
+      i = i + 1
+  order[order:len() + 1] = name
+  order
+
+topsort: any = (g: any, targets: any)
+  visited = {}
+  order = {}
+  i = 1
+  while i <= targets:len()
+    order = topsortvisit(g, targets[i], visited, order)
+    i = i + 1
+  order
