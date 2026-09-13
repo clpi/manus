@@ -11,8 +11,13 @@
 #       so paying the debt down forces a re-pin and cannot silently reverse.
 #
 #   L2  PROJECTIONS.  A generated file may not be authored outside its
-#       generator. Its do-not-edit marker must survive, and a diff that
-#       touches it must touch its generator in the same diff.
+#       producing computation. Its do-not-edit marker must survive, and a
+#       diff that touches it must be reproducible by that computation
+#       (gate/depid.sh verify): the dependency identity -- generator
+#       meaning, emitter hash, input hashes, config, target, artifact
+#       bytes -- is recomputed, the producer is rerun, and its live
+#       output must equal the candidate bytes. The generator filename
+#       is neither required nor sufficient.
 #
 #   L3  RELATION IDENTITY.  The AST layer owns shape, not semantic relation
 #       identity. Ownership tokens in AST-layer files are pinned exactly in
@@ -32,6 +37,9 @@
 #   gate/layering.sh --base <rev>    L2 over <rev>..worktree
 #   gate/layering.sh --diff <file>   L2 over a diff file
 #   gate/layering.sh --static-only   L1 + L3 only (L2 needs a diff; stated)
+#
+#   IDOL_BIN overrides the emitter binary L2b verify runs the producer
+#   with (default: <root>/zig-out/bin/idol).
 
 set -eu
 
@@ -247,8 +255,8 @@ if [ "$mode" = static ]; then
 fi
 
 gen="$tmp/gen.txt"
-if ! LC_ALL=C awk -F'\t' '/^[[:space:]]*(#|$)/ { next } { if (NF < 3) exit 3; print $1 "\t" $2 "\t" $3 }' "$genman" >"$gen"; then
-    die "gate/generated.manifest is malformed (need <generated>\\t<generator>\\t<marker>)."
+if ! LC_ALL=C awk -F'\t' '/^[[:space:]]*(#|$)/ { next } { if (NF < 8) exit 3; print $1 "\t" $2 "\t" $3 }' "$genman" >"$gen"; then
+    die "gate/generated.manifest is malformed (need 8 tab-separated columns)."
 fi
 n_gen=$(LC_ALL=C awk 'END { print NR }' "$gen")
 [ "$n_gen" -gt 0 ] || die "gate/generated.manifest lists no projections. If nothing is generated, delete the rule; do not ship an inert one."
@@ -274,48 +282,73 @@ done <"$gen"
 note "$prog: L2a -- $n_gen projections checked, all markers intact."
 
 if [ "$mode" = static ]; then
-    note "$prog: LAYERING OK (static rules only; L2b co-change SKIPPED, not passed)."
+    note "$prog: LAYERING OK (static rules only; L2b identity SKIPPED, not passed)."
     exit 0
 fi
 
-# L2b -- a diff touching a projection must touch its generator.
+# L2b -- a diff touching a projection must be reproducible by its
+# producing computation. gate/depid.sh verify materializes the
+# candidate tree, recomputes the dependency identity component by
+# component, reruns the declared producer, and demands byte equality
+# between the producer's live output and the candidate bytes. The
+# generator filename is neither required nor sufficient, and a forged
+# sidecar row cannot bless bytes the producer would not emit.
 cand="$tmp/candidate.diff"
+scratch=""
 if [ -n "$diff_file" ]; then
     [ -f "$diff_file" ] || die "--diff $diff_file does not exist."
+    scratch="$tmp/difftree"
+    mkdir -p "$scratch" || die "could not stage the --diff scratch."
+    git -C "$root" archive HEAD | tar -x -C "$scratch" \
+        || die "could not materialize HEAD for --diff."
+    (cd "$scratch" && git apply "$diff_file") \
+        || die "the --diff file does not apply to a clean HEAD tree."
     cp "$diff_file" "$cand"
-elif [ "$have_git" != yes ]; then
-    die "no .git here, so the generated-file co-change rule cannot be evaluated. Pass --diff <file>, or --static-only to say so out loud."
+    dmode=scratch; droot=$scratch
 elif [ -n "$base_rev" ]; then
-    git -C "$root" rev-parse --verify "${base_rev}^{commit}" >/dev/null 2>&1 || die "--base $base_rev is not a commit."
-    if ! git -C "$root" diff -U0 --no-renames "$base_rev" >"$cand"; then die "could not diff against $base_rev."; fi
+    git -C "$root" rev-parse --verify "${base_rev}^{commit}" >/dev/null 2>&1 \
+        || die "--base $base_rev is not a commit."
+    if ! git -C "$root" diff -U0 --no-renames "$base_rev" >"$cand"; then
+        die "could not diff against $base_rev."
+    fi
+    dmode=worktree; droot=$root
 else
-    if ! git -C "$root" diff --cached -U0 --no-renames >"$cand"; then die "could not produce the staged diff."; fi
+    if ! git -C "$root" diff --cached -U0 --no-renames >"$cand"; then
+        die "could not produce the staged diff."
+    fi
+    dmode=staged; droot=$root
 fi
 
 touched="$tmp/touched.txt"
-LC_ALL=C awk '/^\+\+\+ / { p = $2; sub(/^b\//, "", p); if (p != "/dev/null") print p }' "$cand" | LC_ALL=C sort -u >"$touched"
+LC_ALL=C awk '/^\+\+\+ / { p = $2; sub(/^b\//, "", p); if (p != "/dev/null") print p }' "$cand" \
+    | LC_ALL=C sort -u >"$touched"
 n_touched=$(LC_ALL=C awk 'END { print NR }' "$touched")
 
-: >"$tmp/orphan.txt"
+nfail=0
+ncheck=0
 while IFS="$TAB" read -r g gen_src marker; do
     if LC_ALL=C awk -v p="$g" '$0 == p { f = 1 } END { exit f ? 0 : 1 }' "$touched"; then
-        if ! LC_ALL=C awk -v p="$gen_src" '$0 == p { f = 1 } END { exit f ? 0 : 1 }' "$touched"; then
-            printf '%s\t%s\n' "$g" "$gen_src" >>"$tmp/orphan.txt"
+        ncheck=$((ncheck + 1))
+        if ! IDOL_ROOT="$droot" DEPID_MODE="$dmode" DEPID_SCRATCH="$scratch" \
+                IDOL_BIN="${IDOL_BIN:-$root/zig-out/bin/idol}" \
+                sh "$here/depid.sh" verify "$g" </dev/null >"$tmp/depid.out" 2>&1; then
+            note "L2b: $g is not reproducible by its producing computation:"
+            sed 's/^/  /' "$tmp/depid.out" >&2
+            nfail=$((nfail + 1))
         fi
     fi
 done <"$gen"
 
-if [ -s "$tmp/orphan.txt" ]; then
-    note ""
-    note "generated file(s) edited without their generator:"
-    LC_ALL=C awk -F'\t' '{ printf "  %s\n    generator not in this diff: %s\n", $1, $2 }' "$tmp/orphan.txt" >&2
-    note ""
-    die "a projection was authored outside its generator.
-  The edit will work, the tests will pass, and the next generator run will
-  delete it -- after the hand edit has quietly become the authority the
-  generator disagrees with. Change the generator and re-project."
+if [ "$nfail" -gt 0 ]; then
+    die "$nfail projection(s) are not reproducible by their producing computation.
+  A projection may only change through its producing computation:
+  gate/depid.sh stamp <projection> runs it, refuses on nondeterminism,
+  and re-records the identity; stage the artifact together with
+  gate/generated.depid. Bootstrap attestations (stamp --bootstrap) never
+  verify. Touching the generator source is neither required nor
+  sufficient."
 fi
 
-note "$prog: L2b -- $n_touched path(s) in the candidate diff, no projection authored outside its generator."
+note "$prog: L2b -- $n_touched path(s) in the candidate diff, $ncheck projection(s) reproduced by their producing computation."
 note "$prog: LAYERING OK."
 exit 0
