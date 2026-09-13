@@ -1,6 +1,9 @@
 t = "s"
 j = 0
-while j < 10
+while j < 3
   t = t + 1
   j = j + 1
-t
+if j == 3
+  0
+else
+  1

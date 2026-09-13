@@ -3,4 +3,7 @@ j = "s"
 while j < 10
   t = t + 1
   j = j + 1
-t
+if t == 0
+  0
+else
+  1

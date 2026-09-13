@@ -1,9 +1,6 @@
 y = 10
-f: i64 = ()
-  do
-    y = -5
-  0
-f()
+do
+  y = -5
 j = 0
 t = 0
 while j < y

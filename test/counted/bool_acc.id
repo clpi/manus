@@ -1,10 +1,9 @@
-y: i8 = 200
+t = true
 j = 0
-t = 0
-while j < y
+while j < 10
   t = t + 1
   j = j + 1
-if t == 0
+if j == 10
   0
 else
   1
