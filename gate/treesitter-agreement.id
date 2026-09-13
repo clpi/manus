@@ -1,0 +1,91 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+control: i64 = (idol: str, root: str, work: str)
+  staged = chomp(gatecap("mkdir -p '{work}/src' '{work}/ext/tree-sitter-idol' '{work}/gate/treesitter' && cp '{root}/gate/treesitter/agreement.id' '{root}/gate/treesitter/agreement.baseline' '{work}/gate/treesitter/' && cp '{root}/ext/tree-sitter-idol/grammar.js' '{work}/ext/tree-sitter-idol/grammar.js' && printf 'pub const rows = [0]RoleRow%c%c;\\n' 123 125 >'{work}/src/grammar_role_table.zig'; echo $?"))
+  if staged != "0"
+    print("treesitter-agreement: FAIL could not stage the damaged control tree")
+    return 1
+  code = digits(chomp(gatecap("cd '{work}' && timeout 300 '{idol}' compile -o '{work}/agreectl.out' gate/treesitter/agreement.id >'{work}/ctl.log' 2>&1; echo $?")))
+  if code != 0
+    print("treesitter-agreement: FAIL the damaged control tree did not compile")
+    return 1
+  rc = digits(chomp(gatecap("cd '{work}' && timeout 120 ./agreectl.out >'{work}/ctl.out' 2>&1 </dev/null; echo $?")))
+  if rc != 3
+    print("treesitter-agreement: FAIL an owner bridge with no rows exited {rc}, not 3")
+    shown = gatecap("sed -n '1,20p' '{work}/ctl.out'")
+    print(shown)
+    return 1
+  print("treesitter-agreement: PASS an owner with no rows refuses instead of agreeing")
+  0
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  else
+    if idol:sub(1, 1) != "/"
+      idol = "{root}/{idol}"
+  if gatecap("test -x '{idol}'; echo $?") != "0\n"
+    print("treesitter-agreement: FAIL compiler is not executable: {idol}")
+    return 2
+  probe = chomp(gatecap("mktemp -d /tmp/idol-realization.XXXXXX"))
+  wrote = gatecap("printf 'main: i64 = ()\\n  0\\n' >'{probe}/control.id'; echo $?")
+  build = chomp(gatecap("timeout 300 '{idol}' compile --backend=direct -o '{probe}/control.bin' '{probe}/control.id' >'{probe}/log' 2>&1; echo $?"))
+  native = "broken"
+  if build == "0" and gatecap("test -s '{probe}/control.bin'; echo $?") == "0\n"
+    native = "yes"
+  else
+    if build != "0" and gatecap("grep -q DNB004 '{probe}/log'; echo $?") == "0\n"
+      native = "no"
+  cleaned = gatecap("rm -rf '{probe}'; echo $?")
+  if native == "no"
+    print("treesitter-agreement: NOT MEASURED the broken-reader control in this gate is unreachable. This host has no direct-native realization: the compiler refused a trivial program with DNB004.")
+    return 2
+  work = chomp(gatecap("mktemp -d /tmp/idol-treesitter-agreement.XXXXXX"))
+  if work == ""
+    print("treesitter-agreement: FAIL mktemp failed")
+    return 1
+  bad = control(idol, root, work)
+  if bad != 0
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  code = digits(chomp(gatecap("cd '{root}' && timeout 300 '{idol}' compile -o '{work}/agree.out' gate/treesitter/agreement.id >'{work}/real.log' 2>&1; echo $?")))
+  if code != 0
+    print("treesitter-agreement: FAIL the agreement check did not compile")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  rc = digits(chomp(gatecap("cd '{root}' && timeout 300 '{work}/agree.out' >'{work}/real.out' 2>&1 </dev/null; echo $?")))
+  shown = gatecap("cat '{work}/real.out'")
+  if shown != ""
+    print(chomp(shown))
+  gone = gatecap("rm -rf '{work}'")
+  if rc != 0
+    print("treesitter-agreement: FAIL the agreement check exited {rc}")
+    return 1
+  print("treesitter-agreement: PASS")
+  0
