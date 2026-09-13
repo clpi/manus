@@ -9355,11 +9355,14 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
 /// non-negative. When any condition fails this emits nothing and returns
 /// false; the statements lower through the normal path unchanged.
 ///
-/// On success the six statements are discharged up front: the popcount is
-/// emitted and stored to `x`, and the five FOLLOWING statements are recorded
-/// in `popcount_swallowed` so the block loop skips them.
+/// On success the six statements plus the trailing 7-bit mask are discharged
+/// up front: the popcount is emitted and stored to `x`, and the six FOLLOWING
+/// statements are recorded in `popcount_swallowed` so the block loop skips
+/// them. The trailing `x = x & k` (k <= 127) is required for soundness: the
+/// raw idiom leaves garbage in the upper 57 bits, so without the mask a clean
+/// popcount is observably different.
 fn tryEmitPopcountIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
-    if (at == 0 or at + 6 > stmts.len) return false;
+    if (at == 0 or at + 7 > stmts.len) return false;
     const graph = ctx.graph;
 
     // All six must be `x = <expr>` for the same `x`, each matching its step.
@@ -9395,6 +9398,31 @@ fn tryEmitPopcountIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Erro
     const x_slot = ctx.locals.get(x) orelse return false;
     if (ctx.narrow_slots.contains(x_slot)) return false;
 
+    // SOUNDNESS: the six SWAR steps leave partial-sum garbage in the upper
+    // 57 bits; only the low 7 hold the count. Replacing the idiom with a
+    // clean hardware popcount is observably different unless the very next
+    // statement masks x to 7 bits (`x = x & k` with 0 <= k <= 127, either
+    // operand order). The bench program does `x = x & 127`; without such a
+    // mask this declines and the idiom lowers literally.
+    const mask_a = switch (stmts[at + 6]) {
+        .assign => |m| m,
+        else => return false,
+    };
+    if (mask_a.targets.len != 1 or mask_a.values.len != 1) return false;
+    const mask_name = identOf(mask_a.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, mask_name, x)) return false;
+    const mask_bin = switch (mask_a.values[0].*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (mask_bin.op != .band) return false;
+    const mask_val: i64 = blk: {
+        if (isIdent(mask_bin.lhs, x)) break :blk graph.exactI64OfExpr(mask_bin.rhs) orelse return false;
+        if (isIdent(mask_bin.rhs, x)) break :blk graph.exactI64OfExpr(mask_bin.lhs) orelse return false;
+        return false;
+    };
+    if (mask_val < 0 or mask_val > 127) return false;
+
     // t = popcount(x); x = t.
     const t = ctx.freshTemp();
     try ctx.emit(.{
@@ -9406,10 +9434,11 @@ fn tryEmitPopcountIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Erro
     });
     try ctx.emit(.{ .op = .store_local, .result = x_slot, .lhs = .{ .temp = t }, .ty = .any });
 
-    // Swallow all six statements; the block loop skips them. The current
-    // statement (`at`) is swallowed too, and the loop's post-prologue check
+    // Swallow all seven statements (the mask is redundant: a clean popcount
+    // is <= 64, so `& k` with k <= 127 is the identity on it). The current
+    // statement (`at`) is swallowed too, and the post-prologue check
     // below skips its `lowerStmt`.
-    for (stmts[at .. at + 6]) |*st| {
+    for (stmts[at .. at + 7]) |*st| {
         try ctx.popcount_swallowed.put(ctx.alloc, st, {});
     }
 
