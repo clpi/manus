@@ -134,6 +134,24 @@ medianstr: i64 = (buf: str, n: i64)
     v2 = parseint(m2s, 1, 20)
     v1 + (v2 - v1) / 2
 
+variance: f64 = (buf: str, n: i64)
+  mean: f64 = 0.0
+  moment: f64 = 0.0
+  pos = 1
+  i = 1
+  bl = buf:len()
+  while i <= n
+    epos = pos
+    while epos <= bl and buf:byte(epos) != 59
+      epos = epos + 1
+    sample = parseint(buf, pos, epos - 1) / 1000.0
+    delta = sample - mean
+    mean = mean + delta / i
+    moment = moment + delta * (sample - mean)
+    pos = epos + 1
+    i = i + 1
+  moment / (n - 1.0)
+
 runone: i64 = (path: str, exitexp: i64, outhex: str, outlen: i64, phase: str, round: i64)
   t0 = monotime()
   raw = procrun(path, "", "")
@@ -188,20 +206,6 @@ runone: i64 = (path: str, exitexp: i64, outhex: str, outlen: i64, phase: str, ro
       print("detail: stdout bytes differ")
       0 - 1
 
-pbucket: str = (p: f64)
-  if p < 0.00001
-    "<1e-5"
-  else if p < 0.0001
-    "<1e-4"
-  else if p < 0.001
-    "<1e-3"
-  else if p < 0.01
-    "<1e-2"
-  else if p < 0.05
-    "<0.05"
-  else
-    ">=0.05"
-
 main: i64 = ()
   cand = os.args[1]
   comp = os.args[2]
@@ -253,10 +257,6 @@ main: i64 = ()
       chash = sha256file(compiler)
       cbuf = ""
       pbuf = ""
-      cmean: f64 = 0.0
-      pmean: f64 = 0.0
-      cmoment: f64 = 0.0
-      pmoment: f64 = 0.0
       failed = false
       w = 1
       while w <= warmup
@@ -270,7 +270,7 @@ main: i64 = ()
         w = w + 1
       r = 1
       while r <= rounds
-        if not failed
+        if !failed
           if r % 2 == 1
             ct = runone(cand, exitexp, outhex, outlen, "timed", r)
             pt = runone(comp, exitexp, outhex, outlen, "timed", r)
@@ -287,38 +287,16 @@ main: i64 = ()
           else
             cts = tostr(ct)
             cbuf = "{cbuf}{cts};"
-            sample = ct / 1000.0
-            delta = sample - cmean
-            cmean = cmean + delta / r
-            cmoment = cmoment + delta * (sample - cmean)
             pts = tostr(pt)
             pbuf = "{pbuf}{pts};"
-            sample = pt / 1000.0
-            delta = sample - pmean
-            pmean = pmean + delta / r
-            pmoment = pmoment + delta * (sample - pmean)
         r = r + 1
       if failed
         1
       else
         med1 = medianstr(cbuf, rounds)
         med2 = medianstr(pbuf, rounds)
-        n1 = rounds
-        v1 = cmoment / (n1 - 1.0)
-        v2 = pmoment / (n1 - 1.0)
-        se2t = v1 / n1 + v2 / n1
-        tstat = 0.0
-        df = 0.0
-        analysis = "degenerate"
-        if se2t > 0.0
-          dt = cmean - pmean
-          tstat = dt / math.sqrt(se2t)
-          a1 = v1 / n1
-          a2 = v2 / n1
-          divisor = (a1 * a1 + a2 * a2) / (n1 - 1.0)
-          if divisor > 0.0
-            df = se2t * se2t / divisor
-            analysis = "estimate"
+        v1 = variance(cbuf, rounds)
+        v2 = variance(pbuf, rounds)
         pct = 0.0
         if med2 > 0
           pct = (med2 - med1) * 100.0 / med2
@@ -339,9 +317,7 @@ main: i64 = ()
         print("candidate_median_ns: {med1}")
         print("comparator_median_ns: {med2}")
         print("speedup_pct: {pct}")
-        print("t_stat: {tstat}")
-        print("df: {df}")
-        print("analysis: {analysis}")
+        print("analysis: descriptive")
         print("significant: unverified")
         print("tolerance_basis_points: {tolbp}")
         print("candidate_variance_us2: {v1}")
