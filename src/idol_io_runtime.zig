@@ -115,6 +115,7 @@
 //!
 
 // ── platform ABI ────────────────────────────────────────────────────────────
+const std = @import("std");
 extern "c" fn malloc(n: usize) ?*anyopaque;
 extern "c" fn realloc(p: ?*anyopaque, n: usize) ?*anyopaque;
 extern "c" fn free(p: ?*anyopaque) void;
@@ -154,6 +155,9 @@ extern "c" fn waitpid(pid: c_int, status: *c_int, options: c_int) c_int;
 extern "c" fn _exit(code: c_int) noreturn;
 extern "c" fn getentropy(buf: *anyopaque, len: usize) c_int;
 extern "c" fn clock() c_long;
+extern "c" fn clock_gettime_nsec_np(clk_id: c_int) u64;
+
+const CLOCK_MONOTONIC_RAW: c_int = 4;
 
 const EOF: c_int = -1;
 const SEEK_SET: c_int = 0;
@@ -537,7 +541,183 @@ export fn idol_process_execap(prog: ?[*:0]const u8, args: ?[*:0]const u8, input:
     return out orelse emptyHeap();
 }
 
+// ── benchmark timing ingress ──────────────────────────────────────────────
+/// `procrun(prog, args, input)`: spawn `prog` with 0x1f-delimited `args` and
+/// `input` on stdin — the same fork/execvp (no shell) as `execap` — but the
+/// exit status is preserved. Returns "<code>\n<stdout>": the decimal
+/// WEXITSTATUS (0-255), or -N when the child died from signal N, or -999 when
+/// the spawn itself failed. The code is FIRST so stdout — which may end with
+/// newlines — needs no escaping; the first line always parses as an integer.
+export fn idol_process_procrun(prog: ?[*:0]const u8, args: ?[*:0]const u8, input: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
+    const p = prog orelse return runResult(-999, null);
+    const a = args orelse return runResult(-999, null);
+    const inp = input orelse "";
+    arrive(); // B4: the child inherits fd 1 and must not overtake our bytes.
+    var nargs: usize = 0;
+    if (a[0] != 0) {
+        nargs = 1;
+        var ci: usize = 0;
+        while (a[ci] != 0) : (ci += 1) {
+            if (a[ci] == 0x1f) nargs += 1;
+        }
+    }
+    var argv_buf: [34]?[*:0]u8 = undefined;
+    if (nargs + 2 > argv_buf.len) return runResult(-999, null);
+    const argv: [*]?[*:0]u8 = &argv_buf;
+    argv[0] = @ptrCast(@constCast(p));
+    var slot: usize = 1;
+    if (nargs > 0) {
+        var start: usize = 0;
+        var ai: usize = 0;
+        const amut: [*]u8 = @ptrCast(@constCast(a));
+        while (true) {
+            const b: u8 = a[ai];
+            if (b == 0x1f or b == 0) {
+                amut[ai] = 0;
+                argv[slot] = @ptrCast(amut + start);
+                slot += 1;
+                if (b == 0) break;
+                start = ai + 1;
+            }
+            ai += 1;
+        }
+    }
+    argv[nargs + 1] = null;
+    var in_pipe: [2]c_int = undefined;
+    var out_pipe: [2]c_int = undefined;
+    if (pipe(&in_pipe) != 0 or pipe(&out_pipe) != 0) {
+        return runResult(-999, null);
+    }
+    const pid = fork();
+    if (pid < 0) {
+        _ = close(in_pipe[0]);
+        _ = close(in_pipe[1]);
+        _ = close(out_pipe[0]);
+        _ = close(out_pipe[1]);
+        return runResult(-999, null);
+    }
+    if (pid == 0) {
+        _ = dup2(in_pipe[0], 0);
+        _ = dup2(out_pipe[1], 1);
+        _ = close(in_pipe[0]);
+        _ = close(in_pipe[1]);
+        _ = close(out_pipe[0]);
+        _ = close(out_pipe[1]);
+        _ = execvp(p, @ptrCast(argv));
+        _exit(127);
+    }
+    _ = close(in_pipe[0]);
+    _ = close(out_pipe[1]);
+    const inlen = strlen(inp);
+    var written: usize = 0;
+    while (written < inlen) {
+        const n = write(in_pipe[1], inp + written, inlen - written);
+        if (n <= 0) break;
+        written += @intCast(n);
+    }
+    _ = close(in_pipe[1]);
+    const out = readFd(out_pipe[0]);
+    _ = close(out_pipe[0]);
+    var status: c_int = 0;
+    _ = waitpid(pid, &status, 0);
+    var code: c_int = -999;
+    if ((status & 0x7f) == 0) {
+        code = (status >> 8) & 0xff;
+    } else if ((status & 0xff) != 0x7f) {
+        code = -@as(c_int, @intCast(status & 0x7f));
+    }
+    return runResult(code, out);
+}
+
+/// Pack "<code>\n<stdout>" for `idol_process_procrun`.
+fn runResult(code: c_int, out: ?[*:0]u8) ?[*:0]u8 {
+    var digits: [12]u8 = undefined;
+    var v: c_int = code;
+    var neg = false;
+    if (v < 0) {
+        neg = true;
+        v = -v;
+    }
+    var di: usize = digits.len;
+    if (v == 0) {
+        di -= 1;
+        digits[di] = '0';
+    } else {
+        while (v > 0) : (v = @divTrunc(v, 10)) {
+            di -= 1;
+            digits[di] = '0' + @as(u8, @intCast(@mod(v, 10)));
+        }
+    }
+    if (neg) {
+        di -= 1;
+        digits[di] = '-';
+    }
+    const codelen = digits.len - di;
+    const outp: [*:0]const u8 = out orelse "";
+    const outlen = strlen(outp);
+    const total = codelen + 1 + outlen;
+    const buf: [*]u8 = @ptrCast(malloc(total + 1) orelse return null);
+    @memcpy(buf[0..codelen], digits[di..]);
+    buf[codelen] = '\n';
+    @memcpy(buf[codelen + 1 ..][0..outlen], outp[0..outlen]);
+    buf[total] = 0;
+    return @ptrCast(buf);
+}
+
+/// `monotime()`: CLOCK_MONOTONIC in nanoseconds. Elapsed-time measurement
+/// must be monotonic — wall-clock steps (NTP) must not skew a benchmark.
+export fn idol_os_monotime() callconv(.c) i64 {
+    ensureAbortFlush();
+    return @as(i64, @intCast(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)));
+}
+
+/// `filesize(path)`: byte size of the file at `path`, or -1 when it cannot be
+/// opened or measured.
+export fn idol_os_filesize(path: ?[*:0]const u8) callconv(.c) i64 {
+    ensureAbortFlush();
+    const p = path orelse return -1;
+    const f = fopen(p, "rb") orelse return -1;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        _ = fclose(f);
+        return -1;
+    }
+    const n = ftell(f);
+    _ = fclose(f);
+    if (n < 0) return -1;
+    return n;
+}
+
+/// `sha256file(path)`: lowercase hex SHA-256 of the file's exact bytes, or ""
+/// when the file cannot be read. Lives here (not in Idol) because file bytes
+/// are not NUL-safe through the string runtime — the hash must see every
+/// byte, including NULs.
+export fn idol_os_sha256file(path: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
+    const p = path orelse return emptyHeap();
+    const f = fopen(p, "rb") orelse return emptyHeap();
+    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+    var buf: [8192]u8 = undefined;
+    while (true) {
+        const n = fread(buf[0..].ptr, 1, buf.len, f);
+        if (n > 0) hasher.update(buf[0..n]);
+        if (n < buf.len) break;
+    }
+    _ = fclose(f);
+    var digest: [32]u8 = undefined;
+    hasher.final(&digest);
+    const hex: [*]u8 = @ptrCast(malloc(65) orelse return emptyHeap());
+    const xd = "0123456789abcdef";
+    for (digest, 0..) |b, i| {
+        hex[2 * i] = xd[b >> 4];
+        hex[2 * i + 1] = xd[b & 0xf];
+    }
+    hex[64] = 0;
+    return @ptrCast(hex);
+}
+
 fn emptyHeap() ?[*:0]u8 {
+
     const e: [*]u8 = @ptrCast(malloc(1) orelse return null);
     e[0] = 0;
     return @ptrCast(e);

@@ -16848,6 +16848,41 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_process_execap", .ty = .str });
         return .{ .temp = t };
     }
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "procrun") and c.args.len == 3) {
+        const eprog = try lowerExprCons(ctx, c.args[0], .single);
+        const eargs = try lowerExprCons(ctx, c.args[1], .single);
+        const einput = try lowerExprCons(ctx, c.args[2], .single);
+        try ensureExtern(ctx, "process", "procrun", "idol_process_procrun");
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = eprog });
+        try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = eargs });
+        try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = einput });
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_process_procrun", .ty = .str });
+        return .{ .temp = t };
+    }
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "monotime") and c.args.len == 0) {
+        try ensureExtern(ctx, "os", "monotime", "idol_os_monotime");
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_monotime", .ty = .i64 });
+        return .{ .temp = t };
+    }
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "filesize") and c.args.len == 1) {
+        const epath = try lowerExprCons(ctx, c.args[0], .single);
+        try ensureExtern(ctx, "os", "filesize", "idol_os_filesize");
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = epath });
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_filesize", .ty = .i64 });
+        return .{ .temp = t };
+    }
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "sha256file") and c.args.len == 1) {
+        const epath = try lowerExprCons(ctx, c.args[0], .single);
+        try ensureExtern(ctx, "os", "sha256file", "idol_os_sha256file");
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = epath });
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_sha256file", .ty = .str });
+        return .{ .temp = t };
+    }
+
     // `tostring(n)` — the runtime/global-call spelling. Canonical Idol has no
     // such binding; it is a seeded global in `seedGlobalNames` so `scope.lookup`
     // finds it, but it has no application fact, so `ctx.occurrences.get` returns
