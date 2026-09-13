@@ -40,3 +40,9 @@
 | 2 | Input schema is `{"subject": "concept|sibling", "file": "<subject .id>"}`; output is `result.content [0].text` carrying the world-bound verdict or structured refusal, held by `gate/mcp-world.sh`. |
 | 3 | World identity is launcher-observed at server start: `IDOL_WORLD_BIN`, `binhash` (SHA-256), `revision` (git HEAD), sidecar `<bin>.buildid`; the launcher `bin/idol-main-mcp.sh` is the trust root. |
 | 4 | Refusals carry `reason`, `next`, `producer`, `not-performed`; no verdict is emitted when any face disagrees or the world cannot be bound. |
+
+| # | directive |
+|---|---|
+| 1 | The `frontier` tool queries the semantic frontier (GAP-181): `tools/mcp/frontier.id` via `tools/mcp/native.id` dispatch. |
+| 2 | Input schema is `{"file": "<subject .id>", "region": "<optional>"}`; output is `result.content [0].text` carrying known/unknown facts, blocker counts, highest value-of-information, and the acquire/decline decision, held by `gate/mcp-frontier.sh`. |
+| 3 | Value-of-information is `payoff_cents - acquisition_cost_cents`; the tool recommends the cheapest acquisition with positive VoI or `decline`/`nothing-to-learn`. |

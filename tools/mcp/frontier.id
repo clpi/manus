@@ -1,0 +1,467 @@
+jws: i64 = (text: str, pos: i64)
+  n = text:len()
+  i = pos
+  while i <= n
+    c = text:byte(i)
+    if c == 32 or c == 9 or c == 10 or c == 13
+      i = i + 1
+    else
+      return i
+  i
+
+jstrend: i64 = (text: str, pos: i64)
+  n = text:len()
+  i = pos + 1
+  while i <= n
+    c = text:byte(i)
+    if c == 92
+      i = i + 2
+    else
+      if c == 34
+        return i + 1
+      i = i + 1
+  0
+
+jclose: i64 = (text: str, pos: i64, open: i64, close: i64)
+  n = text:len()
+  depth = 1
+  i = pos + 1
+  while i <= n
+    d = text:byte(i)
+    if d == 34
+      e = jstrend(text, i)
+      if e == 0
+        return 0
+      i = e
+    else
+      if d == open
+        depth = depth + 1
+        i = i + 1
+      else
+        if d == close
+          depth = depth - 1
+          if depth == 0
+            return i + 1
+          i = i + 1
+        else
+          i = i + 1
+  0
+
+jskip: i64 = (text: str, pos: i64)
+  i = jws(text, pos)
+  n = text:len()
+  if i > n
+    return 0
+  c = text:byte(i)
+  if c == 34
+    return jstrend(text, i)
+  if c == 123
+    return jclose(text, i, 123, 125)
+  if c == 91
+    return jclose(text, i, 91, 93)
+  i = i + 1
+  while i <= n
+    d = text:byte(i)
+    if d == 44 or d == 125 or d == 93 or d == 32 or d == 9 or d == 10 or d == 13
+      return i
+    i = i + 1
+  i
+
+jhexdig: i64 = (c: i64)
+  if c >= 48 and c <= 57
+    return c - 48
+  if c >= 97 and c <= 102
+    return c - 87
+  if c >= 65 and c <= 70
+    return c - 55
+  -1
+
+jhex4: i64 = (raw: str, pos: i64)
+  v = 0
+  k = 0
+  while k < 4
+    d = jhexdig(raw:byte(pos + k))
+    if d < 0
+      return -1
+    v = v * 16 + d
+    k = k + 1
+  v
+
+jdec: str = (raw: str)
+  asc = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz\{|\}~"
+  n = raw:len()
+  if n < 2
+    return raw
+  if raw:byte(1) != 34
+    return raw
+  if raw:byte(n) != 34
+    return raw
+  out = ""
+  i = 2
+  while i < n
+    c = raw:byte(i)
+    if c == 92
+      i = i + 1
+      e = raw:byte(i)
+      if e == 110
+        out = out .. "\n"
+      else
+        if e == 116
+          out = out .. "\t"
+        else
+          if e == 114
+            out = out .. "\r"
+          else
+            if e == 117
+              v = jhex4(raw, i + 1)
+              if v >= 32 and v <= 126
+                out = out .. asc:sub(v - 31, v - 31)
+              else
+                out = out .. "?"
+              i = i + 4
+            else
+              if e >= 32 and e <= 126
+                out = out .. asc:sub(e - 31, e - 31)
+              else
+                out = out .. "?"
+    else
+      out = out .. raw:sub(i, i)
+    i = i + 1
+  out
+
+jesc: str = (s: str)
+  hex = "0123456789abcdef"
+  out = "\""
+  i = 1
+  n = s:len()
+  while i <= n
+    c = s:byte(i)
+    if c == 34
+      out = out .. "\\\""
+    else
+      if c == 92
+        out = out .. "\\\\"
+      else
+        if c == 10
+          out = out .. "\\n"
+        else
+          if c == 13
+            out = out .. "\\r"
+          else
+            if c == 9
+              out = out .. "\\t"
+            else
+              if c < 32
+                out = out .. "\\u00" .. hex:sub(c / 16 + 1, c / 16 + 1) .. hex:sub(c % 16 + 1, c % 16 + 1)
+              else
+                out = out .. s:sub(i, i)
+    i = i + 1
+  out .. "\""
+
+jget: str = (text: str, path: str)
+  dot = path:find(".", 1, 1)
+  head = path
+  rest = ""
+  if dot > 0
+    head = path:sub(1, dot - 1)
+    rest = path:sub(dot + 1, path:len())
+  n = text:len()
+  i = jws(text, 1)
+  if i > n
+    return ""
+  if text:byte(i) != 123
+    return ""
+  i = i + 1
+  while true
+    i = jws(text, i)
+    if i > n
+      return ""
+    b = text:byte(i)
+    if b == 125
+      return ""
+    if b != 34
+      return ""
+    e = jstrend(text, i)
+    if e == 0
+      return ""
+    k = jdec(text:sub(i, e - 1))
+    i = jws(text, e)
+    if i > n
+      return ""
+    if text:byte(i) != 58
+      return ""
+    vs = jws(text, i + 1)
+    ve = jskip(text, vs)
+    if ve == 0
+      return ""
+    if k == head
+      if rest == ""
+        return text:sub(vs, ve - 1)
+      return jget(text:sub(vs, ve - 1), rest)
+    i = jws(text, ve)
+    if i > n
+      return ""
+    b2 = text:byte(i)
+    if b2 == 44
+      i = i + 1
+    else
+      return ""
+  ""
+
+jhas: i64 = (text: str, path: str)
+  if jget(text, path) == ""
+    0
+  else
+    1
+
+jcount: i64 = (text: str, path: str)
+  raw = jget(text, path)
+  if raw == ""
+    return -1
+  n = raw:len()
+  i = jws(raw, 1)
+  if i > n
+    return -1
+  if raw:byte(i) != 91
+    return -1
+  i = jws(raw, i + 1)
+  if i > n
+    return -1
+  if raw:byte(i) == 93
+    return 0
+  count = 0
+  while true
+    ve = jskip(raw, i)
+    if ve == 0
+      return -1
+    count = count + 1
+    i = jws(raw, ve)
+    if i > n
+      return -1
+    b = raw:byte(i)
+    if b == 44
+      i = jws(raw, i + 1)
+    else
+      if b == 93
+        return count
+      return -1
+  -1
+
+jitem: str = (text: str, path: str, idx: i64)
+  raw = jget(text, path)
+  if raw == ""
+    return ""
+  n = raw:len()
+  i = jws(raw, 1)
+  if i > n
+    return ""
+  if raw:byte(i) != 91
+    return ""
+  i = jws(raw, i + 1)
+  if i > n
+    return ""
+  k = 1
+  while true
+    ve = jskip(raw, i)
+    if ve == 0
+      return ""
+    if k == idx
+      return raw:sub(i, ve - 1)
+    k = k + 1
+    i = jws(raw, ve)
+    if i > n
+      return ""
+    b = raw:byte(i)
+    if b == 44
+      i = jws(raw, i + 1)
+      if i > n
+        return ""
+    else
+      return ""
+  ""
+
+jcountkey: i64 = (text: str, key: str)
+  n = text:len()
+  i = jws(text, 1)
+  if i > n
+    return -1
+  if text:byte(i) != 123
+    return -1
+  i = i + 1
+  found = 0
+  while true
+    i = jws(text, i)
+    if i > n
+      return -1
+    b = text:byte(i)
+    if b == 125
+      return found
+    if b != 34
+      return -1
+    e = jstrend(text, i)
+    if e == 0
+      return -1
+    if jdec(text:sub(i, e - 1)) == key
+      found = found + 1
+    i = jws(text, e)
+    if i > n
+      return -1
+    if text:byte(i) != 58
+      return -1
+    ve = jskip(text, jws(text, i + 1))
+    if ve == 0
+      return -1
+    i = jws(text, ve)
+    if i > n
+      return -1
+    b2 = text:byte(i)
+    if b2 == 44
+      i = i + 1
+    else
+      if b2 == 125
+        return found
+      return -1
+  -1
+
+shq: str = (s: str)
+  out = "'"
+  i = 1
+  n = s:len()
+  while i <= n
+    c = s:sub(i, i)
+    if c == "'"
+      out = out .. "'\\''"
+    else
+      out = out .. c
+    i = i + 1
+  out .. "'"
+
+wvalidline: i64 = (line: str)
+  n = line:len()
+  i = jws(line, 1)
+  if i > n
+    return 0
+  if line:byte(i) != 123
+    return 0
+  e = jskip(line, i)
+  if e == 0
+    return 0
+  if jws(line, e) <= n
+    return 0
+  1
+
+werr: str = (idraw: str, code: i64, reason: str, next: str, producer: str, notdone: str)
+  msg = "\{\"reason\":" .. jesc(reason) .. ",\"next\":" .. jesc(next) .. ",\"producer\":" .. jesc(producer) .. ",\"not-performed\":" .. notdone .. "\}"
+  "\{\"jsonrpc\":\"2.0\",\"id\":" .. idraw .. ",\"error\":\{\"code\":" .. "{code}" .. ",\"message\":" .. jesc(msg) .. "\}\}"
+
+wob: str = (oid: str, status: str, producer: str, evidence: str)
+  "\{\"id\":" .. jesc(oid) .. ",\"status\":" .. jesc(status) .. ",\"producer\":" .. jesc(producer) .. ",\"evidence\":" .. jesc(evidence) .. "\}"
+
+wrowkey: str = (row: str)
+  jget(row, "module") .. "|" .. jdec(jget(row, "home")) .. "|" .. jget(row, "relations") .. "|" .. jget(row, "shapes") .. "|" .. jget(row, "applications") .. "|" .. jget(row, "shared_demand")
+
+wrefkey: str = (row: str)
+  jget(row, "module") .. "|" .. jdec(jget(row, "reason")) .. "|" .. jget(row, "split")
+
+wdigits: i64 = (text: str)
+  if text == ""
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:byte(i)
+    if c < 48 or c > 57
+      return -1
+    v = v * 10 + c - 48
+    i = i + 1
+  v
+
+wtexit: i64 = (out: str)
+  pos = 0
+  i = 1
+  while true
+    f = out:find("__exit:", i, 1)
+    if f == 0
+      break
+    pos = f
+    i = f + 1
+  if pos == 0
+    return -1
+  wdigits(out:sub(pos + 7, out:len()))
+
+wchomp: str = (text: str)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c == 10 or c == 13
+      n = n - 1
+    else
+      break
+  if n <= 0
+    return ""
+  text:sub(1, n)
+
+wtbody: str = (out: str)
+  pos = 0
+  i = 1
+  while true
+    f = out:find("__exit:", i, 1)
+    if f == 0
+      break
+    pos = f
+    i = f + 1
+  if pos <= 2
+    return ""
+  wchomp(out:sub(1, pos - 2))
+
+fresp: str = (line: str, idraw: str)
+  args = jget(line, "params.arguments")
+  if args == ""
+    return werr(idraw, -32602, "invalid-params", "supply params.arguments as an object", "caller", "[\"frontier\"]")
+  file = jdec(jget(args, "file"))
+  if file == ""
+    return werr(idraw, -32602, "invalid-params", "supply arguments.file as a string", "caller", "[\"frontier\"]")
+  region = jdec(jget(args, "region"))
+  qf = shq(file)
+  bin = env("IDOL_WORLD_BIN") or ""
+  if bin == ""
+    bin = "./zig-out/bin/idol"
+  graphraw = gatecap("timeout 60 \"" .. bin .. "\" graph " .. qf .. " 2>/dev/null; printf '\\n__exit:%d' \"$?\"")
+  if wtexit(graphraw) != 0
+    return werr(idraw, -32000, "graph-failed", "supply a valid subject .id file", "world-binary", "[\"frontier\"]")
+  body = wtbody(graphraw)
+  apps = jcount(body, "applications")
+  unres = jcount(body, "unresolved_applications")
+  blocking = jcount(body, "blocking_applications")
+  concepts = jcount(body, "concepts")
+  refusals = jcount(body, "refusals")
+  known = "{\"applications\":" .. apps .. ",\"concepts\":" .. concepts .. ",\"refusals\":" .. refusals .. "}"
+  unknowns = "{\"unresolved\":" .. unres .. ",\"blocking\":" .. blocking .. "}"
+  highest = "null"
+  decision = "nothing-to-learn"
+  if unres > 0 or blocking > 0
+    payoff = unres * 50 + blocking * 100
+    cost_guard = 50
+    cost_proof = 90
+    voi_guard = payoff - cost_guard
+    voi_proof = payoff - cost_proof
+    best_voi = voi_guard
+    best_how = "runtime-guard"
+    if voi_proof > best_voi
+      best_voi = voi_proof
+      best_how = "static-proof"
+    if best_voi > 0
+      decision = "acquire-via-" .. best_how
+    else
+      decision = "decline"
+    highest = "{\"unresolved\":" .. unres .. ",\"blocking\":" .. blocking .. ",\"payoff_cents\":" .. payoff .. ",\"recommendation\":\"" .. decision .. "\"}"
+  frontier = "{\"file\":" .. jesc(file) .. ",\"region\":" .. jesc(region) .. ",\"known\":" .. known .. ",\"unknown\":" .. unknowns .. ",\"highest_voi\":" .. highest .. ",\"decision\":\"" .. decision .. "\"}"
+  "{\"jsonrpc\":\"2.0\",\"id\":" .. idraw .. ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":" .. jesc(frontier) .. "}]}}"
+
+main: i64 = ()
+  line = stdin:line()
+  idraw = jget(line, "id")
+  stdout:write(fresp(line, idraw))
+  0
+main()

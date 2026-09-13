@@ -42,6 +42,10 @@ while true
         1
     else
         0
+    isfrontier: i64 = if line:has("\"method\":\"tools/call\"") and line:has("\"name\":\"frontier\"")
+        1
+    else
+        0
     lineq: str = "'"
     lidx: i64 = 1
     while lidx <= line:len()
@@ -53,6 +57,7 @@ while true
         lidx += 1
     lineq = "{lineq}'"
     worldcmd: str = "printf '%s\\n' " .. lineq .. " | ./zig-out/bin/idol run --backend=native tools/mcp/world.id 2>/dev/null"
+    frontiercmd: str = "printf '%s\\n' " .. lineq .. " | ./zig-out/bin/idol run --backend=native tools/mcp/frontier.id 2>/dev/null"
 
     command: str = if line:has("\"name\":\"status\"")
         "./tools/node/dev/orient --mcp status"
@@ -87,7 +92,10 @@ while true
     resp: str = if isworld == 1
         gatecap(worldcmd)
     else
-        if called
+        if isfrontier == 1
+            gatecap(frontiercmd)
+        else
+            if called
         if failed
             "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"error\":\{\"code\":-32000,\"message\":{output}\}\}"
         else
@@ -100,7 +108,7 @@ while true
                 "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{gatecap(command)}\}"
             else
                 if line:has("\"method\":\"tools/list\"")
-                    "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"tools\":[\{\"name\":\"status\",\"description\":\"git status --short --branch\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"head\",\"description\":\"current HEAD commit id\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"orient\",\"description\":\"Idol orientation snapshot\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"concept\",\"description\":\"render the produced concept verdict (REFUSED or HELD) for a subject .id file\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\}\}\},\{\"name\":\"world\",\"description\":\"bind one request to its actual execution world: world-bound concept verdict or structured refusal\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"subject\":\{\"type\":\"string\"\},\"file\":\{\"type\":\"string\"\}\}\}\}\}]\}\}"
+                    "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"tools\":[\{\"name\":\"status\",\"description\":\"git status --short --branch\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"head\",\"description\":\"current HEAD commit id\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"orient\",\"description\":\"Idol orientation snapshot\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"concept\",\"description\":\"render the produced concept verdict (REFUSED or HELD) for a subject .id file\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\}\}\},\{\"name\":\"world\",\"description\":\"bind one request to its actual execution world: world-bound concept verdict or structured refusal\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"subject\":\{\"type\":\"string\"\},\"file\":\{\"type\":\"string\"\}\}\}\},\{\"name\":\"frontier\",\"description\":\"query the semantic frontier: known/unknown facts, blockers, and highest value-of-information\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\},\"region\":\{\"type\":\"string\"\}\}\}\}\}]\}\}"
                 else
                     if line:has("\"method\":\"initialize\"")
                         "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"protocolVersion\":\"2024-11-05\",\"capabilities\":\{\"tools\":\{\"listChanged\":false\}\},\"serverInfo\":\{\"name\":\"idol\",\"version\":\"0.0.0\"\}\}\}"
