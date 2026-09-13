@@ -533,9 +533,130 @@ fn nonNegWidth(widths: *const NonNegEnv, results: ?Results, e: *const ast.Expr) 
     return widthOfExpr(env.lookup(), e);
 }
 
+/// A loop induction variable whose bound comes from the loop's own shape
+/// rather than from the fixpoint. The fixpoint cannot bound a counter:
+/// `i = i + 1` widens the width every round until it passes 63 and the name
+/// goes to top. But `while i < N` with `i = i + k` for a positive literal `k`
+/// keeps `i` inside `[0, N + k)`, so when `N` is provably non-negative the IV
+/// is provably bounded — and the increment must hold the cap instead of
+/// widening past it.
+const BoundedIV = struct {
+    name: []const u8,
+    cap: u8,
+};
+
+/// Is `v` the increment `iv + k` (either operand order) with `k` a positive
+/// integer literal — the only write to a bounded IV the shape proof admits.
+fn boundedIncrement(iv: []const u8, v: *const ast.Expr) bool {
+    if (v.* != .binop or v.binop.op != .add) return false;
+    const lhs = v.binop.lhs;
+    const rhs = v.binop.rhs;
+    const k_expr = if (lhs.* == .name and std.mem.eql(u8, lhs.name.ident, iv))
+        rhs
+    else if (rhs.* == .name and std.mem.eql(u8, rhs.name.ident, iv))
+        lhs
+    else
+        return false;
+    const k = ast.intLiteralValue(k_expr) orelse return false;
+    return k > 0;
+}
+
+/// Every write to `iv` in `blk` is the positive increment, and `step_w` takes
+/// the widest step seen. Any other write — or any construct this walk does
+/// not look through — refuses, dropping the bound.
+fn bodyIncrementsOnly(blk: *const ast.Block, iv: []const u8, step_w: *u8) bool {
+    for (blk.stmts) |st| switch (st) {
+        .assign => |a| {
+            if (a.targets.len != a.values.len) return false;
+            for (a.targets, a.values) |t, v| {
+                if (t.* != .name) continue;
+                if (!std.mem.eql(u8, t.name.ident, iv)) continue;
+                if (!boundedIncrement(iv, v)) return false;
+                const k_expr = if (v.binop.lhs.* == .name) v.binop.rhs else v.binop.lhs;
+                const k = ast.intLiteralValue(k_expr) orelse return false;
+                step_w.* = @max(step_w.*, nonNegWidthOfLit(k) orelse return false);
+            }
+        },
+        .local_decl => |d| {
+            for (d.names) |n| if (std.mem.eql(u8, n.ident, iv)) return false;
+        },
+        .const_decl => |d| if (std.mem.eql(u8, d.ident, iv)) return false,
+        .global_decl => |d| {
+            for (d.names) |n| if (std.mem.eql(u8, n.ident, iv)) return false;
+        },
+        .do_block => |d| if (!bodyIncrementsOnly(&d.body, iv, step_w)) return false,
+        .while_loop => |w| if (!bodyIncrementsOnly(&w.body, iv, step_w)) return false,
+        .repeat_loop => |r| if (!bodyIncrementsOnly(&r.body, iv, step_w)) return false,
+        .if_stmt => |f| {
+            if (!bodyIncrementsOnly(&f.then, iv, step_w)) return false;
+            for (f.elseifs) |ei| if (!bodyIncrementsOnly(&ei.body, iv, step_w)) return false;
+            if (f.else_body) |eb| if (!bodyIncrementsOnly(&eb, iv, step_w)) return false;
+        },
+        .num_for => |f| {
+            if (std.mem.eql(u8, f.var_name, iv)) return false;
+            if (!bodyIncrementsOnly(&f.body, iv, step_w)) return false;
+        },
+        .gen_for => |f| {
+            for (f.vars) |v| if (std.mem.eql(u8, v, iv)) return false;
+            if (!bodyIncrementsOnly(&f.body, iv, step_w)) return false;
+        },
+        // A call cannot write a caller's local. A module-global IV written by
+        // any relation is foreign, seeded at top before this walk, and
+        // already refused the bound below.
+        .call_stmt, .expr_stmt, .ret, .brk, .cont, .label_stmt => {},
+        else => return false,
+    };
+    return true;
+}
+
+/// If this `while` is a bounded counter — `iv < bound` or `iv <= bound` (or
+/// the mirrored `bound > iv`, `bound >= iv`) with `bound` provably
+/// non-negative, `iv` already holding a provably non-negative value from its
+/// initialization, and every body write to `iv` the positive increment —
+/// seed `iv` at the bound-derived cap and answer the context the body scan
+/// holds. Anything else answers null and the loop keeps the old behavior.
+fn matchBoundedWhile(
+    alloc: std.mem.Allocator,
+    widths: *NonNegEnv,
+    results: ?Results,
+    cond: *const ast.Expr,
+    body: *const ast.Block,
+    changed: *bool,
+) std.mem.Allocator.Error!?BoundedIV {
+    if (cond.* != .binop) return null;
+    const b = cond.binop;
+    const iv: []const u8 = switch (b.op) {
+        .lt, .leq => if (b.lhs.* == .name) b.lhs.name.ident else return null,
+        .gt, .geq => if (b.rhs.* == .name) b.rhs.name.ident else return null,
+        else => return null,
+    };
+    const bound: *const ast.Expr = switch (b.op) {
+        .lt, .leq => b.rhs,
+        .gt, .geq => b.lhs,
+        else => return null,
+    };
+    const bound_w = nonNegWidth(widths, results, bound) orelse return null;
+    // The initialization textually precedes the loop in any valid program,
+    // so the in-order scan has observed it by now. A top value — negative,
+    // unknown, or unmodeled — refuses.
+    const init_w = widths.get(iv) orelse return null;
+    if (init_w >= nonneg_top) return null;
+    var step_w: u8 = 0;
+    if (!bodyIncrementsOnly(body, iv, &step_w)) return null;
+    // At the head `iv` is below `bound`; after `iv + k` below `bound + k`.
+    // The initialization's own width joins separately, so the cap needs no
+    // `init_w` term — and leaving it out keeps the cap stable across rounds.
+    const cap: u8 = @max(bound_w, step_w) + 1;
+    if (cap > 63) return null;
+    try nonNegObserve(alloc, widths, iv, cap, changed);
+    return BoundedIV{ .name = iv, .cap = cap };
+}
+
 /// One pass of the transfer function over every assignment in `blk`.
 /// `changed` is set when a name's width grew. `unmodeled` is set when the body
 /// contains a construct this pass does not model, which discards everything.
+/// `biv` is the bounded induction variable of an enclosing `while`, whose
+/// increment holds its cap instead of widening past it.
 fn nonNegScanBlock(
     alloc: std.mem.Allocator,
     widths: *NonNegEnv,
@@ -543,6 +664,7 @@ fn nonNegScanBlock(
     blk: *const ast.Block,
     changed: *bool,
     unmodeled: *bool,
+    biv: ?BoundedIV,
 ) std.mem.Allocator.Error!void {
     for (blk.stmts) |st| switch (st) {
         .local_decl => |d| {
@@ -559,27 +681,53 @@ fn nonNegScanBlock(
             }
             for (a.targets, a.values) |t, v| {
                 if (t.* != .name) continue;
+                if (biv) |b| {
+                    if (std.mem.eql(u8, t.name.ident, b.name)) {
+                        // The loop shape proved this IV bounded; only its
+                        // increment may write it, and it keeps the cap. Any
+                        // other write breaks the proof.
+                        if (boundedIncrement(b.name, v)) {
+                            try nonNegObserve(alloc, widths, b.name, b.cap, changed);
+                        } else {
+                            try nonNegRaise(alloc, widths, b.name, changed);
+                        }
+                        continue;
+                    }
+                }
                 try nonNegObserve(alloc, widths, t.name.ident, nonNegWidth(widths, results, v), changed);
             }
         },
         // A name bound by any of these takes a value this pass does not model.
         .global_decl => |d| for (d.names) |n| try nonNegRaise(alloc, widths, n.ident, changed),
         .num_for => |f| {
-            try nonNegRaise(alloc, widths, f.var_name, changed);
-            try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled);
+            // The driver keeps the IV inside the closed interval between
+            // `start` and `stop` (inclusive stop, either sign of step), so
+            // provably non-negative bounds prove the IV. A body write only
+            // widens the join, which stays sound.
+            const start_w = nonNegWidth(widths, results, f.start);
+            const stop_w = nonNegWidth(widths, results, f.stop);
+            if (start_w != null and stop_w != null) {
+                try nonNegObserve(alloc, widths, f.var_name, @max(start_w.?, stop_w.?), changed);
+            } else {
+                try nonNegRaise(alloc, widths, f.var_name, changed);
+            }
+            try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv);
         },
         .gen_for => |f| {
             for (f.vars) |v| try nonNegRaise(alloc, widths, v, changed);
-            try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled);
+            try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv);
         },
-        .while_loop => |w| try nonNegScanBlock(alloc, widths, results, &w.body, changed, unmodeled),
-        .repeat_loop => |r| try nonNegScanBlock(alloc, widths, results, &r.body, changed, unmodeled),
-        .do_block => |d| try nonNegScanBlock(alloc, widths, results, &d.body, changed, unmodeled),
+        .while_loop => |w| {
+            const inner = try matchBoundedWhile(alloc, widths, results, w.cond, &w.body, changed);
+            try nonNegScanBlock(alloc, widths, results, &w.body, changed, unmodeled, inner orelse biv);
+        },
+        .repeat_loop => |r| try nonNegScanBlock(alloc, widths, results, &r.body, changed, unmodeled, biv),
+        .do_block => |d| try nonNegScanBlock(alloc, widths, results, &d.body, changed, unmodeled, biv),
         .if_stmt => |f| {
             if (f.binding) |b| try nonNegRaise(alloc, widths, b.name, changed);
-            try nonNegScanBlock(alloc, widths, results, &f.then, changed, unmodeled);
-            for (f.elseifs) |ei| try nonNegScanBlock(alloc, widths, results, &ei.body, changed, unmodeled);
-            if (f.else_body) |eb| try nonNegScanBlock(alloc, widths, results, &eb, changed, unmodeled);
+            try nonNegScanBlock(alloc, widths, results, &f.then, changed, unmodeled, biv);
+            for (f.elseifs) |ei| try nonNegScanBlock(alloc, widths, results, &ei.body, changed, unmodeled, biv);
+            if (f.else_body) |eb| try nonNegScanBlock(alloc, widths, results, &eb, changed, unmodeled, biv);
         },
         // A nested function body can rebind names this one holds, and this pass
         // does not follow it. Refuse the WHOLE function rather than answer for
@@ -637,7 +785,7 @@ fn nonNegativeNames(
     var round: usize = 0;
     while (changed and !unmodeled and round < nonneg_rounds) : (round += 1) {
         changed = false;
-        try nonNegScanBlock(alloc, &widths, results, body, &changed, &unmodeled);
+        try nonNegScanBlock(alloc, &widths, results, body, &changed, &unmodeled, null);
     }
     // Not converged, or a construct this pass does not model: answer nothing.
     if (unmodeled or changed) {
@@ -838,4 +986,88 @@ test "range: an application is bounded by the retained derivation and by nothing
     var relabelled = Reach{ .derivation = .{ .params = escaped.params, .expr = call } };
     const nested = Lookup{ .ctx = &relabelled, .of = Reach.widthOfName, .result = Reach.derivationOfCallee };
     try std.testing.expectEqual(@as(?u8, null), widthOfExpr(nested, call));
+}
+
+/// Parse `source` as a module and answer the settled module-scope width of
+/// `name`, or null when the analysis proves nothing.
+fn testModuleWidth(alloc: std.mem.Allocator, source: []const u8, name: []const u8) !?u8 {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var lexer = Lexer.init(source, "bounded.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    const module = try alloc.create(ast.Module);
+    module.* = try parser.parse_module();
+    var widths = try widthsOfModule(alloc, &module.body, &.{});
+    defer widths.deinit(alloc);
+    return widths.get(name);
+}
+
+test "range: a canonical while counter is bounded by its loop shape" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `i` runs 1..99 in the body and holds 100 after the final increment:
+    // width 7 covers the bound, plus one for the step.
+    const w = try testModuleWidth(alloc, "i = 1\nwhile i < 100\n    i = i + 1\n", "i");
+    try std.testing.expectEqual(@as(?u8, 8), w);
+}
+
+test "range: a while counter with a negative start proves nothing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const w = try testModuleWidth(alloc, "i = 0 - 1\nwhile i < 100\n    i = i + 1\n", "i");
+    try std.testing.expectEqual(@as(?u8, null), w);
+}
+
+test "range: a while counter with an unknown bound proves nothing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const w = try testModuleWidth(alloc, "i = 1\nwhile i < n\n    i = i + 1\n", "i");
+    try std.testing.expectEqual(@as(?u8, null), w);
+}
+
+test "range: a while counter with a non-unit step stays bounded" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Step 3: the cap is max(bound, step) + 1, still 8 for bound 100.
+    const w = try testModuleWidth(alloc, "i = 1\nwhile i < 100\n    i = i + 3\n", "i");
+    try std.testing.expectEqual(@as(?u8, 8), w);
+}
+
+test "range: a while counter with an extra write proves nothing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const w = try testModuleWidth(alloc, "i = 1\nwhile i < 100\n    i = i + 1\n    i = 5\n", "i");
+    try std.testing.expectEqual(@as(?u8, null), w);
+}
+
+test "range: nested while counters keep independent bounds" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src = "i = 1\nwhile i < 100\n    j = 1\n    while j < 1000\n        j = j + 1\n    i = i + 1\n";
+    const wi = try testModuleWidth(alloc, src, "i");
+    const wj = try testModuleWidth(alloc, src, "j");
+    try std.testing.expectEqual(@as(?u8, 8), wi);
+    try std.testing.expectEqual(@as(?u8, 11), wj);
+}
+
+test "range: a num_for IV is bounded by its start and stop" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const w = try testModuleWidth(alloc, "for i = 1, 100\n    x = i\n", "i");
+    try std.testing.expectEqual(@as(?u8, 7), w);
 }

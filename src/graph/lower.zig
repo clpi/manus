@@ -16213,13 +16213,23 @@ fn dividendSign(
 ) dnir.DivisorSign {
     if (f64_op) return .unknown;
     if (tag != .div) return .unknown;
-    const relation = ctx.function orelse return .unknown;
+    const relation = ctx.function orelse return dividendSignModule(ctx, lhs);
+    // At module scope the lowerer sets a non-callable relation id; the module
+    // column answers there.
+    if (!ctx.graph.callable(relation)) return dividendSignModule(ctx, lhs);
     if (lhs.* == .name) {
         const subject = ctx.graph.bindingNamedIn(relation, lhs.name.ident) orelse return .unknown;
         if (ctx.graph.nonNegativeWidth(subject) == null) return .unknown;
         return .{ .binding = subject };
     }
     const width = ctx.graph.nonNegativeWidthOfExpr(relation, lhs) orelse return .unknown;
+    return .{ .derived = width };
+}
+
+/// Module-scope dividend: no relation exists, so the module column answers
+/// through `nonNegativeWidthOfExprModule`. The relation path above is unchanged.
+fn dividendSignModule(ctx: *LowerCtx, lhs: *const ast.Expr) dnir.DivisorSign {
+    const width = ctx.graph.nonNegativeWidthOfExprModule(lhs) orelse return .unknown;
     return .{ .derived = width };
 }
 

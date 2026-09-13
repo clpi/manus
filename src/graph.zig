@@ -4934,6 +4934,33 @@ pub const SemanticGraph = struct {
         return null;
     }
 
+    /// The proved bound on an EXPRESSION at module scope, over the module
+    /// column. The relation-scoped `nonNegativeWidthOfExpr` cannot serve
+    /// here: `bindingNamedIn` requires a callable relation and module code
+    /// has none.
+    pub fn nonNegativeWidthOfExprModule(self: *const SemanticGraph, expr: *const ast.Expr) ?u8 {
+        const value_range = @import("range.zig");
+        var reach = ModuleRangeReach{ .graph = self };
+        return value_range.widthOfExpr(reach.lookup(), expr);
+    }
+
+    /// Module scope's view of `ranges`, as the name lookup
+    /// `range.widthOfExpr` takes. No derivations: `widthsOfModule` settles
+    /// with none, so a consumer here reads the same answer the producer
+    /// gave — which is nothing for an application.
+    const ModuleRangeReach = struct {
+        graph: *const SemanticGraph,
+
+        fn lookup(self: *const ModuleRangeReach) @import("range.zig").Lookup {
+            return .{ .ctx = self, .of = widthOfName };
+        }
+
+        fn widthOfName(ctx: *const anyopaque, name: []const u8) ?u8 {
+            const self: *const ModuleRangeReach = @ptrCast(@alignCast(ctx));
+            return self.graph.moduleBindingWidth(name);
+        }
+    };
+
     /// The proved bound on a divisor-shaped EXPRESSION inside one relation.
     ///
     /// THE DERIVATION STAYS IN SEMA, and the layering gate is what said so:
