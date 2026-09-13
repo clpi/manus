@@ -8587,6 +8587,10 @@ pub const SemanticGraph = struct {
 
         fn scanBlock(self: *CompletionScan, b: *const ast.Block) error{OutOfMemory}!void {
             for (b.stmts) |*s| try self.scanStmt(s);
+            // THE TAIL: a body that is a single expression (`f = () 100 // d`)
+            // carries it as `tail_expr`, not as a statement. Missing it
+            // is missing the whole body.
+            if (b.tail_expr) |t| try self.scanExpr(t);
         }
 
         fn scanStmt(self: *CompletionScan, s: *const ast.Stmt) error{OutOfMemory}!void {

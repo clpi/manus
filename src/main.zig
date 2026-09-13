@@ -5038,6 +5038,12 @@ fn realizeReachedPartition(
     // entry's own lift is the closed world and this one is not.
     var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &graph });
     defer demand_plan.deinit();
+    if (std.c.getenv("IDOL_DEMAND_STATS") != null) {
+        std.debug.print("demand-stats: eliminated_calls={d} dead_stmts={d}\n", .{
+            demand_plan.eliminatedCalls(),
+            demand_plan.count(),
+        });
+    }
     try demand.prune(alloc, &ps.mod, &demand_plan);
     _ = try loop_closure.applyToModule(alloc, &ps.mod);
 
@@ -7106,6 +7112,12 @@ fn do_compile(
                 // instruction counts, and it must describe the shipped binary.
                 var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph });
                 defer demand_plan.deinit();
+                if (std.c.getenv("IDOL_DEMAND_STATS") != null) {
+                    std.debug.print("demand-stats: eliminated_calls={d} dead_stmts={d}\n", .{
+                        demand_plan.eliminatedCalls(),
+                        demand_plan.count(),
+                    });
+                }
                 try demand.prune(alloc, &ps.mod, &demand_plan);
                 // RUNG 3 at the LOOP -- see the executable lift above for why
                 // this needs no world fact and therefore reaches every artifact
@@ -7160,6 +7172,12 @@ fn do_compile(
                 // instruction counts, and it must describe the shipped binary.
                 var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph });
                 defer demand_plan.deinit();
+                if (std.c.getenv("IDOL_DEMAND_STATS") != null) {
+                    std.debug.print("demand-stats: eliminated_calls={d} dead_stmts={d}\n", .{
+                        demand_plan.eliminatedCalls(),
+                        demand_plan.count(),
+                    });
+                }
                 try demand.prune(alloc, &ps.mod, &demand_plan);
                 // RUNG 3 at the LOOP -- see the executable lift above. `--emit
                 // asm` is how the cycle benchmarks read instruction counts, so

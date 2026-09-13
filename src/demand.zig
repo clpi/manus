@@ -211,8 +211,39 @@ pub const Verdict = union(enum) {
 /// Keyed by POINTER because a statement has no id in this tree and two textually
 /// identical statements are different work. The AST outlives lowering, so the
 /// pointers stay valid for exactly as long as the plan is consulted.
+/// Count the call expressions in `e`.
+/// Called when the enclosing statement is marked dead: the statement died
+/// only because every value expression proved inert, so every call it
+/// contains was proven deletable. Each one is an eliminated call.
+fn countCalls(e: *const ast.Expr) u32 {
+    var n: u32 = 0;
+    switch (e.*) {
+        .call => |c| {
+            n += 1;
+            n += countCalls(c.func);
+            for (c.args) |a| n += countCalls(a);
+        },
+        .method_call => |m| {
+            n += 1;
+            n += countCalls(m.obj);
+            for (m.args) |a| n += countCalls(a);
+        },
+        .binop => |b| {
+            n += countCalls(b.lhs);
+            n += countCalls(b.rhs);
+        },
+        .unop => |u| n += countCalls(u.operand),
+        else => {},
+    }
+    return n;
+}
+
 pub const Plan = struct {
     dead: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Calls proven inert and deleted. Distinct from `dead.count()`: a single
+    /// dead statement may hold several calls, and most dead statements hold
+    /// none. This is the eliminated-CALL counter the benchmark reports.
+    calls_eliminated: u32 = 0,
     /// Statements after which a `break` is lawful — the SECOND candidate this
     /// module generates. See `earlyExitSites`.
     break_after: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
@@ -272,6 +303,10 @@ pub const Plan = struct {
 
     pub fn count(self: *const Plan) u32 {
         return @intCast(self.dead.count());
+    }
+
+    pub fn eliminatedCalls(self: *const Plan) u32 {
+        return self.calls_eliminated;
     }
 
     fn mark(self: *Plan, stmt: *const ast.Stmt) !void {
@@ -470,16 +505,27 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
         // O3 lives here, and it is the whole reason the graph is threaded in.
         // `.none` is the only card that discharges it. `.unknown` is an effect.
         //
-        // It discharges ONLY O3. An effect-free relation may still trap or
-        // diverge, and the graph has no separate application facts proving
-        // either impossible. A recursive relation with no world interaction
-        // deliberately publishes `effect = .none`; treating that as totality
-        // changed a hang into a return. Keep every call until exact trap and
-        // completion facts discharge O2 and O4 independently.
+        // O2 AND O4 live here too, discharged by their OWN cards, never by
+        // O3's. An effect-free relation may still trap or diverge: a
+        // recursive relation with no world interaction deliberately publishes
+        // `effect = .none`, and treating that as totality changed a hang into
+        // a return. The call deletes only when all three hold — effect-free,
+        // provably trap-free, provably completing — with inert operands and
+        // receiver.
         .call, .method_call => blk: {
             const graph = opts.graph orelse break :blk .has_effect;
-            const fact = applicationOf(graph, e) orelse break :blk .has_effect;
+            // THE OCCURRENCE THE CALL IS. `callByAst` confirms the index
+            // against the node's own kind and ast_ref; a miss refuses.
+            const occurrence = graph.callByAst(e) orelse break :blk .has_effect;
+            const fact = graph.application(occurrence) orelse break :blk .has_effect;
             if (fact.effect != .none) break :blk .has_effect;
+            // O2: a trapping application stays a trap. `effect = .none`
+            // never proved trap-freedom; only the explicit trap card does.
+            if (fact.trap != .none) break :blk .may_trap;
+            // O4: a nonterminating application stays nonterminating.
+            // `effect = .none` never proved completion; only the explicit
+            // completion card does.
+            if (fact.completion != .none) break :blk .may_not_terminate;
             const args: []const *ast.Expr = switch (e.*) {
                 .call => |c| c.args,
                 .method_call => |m| m.args,
@@ -487,7 +533,7 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
             };
             for (args) |a| if (inert(opts, a)) |b| break :blk b;
             if (e.* == .method_call) if (inert(opts, e.method_call.obj)) |b| break :blk b;
-            break :blk .may_not_terminate;
+            break :blk null;
         },
 
         // Reads through a place. The graph cannot express a place, so
@@ -496,23 +542,6 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
 
         else => .unsupported_shape,
     };
-}
-
-/// The checked application fact for a call expression, when the graph has one.
-fn applicationOf(
-    graph: *const semantic_graph.SemanticGraph,
-    e: *const ast.Expr,
-) ?*const semantic_graph.ApplicationFact {
-    var i: usize = 0;
-    while (i < graph.nodes.items.len) : (i += 1) {
-        const node = graph.nodes.items[i];
-        if (node.kind != .call) continue;
-        const ref = node.ast_ref orelse continue;
-        if (@as(*const ast.Expr, @ptrCast(@alignCast(ref))) != e) continue;
-        const occurrence = std.math.cast(semantic_graph.id, i) orelse return null;
-        return graph.application(occurrence);
-    }
-    return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1626,7 +1655,10 @@ fn transferStmt(w: *Walk, s: *const ast.Stmt, live: *Live) std.mem.Allocator.Err
                 }
             }
             if (w.deleting and all_dead and shaped and blocker == null) {
-                if (w.recording) try w.plan.mark(s);
+                if (w.recording) {
+                    try w.plan.mark(s);
+                    for (d.inits) |e| w.plan.calls_eliminated += countCalls(e);
+                }
                 return;
             }
             if (w.recording) {
@@ -1662,7 +1694,10 @@ fn transferStmt(w: *Walk, s: *const ast.Stmt, live: *Live) std.mem.Allocator.Err
             }
             const shaped = a.targets.len == a.values.len;
             if (w.deleting and plain and all_dead and shaped and blocker == null) {
-                if (w.recording) try w.plan.mark(s);
+                if (w.recording) {
+                    try w.plan.mark(s);
+                    for (a.values) |e| w.plan.calls_eliminated += countCalls(e);
+                }
                 return;
             }
             if (w.recording) {
@@ -1696,7 +1731,10 @@ fn transferStmt(w: *Walk, s: *const ast.Stmt, live: *Live) std.mem.Allocator.Err
                 try readsOf(live, x_expr);
                 return;
             }
-            if (w.recording) try w.plan.mark(s);
+            if (w.recording) {
+                try w.plan.mark(s);
+                w.plan.calls_eliminated += countCalls(x_expr);
+            }
         },
 
         .do_block => |d| try transferBlock(w, &d.body, live),
@@ -2438,7 +2476,12 @@ test "demand: O2 — effect-free application is not a trap proof" {
     try std.testing.expectEqual(@as(u32, 0), result.dead);
 }
 
-test "demand: an effect-free leaf still needs a completion proof" {
+test "demand: an effect-free leaf with completion and trap proofs deletes" {
+    // `triple` is effect-free, provably trap-free (`v * 3` cannot trap), and
+    // provably completing (no loop, no recursion, no unresolved calls), so
+    // the graph publishes all three cards and demand deletes the dead call.
+    // This is the optimization the O2/O4 negative controls bound: deletion
+    // happens if and only if all three facts hold.
     const result = try deadCountWithGraph(
         \\triple: i64 = (v: i64)
         \\    v * 3
@@ -2449,7 +2492,7 @@ test "demand: an effect-free leaf still needs a completion proof" {
         \\
     );
     try std.testing.expectEqual(@as(u32, 1), result.effect_free);
-    try std.testing.expectEqual(@as(u32, 0), result.dead);
+    try std.testing.expectEqual(@as(u32, 1), result.dead);
 }
 
 test "demand: O5 — a break inside the dead loop keeps it" {
