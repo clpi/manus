@@ -5278,7 +5278,9 @@ fn root(
         .ret_record = null,
     };
     defer ctx.deinit();
-    for (mod.body.stmts) |*stmt| switch (stmt.*) {
+    for (mod.body.stmts, 0..) |*stmt, i| {
+        try tryEmitBitReversePrologue(&ctx, mod.body.stmts, i);
+        switch (stmt.*) {
         .func_decl,
         .const_decl,
         .global_decl,
@@ -5290,7 +5292,8 @@ fn root(
         .directive,
         => {},
         else => try lowerStmt(&ctx, stmt, false),
-    };
+        }
+    }
     if (tail_result_demand.blockTailResult(&mod.body)) |tail| {
         if (status(&ctx, tail.expr)) {
             _ = try tryEmitTailDemandReturn(&ctx, &mod.body);
@@ -5809,6 +5812,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
         try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
+        try tryEmitBitReversePrologue(ctx, block.stmts, i);
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -7289,6 +7293,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
             return true;
         }
         try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
+        try tryEmitBitReversePrologue(ctx, block.stmts, i);
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
@@ -8395,6 +8400,263 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
     // consumer of that map treats a miss as "not compile-time known" and stays
     // conservative.
     if (ctx.const_ints.fetchRemove(step.idx)) |kv| ctx.alloc.free(kv.key);
+}
+
+/// BIT-REVERSE IDIOM → PARALLEL BIT-SWAP DATAFLOW.
+///
+/// Recognizes
+///
+///     x = <non-negative expr>     (stmts[at-3])
+///     r = 0                       (stmts[at-2])
+///     i = 0                       (stmts[at-1])
+///     while i < N                 (stmts[at]; 1 <= N <= 64, literal trip count)
+///         r = r * 2 + (x & 1)     (accumulate; must precede the halving)
+///         x = x / 2               (or x = x >> 1)
+///         i = i + 1
+///
+/// and replaces the N-iteration serial recurrence with the parallel
+/// bit-swap dataflow — the scalar form of what the oracle does when it
+/// vectorizes this kernel (observed: clang dissolves the loop-carried chain
+/// into parallel per-bit dataflow and vectorizes across outer iterations).
+///
+/// WHY THIS IS SOUND. Write x_k, r_k for the values after k iterations, x_0
+/// the loop-entry value, r_0 = 0. The halving is truncating division and x is
+/// proved non-negative (below), so x_{k+1} = x_k >> 1 and x_k = x_0 >> k by
+/// induction. Then r_{k+1} = 2*r_k + bit_k(x_0), so r_N is the low N bits of
+/// x_0 reversed. The emitted dataflow computes reverse64(x_0) >> (64-N);
+/// bit j of that is bit (N-1-j) of x_0 for j < N and 0 above — exactly r_N,
+/// with no dependence chain left for the CPU to serialize on.
+/// Two's-complement wrap in `r*2` cannot change the answer: the closed form
+/// never multiplies.
+///
+/// The non-negativity of x is the load-bearing fact: it makes `/2` the
+/// logical shift (so each halving is exact) and makes the post-loop
+/// `x = x_0 >> N` exact. It comes from ONE producer —
+/// `ctx.graph.nonNegativeWidthOfExpr` over the pre-loop binding's right-hand
+/// expression, the same `ranges` column the divisor-sign machinery reads. A
+/// null answer declines the transform; nothing is re-derived here.
+///
+/// THE PROLOGUE IS ADDITIVE, like the vector reduction above it: it stores
+/// the reversed value into `r`, the shifted value into `x`, and N into `i`,
+/// and then the ordinary lowering of the SAME loop runs unchanged — with the
+/// trip test false on entry, so zero iterations execute. Every observable
+/// behavior of the loop (values on exit; no break/continue admitted) is
+/// whatever it already was. When any condition fails this emits nothing and
+/// the loop lowers exactly as it does today.
+fn tryEmitBitReversePrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!void {
+    if (at < 3) return;
+    const ws = switch (stmts[at]) {
+        .while_loop => |w| w,
+        else => return,
+    };
+    if (ws.body.tail_expr != null) return;
+    if (ws.body.stmts.len != 3) return;
+
+    const cb = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return,
+    };
+    if (cb.op != .lt and cb.op != .leq) return;
+    const idx = identOf(cb.lhs) orelse return;
+
+    const hi = loopUpperBound(ctx.graph, ws.cond, idx) orelse return;
+    const lo = literalBindingOf(ctx.graph, &stmts[at - 1], idx) orelse return;
+    if (lo != 0) return;
+    const n: i64 = hi - lo + 1;
+    if (n < 1 or n > 64) return;
+
+    // Exactly one accumulate, one halving, one index increment.
+    var accum: ?BitRevParts = null;
+    var accum_at: usize = 3;
+    for (ws.body.stmts, 0..) |*st, k| {
+        if (bitRevAccum(ctx.graph, st)) |p| {
+            if (accum != null) return;
+            accum = p;
+            accum_at = k;
+        }
+    }
+    const ap = accum orelse return;
+    if (std.mem.eql(u8, ap.acc, idx) or std.mem.eql(u8, ap.src, idx)) return;
+    if (std.mem.eql(u8, ap.acc, ap.src)) return;
+
+    var halve_at: usize = 3;
+    var incr_at: usize = 3;
+    for (ws.body.stmts, 0..) |*st, k| {
+        if (k == accum_at) continue;
+        if (bitRevHalve(ctx.graph, st, ap.src)) {
+            if (halve_at != 3) return;
+            halve_at = k;
+        } else if (stepIsIncrementOfOne(ctx.graph, st, idx)) {
+            if (incr_at != 3) return;
+            incr_at = k;
+        } else return;
+    }
+    if (halve_at == 3 or incr_at == 3) return;
+    // The accumulate must read x BEFORE the halving shifts it; the reversed
+    // order computes the reverse of bits [1,N], not [0,N).
+    if (accum_at > halve_at) return;
+
+    // The three preceding statements: x = <non-negative>, r = 0, i = 0.
+    const r_init = literalBindingOf(ctx.graph, &stmts[at - 2], ap.acc) orelse return;
+    if (r_init != 0) return;
+    const xa = switch (stmts[at - 3]) {
+        .assign => |a| a,
+        else => return,
+    };
+    if (xa.targets.len != 1 or xa.values.len != 1) return;
+    const xt = identOf(xa.targets[0]) orelse return;
+    if (!std.mem.eql(u8, xt, ap.src)) return;
+    const relation = ctx.function orelse return;
+    if (ctx.graph.nonNegativeWidthOfExpr(relation, xa.values[0]) == null) return;
+
+    const r_slot = ctx.locals.get(ap.acc) orelse return;
+    const x_slot = ctx.locals.get(ap.src) orelse return;
+    const i_slot = ctx.locals.get(idx) orelse return;
+    if (slotIsNonInteger(ctx, r_slot)) return;
+    if (slotIsNonInteger(ctx, x_slot)) return;
+    if (slotIsNonInteger(ctx, i_slot)) return;
+    if (r_slot == x_slot or r_slot == i_slot or x_slot == i_slot) return;
+
+    // Hoist the five swap masks; each is used twice per step.
+    const rev_masks = [_]i64{
+        0x5555555555555555,
+        0x3333333333333333,
+        0x0F0F0F0F0F0F0F0F,
+        0x00FF00FF00FF00FF,
+        0x0000FFFF0000FFFF,
+    };
+    const rev_shifts = [_]i64{ 1, 2, 4, 8, 16 };
+    var mask_tmps: [5]u32 = undefined;
+    for (rev_masks, 0..) |m, k| {
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .@"const", .result = t, .lhs = .{ .i64 = m }, .ty = .i64 });
+        mask_tmps[k] = t;
+    }
+
+    var cur: dnir.Value = .{ .local = x_slot };
+    for (rev_shifts, 0..) |sh, k| {
+        const shr_t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = shr_t, .binop = .shr, .lhs = cur, .rhs = .{ .i64 = sh }, .ty = .i64 });
+        const a1 = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = a1, .binop = .band, .lhs = .{ .temp = shr_t }, .rhs = .{ .temp = mask_tmps[k] }, .ty = .i64 });
+        const a2 = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = a2, .binop = .band, .lhs = cur, .rhs = .{ .temp = mask_tmps[k] }, .ty = .i64 });
+        const shl_t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = shl_t, .binop = .shl, .lhs = .{ .temp = a2 }, .rhs = .{ .i64 = sh }, .ty = .i64 });
+        const or_t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = or_t, .binop = .bor, .lhs = .{ .temp = a1 }, .rhs = .{ .temp = shl_t }, .ty = .i64 });
+        cur = .{ .temp = or_t };
+    }
+    const shr32 = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = shr32, .binop = .shr, .lhs = cur, .rhs = .{ .i64 = 32 }, .ty = .i64 });
+    const shl32 = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = shl32, .binop = .shl, .lhs = cur, .rhs = .{ .i64 = 32 }, .ty = .i64 });
+    const full = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = full, .binop = .bor, .lhs = .{ .temp = shr32 }, .rhs = .{ .temp = shl32 }, .ty = .i64 });
+    // r = reverse64(x) >> (64 - n)
+    const r_new = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = r_new, .binop = .shr, .lhs = .{ .temp = full }, .rhs = .{ .i64 = 64 - n }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = r_slot, .lhs = .{ .temp = r_new }, .ty = .any });
+    // x = x >> n — exact because x >= 0. n = 64 halves every non-negative
+    // i64 word to zero, and `lsr #64` would encode as `lsr #0`.
+    if (n == 64) {
+        try ctx.emit(.{ .op = .store_local, .result = x_slot, .lhs = .{ .i64 = 0 }, .ty = .any });
+    } else {
+        const x_new = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = x_new, .binop = .shr, .lhs = .{ .local = x_slot }, .rhs = .{ .i64 = n }, .ty = .i64 });
+        try ctx.emit(.{ .op = .store_local, .result = x_slot, .lhs = .{ .temp = x_new }, .ty = .any });
+    }
+    // i = n: the loop below is then vacuous and lowers unchanged.
+    try ctx.emit(.{ .op = .store_local, .result = i_slot, .lhs = .{ .i64 = n }, .ty = .any });
+
+    // r, x and i are no longer the values the preceding statements bound.
+    // Dropping the entries keeps `const_ints` from answering stale literals
+    // downstream; every consumer treats a miss as "not compile-time known".
+    for ([_][]const u8{ ap.acc, ap.src, idx }) |name| {
+        if (ctx.const_ints.fetchRemove(name)) |kv| ctx.alloc.free(kv.key);
+    }
+}
+
+const BitRevParts = struct { acc: []const u8, src: []const u8 };
+
+/// `r = r * 2 + (x & 1)` in either add-operand order, or null. Returns the
+/// accumulator and the source being reversed.
+fn bitRevAccum(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt) ?BitRevParts {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const acc = identOf(a.targets[0]) orelse return null;
+    const b = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op != .add) return null;
+    if (bitRevAccumOrder(graph, b.lhs, b.rhs, acc)) |p| return p;
+    if (bitRevAccumOrder(graph, b.rhs, b.lhs, acc)) |p| return p;
+    return null;
+}
+
+/// `mul_side = acc * 2` (either order) and `band_side = src & 1` (either
+/// order), or null. The `2` and the `1` are graph exact-i64 facts; the AST
+/// supplies only shape and name identity.
+fn bitRevAccumOrder(
+    graph: *const semantic_graph.SemanticGraph,
+    mul_side: *const ast.Expr,
+    band_side: *const ast.Expr,
+    acc: []const u8,
+) ?BitRevParts {
+    const m = switch (mul_side.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (m.op != .mul) return null;
+    const mul_ok = blk: {
+        if (identOf(m.lhs)) |l| {
+            if (std.mem.eql(u8, l, acc) and graph.exactI64OfExpr(m.rhs) == @as(?i64, 2)) break :blk true;
+        }
+        if (identOf(m.rhs)) |r| {
+            if (std.mem.eql(u8, r, acc) and graph.exactI64OfExpr(m.lhs) == @as(?i64, 2)) break :blk true;
+        }
+        break :blk false;
+    };
+    if (!mul_ok) return null;
+    const bd = switch (band_side.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bd.op != .band) return null;
+    if (identOf(bd.lhs)) |l| {
+        if (graph.exactI64OfExpr(bd.rhs) == @as(?i64, 1)) return .{ .acc = acc, .src = l };
+    }
+    if (identOf(bd.rhs)) |r| {
+        if (graph.exactI64OfExpr(bd.lhs) == @as(?i64, 1)) return .{ .acc = acc, .src = r };
+    }
+    return null;
+}
+
+/// `x = x / 2` or `x = x >> 1`, or false. The division is truncating; the
+/// caller proves x non-negative, under which both spellings halve exactly.
+fn bitRevHalve(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt, x: []const u8) bool {
+    const a = switch (st.*) {
+        .assign => |v| v,
+        else => return false,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return false;
+    const t = identOf(a.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, t, x)) return false;
+    const b = switch (a.values[0].*) {
+        .binop => |v| v,
+        else => return false,
+    };
+    const l = identOf(b.lhs) orelse return false;
+    if (!std.mem.eql(u8, l, x)) return false;
+    return switch (b.op) {
+        .div => graph.exactI64OfExpr(b.rhs) == @as(?i64, 2),
+        .rshift => graph.exactI64OfExpr(b.rhs) == @as(?i64, 1),
+        else => false,
+    };
 }
 
 /// True when `expr` holds a BOOLEAN rather than a number.
