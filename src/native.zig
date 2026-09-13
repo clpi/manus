@@ -4276,12 +4276,38 @@ const Arm64Compiler = struct {
                 },
                 else => {
                     if (!ins.ty.is_integer()) return self.refuse(@src());
-                    const reg = preferred_result orelse try self.allocReg();
-                    if (preferred_result != null) self.claimReg(reg);
                     const val = switch (ins.lhs) {
                         .i64 => |v| v,
                         else => return self.refuse(@src()),
                     };
+                    // A loop-invariant constant already sits in a reserved preheader
+                    // register; reuse it instead of re-emitting the mov/movk chain
+                    // every iteration. The constant arms of evalDnirValue consult
+                    // imm_hoist; this op did not, so the hoist never paid off for
+                    // const-defined values (bit-reverse swap masks, mulh loop
+                    // constants). The temp must die inside the hoisting loop:
+                    // immHoistExit frees the register at the latch, and temps
+                    // would otherwise name a reallocated register past it. The
+                    // hoisted register is a marked home, so releaseReg,
+                    // sweepGpLive, and ensureRegLiveRemap treat it as unfreeable
+                    // and reload-into-itself, the same guarantee the constant
+                    // arms already rely on.
+                    if (self.hoist_depth > 0) {
+                        if (self.imm_hoist.get(val)) |hr| {
+                            const latch = self.hoist_active[self.hoist_depth - 1].latch;
+                            const last_use = if (ins.result) |t|
+                                self.value_free_at.get(t) orelse std.math.maxInt(u32)
+                            else
+                                0;
+                            if (last_use <= latch) {
+                                try self.ensureRegLive(hr);
+                                if (ins.result) |t| try temps.put(self.alloc, t, hr);
+                                return;
+                            }
+                        }
+                    }
+                    const reg = preferred_result orelse try self.allocReg();
+                    if (preferred_result != null) self.claimReg(reg);
                     try self.emitMovImm(reg, val);
                     if (ins.result) |t| try temps.put(self.alloc, t, reg);
                 },
