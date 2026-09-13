@@ -1,0 +1,774 @@
+jws: i64 = (text: str, pos: i64)
+  n = text:len()
+  i = pos
+  while i <= n
+    c = text:byte(i)
+    if c == 32 or c == 9 or c == 10 or c == 13
+      i = i + 1
+    else
+      return i
+  i
+
+jstrend: i64 = (text: str, pos: i64)
+  n = text:len()
+  i = pos + 1
+  while i <= n
+    c = text:byte(i)
+    if c == 92
+      i = i + 2
+    else
+      if c == 34
+        return i + 1
+      i = i + 1
+  0
+
+jclose: i64 = (text: str, pos: i64, open: i64, close: i64)
+  n = text:len()
+  depth = 1
+  i = pos + 1
+  while i <= n
+    d = text:byte(i)
+    if d == 34
+      e = jstrend(text, i)
+      if e == 0
+        return 0
+      i = e
+    else
+      if d == open
+        depth = depth + 1
+        i = i + 1
+      else
+        if d == close
+          depth = depth - 1
+          if depth == 0
+            return i + 1
+          i = i + 1
+        else
+          i = i + 1
+  0
+
+jskip: i64 = (text: str, pos: i64)
+  i = jws(text, pos)
+  n = text:len()
+  if i > n
+    return 0
+  c = text:byte(i)
+  if c == 34
+    return jstrend(text, i)
+  if c == 123
+    return jclose(text, i, 123, 125)
+  if c == 91
+    return jclose(text, i, 91, 93)
+  i = i + 1
+  while i <= n
+    d = text:byte(i)
+    if d == 44 or d == 125 or d == 93 or d == 32 or d == 9 or d == 10 or d == 13
+      return i
+    i = i + 1
+  i
+
+jhexdig: i64 = (c: i64)
+  if c >= 48 and c <= 57
+    return c - 48
+  if c >= 97 and c <= 102
+    return c - 87
+  if c >= 65 and c <= 70
+    return c - 55
+  -1
+
+jhex4: i64 = (raw: str, pos: i64)
+  v = 0
+  k = 0
+  while k < 4
+    d = jhexdig(raw:byte(pos + k))
+    if d < 0
+      return -1
+    v = v * 16 + d
+    k = k + 1
+  v
+
+jdec: str = (raw: str)
+  asc = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz\{|\}~"
+  n = raw:len()
+  if n < 2
+    return raw
+  if raw:byte(1) != 34
+    return raw
+  if raw:byte(n) != 34
+    return raw
+  out = ""
+  i = 2
+  while i < n
+    c = raw:byte(i)
+    if c == 92
+      i = i + 1
+      e = raw:byte(i)
+      if e == 110
+        out = "{out}\n"
+      else
+        if e == 116
+          out = "{out}\t"
+        else
+          if e == 114
+            out = "{out}\r"
+          else
+            if e == 117
+              v = jhex4(raw, i + 1)
+              if v >= 32 and v <= 126
+                ch = asc:sub(v - 31, v - 31)
+                out = "{out}{ch}"
+              else
+                out = "{out}?"
+              i = i + 4
+            else
+              if e >= 32 and e <= 126
+                ch = asc:sub(e - 31, e - 31)
+                out = "{out}{ch}"
+              else
+                out = "{out}?"
+    else
+      ch = raw:sub(i, i)
+      out = "{out}{ch}"
+    i = i + 1
+  out
+
+jesc: str = (s: str)
+  hex = "0123456789abcdef"
+  out = "\""
+  i = 1
+  n = s:len()
+  while i <= n
+    c = s:byte(i)
+    if c == 34
+      out = "{out}\\\""
+    else
+      if c == 92
+        out = "{out}\\\\"
+      else
+        if c == 10
+          out = "{out}\\n"
+        else
+          if c == 13
+            out = "{out}\\r"
+          else
+            if c == 9
+              out = "{out}\\t"
+            else
+              if c < 32
+                h1 = hex:sub(c / 16 + 1, c / 16 + 1)
+                h2 = hex:sub(c % 16 + 1, c % 16 + 1)
+                out = "{out}\\u00{h1}{h2}"
+              else
+                ch = s:sub(i, i)
+                out = "{out}{ch}"
+    i = i + 1
+  out = "{out}\""
+  out
+
+jget: str = (text: str, path: str)
+  dot = path:find(".", 1, 1)
+  head = path
+  rest = ""
+  if dot > 0
+    head = path:sub(1, dot - 1)
+    rest = path:sub(dot + 1, path:len())
+  n = text:len()
+  i = jws(text, 1)
+  if i > n
+    return ""
+  if text:byte(i) != 123
+    return ""
+  i = i + 1
+  while true
+    i = jws(text, i)
+    if i > n
+      return ""
+    b = text:byte(i)
+    if b == 125
+      return ""
+    if b != 34
+      return ""
+    e = jstrend(text, i)
+    if e == 0
+      return ""
+    k = jdec(text:sub(i, e - 1))
+    i = jws(text, e)
+    if i > n
+      return ""
+    if text:byte(i) != 58
+      return ""
+    vs = jws(text, i + 1)
+    ve = jskip(text, vs)
+    if ve == 0
+      return ""
+    if k == head
+      if rest == ""
+        return text:sub(vs, ve - 1)
+      return jget(text:sub(vs, ve - 1), rest)
+    i = jws(text, ve)
+    if i > n
+      return ""
+    b2 = text:byte(i)
+    if b2 == 44
+      i = i + 1
+    else
+      return ""
+  ""
+
+jhas: i64 = (text: str, path: str)
+  if jget(text, path) == ""
+    0
+  else
+    1
+
+jcount: i64 = (text: str, path: str)
+  raw = jget(text, path)
+  if raw == ""
+    return -1
+  n = raw:len()
+  i = jws(raw, 1)
+  if i > n
+    return -1
+  if raw:byte(i) != 91
+    return -1
+  i = jws(raw, i + 1)
+  if i > n
+    return -1
+  if raw:byte(i) == 93
+    return 0
+  count = 0
+  while true
+    ve = jskip(raw, i)
+    if ve == 0
+      return -1
+    count = count + 1
+    i = jws(raw, ve)
+    if i > n
+      return -1
+    b = raw:byte(i)
+    if b == 44
+      i = jws(raw, i + 1)
+    else
+      if b == 93
+        return count
+      return -1
+  -1
+
+jitem: str = (text: str, path: str, idx: i64)
+  raw = jget(text, path)
+  if raw == ""
+    return ""
+  n = raw:len()
+  i = jws(raw, 1)
+  if i > n
+    return ""
+  if raw:byte(i) != 91
+    return ""
+  i = jws(raw, i + 1)
+  if i > n
+    return ""
+  k = 1
+  while true
+    ve = jskip(raw, i)
+    if ve == 0
+      return ""
+    if k == idx
+      return raw:sub(i, ve - 1)
+    k = k + 1
+    i = jws(raw, ve)
+    if i > n
+      return ""
+    b = raw:byte(i)
+    if b == 44
+      i = jws(raw, i + 1)
+      if i > n
+        return ""
+    else
+      return ""
+  ""
+
+jcountkey: i64 = (text: str, key: str)
+  n = text:len()
+  i = jws(text, 1)
+  if i > n
+    return -1
+  if text:byte(i) != 123
+    return -1
+  i = i + 1
+  found = 0
+  while true
+    i = jws(text, i)
+    if i > n
+      return -1
+    b = text:byte(i)
+    if b == 125
+      return found
+    if b != 34
+      return -1
+    e = jstrend(text, i)
+    if e == 0
+      return -1
+    if jdec(text:sub(i, e - 1)) == key
+      found = found + 1
+    i = jws(text, e)
+    if i > n
+      return -1
+    if text:byte(i) != 58
+      return -1
+    ve = jskip(text, jws(text, i + 1))
+    if ve == 0
+      return -1
+    i = jws(text, ve)
+    if i > n
+      return -1
+    b2 = text:byte(i)
+    if b2 == 44
+      i = i + 1
+    else
+      if b2 == 125
+        return found
+      return -1
+  -1
+
+shq: str = (s: str)
+  out = "'"
+  i = 1
+  n = s:len()
+  while i <= n
+    c = s:sub(i, i)
+    if c == "'"
+      out = "{out}'\''"
+    else
+      out = "{out}{c}"
+    i = i + 1
+  out = "{out}'"
+  out
+
+werr: str = (idraw: str, code: i64, reason: str, next: str, producer: str, notdone: str)
+  er = jesc(reason)
+  en = jesc(next)
+  ep = jesc(producer)
+  msg = "\{\"reason\":{er},\"next\":{en},\"producer\":{ep},\"not-performed\":{notdone}\}"
+  em = jesc(msg)
+  "\{\"jsonrpc\":\"2.0\",\"id\":{idraw},\"error\":\{\"code\":{code},\"message\":{em}\}\}"
+
+pok: str = (idraw: str, payload: str)
+  et = jesc(payload)
+  "\{\"jsonrpc\":\"2.0\",\"id\":{idraw},\"result\":\{\"content\":[\{\"type\":\"text\",\"text\":{et}\}]\}\}"
+
+phash: str = (file: str)
+  qf = shq(file)
+  line = gatecap("sha256sum -- {qf} 2>/dev/null")
+  if line:len() >= 64
+    return line:sub(1, 64)
+  ""
+
+wprov: str = (shash: str, bhash: str, rev: str)
+  es = jesc(shash)
+  eb = jesc(bhash)
+  er = jesc(rev)
+  "\{\"subject_sha256\":{es},\"world_binary_sha256\":{eb},\"world_revision\":{er}\}"
+
+rbin: str = ()
+  cand = env("IDOL_WORLD_BIN") or ""
+  if cand != ""
+    qc = shq(cand)
+    if os.execute("test -x {qc} 2>/dev/null") == 0
+      return cand
+  if os.execute("test -x ./zig-out/bin/idol 2>/dev/null") == 0
+    return "./zig-out/bin/idol"
+  ""
+
+riscnamechar: i64 = (c: i64)
+  if c >= 65 and c <= 90
+    return 1
+  if c >= 97 and c <= 122
+    return 1
+  if c >= 48 and c <= 57
+    return 1
+  0
+
+ropstr: str = (op: i64)
+  if op == 43
+    return "+"
+  if op == 45
+    return "-"
+  if op == 42
+    return "*"
+  if op == 47
+    return "/"
+  if op == 38
+    return "&"
+  ""
+
+roktarget: i64 = (t: str)
+  n = t:len()
+  if n == 0
+    return 0
+  i = 1
+  while i <= n
+    if riscnamechar(t:byte(i)) == 0
+      return 0
+    i = i + 1
+  1
+
+rbindidx: i64 = (src: str, tgt: str)
+  n = compiler.opt.licm.linecount(src)
+  i = 0
+  while i < n
+    line = compiler.opt.licm.unpad(compiler.opt.licm.lineat(src, i))
+    if compiler.opt.licm.asgtgt(line) == tgt
+      return i
+    i = i + 1
+  0 - 1
+
+rbindnum: i64 = (src: str, tgt: str)
+  n = compiler.opt.licm.linecount(src)
+  i = 0
+  while i < n
+    line = compiler.opt.licm.unpad(compiler.opt.licm.lineat(src, i))
+    if compiler.opt.licm.asgtgt(line) == tgt
+      return i + 1
+    i = i + 1
+  0
+
+rtargetreg: str = (src: str, tgt: str)
+  idx = rbindidx(src, tgt)
+  if idx >= 0
+    return "binding"
+  n = compiler.opt.licm.linecount(src)
+  i = 0
+  while i < n
+    line = compiler.opt.licm.unpad(compiler.opt.licm.lineat(src, i))
+    if line:find(tgt, 1, 1) > 0
+      return "mention"
+    i = i + 1
+  ""
+
+rwitfold: str = (tgt: str, inputexpr: str, outputexpr: str)
+  et = jesc(tgt)
+  ei = jesc(inputexpr)
+  eo = jesc(outputexpr)
+  "\{\"schema\":\"recover-witness-v1\",\"transform\":\"compiler.opt.licm.foldlit\",\"target\":{et},\"input\":\{\"stage\":\"after-zerotrip\",\"expression\":{ei}\},\"output\":\{\"stage\":\"after-licm\",\"expression\":{eo}\},\"evidence\":[\"subject-source\",\"actual-pass-stage-delta\",\"retained-optimized-binding\"]\}"
+
+rwitlicm: str = (tgt: str, inputexpr: str, outputexpr: str)
+  et = jesc(tgt)
+  ei = jesc(inputexpr)
+  eo = jesc(outputexpr)
+  "\{\"schema\":\"recover-witness-v1\",\"transform\":\"compiler.opt.licm.sweep\",\"kind\":\"licm-hoist\",\"target\":{et},\"input\":\{\"stage\":\"after-zerotrip\",\"expression\":{ei}\},\"output\":\{\"stage\":\"after-licm\",\"expression\":{eo}\},\"evidence\":[\"subject-source\",\"actual-pass-stage-delta\",\"retained-optimized-binding\"]\}"
+
+rfoldvalue: str = (s0: str, s1: str, tgt: str)
+  a = rbindidx(s0, tgt)
+  b = rbindidx(s1, tgt)
+  if a < 0 or b < 0
+    return ""
+  ea = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s0, a))
+  eb = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, b))
+  ha = compiler.opt.licm.asgrhs(ea)
+  hb = compiler.opt.licm.asgrhs(eb)
+  if compiler.opt.licm.oknum(ha) == 1
+    return ""
+  if compiler.opt.licm.oknum(hb) == 0
+    return ""
+  if compiler.opt.licm.parsenum(hb) > 2147483647
+    return ""
+  if compiler.opt.licm.parsenum(hb) < 0 - 2147483647
+    return ""
+  "\{\"value\":{hb}\}"
+
+rhoistvalue: str = (s0: str, s1: str, tgt: str)
+  a = rbindidx(s0, tgt)
+  b = rbindidx(s1, tgt)
+  if a < 0 or b < 0
+    return ""
+  ea = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s0, a))
+  eb = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, b))
+  if compiler.opt.licm.iswhile(ea) == 1
+    return ""
+  if compiler.opt.licm.iswhile(eb) == 1
+    return ""
+  if compiler.opt.licm.asgrhs(eb) != compiler.opt.licm.asgrhs(ea)
+    return ""
+  if compiler.opt.licm.rhsop(compiler.opt.licm.asgrhs(ea)) == ""
+    return ""
+  op = compiler.opt.licm.rhsop(compiler.opt.licm.asgrhs(ea))
+  la = compiler.opt.licm.rhsa(compiler.opt.licm.asgrhs(ea))
+  le = compiler.opt.licm.rhse(compiler.opt.licm.asgrhs(ea))
+  va = ""
+  ve = ""
+  if compiler.opt.licm.oknum(la) == 1
+    va = la
+  else
+    ca = rbindidx(s1, la)
+    if ca < 0
+      return ""
+    ra = compiler.opt.licm.asgrhs(compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, ca)))
+    if compiler.opt.licm.oknum(ra) == 0
+      return ""
+    va = ra
+  if compiler.opt.licm.oknum(le) == 1
+    ve = le
+  else
+    ce = rbindidx(s1, le)
+    if ce < 0
+      return ""
+    re = compiler.opt.licm.asgrhs(compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, ce)))
+    if compiler.opt.licm.oknum(re) == 0
+      return ""
+    ve = re
+  ia = compiler.opt.licm.parsenum(va)
+  ie = compiler.opt.licm.parsenum(ve)
+  if ia > 2147483647 or ia < 0 - 2147483647
+    return ""
+  if ie > 2147483647 or ie < 0 - 2147483647
+    return ""
+  v = 0
+  if op == 43
+    v = ia + ie
+  else
+    if op == 45
+      v = ia - ie
+    else
+      if op == 42
+        v = ia * ie
+      else
+        if op == 47
+          if ie == 0
+            return ""
+          v = ia / ie
+        else
+          return ""
+  ops = ropstr(op)
+  "\{\"value\":{v},\"operands\":[\"{va}\",\"{ops}\",\"{ve}\"]\}"
+
+rtempvalue: str = (s0: str, s1: str, tgt: str)
+  b = rbindidx(s1, tgt)
+  if b < 0
+    return ""
+  if rbindidx(s0, tgt) >= 0
+    return ""
+  line = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, b))
+  rhs = compiler.opt.licm.asgrhs(line)
+  if compiler.opt.licm.rhsop(rhs) != 43
+    return ""
+  la = compiler.opt.licm.rhsa(rhs)
+  le = compiler.opt.licm.rhse(rhs)
+  va = ""
+  ve = ""
+  if compiler.opt.licm.oknum(la) == 1
+    va = la
+  else
+    ca = rbindidx(s1, la)
+    if ca < 0
+      return ""
+    ra = compiler.opt.licm.asgrhs(compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, ca)))
+    if compiler.opt.licm.oknum(ra) == 0
+      return ""
+    va = ra
+  if compiler.opt.licm.oknum(le) == 1
+    ve = le
+  else
+    ce = rbindidx(s1, le)
+    if ce < 0
+      return ""
+    re = compiler.opt.licm.asgrhs(compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, ce)))
+    if compiler.opt.licm.oknum(re) == 0
+      return ""
+    ve = re
+  ia = compiler.opt.licm.parsenum(va)
+  ie = compiler.opt.licm.parsenum(ve)
+  if ia > 2147483647 or ia < 0 - 2147483647
+    return ""
+  if ie > 2147483647 or ie < 0 - 2147483647
+    return ""
+  v = ia + ie
+  "\{\"value\":{v},\"operands\":[\"{va}\",\"+\",\"{ve}\"]\}"
+
+rloopdropwit: str = (s0: str, s1: str, tgt: str)
+  if rbindidx(s0, tgt) < 0
+    return ""
+  if rbindidx(s1, tgt) >= 0
+    return ""
+  a = rbindidx(s0, tgt)
+  w = a
+  while w >= 0
+    line = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s0, w))
+    if compiler.opt.licm.iswhile(line) == 1
+      pw = compiler.opt.zerotrip.prevnb(s0, w)
+      if pw >= 0
+        cond = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s0, pw))
+        ew = jesc(line)
+        ec = jesc(cond)
+        return "\{\"removed_with\":{ew},\"condition\":{ec}}"
+      ew2 = jesc(line)
+      return "\{\"removed_with\":{ew2}}"
+    w = compiler.opt.zerotrip.prevnb(s0, w)
+  ""
+
+rvalue: str = (s0: str, s1: str, s2: str, tgt: str, shash: str, bhash: str, rev: str)
+  fold = rfoldvalue(s1, s2, tgt)
+  if fold != ""
+    v = jget(fold, "value")
+    rhs0 = compiler.opt.licm.asgrhs(compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, rbindidx(s1, tgt))))
+    rhs1 = compiler.opt.licm.asgrhs(compiler.opt.licm.unpad(compiler.opt.licm.lineat(s2, rbindidx(s2, tgt))))
+    eia = jesc(rhs0)
+    eib = jesc(rhs1)
+    wit = rwitfold(tgt, rhs0, rhs1)
+    ee = jesc("recomputed actual pass stages: foldlit collapsed {tgt} = {eia} to {eib} inside compiler.opt.licm")
+    pr = wprov(shash, bhash, rev)
+    return "\{\"classification\":\"exactly-recoverable\",\"value\":{v},\"witness\":{wit},\"derivation\":{ee},\"provenance\":{pr}\}"
+  hoist = rhoistvalue(s1, s2, tgt)
+  if hoist != ""
+    v = jget(hoist, "value")
+    ops = jget(hoist, "operands")
+    rhs0 = compiler.opt.licm.asgrhs(compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, rbindidx(s1, tgt))))
+    wit = rwitlicm(tgt, rhs0, rhs0)
+    ee = jesc("recomputed actual pass stages: compiler.opt.licm.sweep hoisted {tgt} = {rhs0} to loop preheader; constant operands from retained bindings yield {v}")
+    pr = wprov(shash, bhash, rev)
+    return "\{\"classification\":\"exactly-recoverable\",\"value\":{v},\"operands\":{ops},\"witness\":{wit},\"derivation\":{ee},\"provenance\":{pr}\}"
+  temp = rtempvalue(s1, s2, tgt)
+  if temp != ""
+    v = jget(temp, "value")
+    rhs1 = compiler.opt.licm.asgrhs(compiler.opt.licm.unpad(compiler.opt.licm.lineat(s2, rbindidx(s2, tgt))))
+    wit = rwitlicm(tgt, rhs1, rhs1)
+    ee = jesc("recomputed actual pass stages: compiler.opt.licm.sweep introduced {tgt} = {rhs1} as the hoist of a loop invariant; constant operands from retained bindings yield {v}")
+    pr = wprov(shash, bhash, rev)
+    return "\{\"classification\":\"exactly-recoverable\",\"value\":{v},\"witness\":{wit},\"derivation\":{ee},\"provenance\":{pr}\}"
+  b = rbindidx(s2, tgt)
+  if b >= 0
+    et = jesc(tgt)
+    ea = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s2, b))
+    rhs = compiler.opt.licm.asgrhs(ea)
+    op = compiler.opt.licm.rhsop(rhs)
+    la = compiler.opt.licm.rhsa(rhs)
+    le = compiler.opt.licm.rhse(rhs)
+    if op == 38
+      n = 0
+      if compiler.opt.licm.oknum(la) == 1
+        n = compiler.opt.licm.parsenum(la)
+      else
+        if compiler.opt.licm.oknum(le) == 1
+          n = compiler.opt.licm.parsenum(le)
+      if n > 0
+        m = n + 1
+        p2 = 1
+        while p2 < m
+          p2 = p2 * 2
+        if p2 == m
+          just = "retained optimized binding {tgt} = {rhs}; mask operand {n} equals 2^k - 1, so the result lies in the range 0 to {n} regardless of the runtime operand"
+          ej = jesc(just)
+          pr = wprov(shash, bhash, rev)
+          return "\{\"classification\":\"partially-recoverable\",\"target\":{et},\"bound\":\{\"kind\":\"range\",\"min\":\"0\",\"max\":\"{n}\"\},\"justified\":{ej},\"unjustified\":\"exact runtime value; the other operand is not a compile-time constant\",\"provenance\":{pr}\}"
+    if compiler.opt.licm.oknum(rhs) == 0 and op != ""
+      if rbindidx(s2, la) < 0 or rbindidx(s2, le) < 0
+        er = jesc(rhs)
+        pr = wprov(shash, bhash, rev)
+        return "\{\"classification\":\"requires-additional-observation\",\"target\":{et},\"expression\":{er},\"cost\":\{\"additional_bytes_per_event\":\"8\",\"additional_branch_per_event\":\"1\",\"realization_constraint\":\"recording this run can constrain realization: the target binding must be preserved and instrumented at its program point, which admits no zero-cost omniscience\"},\"provenance\":{pr}\}"
+  drop = rloopdropwit(s0, s1, tgt)
+  if drop != ""
+    et = jesc(tgt)
+    pr = wprov(shash, bhash, rev)
+    return "\{\"classification\":\"not-recoverable-from-this-run\",\"target\":{et},\"elimination\":{drop},\"justification\":\"the binding is absent from every retained stage and current explain provenance records no binding-level witness for the removal; no value may be supplied\",\"provenance\":{pr}\}"
+  et = jesc(tgt)
+  pr = wprov(shash, bhash, rev)
+  "\{\"classification\":\"not-recoverable-from-this-run\",\"target\":{et},\"justification\":\"no retained binding or actual pass-stage delta justifies a value for this target in this run; no value may be supplied\",\"provenance\":{pr}\}"
+
+rdecision: str = (s1: str, tgt: str, ctx: str, shash: str, bhash: str, rev: str)
+  et = jesc(tgt)
+  pr = wprov(shash, bhash, rev)
+  if ctx == "licm" or ctx == "licm-hoist"
+    n = compiler.opt.licm.linecount(s1)
+    i = 0
+    while i < n
+      line = compiler.opt.licm.unpad(compiler.opt.licm.lineat(s1, i))
+      if line:find("hh", 1, 1) == 1
+        nm = compiler.opt.licm.asgtgt(line)
+        if nm != ""
+          en = jesc(nm)
+          return "\{\"classification\":\"exactly-recoverable\",\"target\":{et},\"decision\":\"licm-hoist\",\"witness\":\{\"schema\":\"recover-witness-v1\",\"transform\":\"compiler.opt.licm.sweep\",\"kind\":\"licm-hoist\",\"target\":{en},\"evidence\":[\"subject-source\",\"actual-pass-stage-delta\",\"retained-optimized-binding\"]},\"derivation\":\"recomputed actual pass stages: compiler.opt.licm.sweep retained the generated hoist binding {nm} in the optimized subject\",\"provenance\":{pr}\}"
+      i = i + 1
+    return "\{\"classification\":\"not-recoverable-from-this-run\",\"target\":{et},\"justification\":\"the retained optimized subject carries no generated hoist binding for this decision; current explain provenance records no binding-level licm witness\",\"provenance\":{pr}\}"
+  if ctx == "fold" or ctx == "foldlit" or ctx == "constant-fold"
+    return "\{\"classification\":\"not-recoverable-from-this-run\",\"target\":{et},\"justification\":\"no retained transformation witness records this decision for the actual run; a decision answer requires a retained witness, never a reconstructed guess\",\"provenance\":{pr}\}"
+  if ctx == "zerotrip" or ctx == "zero-trip"
+    return "\{\"classification\":\"not-recoverable-from-this-run\",\"target\":{et},\"justification\":\"zero-trip elimination leaves no per-target witness in the retained stages or in current explain provenance; no value may be supplied\",\"provenance\":{pr}\}"
+  "\{\"classification\":\"not-recoverable-from-this-run\",\"target\":{et},\"justification\":\"the requested decision has no retained witness for this run\",\"provenance\":{pr}\}"
+
+rresp: str = (line: str)
+  idraw = jget(line, "id")
+  if idraw == ""
+    return werr("null", 0 - 32602, "missing id", "resend with a request id", "recover", "[\"recover\"]")
+  method = jdec(jget(line, "method"))
+  if method != "tools/call"
+    return werr(idraw, 0 - 32602, "method must be tools/call", "send tools/call", "recover", "[\"recover\"]")
+  name = jdec(jget(line, "params.name"))
+  if name != "recover"
+    return werr(idraw, 0 - 32602, "unknown tool", "call recover", "recover", "[\"recover\"]")
+  args = jget(line, "params.arguments")
+  if args == "" or jcountkey(args, "file") != 1
+    return werr(idraw, 0 - 32602, "file is required", "pass the subject file path", "recover", "[\"recover\"]")
+  file = jdec(jget(args, "file"))
+  if file == ""
+    return werr(idraw, 0 - 32602, "file is required", "pass the subject file path", "recover", "[\"recover\"]")
+  if jcountkey(args, "subject_hash") != 1
+    return werr(idraw, 0 - 32602, "subject_hash is required", "pass the sha256 of the subject", "recover", "[\"recover\"]")
+  want = jdec(jget(args, "subject_hash"))
+  if want == ""
+    return werr(idraw, 0 - 32602, "subject_hash is required", "pass the sha256 of the subject", "recover", "[\"recover\"]")
+  if jcountkey(args, "query") != 1
+    return werr(idraw, 0 - 32602, "query is required", "pass query with kind and target", "recover", "[\"recover\"]")
+  q = jget(args, "query")
+  if jcountkey(q, "kind") != 1 or jcountkey(q, "target") != 1
+    return werr(idraw, 0 - 32602, "query.kind and query.target are required", "pass query with kind and target", "recover", "[\"recover\"]")
+  kind = jdec(jget(q, "kind"))
+  tgt = jdec(jget(q, "target"))
+  ctx = jdec(jget(q, "context"))
+  if kind != "value" and kind != "decision"
+    return werr(idraw, 0 - 32602, "query.kind must be value or decision", "use kind value or decision", "recover", "[\"recover\"]")
+  if roktarget(tgt) == 0
+    return werr(idraw, 0 - 32602, "query.target must be a plain binding name", "use an alphanumeric binding name", "recover", "[\"recover\"]")
+  qf = shq(file)
+  if os.execute("test -r {qf} 2>/dev/null") != 0
+    return werr(idraw, 0 - 32001, "subject unreadable", "pass a readable subject file", "recover", "[\"recover\"]")
+  shash = phash(file)
+  if shash == ""
+    return werr(idraw, 0 - 32001, "subject unreadable", "pass a readable subject file", "recover", "[\"recover\"]")
+  if shash != want
+    return werr(idraw, 0 - 32002, "subject hash mismatch", "recompute the sha256 of the subject file", "recover", "[\"recover\"]")
+  bin = rbin()
+  if bin == ""
+    return werr(idraw, 0 - 32003, "world binary unavailable", "set IDOL_WORLD_BIN to a readable idol binary", "recover", "[\"recover\"]")
+  bhash = phash(bin)
+  rev = ""
+  bid = "{bin}.buildid"
+  qb = shq(bid)
+  if os.execute("test -r {qb} 2>/dev/null") == 0
+    rev = gatecap("cat -- {qb} 2>/dev/null")
+    nl = rev:find("\n", 1, 1)
+    if nl > 0
+      rev = rev:sub(1, nl - 1)
+  if rev == ""
+    rev = "unknown"
+  src = gatecap("cat -- {qf} 2>/dev/null")
+  s0 = src
+  s1 = compiler.opt.zerotrip.zerotrip(src)
+  s2 = compiler.opt.licm.licm(s1)
+  s3 = compiler.opt.poly.poly(s2)
+  reg = rtargetreg(s3, tgt)
+  if reg == "mention"
+    et = jesc(tgt)
+    pr = wprov(shash, bhash, rev)
+    return pok(idraw, "\{\"classification\":\"not-recoverable-from-this-run\",\"target\":{et},\"justification\":\"the target is mentioned but bound nowhere in the optimized subject; an ambiguous target is refused, never guessed\",\"provenance\":{pr}\}")
+  if kind == "decision"
+    return pok(idraw, rdecision(s2, tgt, ctx, shash, bhash, rev))
+  pok(idraw, rvalue(s0, s1, s2, tgt, shash, bhash, rev))
+
+main: i64 = ()
+  line = stdin:read()
+  if line == ""
+    return 1
+  w = rresp(line)
+  print(w)
+  0
+
+main()
