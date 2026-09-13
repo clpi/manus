@@ -1,0 +1,128 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = 0
+    i = 0
+    while i < 1
+        d = (v & 15) + 1
+        i = i + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    a = ""
+    i = 0
+    while i < 1
+        a = hex(v >> 4) .. hex(v)
+        i = i + 1
+    a
+
+half: str = (v: i64)
+    a = ""
+    i = 0
+    while i < 1
+        a = pair(v) .. pair(v >> 8)
+        i = i + 1
+    a
+
+word: str = (v: i64)
+    a = ""
+    i = 0
+    while i < 1
+        a = pair(v) .. pair(v >> 8) .. pair(v >> 16) .. pair(v >> 24)
+        i = i + 1
+    a
+
+quad: str = (v: i64)
+    a = ""
+    i = 0
+    while i < 1
+        a = word(v) .. word(v >> 32)
+        i = i + 1
+    a
+
+nib: i64 = (c: i64)
+    r = 0
+    i = 0
+    while i < 1
+        if c >= 48 and c <= 57
+            r = c - 48
+        else
+            if c >= 97 and c <= 102
+                r = c - 87
+        i = i + 1
+    r
+
+hexval: i64 = (h: str, pos: i64)
+    r = 0
+    i = 0
+    while i < 1
+        r = nib(h:byte(pos)) * 16 + nib(h:byte(pos + 1))
+        i = i + 1
+    r
+
+readu32: i64 = (data: str, off: i64)
+    r = 0
+    i = 0
+    while i < 1
+        b0 = hexval(data, off * 2 + 1)
+        b1 = hexval(data, off * 2 + 3)
+        b2 = hexval(data, off * 2 + 5)
+        b3 = hexval(data, off * 2 + 7)
+        r = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+        i = i + 1
+    r
+
+w: i64 = (b: i64)
+    stdout:write(string.char(b))
+    0
+
+emithex: i64 = (h: str)
+    i = 1
+    n = h:len()
+    while i < n
+        w(nib(h:byte(i)) * 16 + nib(h:byte(i + 1)))
+        i = i + 2
+    0
+
+exe: str = (code: str, entry: i64)
+    out = ""
+    i = 0
+    while i < 1
+        cl = code:len() / 2
+        base = 4194304
+        ho = 120
+        total = ho + cl
+        out = "7f454c46" .. pair(2) .. pair(1) .. pair(1) .. pair(0)
+        out = out .. "0000000000000000"
+        out = out .. half(2) .. half(183) .. word(1)
+        out = out .. quad(entry) .. quad(64) .. quad(0)
+        out = out .. word(0) .. half(64) .. half(56) .. half(1) .. half(64) .. half(0) .. half(0)
+        out = out .. word(1) .. word(5) .. quad(0) .. quad(base) .. quad(base)
+        out = out .. quad(total) .. quad(total) .. quad(65536)
+        out = out .. code
+        i = i + 1
+    out
+
+dolin: str = (input: str)
+    code = ""
+    i = 0
+    while i < 1
+        j = 1
+        start = 1
+        while j <= input:len() + 1
+            if j > input:len() or input:byte(j) == 10
+                line = ""
+                if j > start
+                    line = input:sub(start, j - 1)
+                if line:len() > 0
+                    code = code .. line
+                start = j + 1
+            j = j + 1
+        i = i + 1
+    code
+
+main: i64 = ()
+    input = stdin:read()
+    code = dolin(input)
+    out = exe(code, 4194424)
+    emithex(out)
+    0

@@ -1,0 +1,65 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = (v & 15) + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    hex(v >> 4) .. hex(v)
+
+half: str = (v: i64)
+    pair(v) .. pair(v >> 8)
+
+word: str = (v: i64)
+    pair(v) .. pair(v >> 8) .. pair(v >> 16) .. pair(v >> 24)
+
+quad: str = (v: i64)
+    word(v) .. word(v >> 32)
+
+align: i64 = (v: i64, a: i64)
+    r = v & (a - 1)
+    if r == 0
+        return v
+    (v + a) - r
+
+pad: str = (n: i64)
+    out = ""
+    i = 0
+    while i < n
+        out = out .. "00"
+        i = i + 1
+    out
+
+strhex: str = (s: str)
+    out = ""
+    i = 1
+    while i <= s:len()
+        out = out .. pair(s:byte(i))
+        i = i + 1
+    out
+
+nib: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return c - 48
+    if c >= 97 and c <= 102
+        return c - 87
+    0
+
+hexval: i64 = (h: str, pos: i64)
+    nib(h:byte(pos)) * 16 + nib(h:byte(pos + 1))
+
+readu16: i64 = (data: str, off: i64)
+    b0 = hexval(data, off * 2 + 1)
+    b1 = hexval(data, off * 2 + 3)
+    b0 | (b1 << 8)
+
+readu32: i64 = (data: str, off: i64)
+    b0 = hexval(data, off * 2 + 1)
+    b1 = hexval(data, off * 2 + 3)
+    b2 = hexval(data, off * 2 + 5)
+    b3 = hexval(data, off * 2 + 7)
+    b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+
+readu64: i64 = (data: str, off: i64)
+    lo = readu32(data, off)
+    hi = readu32(data, off + 4)
+    lo | (hi << 32)
