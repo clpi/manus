@@ -1224,6 +1224,72 @@ freshvar: str = (src: str, a: i64, b: i64, base: str)
         v = v .. "z"
     v
 
+hoistval: str = (src: str, k: i64, e: i64, name: str)
+    if okname(name) == 0
+        return ""
+    if countassign(src, k, e, name) != 0
+        return ""
+    ind = indof(lineat(src, k))
+    found = 0
+    val = ""
+    j = 0
+    while j < k
+        r = lineat(src, j)
+        if unpad(r):len() > 0 and asgtgt(unpad(r)) == name
+            if found == 1
+                return ""
+            found = 1
+            if indof(r) != ind
+                return ""
+            rhs = unpad(asgrhs(unpad(r)))
+            neg = 0
+            if rhs:len() > 1 and rhs:byte(1) == 45
+                neg = 1
+                rhs = rhs:sub(2, rhs:len())
+            if oknum(rhs) == 0
+                return ""
+            if neg == 1
+                val = "-" .. rhs
+            else
+                val = rhs
+        j = j + 1
+    if found == 0
+        return ""
+    val
+
+redhoist: str = (t: str, var: str, src: str, k: i64, e: i64)
+    u = nospace(t)
+    sgn = 0
+    c = ""
+    p = var .. "=" .. var .. "+"
+    if ssub(u, 1, p:len()) == p
+        sgn = 1
+        c = ssub(u, p:len() + 1, u:len())
+    else
+        p = var .. "=" .. var .. "-"
+        if ssub(u, 1, p:len()) == p
+            sgn = 0 - 1
+            c = ssub(u, p:len() + 1, u:len())
+        else
+            p = var .. "+="
+            if ssub(u, 1, p:len()) == p
+                sgn = 1
+                c = ssub(u, p:len() + 1, u:len())
+            else
+                p = var .. "-="
+                if ssub(u, 1, p:len()) == p
+                    sgn = 0 - 1
+                    c = ssub(u, p:len() + 1, u:len())
+    if sgn == 0
+        return ""
+    v = hoistval(src, k, e, c)
+    if v == ""
+        return ""
+    d = sgn * parsesgn(v)
+    if d < 0
+        return "-|" .. decnum(0 - d)
+    "+|" .. decnum(d)
+
 trycollapse: str = (src: str, k: i64, lc: i64)
     ns = parsenest(src, k, lc)
     if ns == ""
@@ -1254,6 +1320,7 @@ trycollapse: str = (src: str, k: i64, lc: i64)
     kk = parsesgn(pfield(seg, 5))
     ee = parsesgn(pfield(seg, 6))
     uj = findassign(src, kk, ee, pfield(seg, 0))
+    e0 = parsesgn(pfield(nlvl(ns, 0), 6))
     acc = ""
     j = kk + 1
     while j <= ee
@@ -1267,6 +1334,8 @@ trycollapse: str = (src: str, k: i64, lc: i64)
                     return ""
                 rf = redform(t, v)
                 if rf == ""
+                    rf = redhoist(t, v, src, k, e0)
+                if rf == ""
                     return ""
                 delta = parsenum(pfield(rf, 1))
                 if pfield(rf, 0) == "-"
@@ -1276,7 +1345,6 @@ trycollapse: str = (src: str, k: i64, lc: i64)
     if varsusedafter(src, parsesgn(pfield(nlvl(ns, 0), 6)), lc, ns) == 1
         return ""
     seg0 = nlvl(ns, 0)
-    e0 = parsesgn(pfield(seg0, 6))
     ind = indof(lineat(src, parsesgn(pfield(seg0, 4))))
     rep = ""
     i = 0
