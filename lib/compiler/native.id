@@ -117,6 +117,7 @@ global _lslpos: i64 = 0 - 1
 global _lslrd: i64 = 0
 global _lslrn: i64 = 0
 global _lslsh: i64 = 0
+global _maxhome: i64 = 0
 
 digit: i64 = (c: i64)
     if c >= 48 and c <= 57
@@ -397,13 +398,26 @@ spillpop: str = (c: str, base: i64, r: i64)
     c .. word(addi(31, 31, b))
 
 deepexpr: str = (c: str, r: i64, a: str, o: i64, e: str, base: i64, names: str)
-    c = spillpush(c, base)
-    c = calc(c, 11, a, o, e, 11, names)
+    sv = _maxhome
+    _maxhome = 0
+    t2 = calc("", 11, a, o, e, 11, names)
+    nb = _maxhome
+    _maxhome = sv
+    if nb > base
+        nb = base
+    if nb < 13
+        nb = 13
+    if (nb & 1) == 0
+        nb = nb + 1
+    c = spillpush(c, nb)
+    c = c .. t2
     c = c .. word(stx(11, 31, 0))
-    c = spillpop(c, base, r)
+    c = spillpop(c, nb, r)
     c
 
 expr: str = (c: str, t: str, r: i64, base: i64, names: str)
+    if r > _maxhome
+        _maxhome = r
     t = trim(t)
     if isnum(t) == 1
         return imm(c, r, num(t))
@@ -777,6 +791,8 @@ divlit: str = (c: str, rd: i64, ra: i64, dd: i64, names: str)
             return c .. word(mov(rd, 10))
     ""
 calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
+    if rd > _maxhome
+        _maxhome = rd
     sa = simple(a)
     se = simple(e)
     if sa == 0 or se == 0
