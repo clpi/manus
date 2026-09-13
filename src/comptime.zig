@@ -276,6 +276,10 @@ pub const Evaluator = struct {
         /// function, so the folded program and the emitted program cannot
         /// answer differently.
         width: ?types.ResolvedType = null,
+        /// THE STATED FLOAT CONTRACT OF THE PLACE, or .none. A write to this
+        /// binding rounds exact decimals and integers to the float the place
+        /// names -- the same boundary every binding path shares.
+        float_contract: FloatContract = .none,
     };
 
     const BlockResult = union(enum) {
@@ -316,24 +320,28 @@ pub const Evaluator = struct {
     }
 
     fn pushLocal(self: *Evaluator, name: []const u8, value: Value) EvalError!usize {
-        return self.pushPlace(name, value, null);
+        return self.pushPlace(name, value, .{ .inferred = {} });
     }
 
     /// THE ONE WRITE PRIMITIVE. Every binding is created here and every value
-    /// that enters one passes through `project`, so there is no path by which a
-    /// declared width can be established and then not applied.
+    /// that enters one passes through `project` and `applyFloatContract`, so
+    /// there is no path by which a declared width or float contract can be
+    /// established and then not applied.
     fn pushPlace(
         self: *Evaluator,
         name: []const u8,
         value: Value,
-        width: ?types.ResolvedType,
+        typ: ast.TypeExpr,
     ) EvalError!usize {
         const alloc = self.options.alloc orelse return error.UnsupportedExpression;
         const mark = self.locals.items.len;
+        const width = types.narrowIntOfType(typ);
+        const contract = floatContractOfType(typ);
         self.locals.append(alloc, .{
             .name = name,
-            .value = project(value, width),
+            .value = project(applyFloatContract(value, contract), width),
             .width = width,
+            .float_contract = contract,
         }) catch return error.UnsupportedExpression;
         return mark;
     }
@@ -351,6 +359,52 @@ pub const Evaluator = struct {
         return .{ .int = types.narrowFitConst(value.int, w) };
     }
 
+    /// THE ONE NUMERIC CONVERSION BOUNDARY. A value crossing a stated float
+    /// contract is projected to the float the contract names: f64 takes the
+    /// nearest f64, f32 the nearest f32 (carried widened -- .float is the
+    /// only float carrier). This is what makes `a: f64 = 0.1` name the f64
+    /// nearest one tenth while unqualified `a = 0.1` keeps naming one tenth
+    /// exactly. Every binding path -- parameters, locals, constants, module
+    /// bindings, returns -- routes through here; there is no second table.
+    pub const FloatContract = enum { none, f32, f64 };
+
+    pub fn floatContractOfType(t: ast.TypeExpr) FloatContract {
+        if (t != .named) return .none;
+        const named = types.descriptorNamed(t.named) orelse return .none;
+        const facts = named.numericFacts() orelse return .none;
+        if (facts.domain != .real or facts.lanes != 1) return .none;
+        return switch (facts.width) {
+            32 => .f32,
+            64 => .f64,
+            else => .none,
+        };
+    }
+
+    /// Apply the contract: exact decimals and integers crossing into a stated
+    /// float place round to the float the place names. Anything else -- already
+    /// a float, or no contract -- passes through untouched.
+    pub fn applyFloatContract(value: Value, contract: FloatContract) Value {
+        switch (contract) {
+            .none => return value,
+            .f64 => switch (value) {
+                .decimal => |d| return .{ .float = d.toFloat() },
+                .int => |n| return .{ .float = @floatFromInt(n) },
+                else => return value,
+            },
+            .f32 => switch (value) {
+                .decimal => |d| {
+                    const f: f32 = @floatCast(d.toFloat());
+                    return .{ .float = f };
+                },
+                .int => |n| {
+                    const f: f32 = @floatFromInt(n);
+                    return .{ .float = f };
+                },
+                else => return value,
+            },
+        }
+    }
+
     fn popLocals(self: *Evaluator, mark: usize) void {
         self.locals.shrinkRetainingCapacity(mark);
     }
@@ -365,7 +419,10 @@ pub const Evaluator = struct {
                 // update is a write like any other, and it was the one this
                 // evaluator got wrong: the declaration bound 0 and every
                 // iteration after it stored a value the place cannot hold.
-                self.locals.items[i].value = project(value, self.locals.items[i].width);
+                self.locals.items[i].value = project(
+                    applyFloatContract(value, self.locals.items[i].float_contract),
+                    self.locals.items[i].width,
+                );
                 return;
             }
         }
@@ -1017,7 +1074,7 @@ pub const Evaluator = struct {
         }
         var next: usize = 0;
         if (subject) |value| {
-            _ = try self.pushPlace(func.params[0].name, value, types.narrowIntOfType(func.params[0].typ));
+            _ = try self.pushPlace(func.params[0].name, value, func.params[0].typ);
             next = 1;
         }
         for (func.params[next..], 0..) |param, i| {
@@ -1031,9 +1088,12 @@ pub const Evaluator = struct {
             // narrow parameter ON ENTRY precisely because the caller may not
             // have -- see its "arrives in a 64-bit register" note -- so the
             // fold binds the projection the callee would actually see.
-            _ = try self.pushPlace(param.name, value, types.narrowIntOfType(param.typ));
+            _ = try self.pushPlace(param.name, value, param.typ);
         }
-        return try self.evalBlockValue(&func.body);
+        // A RETURN IS A PLACE. An explicit float return type converts the
+        // body's value at the boundary, exactly as the parameter binding does
+        // on entry.
+        return applyFloatContract(try self.evalBlockValue(&func.body), floatContractOfType(func.ret_type));
     }
 
     /// Evaluate string.* standard library functions at compile time.
@@ -1697,12 +1757,12 @@ pub const Evaluator = struct {
                     const value = if (i < decl.inits.len) try self.eval(decl.inits[i]) else Value.nil;
                     // THE INITIAL BINDING IS A WRITE. `t: u8 = a * b` stores
                     // the projection, exactly as a later `t = a * b` does.
-                    _ = try self.pushPlace(name.ident, value, types.narrowIntOfType(name.typ));
+                    _ = try self.pushPlace(name.ident, value, name.typ);
                 }
                 break :blk .none;
             },
             .const_decl => |decl| blk: {
-                _ = try self.pushPlace(decl.ident, try self.eval(decl.val), types.narrowIntOfType(decl.typ));
+                _ = try self.pushPlace(decl.ident, try self.eval(decl.val), decl.typ);
                 break :blk .none;
             },
             .assign => |assign| blk: {
@@ -1768,7 +1828,7 @@ pub const Evaluator = struct {
         // The induction variable is a PLACE and may carry a descriptor:
         // `for k: u8 = 1, 300` counts through a `u8`, and `setLocal` below is
         // the write that has to know it.
-        _ = try self.pushPlace(num_for.var_name, .{ .int = start }, types.narrowIntOfType(num_for.var_typ));
+        _ = try self.pushPlace(num_for.var_name, .{ .int = start }, num_for.var_typ);
         var i = start;
         while (if (step_value > 0) i <= stop else i >= stop) : (i += step_value) {
             try self.step();
@@ -2286,16 +2346,16 @@ pub fn foldRelationBody(
     // which is the same refusal by a shorter route.
     if (graph_query.moduleDeclaration(graph)) |module| {
         for (module.body.stmts) |statement| {
-            const name: []const u8, const init: *const ast.Expr = switch (statement) {
-                .const_decl => |d| .{ d.ident, d.val },
+            const name: []const u8, const init: *const ast.Expr, const typ: ?ast.TypeExpr = switch (statement) {
+                .const_decl => |d| .{ d.ident, d.val, d.typ },
                 .local_decl => |d| blk: {
                     if (d.names.len != 1 or d.inits.len != 1) continue;
-                    break :blk .{ d.names[0].ident, d.inits[0] };
+                    break :blk .{ d.names[0].ident, d.inits[0], d.names[0].typ };
                 },
                 .assign => |a| blk: {
                     if (a.targets.len != 1 or a.values.len != 1) continue;
                     if (a.targets[0].* != .name) continue;
-                    break :blk .{ a.targets[0].name.ident, a.values[0] };
+                    break :blk .{ a.targets[0].name.ident, a.values[0], null };
                 },
                 else => continue,
             };
@@ -2326,13 +2386,17 @@ pub fn foldRelationBody(
                 // only that no application is admitted in this sub-evaluation.
                 .application_work = .{ .graph = graph, .sites = &.{} },
             }) catch continue;
-            switch (value) {
+            // THE CONTRACT CROSSES HERE TOO. `fa: f64 = 0.1` at module
+            // scope names the f64 nearest one tenth for every relation that
+            // reads it, exactly as the parameter binding does at a call.
+            const contracted = if (typ) |t| Evaluator.applyFloatContract(value, Evaluator.floatContractOfType(t)) else value;
+            switch (contracted) {
                 .int, .float, .decimal, .bool, .string => {},
                 else => continue,
             }
             const slot = scope.getOrPut(scratch, name) catch return null;
             if (slot.found_existing) return null;
-            slot.value_ptr.* = value;
+            slot.value_ptr.* = contracted;
         }
     }
 
@@ -2521,9 +2585,9 @@ pub fn callFunctionValue(func: Value, args: []const Value, bindings: Bindings, o
             try evaluator.eval(default_val)
         else
             Value.nil;
-        _ = try evaluator.pushPlace(param.name, value, types.narrowIntOfType(param.typ));
+        _ = try evaluator.pushPlace(param.name, value, param.typ);
     }
-    return evaluator.evalBlockValue(&body.body);
+    return Evaluator.applyFloatContract(try evaluator.evalBlockValue(&body.body), Evaluator.floatContractOfType(body.ret_type));
 }
 
 fn tableFieldLookup(obj: Value, field: []const u8) EvalError!Value {
@@ -2694,6 +2758,22 @@ fn evalInteger(op: ast.BinOp, left: Value, right: Value) EvalError!Value {
         .lshift => if (r >= 0 and r < 64) .{ .int = l << @intCast(r) } else error.UnsupportedOperator,
         .rshift => if (r >= 0 and r < 64) .{ .int = @as(i64, @bitCast(@as(u64, @bitCast(l)) >> @intCast(r))) } else error.UnsupportedOperator,
         else => error.UnsupportedOperator,
+    };
+}
+
+/// THE COMPARISON LAW, BY VALUE. The lowering fold answers through this --
+/// the same arms the evaluator's own binop path uses -- so a folded constant
+/// and an interpreted body cannot disagree. Null is "the producer cannot
+/// tell", and the fold declines rather than picking a side.
+pub fn compareValues(op: ast.BinOp, left: Value, right: Value) EvalError!?bool {
+    return switch (op) {
+        .eq => left.eqlOrUnknown(right),
+        .neq => if (left.eqlOrUnknown(right)) |b| !b else null,
+        .lt, .gt, .leq, .geq => switch (try evalComparison(op, left, right)) {
+            .bool => |b| b,
+            else => null,
+        },
+        else => null,
     };
 }
 
