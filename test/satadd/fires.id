@@ -1,0 +1,5 @@
+s = 50 + 60
+q = 100/(s+1)
+isbig = 1/(1+q)
+s = s*(1-isbig) + 100*isbig
+s
