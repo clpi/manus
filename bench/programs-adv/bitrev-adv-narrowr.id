@@ -1,0 +1,68 @@
+shrink: i64 = ()
+  x = 255
+  r: i8 = 0
+  i = 0
+  while i < 8
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+clip: i64 = ()
+  x = 511
+  r: u8 = 0
+  i = 0
+  while i < 9
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+snip: i64 = ()
+  x = 131071
+  r: i16 = 0
+  i = 0
+  while i < 17
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+crop: i64 = ()
+  x = 131071
+  r: u16 = 0
+  i = 0
+  while i < 17
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+shave: i64 = ()
+  x = 8589934591
+  r: i32 = 0
+  i = 0
+  while i < 33
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+pare: i64 = ()
+  x = 8589934591
+  r: u32 = 0
+  i = 0
+  while i < 33
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+main: i64 = ()
+  print(shrink())
+  print(clip())
+  print(snip())
+  print(crop())
+  print(shave())
+  print(pare())
+  0
