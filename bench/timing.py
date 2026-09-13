@@ -27,8 +27,18 @@ import time
 SIGNIFICANCE_LEVEL = 0.05
 
 
+RUN_TIMEOUT_S = 120
+
+
 def run_once(binary):
-    p = subprocess.run([binary], capture_output=True)
+    # Every benchmark binary runs under a timeout: a hung binary is failed
+    # measurement and must abort loudly, never hang the sweep.
+    try:
+        p = subprocess.run([binary], capture_output=True, timeout=RUN_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        print(f"bench: FATAL: benchmark binary hung (>{RUN_TIMEOUT_S}s): {binary}",
+              file=sys.stderr)
+        sys.exit(7)
     return p.returncode
 
 

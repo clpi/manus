@@ -191,11 +191,11 @@ for P in $PROGS; do
   # recording the code.
   REF_OUT="$WORK/$P.oracle.out"
   REF_RC=0
-  "$WORK/$P.$ORACLE" > "$REF_OUT" 2>/dev/null || REF_RC=$?
+  timeout 120 "$WORK/$P.$ORACLE" > "$REF_OUT" 2>/dev/null || REF_RC=$?
   for C in $COMPILERS; do
     [ "$C" = "$ORACLE" ] && continue
     RC=0
-    "$WORK/$P.$C" > "$WORK/$P.$C.out" 2>/dev/null || RC=$?
+    timeout 120 "$WORK/$P.$C" > "$WORK/$P.$C.out" 2>/dev/null || RC=$?
     if [ "$RC" != "$REF_RC" ] || ! cmp -s "$WORK/$P.$C.out" "$REF_OUT"; then
       echo "bench: CORRECTNESS FAIL [$P]: $C differs from oracle $ORACLE (rc $RC vs $REF_RC, stdout compared byte-identical). aborting." >&2
       exit 5
