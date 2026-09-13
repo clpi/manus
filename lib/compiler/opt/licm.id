@@ -688,7 +688,54 @@ sweep: str = (src: str, base: i64, wlist: str)
             k = k + 1
     out
 
+numstr: str = (v: i64)
+    if v == 0
+        return "0"
+    if v < 0
+        nv = 0 - v
+        if nv < 0
+            return ""
+        return "-" .. decnum(nv)
+    decnum(v)
+
+foldlit: str = (src: str)
+    out = ""
+    lc = linecount(src)
+    j = 0
+    while j < lc
+        r = lineat(src, j)
+        nr = r
+        t = unpad(r)
+        if okassign(t) == 1
+            rhs = asgrhs(t)
+            op = rhsop(rhs)
+            if op == 43 or op == 45 or op == 42 or op == 47 or op == 38
+                a = rhsa(rhs)
+                e = rhse(rhs)
+                if oknum(a) == 1 and oknum(e) == 1
+                    av = parsenum(a)
+                    ev = parsenum(e)
+                    if op != 47 or ev != 0
+                        v = av
+                        if op == 43
+                            v = av + ev
+                        if op == 45
+                            v = av - ev
+                        if op == 42
+                            v = av * ev
+                        if op == 47
+                            v = av / ev
+                        if op == 38
+                            v = av & ev
+                        ns = numstr(v)
+                        if ns != ""
+                            nr = spaces(indof(r)) .. asgtgt(t) .. " = " .. ns
+        out = out .. nr .. "\n"
+        j = j + 1
+    out
+
 licm: str = (src: str)
     fix4 = "target=licm layer=stream invar=outside-or-hoisted never=div,trap,store zerotrip=dead-after-loop partial=leave constsplit=hoist-temp order=inside-out"
     rules = "invar=operands-const-or-not-defined-in-loop-or-hoisted-earlier|singledef=target-defined-exactly-once-in-loop|domuse=target-not-used-before-stmt-and-not-in-loop-cond|pure=op-in-add-sub-mul-or-copy-no-div-no-calls|never=division-traps-stores-mutating-edges|zerotrip=target-not-used-after-loop-end|partial=leave-in-loop-no-peel|constsplit=invariant-const-operand-split-to-fresh-preheader-temp|order=innermost-first-cascade-outward|preheader=immediately-before-while-or-before-i-equals-0-preserving-countdown"
+    src = foldlit(src)
     sweep(src, 0, words(src))
