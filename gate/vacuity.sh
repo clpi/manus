@@ -75,12 +75,12 @@ cd "$root" || { echo "vacuity: cannot enter root" >&2; exit 2; }
 # here is a claim about that gate's header, and `vacuity` checks the file
 # exists; it deliberately does NOT check the wording, because a prose match is
 # the same fragile instrument this gate exists to distrust.
-# One, CHECKED against its own header rather than assumed:
-#   coverage.sh  "reporting only (set COVERAGE_BUDGET to ratchet)"
-#                (64 empty / 0 hollow — needs the exemption)
-#
-# architecture-roadmap.sh was the second; it migrated to gate/architecture-roadmap.id,
-# which the plant census does not enumerate, so the exemption left with the .sh.
+# EMPTY, AND THAT IS THE POINT. A declaration is a permission slip, and
+# this harness just watched `coverage.sh` earn its removal: it refuses
+# under both plants now (64/64), so the exemption it carried is deleted
+# rather than renewed. `architecture-roadmap.sh` left the same way when
+# it migrated to gate/architecture-roadmap.id, which the plant census
+# does not enumerate.
 #
 # THE LIST STARTED AT FIVE AND THIS HARNESS SHRANK IT. `attribution.sh`,
 # `differential.sh` and `envcache.sh` were exempted on the strength of a
@@ -90,7 +90,7 @@ cd "$root" || { echo "vacuity: cannot enter root" >&2; exit 2; }
 # `envcache.sh` matched a variable named `N_UNMEASURED`. An exemption granted
 # by a loose pattern match is the same instrument this gate distrusts, so the
 # three are gone and they are measured like everything else.
-DECLARED='gate/coverage.sh'
+DECLARED=''
 
 # ── convicted, and not yet repaired ────────────────────────────────────────
 # A NAMED list, not a count. `gate/all.sh` ratchets on bare numbers, which is

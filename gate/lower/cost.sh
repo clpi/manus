@@ -427,7 +427,14 @@ case "$dump" in
 esac
 triple="$arch-$os-$abi"
 
-revision=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+# THE ROW NAMES ITS SUBJECT. `law.evidence.subject.one` is the exact
+# measured subject revision; a row stamped `unknown` cannot join any
+# selection and is not a measurement the ledger can use. No repo, no
+# revision, no rows — CANNOT MEASURE, never a fabricated subject.
+revision=$(git rev-parse HEAD 2>/dev/null) || {
+    printf 'lower/cost: CANNOT MEASURE — no repository revision to name as the measured subject\n' >&2
+    exit 2
+}
 
 printf '{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"%s","unit":"picoseconds","cost":{"access":%s,"crossing":0},"subject_revision":"%s","checked_access_ns":%s,"plain_access_ns":%s,"accesses_per_rep":%s,"reps":%s}\n' \
     "$triple" "$delta_ps" "$revision" "$checked_ns" "$plain_ns" "$K" "$N"

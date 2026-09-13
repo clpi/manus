@@ -105,6 +105,12 @@ compiler=$work/idol
 # failed' — a sentence that sends a reader to the cache-home logic, which is
 # fine. The host fact has one producer, and it is asked before the subjects are
 # blamed for it.
+# A BARE DOT ON A MISSING FILE DOES NOT TRIP `set -e` WHEN A TRAP ON
+# EXIT IS SET: measured on this fleet's bash, the script halts and
+# exits 0. The helper is a prerequisite, so its absence is refused
+# explicitly — a missing prerequisite is never a silent green.
+[ -f "$root/gate/realization/direct.sh" ] ||
+    fail "missing prerequisite: gate/realization/direct.sh"
 . "$root/gate/realization/direct.sh"
 direct_native_probe "$idol"
 if direct_native_absent; then
