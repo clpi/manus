@@ -665,6 +665,19 @@ pub const Env = NonNegEnv;
 /// name holds, and a module binding is written by relations this walk never
 /// sees: reading `g = 5` inside one body as "g is bounded by 3 bits" answers
 /// for a value another relation chose.
+/// The name-keyed answer for a MODULE body. `foreign` is every name the
+/// module body does not own but may observe being written elsewhere — in
+/// particular, names assigned inside any relation body. Those are seeded at
+/// top and can never be talked down, so a module binding written by a
+/// relation this walk never sees cannot enter the answer.
+pub fn widthsOfModule(
+    alloc: std.mem.Allocator,
+    body: *const ast.Block,
+    foreign: []const []const u8,
+) !Env {
+    return nonNegativeNames(alloc, body, &.{}, foreign, null);
+}
+
 pub fn widthsOf(
     alloc: std.mem.Allocator,
     fb: *const ast.FuncBody,

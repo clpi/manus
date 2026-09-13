@@ -1,0 +1,9 @@
+t = 0
+j = 0
+while j < 10
+  t = t + 1
+  j = j + 1
+if t == 10
+  0
+else
+  1

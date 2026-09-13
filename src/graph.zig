@@ -4831,10 +4831,102 @@ pub const SemanticGraph = struct {
                 try self.ranges.append(self.alloc, .{ .subject = entity, .nonneg_width = width });
             }
         }
+        // Module-scope bindings. A name assigned inside any relation body is
+        // foreign to the module body and seeded at top, so it can never enter
+        // the answer; only names the module body alone writes are published.
+        {
+            var foreign = std.ArrayListUnmanaged([]const u8).empty;
+            defer foreign.deinit(self.alloc);
+            for (mod.body.stmts) |*stmt| {
+                if (stmt.* != .func_decl) continue;
+                try collectAssignedNames(self.alloc, &foreign, &stmt.func_decl.func.body);
+            }
+            var widths = try value_range.widthsOfModule(self.alloc, &mod.body, foreign.items);
+            defer widths.deinit(self.alloc);
+            if (widths.count() > 0) {
+                for (self.nodes.items, 0..) |node, i| {
+                    if (node.kind != .local) continue;
+                    if (node.scope != self.module_root) continue;
+                    const name = node.name orelse continue;
+                    const entity = std.math.cast(id, i) orelse break;
+                    const width = widths.get(name) orelse continue;
+                    try self.ranges.append(self.alloc, .{ .subject = entity, .nonneg_width = width });
+                }
+            }
+        }
+    }
+
+    /// Collect every name assigned in a block (for module-foreign detection).
+    /// The switch is exhaustive over `ast.Stmt` with no `else` arm: a future
+    /// statement variant fails compilation here instead of silently leaving a
+    /// relation write uncollected, which would let a false module-binding
+    /// width be published.
+    fn collectAssignedNames(alloc: std.mem.Allocator, out: *std.ArrayListUnmanaged([]const u8), body: *const ast.Block) !void {
+        for (body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .assign => |a| for (a.targets) |t| {
+                    switch (t.*) {
+                        .name => |n| try out.append(alloc, n.ident),
+                        else => {},
+                    }
+                },
+                // A `global` declaration inside a relation body writes a
+                // module binding; a `local`/`const` declaration does not.
+                .global_decl => |g| for (g.names) |n| try out.append(alloc, n.ident),
+                .local_decl => {},
+                .const_decl => {},
+                .call_stmt => {},
+                .expr_stmt => {},
+                .do_block => |d| try collectAssignedNames(alloc, out, &d.body),
+                .while_loop => |w| try collectAssignedNames(alloc, out, &w.body),
+                .repeat_loop => |r| try collectAssignedNames(alloc, out, &r.body),
+                .if_stmt => |c| {
+                    try collectAssignedNames(alloc, out, &c.then);
+                    for (c.elseifs) |*e| try collectAssignedNames(alloc, out, &e.body);
+                    if (c.else_body) |*e| try collectAssignedNames(alloc, out, e);
+                },
+                .num_for => |f| try collectAssignedNames(alloc, out, &f.body),
+                .gen_for => |f| try collectAssignedNames(alloc, out, &f.body),
+                .func_decl => |fd| try collectAssignedNames(alloc, out, &fd.func.body),
+                .ret => {},
+                .brk => {},
+                .cont => {},
+                .goto_stmt => {},
+                .label_stmt => {},
+                .match_stmt => |m| for (m.arms) |*a| try collectAssignedNames(alloc, out, &a.body),
+                .try_stmt => |t| {
+                    try collectAssignedNames(alloc, out, &t.body);
+                    for (t.catches) |*c| try collectAssignedNames(alloc, out, &c.body);
+                    for (t.defers) |*d| try collectAssignedNames(alloc, out, &d.body);
+                },
+                .defer_stmt => |d| try collectAssignedNames(alloc, out, &d.body),
+                .enum_def => {},
+                .concept_def => {},
+                .alias_def => {},
+                .macro_def => {},
+                .cinclude => {},
+                .directive => {},
+            }
+        }
     }
 
     /// The proved bound on one entity, or null for UNKNOWN — which is not
     /// "negative", not "zero" and not "unbounded".
+    /// The proved non-negative width of a module-scope binding, or null.
+    /// Consumes the module column published by `publishBindingRanges`; the
+    /// backend must not re-derive this.
+    pub fn moduleBindingWidth(self: *const SemanticGraph, name: []const u8) ?u8 {
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind != .local) continue;
+            if (node.scope != self.module_root) continue;
+            const n = node.name orelse continue;
+            if (!std.mem.eql(u8, n, name)) continue;
+            const entity = std.math.cast(id, i) orelse return null;
+            return self.nonNegativeWidth(entity);
+        }
+        return null;
+    }
+
     pub fn nonNegativeWidth(self: *const SemanticGraph, subject: id) ?u8 {
         for (self.ranges.items) |fact| {
             if (fact.subject == subject) return fact.nonneg_width;
