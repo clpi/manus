@@ -561,20 +561,27 @@ fn boundedIncrement(iv: []const u8, v: *const ast.Expr) bool {
     return k > 0;
 }
 
-/// Every write to `iv` in `blk` is the positive increment, and `step_w` takes
-/// the widest step seen. Any other write — or any construct this walk does
-/// not look through — refuses, dropping the bound.
-fn bodyIncrementsOnly(blk: *const ast.Block, iv: []const u8, step_w: *u8) bool {
+/// Every write to `iv` in `blk` is the positive increment, and `total_step`
+/// sums every step literal. The cap must cover the bound plus the whole
+/// per-iteration increase: the widest single step alone under-bounds when the
+/// body increments more than once. An increment inside a nested loop may fire
+/// many times per outer iteration, so `in_loop` refuses the bound there.
+/// (A conditional is fine: only one branch runs per iteration, so the textual
+/// sum over-approximates the dynamic increase.) Any other write — or any
+/// construct this walk does not look through — refuses, dropping the bound.
+fn bodyIncrementsOnly(blk: *const ast.Block, iv: []const u8, total_step: *u64, in_loop: bool) bool {
     for (blk.stmts) |st| switch (st) {
         .assign => |a| {
             if (a.targets.len != a.values.len) return false;
             for (a.targets, a.values) |t, v| {
                 if (t.* != .name) continue;
                 if (!std.mem.eql(u8, t.name.ident, iv)) continue;
+                if (in_loop) return false;
                 if (!boundedIncrement(iv, v)) return false;
                 const k_expr = if (v.binop.lhs.* == .name) v.binop.rhs else v.binop.lhs;
                 const k = ast.intLiteralValue(k_expr) orelse return false;
-                step_w.* = @max(step_w.*, nonNegWidthOfLit(k) orelse return false);
+                // boundedIncrement proved k > 0, so the cast cannot fail.
+                total_step.* = std.math.add(u64, total_step.*, @as(u64, @intCast(k))) catch return false;
             }
         },
         .local_decl => |d| {
@@ -584,21 +591,21 @@ fn bodyIncrementsOnly(blk: *const ast.Block, iv: []const u8, step_w: *u8) bool {
         .global_decl => |d| {
             for (d.names) |n| if (std.mem.eql(u8, n.ident, iv)) return false;
         },
-        .do_block => |d| if (!bodyIncrementsOnly(&d.body, iv, step_w)) return false,
-        .while_loop => |w| if (!bodyIncrementsOnly(&w.body, iv, step_w)) return false,
-        .repeat_loop => |r| if (!bodyIncrementsOnly(&r.body, iv, step_w)) return false,
+        .do_block => |d| if (!bodyIncrementsOnly(&d.body, iv, total_step, in_loop)) return false,
+        .while_loop => |w| if (!bodyIncrementsOnly(&w.body, iv, total_step, true)) return false,
+        .repeat_loop => |r| if (!bodyIncrementsOnly(&r.body, iv, total_step, true)) return false,
         .if_stmt => |f| {
-            if (!bodyIncrementsOnly(&f.then, iv, step_w)) return false;
-            for (f.elseifs) |ei| if (!bodyIncrementsOnly(&ei.body, iv, step_w)) return false;
-            if (f.else_body) |eb| if (!bodyIncrementsOnly(&eb, iv, step_w)) return false;
+            if (!bodyIncrementsOnly(&f.then, iv, total_step, in_loop)) return false;
+            for (f.elseifs) |ei| if (!bodyIncrementsOnly(&ei.body, iv, total_step, in_loop)) return false;
+            if (f.else_body) |eb| if (!bodyIncrementsOnly(&eb, iv, total_step, in_loop)) return false;
         },
         .num_for => |f| {
             if (std.mem.eql(u8, f.var_name, iv)) return false;
-            if (!bodyIncrementsOnly(&f.body, iv, step_w)) return false;
+            if (!bodyIncrementsOnly(&f.body, iv, total_step, true)) return false;
         },
         .gen_for => |f| {
             for (f.vars) |v| if (std.mem.eql(u8, v, iv)) return false;
-            if (!bodyIncrementsOnly(&f.body, iv, step_w)) return false;
+            if (!bodyIncrementsOnly(&f.body, iv, total_step, true)) return false;
         },
         // A call cannot write a caller's local. A module-global IV written by
         // any relation is foreign, seeded at top before this walk, and
@@ -641,9 +648,14 @@ fn matchBoundedWhile(
     // unknown, or unmodeled — refuses.
     const init_w = widths.get(iv) orelse return null;
     if (init_w >= nonneg_top) return null;
+    var total_step: u64 = 0;
+    if (!bodyIncrementsOnly(body, iv, &total_step, false)) return null;
+    // At the head `iv` is below `bound`; after the body below
+    // `bound + total_step`. The step width covers every increment's
+    // contribution, not just the widest single step.
     var step_w: u8 = 0;
-    if (!bodyIncrementsOnly(body, iv, &step_w)) return null;
-    // At the head `iv` is below `bound`; after `iv + k` below `bound + k`.
+    var n: u64 = total_step;
+    while (n != 0) : (n >>= 1) step_w += 1;
     // The initialization's own width joins separately, so the cap needs no
     // `init_w` term — and leaving it out keeps the cap stable across rounds.
     const cap: u8 = @max(bound_w, step_w) + 1;
@@ -1049,6 +1061,33 @@ test "range: a while counter with an extra write proves nothing" {
 
     const w = try testModuleWidth(alloc, "i = 1\nwhile i < 100\n    i = i + 1\n    i = 5\n", "i");
     try std.testing.expectEqual(@as(?u8, null), w);
+}
+
+test "range: a while counter with several increments bounds every step" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Four steps of 64 per iteration: i reaches 257, so the cap must cover
+    // bound + total (100 + 256), not just bound + widest step. Width 10.
+    const src = "i = 1\nwhile i < 100\n    i = i + 64\n    i = i + 64\n    i = i + 64\n    i = i + 64\n";
+    const w = try testModuleWidth(alloc, src, "i");
+    try std.testing.expectEqual(@as(?u8, 10), w);
+}
+
+test "range: a while counter incremented inside a nested loop proves nothing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // The inner loop fires `i = i + 1` many times per outer iteration, so the
+    // textual step sum would under-bound it; the outer shape must decline.
+    // The inner counter j still proves its own bound (width 5).
+    const src = "i = 1\nwhile i < 100\n    j = 0\n    while j < 10\n        i = i + 1\n        j = j + 1\n";
+    const wi = try testModuleWidth(alloc, src, "i");
+    const wj = try testModuleWidth(alloc, src, "j");
+    try std.testing.expectEqual(@as(?u8, null), wi);
+    try std.testing.expectEqual(@as(?u8, 5), wj);
 }
 
 test "range: nested while counters keep independent bounds" {
