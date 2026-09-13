@@ -1,6 +1,10 @@
 a = 0.1
 b = 0.2
 c = 0.1 + 0.2
+fa: f64 = 0.1
+fb: f64 = 0.2
+total: f64 = (a: f64, b: f64)
+  a + b
 main: i64 = ()
   t = 0
   if 0.1 + 0.2 == 0.3
@@ -35,7 +39,23 @@ main: i64 = ()
     t = t + 1
   else
     t = t + 100
-  if t == 8
+  if fa + fb == 0.3
+    t = t + 100
+  else
+    t = t + 1
+  if fa + fb == 0.30000000000000004
+    t = t + 1
+  else
+    t = t + 100
+  if total(0.1, 0.2) == 0.3
+    t = t + 100
+  else
+    t = t + 1
+  if total(0.1, 0.2) == 0.30000000000000004
+    t = t + 1
+  else
+    t = t + 100
+  if t == 12
     0
   else
     1

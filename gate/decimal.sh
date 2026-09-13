@@ -60,7 +60,7 @@ carrier() {
   fi
 }
 
-carrier exact '1 1 0' '' "$root/examples/decimal/exact.id"
+carrier exact '1 0 1' '' "$root/examples/decimal/exact.id"
 carrier smallexp '1 0 0' '
 holds: i64 = ()
   tiny = 1e-19
