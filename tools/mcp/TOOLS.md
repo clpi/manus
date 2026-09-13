@@ -33,3 +33,10 @@
 |---|---|
 | 1 | No tool or example may teach universal namespace dispatch as native meaning. |
 | 2 | Package location is provenance, relations are identity, subjects orient application, worlds grant authority, and realization selects physical implementation with zero runtime catalog obligation for sealed programs. |
+
+| # | directive |
+|---|---|
+| 1 | The `world` tool binds one request to its actual execution world: `tools/mcp/world.id` via `tools/mcp/native.id` dispatch. |
+| 2 | Input schema is `{"subject": "concept|sibling", "file": "<subject .id>"}`; output is `result.content [0].text` carrying the world-bound verdict or structured refusal, held by `gate/mcp-world.sh`. |
+| 3 | World identity is launcher-observed at server start: `IDOL_WORLD_BIN`, `binhash` (SHA-256), `revision` (git HEAD), sidecar `<bin>.buildid`; the launcher `bin/idol-main-mcp.sh` is the trust root. |
+| 4 | Refusals carry `reason`, `next`, `producer`, `not-performed`; no verdict is emitted when any face disagrees or the world cannot be bound. |
