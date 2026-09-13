@@ -4971,8 +4971,14 @@ pub const SemanticGraph = struct {
 
         fn widthOfName(ctx: *const anyopaque, name: []const u8) ?u8 {
             const self: *const RangeReach = @ptrCast(@alignCast(ctx));
-            const subject = self.graph.bindingNamedIn(self.relation, name) orelse return null;
-            return self.graph.nonNegativeWidth(subject);
+            const subject = blk: {
+                if (self.graph.module_root) |mod_root| {
+                    if (self.relation == mod_root) break :blk self.graph.resolveBindingInScope(mod_root, name);
+                }
+                break :blk self.graph.bindingNamedIn(self.relation, name);
+            };
+            const s = subject orelse return null;
+            return self.graph.nonNegativeWidth(s);
         }
 
         fn derivationOfCallee(ctx: *const anyopaque, callee: []const u8) ?@import("range.zig").Derivation {

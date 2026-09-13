@@ -4615,6 +4615,7 @@ pub const LowerCtx = struct {
     /// the block loop must not lower them. Keyed by statement pointer; the
     /// prologue inserts them, the loop skips them.
     popcount_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    satadd_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
@@ -4730,6 +4731,7 @@ pub const LowerCtx = struct {
         self.instrs.deinit(self.alloc);
         self.nonzero_slots.deinit(self.alloc);
         self.popcount_swallowed.deinit(self.alloc);
+        self.satadd_swallowed.deinit(self.alloc);
         self.absent_applications.deinit(self.alloc);
     }
 
@@ -5306,7 +5308,7 @@ fn root(
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
-        const claimed = try tryEmitBitReversePrologue(&ctx, mod.body.stmts, i);
+        const claimed = try runAdditivePrologues(&ctx, mod.body.stmts, i);
         if (!claimed) tryArmCountedLoop(&ctx, mod.body.stmts, i);
         switch (stmt.*) {
         .func_decl,
@@ -5847,6 +5849,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         // A multi-statement idiom prologue (popcount) swallowed this statement;
         // its semantics were discharged up front.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
+        if (ctx.satadd_swallowed.contains(stmt)) continue;
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
@@ -5855,6 +5858,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         // The prologue may have swallowed this statement itself (popcount
         // discharges all six up front); do not lower it twice.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
+        if (ctx.satadd_swallowed.contains(stmt)) continue;
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -7344,6 +7348,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         // A multi-statement idiom prologue (popcount) swallowed this statement;
         // its semantics were discharged up front.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
+        if (ctx.satadd_swallowed.contains(stmt)) continue;
         const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
             try lowerStmt(ctx, stmt, tail_here);
@@ -7357,6 +7362,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         // The prologue may have swallowed this statement itself (popcount
         // discharges all six up front); do not lower it twice.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
+        if (ctx.satadd_swallowed.contains(stmt)) continue;
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
@@ -9552,9 +9558,137 @@ fn isShiftAdd(e: *const ast.Expr, x: []const u8, k: i64) bool {
     return false;
 }
 
+/// ZERO-OR-ONE-TRIP LOOP → BRANCHLESS IF.
+///
+/// Recognizes
+///
+///     iv = 0                  (stmts[at-1])
+///     while iv < bound         (stmts[at]; bound provably <= 1 via width)
+///         acc = acc + <const>
+///         iv = 1
+///
+/// and emits
+///
+///     cond = (0 < bound)
+///     if cond { acc = acc + const }   (W7 if-converts to csel)
+///     iv = cond
+///
+/// The `if` uses the ordinary one-sided branch shape so W7 if-conversion
+/// makes it a `csel` with no new backend code. The `iv` store sets the exact
+/// post-loop value (0 when bound <= 0, 1 when bound == 1); the loop that
+/// lowers next sees its trip test false on entry and runs zero times.
+///
+/// SOUNDNESS: `bound <= 1` is load-bearing. If bound >= 2 the source loop
+/// does not terminate (iv resets to 1, and 1 < bound stays true), so the
+/// width proof is a termination proof, not just a bound.
+fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    const debug = true;
+    if (at < 1) { if (debug) std.debug.print("LS: at<1\n", .{}); return false; }
+    const ws = switch (stmts[at]) {
+        .while_loop => |w| w,
+        else => return false,
+    };
+    if (ws.body.tail_expr != null) return false;
+    if (ws.body.stmts.len != 2) return false;
+
+    const cb = switch (ws.cond.*) {
+        .binop => |b| b,
+        else => return false,
+    };
+    if (cb.op != .lt) return false;
+    const iv = identOf(cb.lhs) orelse return false;
+    const bound_expr = cb.rhs;
+
+    // The bound must be a plain name not written in the body; otherwise the
+    // prologue single evaluation differs from per-trip evaluation.
+    const bound_name = identOf(bound_expr) orelse return false;
+
+    const iv_init = literalBindingOf(ctx.graph, &stmts[at - 1], iv) orelse return false;
+    if (iv_init != 0) return false;
+
+    var acc: ?[]const u8 = null;
+    var acc_const: i64 = 0;
+    var seen_add = false;
+    var seen_iv1 = false;
+    for (ws.body.stmts) |*st| {
+        const a = switch (st.*) {
+            .assign => |x| x,
+            else => return false,
+        };
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const tname = identOf(a.targets[0]) orelse return false;
+        if (std.mem.eql(u8, tname, iv)) {
+            if (seen_iv1) return false;
+            const v = ctx.graph.exactI64OfExpr(a.values[0]) orelse return false;
+            if (v != 1) return false;
+            seen_iv1 = true;
+        } else if (std.mem.eql(u8, tname, bound_name)) {
+            return false;
+        } else {
+            if (seen_add) return false;
+            const b = switch (a.values[0].*) {
+                .binop => |bb| bb,
+                else => return false,
+            };
+            if (b.op != .add) return false;
+            const lhs_is_acc = if (identOf(b.lhs)) |n| std.mem.eql(u8, n, tname) else false;
+            const rhs_is_acc = if (identOf(b.rhs)) |n| std.mem.eql(u8, n, tname) else false;
+            if (lhs_is_acc == rhs_is_acc) return false;
+            const lit = if (lhs_is_acc) b.rhs else b.lhs;
+            acc_const = ctx.graph.exactI64OfExpr(lit) orelse return false;
+            if (exprMentionsIdent(a.values[0], iv)) return false;
+            if (exprMentionsIdent(a.values[0], bound_name)) return false;
+            acc = tname;
+            seen_add = true;
+        }
+    }
+    if (!seen_add or !seen_iv1) return false;
+    const acc_name = acc.?;
+
+    // Prove bound <= 1: a 1-bit non-negative width means bound in {0,1}.
+    // Width 0 means bound == 0; the if folds to skip.
+    const relation = ctx.function orelse return false;
+    const w_opt = ctx.graph.nonNegativeWidthOfExpr(relation, bound_expr);
+    if (debug) std.debug.print("LS: width of bound={s} = {?}\n", .{bound_name, w_opt});
+    const w = w_opt orelse return false;
+    if (w > 1) return false;
+
+    const acc_slot = ctx.locals.get(acc_name) orelse return false;
+    const iv_slot = ctx.locals.get(iv) orelse return false;
+    if (slotIsNonInteger(ctx, acc_slot)) return false;
+    if (slotIsNonInteger(ctx, iv_slot)) return false;
+    if (ctx.narrow_slots.contains(acc_slot)) return false;
+    if (ctx.narrow_slots.contains(iv_slot)) return false;
+    if (acc_slot == iv_slot) return false;
+
+    // cond = (0 < bound)
+    const bound_val = try lowerExpr(ctx, bound_expr);
+    const cond_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = cond_tmp, .binop = .lt, .lhs = .{ .i64 = 0 }, .rhs = bound_val, .ty = .i64 });
+
+    // if cond { acc = acc + const } — the ordinary one-sided branch shape.
+    const fail_idx: u32 = @intCast(ctx.instrs.items.len);
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = cond_tmp }, .branch_target = 0, .branch_condition = .when_false });
+    const sum_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = sum_tmp, .binop = .add, .lhs = .{ .local = acc_slot }, .rhs = .{ .i64 = acc_const }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum_tmp }, .ty = .any });
+    const join_br_idx: u32 = @intCast(ctx.instrs.items.len);
+    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+    const end_idx: u32 = @intCast(ctx.instrs.items.len);
+    ctx.instrs.items[fail_idx].branch_target = end_idx;
+    ctx.instrs.items[join_br_idx].branch_target = end_idx;
+
+    // iv = cond: the exact post-loop value. The loop lowers next with its
+    // trip test false on entry.
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = .{ .temp = cond_tmp }, .ty = .any });
+    return true;
+}
+
 fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
     if (try tryEmitVectorReductionPrologue(ctx, stmts, at)) return true;
     if (try tryEmitPopcountIdiom(ctx, stmts, at)) return true;
+    if (try tryEmitLoopSelectPrologue(ctx, stmts, at)) return true;
+    if (try tryEmitSataddIdiom(ctx, stmts, at)) return true;
     return try tryEmitBitReversePrologue(ctx, stmts, at);
 }
 
