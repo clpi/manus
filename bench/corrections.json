@@ -2,7 +2,7 @@
  "directives": [
   {
    "id": "route",
-   "text": "Route labeling: the \"idol\" binaries in every section below were compiled by the RESTRICTED route (`idol compile lib/compiler/native.id --backend native --no-cache -o nativebench`, then `nativebench < P.id` piped through `xxd -r -p`, then `ld -arch arm64 -e _idolmain`), not by the production compiler (zig-out/bin/idol) compiling the programs. The production route (src/native.zig) does not consume the .id optimizer passes (opt/licm.id, opt/poly.id, opt/zerotrip.id); restricted-route wins are not production progress until the production route consumes the technique with its own equivalence + cost evidence."
+   "text": "Route labeling: the `idol` binaries in every section below were compiled by the route named in the `route` field row above. RESTRICTED route = `idol compile lib/compiler/native.id --backend native --no-cache -o nativebench`, then `nativebench < P.id` piped through `xxd -r -p`, then `ld -arch arm64 -e _idolmain`. PRODUCTION route = the production compiler (`zig-out/bin/idol compile P.id --backend native --no-cache -o P.idol`), which emits a linked Mach-O executable directly. The production route (src/native.zig) does not consume the .id optimizer passes (opt/licm.id, opt/poly.id, opt/zerotrip.id); restricted-route wins are not production progress until the production route consumes the technique with its own equivalence + cost evidence."
   },
   {
    "id": "oracle-identity",
@@ -10,7 +10,7 @@
   },
   {
    "id": "compile-time-scope",
-   "text": "Compile-time rows (\"Compile time, source to executable\") use the same restricted route + `ld` vs the run-time-discovered comparators. A duration counts as a successful compilation only after every required stage succeeded and the artifact was validated (exists, nonzero size). Failed attempts are recorded as FAILED work and are never mixed into success medians. Faster compile time does not offset slower output, extra allocation, larger code, or wrong answers; no faster-compile-time claim may be presented as compensating for those."
+   "text": "Compile-time rows (`Compile time, source to executable`) use the run's labeled route vs the run-time-discovered comparators: restricted = the `nativebench` produce/decode/`ld` pipeline; production = `zig-out/bin/idol compile P.id --backend native --no-cache -o P.idol`. A duration counts as a successful compilation only after every required stage succeeded and the artifact was validated (exists, nonzero size). Failed attempts are recorded as FAILED work and are never mixed into success medians. Faster compile time does not offset slower output, extra allocation, larger code, or wrong answers; no faster-compile-time claim may be presented as compensating for those."
   },
   {
    "id": "reverted-narrowed-spill",

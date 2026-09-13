@@ -5,16 +5,23 @@ Measures source->executable compile time with HARD validation.
 
 Usage:
     ctime.py <native> <benchdir> <prog> <sdk> <workdir> <out-json> <compilers>
+             [route] [idol_bin]
 
     <compilers> is a space-separated list drawn from run.sh's discovered set,
     e.g. "idol clang gcc". "idol" takes the nativebench pipeline route;
     every other name is invoked as "<cc> -O3 <prog>.c -o <artifact>".
+    [route] is "restricted" (default) or "production"; on the production
+    route "idol" compiles via <idol_bin> (zig-out/bin/idol)
+    `compile <prog>.id --backend native --no-cache -o <artifact>`.
 
 Measurement-integrity contract (the point of this file):
   - A duration qualifies as a SUCCESSFUL compilation ONLY when every required
     stage succeeds AND the artifact is validated:
         idol : produce (nativebench rc 0) -> decode (valid nonempty hex) ->
                link (ld rc 0) -> validate (executable exists, size > 0)
+        idol (production route): compile
+               (zig-out/bin/idol compile --backend native --no-cache rc 0) ->
+               validate (executable exists, size > 0)
         clang/gcc: compile (cc rc 0) -> validate (executable exists, size > 0)
   - Failed attempts are recorded as FAILED work (stage, rc, stderr tail,
     stdout tail, and the wall-clock cost of the failed attempt). They stay
@@ -100,6 +107,20 @@ def attempt_idol(native, prog_id, sdk, workdir, tag):
     return succeeded(t0, exe)
 
 
+def attempt_idol_prod(idol_bin, prog_id, workdir, tag):
+    """One production-route idol compile attempt: compile -> validate."""
+    t0 = time.perf_counter()
+    exe = os.path.join(workdir, tag + ".cto")
+    p = run([idol_bin, "compile", prog_id, "--backend", "native",
+             "--no-cache", "-o", exe])
+    if p.returncode != 0:
+        return failed("compile", p.returncode, t0, p.stderr, p.stdout)
+    why = validate_artifact(exe)
+    if why is not None:
+        return failed("validate", why, t0, b"")
+    return succeeded(t0, exe)
+
+
 def attempt_cc(cc, prog_c, workdir, tag):
     """One C-compiler attempt: compile -> validate."""
     t0 = time.perf_counter()
@@ -119,18 +140,29 @@ def median(xs):
 
 
 def main():
-    if len(sys.argv) != 8:
+    if len(sys.argv) not in (8, 10):
         print("usage: ctime.py <native> <benchdir> <prog> <sdk> "
-              "<workdir> <out-json> <compilers>", file=sys.stderr)
+              "<workdir> <out-json> <compilers> [route] [idol_bin]",
+              file=sys.stderr)
         return 2
     native, benchdir, prog, sdk, workdir, out_json, compilers = sys.argv[1:8]
+    route = sys.argv[8] if len(sys.argv) > 8 else "restricted"
+    idol_bin = sys.argv[9] if len(sys.argv) > 9 else None
+    if route not in ("restricted", "production"):
+        print("ctime: bad route: " + route, file=sys.stderr)
+        return 2
+    if route == "production" and not idol_bin:
+        print("ctime: production route needs idol_bin", file=sys.stderr)
+        return 2
     compilers = compilers.split()
     if "idol" not in compilers:
         print("ctime: compilers must include idol", file=sys.stderr)
         return 2
     prog_id = os.path.join(benchdir, "programs", prog + ".id")
     prog_c = os.path.join(benchdir, "programs", prog + ".c")
-    for req in (native, prog_id, prog_c, sdk, workdir):
+    reqs = [prog_id, prog_c, sdk, workdir]
+    reqs.append(idol_bin if route == "production" else native)
+    for req in reqs:
         if not os.path.exists(req):
             print("ctime: missing input: " + req, file=sys.stderr)
             return 2
@@ -140,7 +172,12 @@ def main():
         for cc in compilers:
             tag = "%s.%s" % (prog, cc)
             if cc == "idol":
-                attempts[cc].append(attempt_idol(native, prog_id, sdk, workdir, tag))
+                if route == "production":
+                    attempts[cc].append(
+                        attempt_idol_prod(idol_bin, prog_id, workdir, tag))
+                else:
+                    attempts[cc].append(
+                        attempt_idol(native, prog_id, sdk, workdir, tag))
             else:
                 attempts[cc].append(attempt_cc(cc, prog_c, workdir, tag))
 

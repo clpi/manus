@@ -5,10 +5,16 @@
 #   ./run.sh                 # full run: 21 interleaved rounds per benchmark
 #   ./run.sh --quick         # smoke run: 5 rounds
 #   ./run.sh --progs "sum fib" --compilers "clang"
+#   ./run.sh --route production   # production compiler route (default: restricted)
 #
 # Pipeline per benchmark program P and compiler C:
-#   1. Build P with the Idol native compiler (built from lib/compiler/native.id
-#      at the start of this run with --no-cache — never a stale binary).
+#   1. Build P with the Idol compiler for this run's route. Restricted route:
+#      nativebench is built from lib/compiler/native.id at the start of this
+#      run with --no-cache (never a stale binary); P.id is piped through it,
+#      hex-decoded, and linked with `ld -e _idolmain`. Production route: P.id
+#      is compiled directly by the production compiler
+#      (zig-out/bin/idol compile P.id --backend native --no-cache), which
+#      emits a linked Mach-O executable.
 #   2. Build P with each C compiler (clang -O3, gcc -O3 where present).
 #   3. CORRECTNESS GATE: every binary must exit with the same code AND emit
 #      byte-identical stdout vs the oracle (first of clang, gcc; idol only if
@@ -49,15 +55,22 @@ mkdir -p "$WORK"
 ROUNDS=21
 PROGS="sum arith fib nest div mul13 bigconst zerotrip upbranch startup brm1 brm2 brm3 divv divm divd dgcd divpow2 ceildiv mulc mulh madd sred1 powmod popc bitr xsft absd cltz nest3d unroll mixop loopinv satadd regp ilp stride3"
 WANT_COMPILERS="clang gcc"
+ROUTE="restricted"
 while [ $# -gt 0 ]; do
   case "$1" in
     --quick) ROUNDS=5 ;;
     --progs) PROGS="$2"; shift ;;
     --compilers) WANT_COMPILERS="$2"; shift ;;
+    --route) ROUTE="$2"; shift ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
   shift
 done
+case "$ROUTE" in
+  restricted|production) ;;
+  *) echo "unknown route: $ROUTE (expected restricted|production)" >&2; exit 2 ;;
+esac
+echo "bench: route=$ROUTE"
 
 # --- 0. Load-average gate: refuse to time on a loaded machine ---
 # Compares the 1-minute load average against a fixed threshold of 8 and
@@ -93,16 +106,20 @@ if [ "${ARCH}-${OS}" != "arm64-Darwin" ]; then
 fi
 SDK="$(xcrun --show-sdk-path)"
 
-# --- 1. Build the Idol native compiler from repo source (never stale) ---
+# --- 1. Build the Idol compiler for this run's route (never stale) ---
 IDOL_BIN="$REPO/zig-out/bin/idol"
 if [ ! -x "$IDOL_BIN" ]; then
   echo "bench: $IDOL_BIN missing; run 'zig build' in the repo first." >&2; exit 4
 fi
 NATIVE="$WORK/nativebench"
-echo "bench: compiling lib/compiler/native.id -> nativebench (--no-cache)"
-"$IDOL_BIN" compile "$REPO/lib/compiler/native.id" --backend native --no-cache -o "$NATIVE"
-if [ ! -x "$NATIVE" ] || [ ! -s "$NATIVE" ]; then
-  echo "bench: nativebench build failed (missing or empty)." >&2; exit 4
+if [ "$ROUTE" = "restricted" ]; then
+  echo "bench: compiling lib/compiler/native.id -> nativebench (--no-cache)"
+  "$IDOL_BIN" compile "$REPO/lib/compiler/native.id" --backend native --no-cache -o "$NATIVE"
+  if [ ! -x "$NATIVE" ] || [ ! -s "$NATIVE" ]; then
+    echo "bench: nativebench build failed (missing or empty)." >&2; exit 4
+  fi
+else
+  echo "bench: production route: programs compile directly with $IDOL_BIN"
 fi
 
 # --- compiler discovery: identity from --version at run time, never assumed ---
@@ -134,9 +151,24 @@ echo "bench: correctness oracle: $ORACLE"
 # With set -o pipefail, a failed producer behind the pipe fails the build:
 # a successful decoder can no longer conceal a failed producer.
 idol_build() { # $1=prog -> $WORK/$1.idol (executable)
-  "$NATIVE" < "$BENCH/programs/$1.id" | xxd -r -p > "$WORK/$1.o"
-  ld -arch arm64 -e _idolmain -platform_version macos 14.0 14.0 \
-     -syslibroot "$SDK" "$WORK/$1.o" -lSystem -o "$WORK/$1.idol"
+  if [ "$ROUTE" = "restricted" ]; then
+    "$NATIVE" < "$BENCH/programs/$1.id" | xxd -r -p > "$WORK/$1.o"
+    ld -arch arm64 -e _idolmain -platform_version macos 14.0 14.0 \
+       -syslibroot "$SDK" "$WORK/$1.o" -lSystem -o "$WORK/$1.idol"
+  else
+    # Production route: the production compiler emits a linked Mach-O
+    # executable directly (--no-cache keeps every program compile hermetic).
+    PLOG="$WORK/$1.prod-compile.log"
+    if ! "$IDOL_BIN" compile "$BENCH/programs/$1.id" --backend native --no-cache \
+        -o "$WORK/$1.idol" >"$PLOG" 2>&1; then
+      echo "bench: production compile of $1 FAILED:" >&2
+      tail -5 "$PLOG" >&2
+      exit 4
+    fi
+    if [ ! -x "$WORK/$1.idol" ] || [ ! -s "$WORK/$1.idol" ]; then
+      echo "bench: production compile of $1 produced no valid artifact." >&2; exit 4
+    fi
+  fi
 }
 clang_build() { clang -O3 "$BENCH/programs/$1.c" -o "$WORK/$1.clang"; }
 gcc_build()   { gcc -O3 "$BENCH/programs/$1.c" -o "$WORK/$1.gcc"; }
@@ -179,7 +211,12 @@ for P in $PROGS; do
   python3 "$BENCH/timing.py" < "$SPEC" > "$WORK/$P.time.json"
 
   # --- 6a. code size: object bytes ---
-  SZ_IDOL=$(stat -f%z "$WORK/$P.o" 2>/dev/null || stat -c%s "$WORK/$P.o")
+  if [ "$ROUTE" = "restricted" ]; then
+    SZ_IDOL=$(stat -f%z "$WORK/$P.o" 2>/dev/null || stat -c%s "$WORK/$P.o")
+  else
+    # Production route emits a linked executable, not an object file.
+    SZ_IDOL=$(stat -f%z "$WORK/$P.idol" 2>/dev/null || stat -c%s "$WORK/$P.idol")
+  fi
   SZ_CLANG=""; SZ_GCC=""
   clang -O3 -c "$BENCH/programs/$P.c" -o "$WORK/$P.clang.o" 2>/dev/null && SZ_CLANG=$(stat -f%z "$WORK/$P.clang.o" 2>/dev/null || stat -c%s "$WORK/$P.clang.o")
   command -v gcc >/dev/null 2>&1 && gcc -O3 -c "$BENCH/programs/$P.c" -o "$WORK/$P.gcc.o" 2>/dev/null && SZ_GCC=$(stat -f%z "$WORK/$P.gcc.o" 2>/dev/null || stat -c%s "$WORK/$P.gcc.o")
@@ -189,7 +226,7 @@ for P in $PROGS; do
   # stage succeeded and the artifact was validated (exists, nonzero size).
   # Failed attempts are recorded as FAILED work, never in success medians.
   CTIME="$WORK/$P.ctime.json"
-  python3 "$BENCH/ctime.py" "$NATIVE" "$BENCH" "$P" "$SDK" "$WORK" "$CTIME" "$COMPILERS"
+  python3 "$BENCH/ctime.py" "$NATIVE" "$BENCH" "$P" "$SDK" "$WORK" "$CTIME" "$COMPILERS" "$ROUTE" "$IDOL_BIN"
 
   # --- merge into results ---
   python3 - "$RESULT_JSON" "$WORK/$P.time.json" "$CTIME" "$P" "$SZ_IDOL" "$SZ_CLANG" "$SZ_GCC" \
@@ -221,9 +258,14 @@ done
 # EVERY run: the evidence producer owns it, so no report regeneration can
 # delete it. Amend corrections only by committing a change to that file.
 python3 - "$RESULT_JSON" "$BENCH/RESULTS.md" "$ROUNDS" "$BENCH/results/history.jsonl" "$REPO" \
-        "$BENCH/corrections.json" "$CLANG_VERSION" "$GCC_VERSION" "$ORACLE" << 'PYEOF'
+        "$BENCH/corrections.json" "$CLANG_VERSION" "$GCC_VERSION" "$ORACLE" "$ROUTE" << 'PYEOF'
 import json, sys, datetime, subprocess
-res_path, out_path, rounds, hist_path, repo, corr_path, clang_v, gcc_v, oracle = sys.argv[1:10]
+(res_path, out_path, rounds, hist_path, repo, corr_path, clang_v, gcc_v,
+ oracle, route) = sys.argv[1:11]
+# History is kept per route: restricted and production verdicts must never
+# mix in one per-program history table.
+if route != "restricted":
+    hist_path = hist_path.replace("history.jsonl", "history-production.jsonl")
 res = json.load(open(res_path))
 
 try:
@@ -259,6 +301,7 @@ entry = {
     "ts": datetime.datetime.now().isoformat(timespec="seconds"),
     "commit": commit_of(repo),
     "rounds": int(rounds),
+    "route": route,
     "oracle": oracle,
     "oracle_versions": {"clang": clang_v or None, "gcc": gcc_v or None},
     "verdicts": verdicts,
@@ -287,10 +330,11 @@ L.append("|---|---|")
 L.append("| title | Benchmark results |")
 L.append(f"| oracle_versions | clang: {clang_v or 'absent'} ; gcc: {gcc_v or 'absent'} |")
 L.append(f"| correctness_oracle | {oracle} (exit code + byte-identical stdout) |")
+L.append(f"| route | {route} |")
 L.append("")
 L.append("| # | directive |")
 L.append("|---|---|")
-L.append(f"| 1 | Generated {entry['ts']} by `bench/run.sh` ({rounds} interleaved rounds, 3 warmup, median is primary). |")
+L.append(f"| 1 | Generated {entry['ts']} by `bench/run.sh` (route {route}, {rounds} interleaved rounds, 3 warmup, median is primary). |")
 L.append("")
 L.append("| section |")
 L.append("|---|---|")
@@ -348,7 +392,12 @@ for prog, d in res["programs"].items():
     L.append("")
     L.append("| # | directive |")
     L.append("|---|---|")
-    L.append("| 1 | Object size (bytes): " +
+    if route == "restricted":
+        sizelabel = "Object size (bytes)"
+    else:
+        sizelabel = ("Artifact size (bytes; idol = linked executable, "
+                     "production route emits no separate object)")
+    L.append("| 1 | " + sizelabel + ": " +
              ", ".join(f"{k} {v}" for k, v in d["obj_bytes"].items() if v) + ". |")
 L.append("")
 L.append("| section |")
