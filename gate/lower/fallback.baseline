@@ -61,7 +61,6 @@
 # reproduces every row. REVISION is — a stale compiler disagrees, and the gate
 # calls that a CLASS CHANGE rather than agreeing. The tree used to carry one: a
 # tracked prebuilt `out/bin/idol`, now deleted.
-0	CLEAN	lib/compiler/application.id
 0	CLEAN	lib/compiler/arm64.id
 REFUSED	-	lib/compiler/arm64check.id
 0	CLEAN	lib/compiler/bind.id
@@ -84,6 +83,9 @@ REFUSED	-	lib/compiler/emit_c.id
 0	CLEAN	lib/token/grammarrole.id
 0	CLEAN	lib/compiler/elfarm.id
 0	CLEAN	lib/compiler/elfx86.id
+0	CLEAN	lib/compiler/elfarmhi.id
+0	CLEAN	lib/compiler/elfx86hi.id
+0	DIRTY	lib/compiler/machoexe.id
 0	CLEAN	lib/compiler/hw/neon.id
 0	CLEAN	lib/compiler/hw/sme.id
 0	DIRTY	lib/compiler/native.id
