@@ -5823,6 +5823,29 @@ pub const CodeGen = struct {
                 const rt = self.resolve_type(contract_ret(&fd.func));
                 break :blk if (rt == .i64 or rt == .str) rt else .any;
             },
+            // A primitive numeric conversion PROVES its target:
+            // `x:to(f64)` / `f64:from(x)` hold floats, `x:to(i64)` /
+            // `i64:from(x)` hold integers. Without this a name bound to
+            // a conversion answered `.any` and `print` of a dynamic f64
+            // was refused print-arg:any -- the descriptor gap wider
+            // than any one conversion spelling.
+            .method_call => |mc| blk: {
+                if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and
+                    mc.args[0].* == .name)
+                {
+                    const target = mc.args[0].name.ident;
+                    if (std.mem.eql(u8, target, "f64")) break :blk .f64;
+                    if (std.mem.eql(u8, target, "i64")) break :blk .i64;
+                }
+                if (std.mem.eql(u8, mc.method, "from") and mc.args.len == 1 and
+                    mc.obj.* == .name)
+                {
+                    const target = mc.obj.name.ident;
+                    if (std.mem.eql(u8, target, "f64")) break :blk .f64;
+                    if (std.mem.eql(u8, target, "i64")) break :blk .i64;
+                }
+                break :blk .any;
+            },
             else => .any,
         };
     }
@@ -5869,6 +5892,11 @@ pub const CodeGen = struct {
                 // `dnir_lower.lowerPrint` renders (gap[034]: the precheck and
                 // the lowering must claim the same set).
                 if (rt == .any) rt = self.precheck_name_type(arg);
+                // A conversion face is not a name, so the line above
+                // leaves it `.any`; the value predicate proves the
+                // primitive numeric targets. Still last: never widens a
+                // type sema was sure about.
+                if (rt == .any) rt = self.precheck_value_type(arg);
                 if (self.enum_name_of(rt)) |ename| {
                     if (self.enum_is_payload_free(ename) and self.expr_is_native_scalar(arg)) continue;
                     return false;

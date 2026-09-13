@@ -205,6 +205,14 @@ pub const Op = enum {
     store_global,
     binop,
     cmp,
+    /// Explicit numeric conversion between the scalar register files.
+    /// `.ty` is the TARGET type (`.i64` or `.f64`); `.lhs` is the source.
+    /// f64->i64 truncates toward zero (fcvtzs); NaN yields 0 and
+    /// out-of-range yields INT64_MIN, matching the constant folder total
+    /// law. i64->f64 widens (scvtf). This is the only DNIR producer of
+    /// float<->int conversion semantics: the crossFile fmov fallback in
+    /// evalDnirValue is bit transport for spill/ABI and never a conversion.
+    conv,
     call_direct,
     call_extern,
     /// Move an i64 value into x{result} before `call_direct`.
@@ -358,6 +366,7 @@ pub fn definition(instruction: Instr) ?u32 {
         .load_index,
         .alloc_slots,
         .binop,
+        .conv,
         .call_direct,
         .call_extern,
         .hw_unary,
@@ -749,6 +758,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .hw_unary,
                     .str_len,
                     .print_value,
+                    .conv,
                     => {},
                 }
             }
