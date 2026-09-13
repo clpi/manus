@@ -83,7 +83,7 @@ medianstr: i64 = (buf: str, n: i64)
   bl = buf:len()
   while i <= n
     epos = pos
-    while epos <= bl
+    while epos <= bl and buf:byte(epos) != 59
       epos = epos + 1
     vs = buf:sub(pos, epos - 1)
     ps = pad20(vs)
@@ -132,11 +132,12 @@ medianstr: i64 = (buf: str, n: i64)
     m2s = sbuf:sub(mp2, mp2 + 19)
     v1 = parseint(m1s, 1, 20)
     v2 = parseint(m2s, 1, 20)
-    (v1 + v2) / 2
+    v1 + (v2 - v1) / 2
 
 runone: i64 = (path: str, exitexp: i64, outhex: str, outlen: i64, phase: str, round: i64)
   t0 = monotime()
   raw = procrun(path, "", "")
+  t1 = monotime()
   nl = 0
   i = 1
   rn = raw:len()
@@ -178,7 +179,6 @@ runone: i64 = (path: str, exitexp: i64, outhex: str, outlen: i64, phase: str, ro
       else
         j = j + 1
     if ok
-      t1 = monotime()
       t1 - t0
     else
       print("status: mismatch")
@@ -253,10 +253,10 @@ main: i64 = ()
       chash = sha256file(compiler)
       cbuf = ""
       pbuf = ""
-      csum = 0
-      psum = 0
-      csumsq = 0
-      psumsq = 0
+      cmean: f64 = 0.0
+      pmean: f64 = 0.0
+      cmoment: f64 = 0.0
+      pmoment: f64 = 0.0
       failed = false
       w = 1
       while w <= warmup
@@ -287,65 +287,42 @@ main: i64 = ()
           else
             cts = tostr(ct)
             cbuf = "{cbuf}{cts};"
-            csum = csum + ct
-            ctus = ct / 1000
-            csumsq = csumsq + ctus * ctus
+            sample = ct / 1000.0
+            delta = sample - cmean
+            cmean = cmean + delta / r
+            cmoment = cmoment + delta * (sample - cmean)
             pts = tostr(pt)
             pbuf = "{pbuf}{pts};"
-            psum = psum + pt
-            ptus = pt / 1000
-            psumsq = psumsq + ptus * ptus
+            sample = pt / 1000.0
+            delta = sample - pmean
+            pmean = pmean + delta / r
+            pmoment = pmoment + delta * (sample - pmean)
         r = r + 1
       if failed
         1
       else
         med1 = medianstr(cbuf, rounds)
         med2 = medianstr(pbuf, rounds)
-        n1 = rounds:to(f64)
-        csumf = csum:to(f64)
-        cmean = csumf / n1
-        psumf = psum:to(f64)
-        pmean = psumf / n1
-        csqf = csumsq:to(f64)
-        psqf = psumsq:to(f64)
-        cmeanus = csumf / 1000.0 / n1
-        pmeanus = psumf / 1000.0 / n1
-        v1 = (csqf - n1 * cmeanus * cmeanus) / (n1 - 1.0)
-        v2 = (psqf - n1 * pmeanus * pmeanus) / (n1 - 1.0)
+        n1 = rounds
+        v1 = cmoment / (n1 - 1.0)
+        v2 = pmoment / (n1 - 1.0)
         se2t = v1 / n1 + v2 / n1
         tstat = 0.0
+        df = 0.0
+        analysis = "degenerate"
         if se2t > 0.0
-          dt = cmeanus - pmeanus
+          dt = cmean - pmean
           tstat = dt / math.sqrt(se2t)
-        a1 = v1 / n1
-        a2 = v2 / n1
-        se2d = a1 + a2
-        numd = se2d * se2d
-        d1 = a1 * a1 / (n1 - 1.0)
-        d2 = a2 * a2 / (n1 - 1.0)
-        df = numd / (d1 + d2)
-        critadj = 1.0 + 1.2104 / df
-        crit = 1.96 * critadj
-        sig = false
-        if tstat > crit
-          sig = true
-        if tstat < 0.0 - crit
-          sig = true
-        pct = (med2 - med1) * 100 / med2
+          a1 = v1 / n1
+          a2 = v2 / n1
+          divisor = (a1 * a1 + a2 * a2) / (n1 - 1.0)
+          if divisor > 0.0
+            df = se2t * se2t / divisor
+            analysis = "estimate"
+        pct = 0.0
+        if med2 > 0
+          pct = (med2 - med1) * 100.0 / med2
         verdict = "inconclusive"
-        if sig
-          if med1 < med2
-            verdict = "win"
-          else if med1 > med2
-            verdict = "loss"
-            verdict = "loss"
-        else if tolbp > 0
-          if med2 > 0
-            diff = med1 - med2
-            if diff < 0
-              diff = 0 - diff
-            if diff * 10000 <= med2 * tolbp
-              verdict = "tie"
         print("status: ok")
         print("verdict: {verdict}")
         print("candidate: {cand}")
@@ -364,10 +341,13 @@ main: i64 = ()
         print("speedup_pct: {pct}")
         print("t_stat: {tstat}")
         print("df: {df}")
-        sigs = "no"
-        if sig
-          sigs = "yes"
-        print("significant: {sigs}")
+        print("analysis: {analysis}")
+        print("significant: unverified")
+        print("tolerance_basis_points: {tolbp}")
+        print("candidate_variance_us2: {v1}")
+        print("comparator_variance_us2: {v2}")
+        print("candidate_samples_ns: {cbuf}")
+        print("comparator_samples_ns: {pbuf}")
         0
 
 main()

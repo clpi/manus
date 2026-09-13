@@ -4707,10 +4707,6 @@ pub const Sema = struct {
             }
         }
         if (std.mem.eql(u8, method, "to") and args.len == 1) return true;
-        if (std.mem.eql(u8, method, "from") and args.len == 1 and obj.* == .name) {
-            const ident = obj.name.ident;
-            if (std.mem.eql(u8, ident, "f64") or std.mem.eql(u8, ident, "i64")) return true;
-        }
         // SUBJECT-ONE. `subject:relation(x)` is the same edge as
         // `home.relation(subject, x)`, and the canon PREFERS the subject-first
         // spelling. It used to resolve through the allow-list below while the
@@ -5692,20 +5688,6 @@ pub const Sema = struct {
                 // starts existing. Nothing here is undone later — it is never
                 // done.
                 if (try self.checkCollectionRelation(expr)) |rt| return rt;
-                // CANONICAL CONVERSION: \ and \ — the type name is
-                // the subject, not a value. Return the target type directly without
-                // recording a graph application; lowering handles it as a special form.
-                if (std.mem.eql(u8, mc.method, "from") and mc.args.len == 1 and mc.obj.* == .name) {
-                    const tname = mc.obj.name.ident;
-                    if (std.mem.eql(u8, tname, "f64")) {
-                        _ = try self.check_expr(mc.args[0]);
-                        return .f64;
-                    }
-                    if (std.mem.eql(u8, tname, "i64")) {
-                        _ = try self.check_expr(mc.args[0]);
-                        return .i64;
-                    }
-                }
                 const ot = try self.check_expr(mc.obj);
                 for (mc.args) |arg| _ = try self.check_expr(arg);
                 if (std.mem.eql(u8, mc.method, "eq") and enum_type_has_derive(ot, "Eq")) {

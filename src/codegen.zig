@@ -2404,6 +2404,7 @@ pub const CodeGen = struct {
         if (e.* == .method_call) {
             const mc = e.method_call;
             if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and mc.args[0].* == .name) {
+                if (self.mem_type_from_name(mc.args[0].name.ident)) |t| return t;
                 if (std.mem.eql(u8, mc.args[0].name.ident, "str")) return .str;
             }
         }
@@ -6212,8 +6213,6 @@ pub const CodeGen = struct {
                     // law.host.projection { projects = to, authority = false }
                     // gap[082] is the deletion gate.
                     (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1) or
-                    (std.mem.eql(u8, mc.method, "from") and mc.args.len == 1 and mc.obj.* == .name and
-                        (std.mem.eql(u8, mc.obj.name.ident, "f64") or std.mem.eql(u8, mc.obj.name.ident, "i64"))) or
                     // The test world's relations lower to a trap, not a call,
                     // so there is no declaration for this precheck to find.
                     (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "test")) or

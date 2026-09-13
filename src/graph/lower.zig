@@ -7830,19 +7830,6 @@ fn exprIsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return switch (expr.*) {
         .float_lit => true,
         .call => exprReturnsF64(ctx, expr),
-        .method_call => |m| blk: {
-            if (std.mem.eql(u8, m.method, "to") and m.args.len == 1) {
-                if (m.args[0].* == .name and std.mem.eql(u8, m.args[0].name.ident, "f64")) {
-                    break :blk true;
-                }
-            }
-            if (std.mem.eql(u8, m.method, "from") and m.args.len == 1) {
-                if (m.obj.* == .name and std.mem.eql(u8, m.obj.name.ident, "f64")) {
-                    break :blk true;
-                }
-            }
-            break :blk false;
-        },
         // Arithmetic promotes: if either operand is f64, the result is f64.
         // Without this, `x = 0.1 + 0.2` leaves the binop unrecognized, the
         // binding never marks the slot, and a later concat prints the
@@ -10697,7 +10684,6 @@ fn holds(ctx: *const LowerCtx, v: dnir.Value) bool {
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (!ctx.require_graph_facts) return false;
     if (expr.* != .call and expr.* != .method_call) return false;
-    if (expr.* == .method_call and std.mem.eql(u8, expr.method_call.method, "from")) return false;
     if (ctx.occurrences.get(expr) != null) return false;
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
@@ -15289,11 +15275,7 @@ fn lowerSubjectCall(
                 bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
             }
-            // BYPASS: f64:from(x) is a special form, not a checked call.
-            const is_from_tn = expr.* == .method_call and std.mem.eql(u8, expr.method_call.method, "from");
-            if (!is_from_tn) {
             return lowerCheckedScalarCall(ctx, application, consumption);
-            }
         }
     }
     if (expr.* == .method_call) {
@@ -15394,24 +15376,6 @@ fn lowerSubjectCall(
                 }
             }
             return lowerSubjectTail(ctx, expr, consumption);
-        }
-        if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1) {
-            if (mc.args[0].* == .name) {
-                const target = mc.args[0].name.ident;
-                if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "i64")) {
-                    if (exprIsIntegral(ctx, mc.obj) or exprIsF64(ctx, mc.obj)) {
-                        return lowerNumericConvert(ctx, mc.obj, target, consumption);
-                    }
-                }
-            }
-        }
-        if (std.mem.eql(u8, mc.method, "from") and mc.args.len == 1) {
-            if (mc.obj.* == .name) {
-                const target = mc.obj.name.ident;
-                if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "i64")) {
-                    return lowerNumericConvert(ctx, mc.args[0], target, consumption);
-                }
-            }
         }
         if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and ctx.graph.bootstrapApplicationExpr(expr)) {
             return lowerSubjectTo(ctx, mc.obj, mc.args[0], consumption);
@@ -16639,52 +16603,6 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         },
         else => false,
     };
-}
-
-/// Numeric type conversion for `:to` and `:from`.
-/// `x:to(f64)` converts numeric x to f64; `f64:from(x)` does the same.
-/// Pure value conversion, not bootstrap-gated.
-fn lowerNumericConvert(
-    ctx: *LowerCtx,
-    value_expr: *const ast.Expr,
-    target_name: []const u8,
-    consumption: types.ReturnConsumption,
-) Error!dnir.Value {
-    const v = try lowerExpr(ctx, value_expr);
-    if (std.mem.eql(u8, target_name, "f64")) {
-        switch (v) {
-            .i64 => |n| {
-                if (consumption == .discard) return .void;
-                return dnir.Value{ .f64 = @floatFromInt(n) };
-            },
-            .f64 => {
-                if (consumption == .discard) return .void;
-                return v;
-            },
-            else => {
-                if (consumption == .discard) return .void;
-                const t = try binopTemp(ctx, .add, v, .{ .f64 = 0.0 });
-                return dnir.Value{ .temp = t };
-            },
-        }
-    }
-    if (std.mem.eql(u8, target_name, "i64")) {
-        switch (v) {
-            .f64 => |x| {
-                if (consumption == .discard) return .void;
-                return dnir.Value{ .i64 = @intFromFloat(x) };
-            },
-            .i64 => {
-                if (consumption == .discard) return .void;
-                return v;
-            },
-            else => {
-                if (consumption == .discard) return .void;
-                return v;
-            },
-        }
-    }
-    return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
 }
 
 /// `value:to(i64)` — bootstrap text-to-integer edge for gate transport scripts.
