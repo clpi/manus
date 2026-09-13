@@ -100,7 +100,7 @@ done
 # the gate is NOT MEASURED rather than failed: the same attribution class
 # the .sh gates get from the producer's sentence, via IDOL_DIRECT_NATIVE,
 # which this file already probed above.
-IDOL_GATES='gate/table_apply.id gate/canonicality.id gate/readpath.id gate/gap-111-map-ambiguity.id gate/gap-111-subject-first.id gate/gap-118-env-absence.id gate/perfmonotone.id gate/grammar-projection.id gate/delimiter-projection-law.id gate/gap-114-boxed-len.id gate/gap-121-module-init.id gate/selfhost.id gate/architecture-roadmap.id gate/public-safety.id gate/module-zero-precheck.id gate/elfexec.id gate/machoexec.id gate/architecture-negative.id gate/architecture-companion.id gate/gap-141-runtime-temp.id gate/corpus-status.id gate/treesitter-agreement.id gate/foreign-symbol-quarantine.id gate/researchgap.id gate/gap-115-evidence.id'
+IDOL_GATES='gate/table_apply.id gate/canonicality.id gate/readpath.id gate/gap-111-map-ambiguity.id gate/gap-111-subject-first.id gate/gap-118-env-absence.id gate/perfmonotone.id gate/grammar-projection.id gate/delimiter-projection-law.id gate/gap-114-boxed-len.id gate/gap-121-module-init.id gate/selfhost.id gate/architecture-roadmap.id gate/public-safety.id gate/module-zero-precheck.id gate/elfexec.id gate/machoexec.id gate/architecture-negative.id gate/architecture-companion.id gate/gap-141-runtime-temp.id gate/corpus-status.id gate/treesitter-agreement.id gate/foreign-symbol-quarantine.id gate/researchgap.id gate/gap-115-evidence.id gate/decimal-compare.id'
 
 idol=${IDOL_BIN:-$repo/zig-out/bin/idol}
 for idgate in $IDOL_GATES; do

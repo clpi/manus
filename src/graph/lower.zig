@@ -12,6 +12,7 @@ const ast = @import("../ast.zig");
 const Expr = ast.Expr;
 const types = @import("../types.zig");
 const comptime_eval = @import("../comptime.zig");
+const decimal = @import("../decimal.zig");
 const subject_home = @import("../subject_home.zig");
 const dnir = @import("../native/ir.zig");
 const dnir_hardware = @import("../dnir_hardware.zig");
@@ -228,6 +229,14 @@ fn refuseMissingApplication(
 const ModuleConsts = struct {
     ints: std.StringHashMapUnmanaged(i64) = .empty,
     strs: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Exact decimal value of a stable module-level decimal binding.
+    /// 0.1 names one tenth; the f64 nearest it does not, so a comparison
+    /// that lowers through f64 answers about the roundings. This table
+    /// carries the named value from the collection walk (which proves
+    /// stability -- see collectModuleConsts) to the comparison fold in
+    /// lowerBinop, which decides the comparison on the values named.
+    /// Values are copied decimal structs; keys are duped like the tables.
+    decimals: std.StringHashMapUnmanaged(decimal.Decimal) = .empty,
     /// Module-level positional tables whose every element is text. The function
     /// path carries this in `LowerCtx.str_tables` via `noteStrTable`; a module
     /// binding has no `LowerCtx`, so it is recorded here and read at the same
@@ -260,6 +269,9 @@ const ModuleConsts = struct {
         var sit = self.strs.iterator();
         while (sit.next()) |e| alloc.free(e.key_ptr.*);
         self.strs.deinit(alloc);
+        var decit = self.decimals.iterator();
+        while (decit.next()) |e| alloc.free(e.key_ptr.*);
+        self.decimals.deinit(alloc);
         var tit = self.str_tables.iterator();
         while (tit.next()) |e| alloc.free(e.key_ptr.*);
         self.str_tables.deinit(alloc);
@@ -2302,6 +2314,141 @@ pub fn moduleConstTableKind(
     return if (all_int) .int else .text;
 }
 
+/// How decimalOfExpr resolves a `.name`.
+const DecimalScope = union(enum) {
+    /// Population time (collectModuleConsts): names resolve through the
+    /// tables being built, so `b = a` chains onto an earlier binding.
+    /// Integer constants resolve through decimal.fromInt, which is exact.
+    init: struct {
+        decimals: *const std.StringHashMapUnmanaged(decimal.Decimal),
+        ints: *const std.StringHashMapUnmanaged(i64),
+    },
+    /// Fold time (lowerBinop): names resolve only through the finished
+    /// module tables, and only to decimals. A name that also names an
+    /// integer constant declines: mixed int/decimal comparisons are a
+    /// separate divergence the fold must not adjudicate, so they keep the
+    /// runtime answer.
+    fold: *const LowerCtx,
+};
+
+/// The exact decimal an expression names, or null when it names anything else.
+///
+/// A float literal carries its spelling value on the AST (float_lit.dec; a
+/// spelling the decimal carrier declined, like a hex float, has none and the
+/// fold declines). `+`, `-`, `*` and unary `-` stay exact through decimal.zig;
+/// division, calls and indexing are not exact-decimal facts and decline the
+/// whole comparison. Every decimal.zig relation is total and bounded: it
+/// answers, or declines with null -- never traps.
+fn decimalOfExpr(scope: DecimalScope, expr: *const Expr) ?decimal.Decimal {
+    return switch (expr.*) {
+        .float_lit => |fl| fl.dec,
+        .unop => |u| switch (u.op) {
+            .neg => (decimalOfExpr(scope, u.operand) orelse return null).neg(),
+            else => null,
+        },
+        .binop => |b| {
+            const l = decimalOfExpr(scope, b.lhs) orelse return null;
+            const r = decimalOfExpr(scope, b.rhs) orelse return null;
+            return switch (b.op) {
+                .add => decimal.add(l, r),
+                .sub => decimal.sub(l, r),
+                .mul => decimal.mul(l, r),
+                else => null,
+            };
+        },
+        .name => |nm| decimalOfName(scope, nm.ident),
+        else => null,
+    };
+}
+
+fn decimalOfName(scope: DecimalScope, name: []const u8) ?decimal.Decimal {
+    switch (scope) {
+        .init => |t| {
+            if (t.decimals.get(name)) |d| return d;
+            if (t.ints.get(name)) |v| return decimal.fromInt(v);
+            return null;
+        },
+        .fold => |ctx| {
+            // The read must answer for the module binding, never for a
+            // shadow: fused literals, written globals and -- inside a
+            // relation body -- any local all win over the module constant in
+            // the `.name` arm of lowerExprCons, so the fold declines exactly
+            // where that arm would read something else. At module root the
+            // map holds the module bindings themselves; their stability is
+            // established at population time (see collectModuleConsts).
+            if (ctx.fused_literals.contains(name)) return null;
+            if (ctx.module_globals.types.contains(name)) return null;
+            if (!ctx.module_root and ctx.locals.contains(name)) return null;
+            return ctx.module_consts.decimals.get(name);
+        },
+    }
+}
+
+/// Names bound as loop variables by a `for`/`gen for` at module root, outside
+/// any relation body. A loop variable reuses the slot of a same-named module
+/// binding (the first arm of lowerAssignTarget takes the existing slot), so
+/// once the loop runs the slot no longer holds the binding initializer --
+/// but moduleConstIsStable counts only syntactic writes and never sees the
+/// loop-variable write. Recording such a name as an exact decimal would fold
+/// reads after the loop to the stale initializer. Function bodies are not
+/// descended into: there the !ctx.module_root guard in decimalOfName already
+/// declines shadowed names.
+fn collectModuleForVarNames(alloc: std.mem.Allocator, mod: *const ast.Module) Error!std.StringHashMapUnmanaged(void) {
+    var out: std.StringHashMapUnmanaged(void) = .empty;
+    errdefer {
+        var it = out.iterator();
+        while (it.next()) |e| alloc.free(e.key_ptr.*);
+        out.deinit(alloc);
+    }
+    try forVarNamesInStmts(alloc, mod.body.stmts, &out);
+    return out;
+}
+
+fn forVarNamesInStmts(
+    alloc: std.mem.Allocator,
+    stmts: []const ast.Stmt,
+    out: *std.StringHashMapUnmanaged(void),
+) Error!void {
+    for (stmts) |*st| {
+        switch (st.*) {
+            .num_for => |f| {
+                {
+                    if (out.contains(f.var_name)) break;
+                    const key = try alloc.dupe(u8, f.var_name);
+                    errdefer alloc.free(key);
+                    try out.put(alloc, key, {});
+                }
+                try forVarNamesInStmts(alloc, f.body.stmts, out);
+            },
+            .gen_for => |g| {
+                for (g.vars) |v| {
+                    if (out.contains(v)) continue;
+                    const key = try alloc.dupe(u8, v);
+                    errdefer alloc.free(key);
+                    try out.put(alloc, key, {});
+                }
+                try forVarNamesInStmts(alloc, g.body.stmts, out);
+            },
+            .do_block => |d| try forVarNamesInStmts(alloc, d.body.stmts, out),
+            .while_loop => |w| try forVarNamesInStmts(alloc, w.body.stmts, out),
+            .repeat_loop => |r| try forVarNamesInStmts(alloc, r.body.stmts, out),
+            .if_stmt => |s| {
+                try forVarNamesInStmts(alloc, s.then.stmts, out);
+                for (s.elseifs) |ei| try forVarNamesInStmts(alloc, ei.body.stmts, out);
+                if (s.else_body) |eb| try forVarNamesInStmts(alloc, eb.stmts, out);
+            },
+            .match_stmt => |m| for (m.arms) |arm| try forVarNamesInStmts(alloc, arm.body.stmts, out),
+            .try_stmt => |t| {
+                try forVarNamesInStmts(alloc, t.body.stmts, out);
+                for (t.catches) |c| try forVarNamesInStmts(alloc, c.body.stmts, out);
+                for (t.defers) |d| try forVarNamesInStmts(alloc, d.body.stmts, out);
+            },
+            .defer_stmt => |d| try forVarNamesInStmts(alloc, d.body.stmts, out),
+            else => {},
+        }
+    }
+}
+
 fn collectModuleConsts(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -2311,6 +2458,14 @@ fn collectModuleConsts(
     var out: ModuleConsts = .{};
     errdefer out.deinit(alloc);
     const map = &out.ints;
+    // Loop variables at module root reuse a same-named binding slot (see
+    // collectModuleForVarNames); exclude them before any recording.
+    var for_var_names = try collectModuleForVarNames(alloc, mod);
+    defer {
+        var fvit = for_var_names.iterator();
+        while (fvit.next()) |e| alloc.free(e.key_ptr.*);
+        for_var_names.deinit(alloc);
+    }
     for (mod.body.stmts) |*stmt| {
         var name: ?[]const u8 = null;
         var val: ?*const Expr = null;
@@ -2387,6 +2542,18 @@ fn collectModuleConsts(
         if (graphTextConst(graph, v)) {
             try out.strs.put(alloc, try alloc.dupe(u8, n), v.quoted.val);
             continue;
+        }
+        // Exact decimal constants. moduleConstIsStable counts syntactic
+        // writes; the graph fact catches what it cannot see; loop
+        // variables are excluded outright (see
+        // collectModuleForVarNames). A name that survives all three
+        // names one value for the whole module, so the fold in
+        // lowerBinop may answer comparisons from it.
+        if (!for_var_names.contains(n) and graph.moduleBindingConstant(n)) {
+            if (decimalOfExpr(.{ .init = .{ .decimals = &out.decimals, .ints = &out.ints } }, v)) |d| {
+                try out.decimals.put(alloc, try alloc.dupe(u8, n), d);
+                continue;
+            }
         }
         // A descriptor is a bare `{ ... }`. `@({ ... })` is comptime eval of a
         // pack and parses as a `.compile` unop wrapping the table, so unwrap
@@ -2905,6 +3072,7 @@ fn lowerModuleFromGraph(
         while (it.next()) |name| {
             if (module_consts.ints.fetchRemove(name.*)) |e| alloc.free(e.key);
             if (module_consts.strs.fetchRemove(name.*)) |e| alloc.free(e.key);
+            if (module_consts.decimals.fetchRemove(name.*)) |e| alloc.free(e.key);
         }
     }
     var records: std.ArrayList(dnir.RecordDesc) = .empty;
@@ -13958,7 +14126,41 @@ pub fn binopTagOf(op: ast.BinOp) ?dnir.BinOpTag {
     };
 }
 
+/// Decide a comparison on the exact decimals its operands name.
+///
+/// 0.1 names one tenth; the f64 nearest it does not. Ordinary lowering
+/// commits every float literal to f64 before comparing, so 0.1 + 0.2 == 0.3
+/// answered 0 on every backend -- the exact fact was discarded before
+/// emission and the backends correctly executed binary floating-point
+/// arithmetic on the roundings. Deciding the comparison on the decimals the
+/// spellings name restores the answer the source states. Fail-closed: any
+/// operand that is not an exact decimal leaves the comparison on the
+/// ordinary path. Strict exactness, never a tolerance: 0.1 + 1e-19 == 0.1
+/// stays false.
+fn foldDecimalCompare(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) ?bool {
+    const order = switch (op) {
+        .eq, .neq, .lt, .gt, .leq, .geq => decimal.compare(
+            decimalOfExpr(.{ .fold = ctx }, lhs) orelse return null,
+            decimalOfExpr(.{ .fold = ctx }, rhs) orelse return null,
+        ) orelse return null,
+        else => return null,
+    };
+    return switch (op) {
+        .eq => order == .eq,
+        .neq => order != .eq,
+        .lt => order == .lt,
+        .gt => order == .gt,
+        .leq => order != .gt,
+        .geq => order != .lt,
+        else => unreachable,
+    };
+}
+
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
+    // Exact-decimal comparison fold. Decides the comparison on the
+    // decimals the operand spellings name; declines (null) for anything
+    // else and the ordinary f64 path below runs unchanged.
+    if (foldDecimalCompare(ctx, op, lhs, rhs)) |truth| return .{ .i64 = if (truth) 1 else 0 };
     if (op == .concat and concatOperandOk(ctx, lhs) and concatOperandOk(ctx, rhs) and
         (exprIsStr(ctx, lhs) or exprIsStr(ctx, rhs)))
     {

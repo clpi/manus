@@ -1,0 +1,41 @@
+a = 0.1
+b = 0.2
+c = 0.1 + 0.2
+main: i64 = ()
+  t = 0
+  if 0.1 + 0.2 == 0.3
+    t = t + 1
+  else
+    t = t + 100
+  if a + b == 0.3
+    t = t + 1
+  else
+    t = t + 100
+  if .1 + .2 == .3
+    t = t + 1
+  else
+    t = t + 100
+  if 0.1 + 1e-19 == 0.1
+    t = t + 100
+  else
+    t = t + 1
+  if 0.1 + 0.2 != 0.3
+    t = t + 100
+  else
+    t = t + 1
+  if 0.1 + 0.2 <= 0.3
+    t = t + 1
+  else
+    t = t + 100
+  if 0.1 + 0.2 < 0.3
+    t = t + 100
+  else
+    t = t + 1
+  if c == 0.3
+    t = t + 1
+  else
+    t = t + 100
+  if t == 8
+    0
+  else
+    1
