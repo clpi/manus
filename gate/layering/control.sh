@@ -139,7 +139,7 @@ echo
 echo "-- L1: dependency direction --"
 
 C=$(mkclone)
-printf '\nconst sema = @import("sema.zig");\n' >>"$C/src/c/backend.zig"
+printf '\nconst sema = @import("../sema.zig");\n' >>"$C/src/c/backend.zig"
 expect_fail "c/backend.zig (BACKEND) newly imports sema.zig -- backend recovering meaning" \
     "$C/gate/layering.sh" --static-only
 rm -rf "$C"
@@ -151,7 +151,7 @@ expect_fail "wasm_semantic.zig (BACKEND) newly imports ast.zig" \
 rm -rf "$C"
 
 C=$(mkclone)
-printf '\nconst p = @import("parser.zig");\n' >>"$C/src/backend/identity.zig"
+printf '\nconst p = @import("../parser.zig");\n' >>"$C/src/backend/identity.zig"
 expect_fail "backend/identity.zig (IR) newly imports parser.zig" \
     "$C/gate/layering.sh" --static-only
 rm -rf "$C"
@@ -159,7 +159,7 @@ rm -rf "$C"
 # The evasion this rule most needs to survive: hide the reach mid-file, far
 # from the header block, where a reviewer skimming imports will not see it.
 C=$(mkclone)
-LC_ALL=C awk 'NR == 40 { print "fn hidden() void { const s = @import(\"sema.zig\").Sema; _ = s; }" } { print }' \
+LC_ALL=C awk 'NR == 40 { print "fn hidden() void { const s = @import(\"../sema.zig\").Sema; _ = s; }" } { print }' \
     "$C/src/c/backend.zig" >"$C/src/c_backend.new"
 mv "$C/src/c_backend.new" "$C/src/c/backend.zig"
 expect_fail "sema reach buried mid-file, far from the import header a reviewer skims" \
