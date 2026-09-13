@@ -1328,20 +1328,122 @@ pub const Sema = struct {
         self: *Sema,
         loc: ast.Loc,
         method: []const u8,
+        obj: *const ast.Expr,
+        args: []const *ast.Expr,
+        ot: RT,
         matches: []const ForeignRelation,
     ) SemaError!?ForeignRelation {
         return switch (matches.len) {
             0 => null,
             1 => matches[0],
-            else => blk: {
-                self.err(
-                    loc,
-                    "ambiguous subject-first relation '{s}': {d} admissible declarations with no distinguishing descriptor/world facts",
-                    .{ method, matches.len },
-                );
-                break :blk null;
-            },
+            else => self.narrowForeignRelations(loc, method, obj, args, ot, matches),
         };
+    }
+
+    /// THE NARROWING CASCADE. More than one admissible foreign declaration is
+    /// not yet an ambiguity: each stage below can only REMOVE candidates, and
+    /// a stage that would empty the set keeps the previous set instead — fail
+    /// open to the next stage, never to a guess. The first stage yielding
+    /// exactly one wins; when none does, the ambiguity refusal is unchanged,
+    /// so this can only turn refusals into resolutions, never change a
+    /// working program's selection.
+    fn narrowForeignRelations(
+        self: *Sema,
+        loc: ast.Loc,
+        method: []const u8,
+        obj: *const ast.Expr,
+        args: []const *ast.Expr,
+        ot: RT,
+        matches: []const ForeignRelation,
+    ) SemaError!?ForeignRelation {
+        var narrowed: std.ArrayListUnmanaged(ForeignRelation) = .empty;
+        defer narrowed.deinit(self.alloc);
+
+        // Stage 1 — the subject's own conformance home. `pot:len()` on a
+        // sequence-conformant subject keeps only the table home's declaration.
+        {
+            const conf = self.subjectConformance(obj, ot);
+            if (conf != .unknown) {
+                if (subject_home.homeForConformance(conf, method)) |h| {
+                    const want = subject_home.homeName(h);
+                    narrowed.clearRetainingCapacity();
+                    for (matches) |m| {
+                        if (std.mem.eql(u8, m.home.home, want)) try narrowed.append(self.alloc, m);
+                    }
+                    if (narrowed.items.len == 1) return narrowed.items[0];
+                }
+            }
+        }
+
+        // Stage 2 — arity. The subject-first face fills slot zero, so a
+        // candidate's params must take (subject, args...): params.len >= 1
+        // with params.len - 1 == args.len, trailing defaults covering the
+        // rest, or vararg with params.len - 1 <= args.len.
+        {
+            narrowed.clearRetainingCapacity();
+            for (matches) |m| {
+                const params = m.decl.func.params;
+                if (params.len < 1) continue;
+                const rest = params.len - 1;
+                if (m.decl.func.vararg) {
+                    if (rest <= args.len) try narrowed.append(self.alloc, m);
+                    continue;
+                }
+                if (rest == args.len) {
+                    try narrowed.append(self.alloc, m);
+                    continue;
+                }
+                if (rest > args.len) {
+                    var covered = true;
+                    for (params[args.len + 1 ..]) |p| {
+                        if (p.default_val == null) {
+                            covered = false;
+                            break;
+                        }
+                    }
+                    if (covered) try narrowed.append(self.alloc, m);
+                }
+            }
+            if (narrowed.items.len == 1) return narrowed.items[0];
+        }
+
+        // Stage 3 — declared parameter descriptors. Subject type ot fills
+        // position zero, arg types come from type_map; .any on either side is
+        // compatible (resolve_overload's rule). Exact-only survivors are
+        // preferred when they yield exactly one.
+        {
+            var exact: std.ArrayListUnmanaged(ForeignRelation) = .empty;
+            defer exact.deinit(self.alloc);
+            var compat: std.ArrayListUnmanaged(ForeignRelation) = .empty;
+            defer compat.deinit(self.alloc);
+            for (matches) |m| {
+                const params = m.decl.func.params;
+                var is_exact = true;
+                var is_compat = true;
+                var i: usize = 0;
+                while (i < params.len) : (i += 1) {
+                    const at: RT = if (i == 0) ot else if (i - 1 < args.len)
+                        (self.type_map.get(args[i - 1]) orelse .any)
+                    else
+                        .any;
+                    const pt = try self.resolve_type(params[i].typ);
+                    if (pt.eql(at)) continue;
+                    is_exact = false;
+                    if (pt != .any and at != .any) is_compat = false;
+                }
+                if (is_exact) try exact.append(self.alloc, m);
+                if (is_compat) try compat.append(self.alloc, m);
+            }
+            if (exact.items.len == 1) return exact.items[0];
+            if (compat.items.len == 1) return compat.items[0];
+        }
+
+        self.err(
+            loc,
+            "ambiguous subject-first relation '{s}': {d} admissible declarations with no distinguishing descriptor/world facts",
+            .{ method, matches.len },
+        );
+        return null;
     }
 
     /// SUBJECT-FIRST CROSS-HOME. `xs:map(f)` is the same application as
@@ -1351,6 +1453,7 @@ pub const Sema = struct {
         loc: ast.Loc,
         obj: *const ast.Expr,
         method: []const u8,
+        args: []const *ast.Expr,
         ot: RT,
     ) SemaError!?ForeignRelation {
         if (self.home_loader == null) return null;
@@ -1360,11 +1463,11 @@ pub const Sema = struct {
         if (self.subjectHome(obj, method, ot)) |home| {
             const spelling = subject_home.homeName(home);
             try self.collectForeignRelationsInHomes(&[_][]const u8{spelling}, method, &matches);
-            return self.resolveUniqueForeignRelations(loc, method, matches.items);
+            return self.resolveUniqueForeignRelations(loc, method, obj, args, ot, matches.items);
         }
 
         try self.collectForeignRelationsInHomes(&foreign_module_homes, method, &matches);
-        return self.resolveUniqueForeignRelations(loc, method, matches.items);
+        return self.resolveUniqueForeignRelations(loc, method, obj, args, ot, matches.items);
     }
 
     fn recordApplication(
@@ -4772,7 +4875,6 @@ pub const Sema = struct {
     /// gap's own "Do not" places the diagnostic exactly there. The subject
     /// resolution and the label test mirror `check_descriptor_application`
     /// clause for clause so the two faces cannot drift apart.
-
     /// A fixed-array annotation `[N]T` demands exactly N positional elements
     /// in a table-literal initializer. A short literal used to sail through
     /// and publish a literal-sized aggregate while the annotation promised
@@ -5648,7 +5750,7 @@ pub const Sema = struct {
                     return .any;
                 }
 
-                if (try self.subjectFirstForeignRelation(mc.loc, mc.obj, mc.method, ot)) |foreign| {
+                if (try self.subjectFirstForeignRelation(mc.loc, mc.obj, mc.method, mc.args, ot)) |foreign| {
                     const declared = try self.resolve_type(contract_ret_expr(&foreign.decl.func));
                     try self.recordApplicationInHome(
                         expr,
@@ -14069,7 +14171,6 @@ pub const Sema = struct {
         }
     };
     const Constructor = struct {
-
         fn accepts(self: *Sema, descriptor: RT, value: *const Expr) bool {
             if (value.* != .table) return false;
             var owned: ?[]types.FieldType = null;
@@ -14515,7 +14616,6 @@ test "sema: GAP-226 a world the launcher did not grant fails closed at the edge"
         "'assert' is neither a descriptor nor a callable",
     ) != null);
 }
-
 
 test "sema: gap236 case3 — subject-specialized declaration mints a Lua method, publishes nothing" {
     // RESIDUE vs the ruling: `body:weight = (factor)` should be relation
@@ -17735,7 +17835,8 @@ test "sema: RESOLUTION-PERMUTATION resolveUniqueForeignRelations does not first-
     var s = Sema.init(alloc);
     const loc = ast.Loc{ .file = "test.id", .line = 1, .col = 1 };
 
-    try testing.expect(try s.resolveUniqueForeignRelations(loc, "nosuch", &.{}) == null);
+    var dummy = ast.Expr{ .nil = loc };
+    try testing.expect(try s.resolveUniqueForeignRelations(loc, "nosuch", &dummy, &.{}, .any, &.{}) == null);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
 

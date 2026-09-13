@@ -676,15 +676,56 @@ fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
 /// literal of one kind, use is at most `dyn_read`). Either admit is enough;
 /// either refuse keeps the word.
 fn moduleBindingIsAbsentAggregate(
+    alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
     mod: *const ast.Module,
     name: []const u8,
     init: ?*const Expr,
-) bool {
+) Error!bool {
     const p = graph.placeNamed(name) orelse return false;
     if (place.residencyRefusal(p) == .none) return true;
     if (init) |v| {
         if (moduleConstTableKindGraph(graph, true, mod, name, v) != null) return true;
+    }
+    // A RECORD GLOBAL WITH ALL-CONSTANT NAMED FIELDS TAKES NO WORD. The
+    // reads already fold through the "name.field" keys collectModuleConsts
+    // records; the word the publish step would register for it exists only
+    // to fail `global-init-not-constant` in constGlobalInit, which cannot
+    // fold a record literal into one i64. The admission is the record mirror
+    // of the positional arm above: every named field is an exact i64 or text
+    // constant — the same verdict the const walk records — the census sees
+    // no write, rebind, alias or escape, determinacy is exact, and no
+    // relation writes a field. Anything else keeps the word.
+    const binds_once = switch (p.bindCount()) {
+        .exact => |n| n == 1,
+        else => false,
+    };
+    if (p.shape == .record and
+        p.facts.mutation == .no and p.facts.immutability == .yes and
+        binds_once and
+        p.facts.alias == .no and p.facts.escape == .no and
+        p.facts.determinacy == .exact and
+        !(try moduleHasFieldWrite(alloc, &mod.body, p.binding, name)))
+    {
+        if (init) |v| {
+            if (v.* == .table) {
+                var all_const = true;
+                for (v.table.fields) |fld| {
+                    const nf = switch (fld) {
+                        .named => |x| x,
+                        else => {
+                            all_const = false;
+                            break;
+                        },
+                    };
+                    if (graph.exactI64OfExpr(nf.val) == null and !graphTextConst(graph, nf.val)) {
+                        all_const = false;
+                        break;
+                    }
+                }
+                if (all_const) return true;
+            }
+        }
     }
     return false;
 }
@@ -721,7 +762,7 @@ fn collectModuleGlobals(
                 // THE BINDING IS A POSITIONAL CONSTANT TABLE OF ONE KIND —
                 // two independent reasons no `__DATA` word is needed.
                 const init: ?*const Expr = if (i < gd.inits.len) gd.inits[i] else null;
-                if (moduleBindingIsAbsentAggregate(graph, mod, n.ident, init)) continue;
+                if (try moduleBindingIsAbsentAggregate(alloc, graph, mod, n.ident, init)) continue;
                 try out.types.put(alloc, n.ident, typeOfGlobal(n.typ, init));
                 try out.order.append(alloc, .{ .name = n.ident, .init = init });
             },
@@ -825,7 +866,6 @@ fn collectModuleTableFieldGlobals(
 /// The correct approach: resolve the exact binding the current body sees for
 /// `base`, then check if that binding is at module scope. Only when the binding
 /// identity is the module-level binding does module storage apply.
-
 /// The binding `name` denotes from the body being lowered, or null when no
 /// binding is visible. Relation bodies resolve through their callable; the
 /// module body IS module scope, and the module entity is not a callable, so
@@ -15236,7 +15276,8 @@ fn lowerWrite(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     if (arg.* == .call and arg.call.func.* == .field) {
         const f = arg.call.func.field;
         if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string") and
-            std.mem.eql(u8, f.field, "char") and arg.call.args.len == 1) {
+            std.mem.eql(u8, f.field, "char") and arg.call.args.len == 1)
+        {
             const bv = try lowerExpr(ctx, arg.call.args[0]);
             try ctx.emit(.{ .op = .print_value, .lhs = bv, .ty = .i64, .field = "byte" });
             return .void;

@@ -18875,6 +18875,15 @@ pub const CodeGen = struct {
                         self.p("lua_tbl_remove(", .{});
                         try self.emit_as_lua_value(mc.obj);
                         self.p(", lua_val_nil())", .{});
+                        // THE PUBLISHED FACT RESCUES THE RECEIVER FACE. This stays
+                        // the chain's terminal else-if: every arm above that could
+                        // answer this method has declined, and what remains after
+                        // the guard is the dynamic member lookup — the wrong answer
+                        // for a site sema resolved to a declared relation.
+                        // tryEmitApplicationFactReceiverCall only fires on such a
+                        // site, so data still wins the name by construction.
+                    } else if (try self.tryEmitApplicationFactReceiverCall(expr, mc)) {
+                        return;
                     } else {
                         const hash = calc_lua_hash(mc.method);
                         self.p("({{\n", .{});
@@ -18985,6 +18994,15 @@ pub const CodeGen = struct {
                         }
                         self.p(")", .{});
                         if (coerced) self.emit_lua_result_coerce_suffix(result_rt);
+                        // THE PUBLISHED FACT RESCUES THE RECEIVER FACE. This stays
+                        // the chain's terminal else-if: every arm above that could
+                        // answer this method has declined, and what remains after
+                        // the guard is the dynamic member lookup — the wrong answer
+                        // for a site sema resolved to a declared relation.
+                        // tryEmitApplicationFactReceiverCall only fires on such a
+                        // site, so data still wins the name by construction.
+                    } else if (try self.tryEmitApplicationFactReceiverCall(expr, mc)) {
+                        return;
                     } else {
                         // Unknown string method — fall back to dynamic dispatch
                         const hash = calc_lua_hash(mc.method);
@@ -26797,6 +26815,45 @@ pub const CodeGen = struct {
         return true;
     }
 
+    /// THE PUBLISHED APPLICATION FACT, ASKED AT THE RECEIVER FACE. Sema
+    /// records which declaration a `subject:method(args)` site resolved to —
+    /// same-module or foreign home — but the receiver-face emitters never
+    /// consulted it, so a site sema HAD resolved fell through to the dynamic
+    /// table-member lookup and invoked whatever the subject carried as data:
+    /// `bag:tally()` answered 4294967296 where `tally(bag)` answered 1. This
+    /// rescues exactly those calls: the fact must name THIS occurrence (the
+    /// subject pointer is the identity), and the emission is the
+    /// operation-first face's own — a synthesized `.call` with the subject
+    /// filling slot zero (SLOT-ROLE-ONE) — so the two faces cannot diverge.
+    /// Fail-closed throughout: no fact, no subject, a foreign home with no
+    /// embedded C name, or an empty relation path all decline and the
+    /// existing fallback runs unchanged.
+    fn tryEmitApplicationFactReceiverCall(self: *CodeGen, expr: *const ast.Expr, mc: anytype) E!bool {
+        const checked = self.checked_sema orelse return false;
+        const fact = checked.applicationFact(expr) orelse return false;
+        const subject = fact.subject orelse return false;
+        if (subject != mc.obj) return false;
+        if (fact.applied.path.len == 0) return false;
+        const result_rt = if (fact.result != .any) fact.result else self.expr_type(expr);
+        var argv: std.ArrayListUnmanaged(*ast.Expr) = .empty;
+        defer argv.deinit(self.alloc);
+        try argv.append(self.alloc, @constCast(subject));
+        for (fact.arguments) |a| try argv.append(self.alloc, a);
+        if (fact.home) |home| {
+            const cname = self.embedded_cname_for_home(home) orelse return false;
+            return try self.emit_module_field_call(cname, fact.applied.path[0], argv.items, result_rt);
+        }
+        var name_expr = ast.Expr{ .name = .{ .loc = mc.loc, .ident = fact.applied.path[0] } };
+        var synth = ast.Expr{ .call = .{ .loc = mc.loc, .func = &name_expr, .args = argv.items } };
+        // The `.call` face reads `expr_type` for its result coercion; the
+        // synthesized node is not in sema's type map, so lend it the fact's
+        // recorded result for the duration of the emission.
+        try self.type_map.put(&synth, result_rt);
+        defer _ = self.type_map.remove(&synth);
+        try self.emit_expr(&synth);
+        return true;
+    }
+
     fn infer_req_module_call_return_type(self: *CodeGen, expr: *const ast.Expr) ?RT {
         if (expr.* != .call) return null;
         const c = expr.call;
@@ -26997,7 +27054,7 @@ pub const CodeGen = struct {
             if (types.luaBoxClass(ft.func.ret.*)) |cls| {
                 switch (cls) {
                     .int, .num => self.p("{s}(", .{cls.ctor()}),
-                    .@"bool", .str => self.p("{s}", .{cls.ctor()}),
+                    .bool, .str => self.p("{s}", .{cls.ctor()}),
                 }
             } else {
                 self.p("(", .{});
@@ -27045,7 +27102,7 @@ pub const CodeGen = struct {
             if (types.luaBoxClass(ft.func.ret.*)) |cls| {
                 switch (cls) {
                     .int, .num => self.p("))", .{}),
-                    .@"bool", .str => self.p(")", .{}),
+                    .bool, .str => self.p(")", .{}),
                 }
             } else {
                 self.p(")", .{});

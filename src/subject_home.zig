@@ -685,7 +685,7 @@ fn tbl_(name: []const u8) Provided {
 /// tiebreak.
 const sequence_relations = [_]Provided{
     tbl_("insert"), tbl_("remove"), tbl_("sort"),   tbl_("unpack"),
-    tbl_("push"),   tbl_("pop"),    tbl_("concat"),
+    tbl_("push"),   tbl_("pop"),    tbl_("concat"), tbl_("len"),
 };
 
 /// A STREAM's relations.
