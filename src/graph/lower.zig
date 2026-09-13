@@ -16908,6 +16908,25 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         return .{ .temp = t };
     }
 
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__as") and c.args.len == 2) {
+        if (c.args[0].* != .quoted) return invalidGraphFacts(ctx.diagnostic, @src(), "as-target-not-type");
+        const target = c.args[0].quoted.val;
+        const v = try lowerExpr(ctx, c.args[1]);
+        if (std.mem.eql(u8, target, "f64")) {
+            switch (v) {
+                .i64 => |n| return dnir.Value{ .f64 = @floatFromInt(n) },
+                else => return v,
+            }
+        }
+        if (std.mem.eql(u8, target, "i64")) {
+            switch (v) {
+                .f64 => |x| return dnir.Value{ .i64 = @intFromFloat(x) },
+                else => return v,
+            }
+        }
+        return v;
+    }
+
     // `tostring(n)` — the runtime/global-call spelling. Canonical Idol has no
     // such binding; it is a seeded global in `seedGlobalNames` so `scope.lookup`
     // finds it, but it has no application fact, so `ctx.occurrences.get` returns

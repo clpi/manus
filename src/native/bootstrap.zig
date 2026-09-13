@@ -334,6 +334,7 @@ fn callApplication(expr: *const Expr) bool {
             if (std.mem.eql(u8, n.ident, "monotime") and c.args.len == 0) return true;
             if (std.mem.eql(u8, n.ident, "filesize") and c.args.len == 1) return true;
             if (std.mem.eql(u8, n.ident, "sha256file") and c.args.len == 1) return true;
+            if (std.mem.eql(u8, n.ident, "__as") and c.args.len == 2) return true;
             return false;
         },
         // `to(str)(n)` — A CALL WHOSE CALLEE IS A CALL, which is the whole
