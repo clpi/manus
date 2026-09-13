@@ -5279,7 +5279,10 @@ fn root(
     };
     defer ctx.deinit();
     for (mod.body.stmts, 0..) |*stmt, i| {
-        try tryEmitBitReversePrologue(&ctx, mod.body.stmts, i);
+        // A fired prologue claims the statement; the counted-loop arming
+        // takes `if (!claimed)` here at its merge.
+        const claimed = try tryEmitBitReversePrologue(&ctx, mod.body.stmts, i);
+        _ = claimed;
         switch (stmt.*) {
         .func_decl,
         .const_decl,
@@ -5811,8 +5814,10 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     ctx.block_answering = allow_return;
     defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
-        try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
-        try tryEmitBitReversePrologue(ctx, block.stmts, i);
+        // A fired prologue claims the statement; the counted-loop arming
+        // takes `if (!claimed)` here at its merge.
+        const claimed = try runAdditivePrologues(ctx, block.stmts, i);
+        _ = claimed;
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -7292,8 +7297,10 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
             try lowerStmt(ctx, stmt, tail_here);
             return true;
         }
-        try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
-        try tryEmitBitReversePrologue(ctx, block.stmts, i);
+        // A fired prologue claims the statement; the counted-loop arming
+        // takes `if (!claimed)` here at its merge.
+        const claimed = try runAdditivePrologues(ctx, block.stmts, i);
+        _ = claimed;
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
@@ -8329,8 +8336,12 @@ fn slotIsNonInteger(ctx: *const LowerCtx, slot: u32) bool {
 ///   `idx` stay ordinary integer locals for the whole function; the vector
 ///   accumulator is a register private to one instruction's expansion, created
 ///   and consumed inside it, and never named by any slot.
-fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!void {
-    if (at == 0) return;
+///
+/// CLAIM PROTOCOL — returns true when the prologue fired, claiming
+/// `stmts[at]`; a claimed statement's semantics are discharged, so
+/// structural loop transforms must not re-claim it.
+fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    if (at == 0) return false;
     const ws = switch (stmts[at]) {
         .while_loop => |w| w,
         else => return,
@@ -8338,39 +8349,39 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
     // Exactly the two statements, and no tail expression. Anything else in the
     // body could read `acc`, rebind `idx`, or store into `tbl`, and each of
     // those makes the regrouping observable.
-    if (ws.body.tail_expr != null) return;
-    if (ws.body.stmts.len != 2) return;
+    if (ws.body.tail_expr != null) return false;
+    if (ws.body.stmts.len != 2) return false;
 
-    const step = reduceStep(&ws.body.stmts[0]) orelse return;
-    if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[1], step.idx)) return;
-    if (std.mem.eql(u8, step.acc, step.idx)) return;
-    if (std.mem.eql(u8, step.acc, step.tbl)) return;
-    if (std.mem.eql(u8, step.idx, step.tbl)) return;
+    const step = reduceStep(&ws.body.stmts[0]) orelse return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[1], step.idx)) return false;
+    if (std.mem.eql(u8, step.acc, step.idx)) return false;
+    if (std.mem.eql(u8, step.acc, step.tbl)) return false;
+    if (std.mem.eql(u8, step.idx, step.tbl)) return false;
 
-    const hi = loopUpperBound(ctx.graph, ws.cond, step.idx) orelse return;
-    const lo = literalBindingOf(ctx.graph, &stmts[at - 1], step.idx) orelse return;
-    if (lo < 1 or hi < lo) return;
+    const hi = loopUpperBound(ctx.graph, ws.cond, step.idx) orelse return false;
+    const lo = literalBindingOf(ctx.graph, &stmts[at - 1], step.idx) orelse return false;
+    if (lo < 1 or hi < lo) return false;
 
-    const base_slot = ctx.locals.get(step.tbl) orelse return;
-    if (!ctx.ptr_slots.contains(base_slot)) return;
+    const base_slot = ctx.locals.get(step.tbl) orelse return false;
+    if (!ctx.ptr_slots.contains(base_slot)) return false;
 
     var key_buf: [512]u8 = undefined;
-    const len_key = std.fmt.bufPrint(&key_buf, "{s}.len", .{step.tbl}) catch return;
-    const len_slot = ctx.locals.get(len_key) orelse return;
-    const len = ctx.table_lens.get(len_slot) orelse return;
-    if (hi > len) return;
+    const len_key = std.fmt.bufPrint(&key_buf, "{s}.len", .{step.tbl}) catch return false;
+    const len_slot = ctx.locals.get(len_key) orelse return false;
+    const len = ctx.table_lens.get(len_slot) orelse return false;
+    if (hi > len) return false;
 
-    const acc_slot = ctx.locals.get(step.acc) orelse return;
-    if (slotIsNonInteger(ctx, acc_slot)) return;
-    const idx_slot = ctx.locals.get(step.idx) orelse return;
-    if (slotIsNonInteger(ctx, idx_slot)) return;
-    if (acc_slot == idx_slot or acc_slot == base_slot or idx_slot == base_slot) return;
+    const acc_slot = ctx.locals.get(step.acc) orelse return false;
+    if (slotIsNonInteger(ctx, acc_slot)) return false;
+    const idx_slot = ctx.locals.get(step.idx) orelse return false;
+    if (slotIsNonInteger(ctx, idx_slot)) return false;
+    if (acc_slot == idx_slot or acc_slot == base_slot or idx_slot == base_slot) return false;
 
     // Whole lane groups only. A trip count below one group (which includes the
     // empty range) leaves this to the scalar loop entirely.
     const count = hi - lo + 1;
     const vectored = @divTrunc(count, vec_i64_lanes) * vec_i64_lanes;
-    if (vectored < vec_i64_lanes) return;
+    if (vectored < vec_i64_lanes) return false;
 
     const sum = ctx.freshTemp();
     try ctx.emit(.{
@@ -8400,6 +8411,17 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
     // consumer of that map treats a miss as "not compile-time known" and stays
     // conservative.
     if (ctx.const_ints.fetchRemove(step.idx)) |kv| ctx.alloc.free(kv.key);
+    return true;
+}
+
+/// Additive lowering prologues, tried in order; at most one fires per
+/// statement. Returns whether a prologue claimed `stmts[at]`: a claimed
+/// statement's semantics are discharged up front, so structural loop
+/// transforms must not re-claim it — their arming is skipped when this
+/// returns true (the counted-loop arming takes that guard at its merge).
+fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    if (try tryEmitVectorReductionPrologue(ctx, stmts, at)) return true;
+    return try tryEmitBitReversePrologue(ctx, stmts, at);
 }
 
 /// BIT-REVERSE IDIOM → PARALLEL BIT-SWAP DATAFLOW.
@@ -8443,79 +8465,91 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
 /// behavior of the loop (values on exit; no break/continue admitted) is
 /// whatever it already was. When any condition fails this emits nothing and
 /// the loop lowers exactly as it does today.
-fn tryEmitBitReversePrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!void {
-    if (at < 3) return;
+///
+/// CLAIM PROTOCOL — returns true when the prologue fired, claiming
+/// `stmts[at]`. Narrow `r`/`x` decline: their stores truncate per iteration
+/// in the source while the prologue's `.any` stores are full-width, and a
+/// pre-truncation non-negativity proof does not survive narrowing.
+fn tryEmitBitReversePrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    if (at < 3) return false;
     const ws = switch (stmts[at]) {
         .while_loop => |w| w,
         else => return,
     };
-    if (ws.body.tail_expr != null) return;
-    if (ws.body.stmts.len != 3) return;
+    if (ws.body.tail_expr != null) return false;
+    if (ws.body.stmts.len != 3) return false;
 
     const cb = switch (ws.cond.*) {
         .binop => |x| x,
         else => return,
     };
-    if (cb.op != .lt and cb.op != .leq) return;
-    const idx = identOf(cb.lhs) orelse return;
+    if (cb.op != .lt and cb.op != .leq) return false;
+    const idx = identOf(cb.lhs) orelse return false;
 
-    const hi = loopUpperBound(ctx.graph, ws.cond, idx) orelse return;
-    const lo = literalBindingOf(ctx.graph, &stmts[at - 1], idx) orelse return;
-    if (lo != 0) return;
+    const hi = loopUpperBound(ctx.graph, ws.cond, idx) orelse return false;
+    const lo = literalBindingOf(ctx.graph, &stmts[at - 1], idx) orelse return false;
+    if (lo != 0) return false;
     const n: i64 = hi - lo + 1;
-    if (n < 1 or n > 64) return;
+    if (n < 1 or n > 64) return false;
 
     // Exactly one accumulate, one halving, one index increment.
     var accum: ?BitRevParts = null;
     var accum_at: usize = 3;
     for (ws.body.stmts, 0..) |*st, k| {
         if (bitRevAccum(ctx.graph, st)) |p| {
-            if (accum != null) return;
+            if (accum != null) return false;
             accum = p;
             accum_at = k;
         }
     }
-    const ap = accum orelse return;
-    if (std.mem.eql(u8, ap.acc, idx) or std.mem.eql(u8, ap.src, idx)) return;
-    if (std.mem.eql(u8, ap.acc, ap.src)) return;
+    const ap = accum orelse return false;
+    if (std.mem.eql(u8, ap.acc, idx) or std.mem.eql(u8, ap.src, idx)) return false;
+    if (std.mem.eql(u8, ap.acc, ap.src)) return false;
 
     var halve_at: usize = 3;
     var incr_at: usize = 3;
     for (ws.body.stmts, 0..) |*st, k| {
         if (k == accum_at) continue;
         if (bitRevHalve(ctx.graph, st, ap.src)) {
-            if (halve_at != 3) return;
+            if (halve_at != 3) return false;
             halve_at = k;
         } else if (stepIsIncrementOfOne(ctx.graph, st, idx)) {
-            if (incr_at != 3) return;
+            if (incr_at != 3) return false;
             incr_at = k;
-        } else return;
+        } else return false;
     }
-    if (halve_at == 3 or incr_at == 3) return;
+    if (halve_at == 3 or incr_at == 3) return false;
     // The accumulate must read x BEFORE the halving shifts it; the reversed
     // order computes the reverse of bits [1,N], not [0,N).
-    if (accum_at > halve_at) return;
+    if (accum_at > halve_at) return false;
 
     // The three preceding statements: x = <non-negative>, r = 0, i = 0.
-    const r_init = literalBindingOf(ctx.graph, &stmts[at - 2], ap.acc) orelse return;
-    if (r_init != 0) return;
+    const r_init = literalBindingOf(ctx.graph, &stmts[at - 2], ap.acc) orelse return false;
+    if (r_init != 0) return false;
     const xa = switch (stmts[at - 3]) {
         .assign => |a| a,
         else => return,
     };
-    if (xa.targets.len != 1 or xa.values.len != 1) return;
-    const xt = identOf(xa.targets[0]) orelse return;
-    if (!std.mem.eql(u8, xt, ap.src)) return;
-    const relation = ctx.function orelse return;
-    if (ctx.graph.nonNegativeWidthOfExpr(relation, xa.values[0]) == null) return;
+    if (xa.targets.len != 1 or xa.values.len != 1) return false;
+    const xt = identOf(xa.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, xt, ap.src)) return false;
+    const relation = ctx.function orelse return false;
+    if (ctx.graph.nonNegativeWidthOfExpr(relation, xa.values[0]) == null) return false;
 
-    const r_slot = ctx.locals.get(ap.acc) orelse return;
-    const x_slot = ctx.locals.get(ap.src) orelse return;
-    const i_slot = ctx.locals.get(idx) orelse return;
-    if (slotIsNonInteger(ctx, r_slot)) return;
-    if (slotIsNonInteger(ctx, x_slot)) return;
-    if (slotIsNonInteger(ctx, i_slot)) return;
-    if (r_slot == x_slot or r_slot == i_slot or x_slot == i_slot) return;
+    const r_slot = ctx.locals.get(ap.acc) orelse return false;
+    const x_slot = ctx.locals.get(ap.src) orelse return false;
+    const i_slot = ctx.locals.get(idx) orelse return false;
+    if (slotIsNonInteger(ctx, r_slot)) return false;
+    if (slotIsNonInteger(ctx, x_slot)) return false;
+    if (slotIsNonInteger(ctx, i_slot)) return false;
+    // Narrow slots truncate on every store while the prologue's stores are
+    // full-width: the source truncates `r` each iteration, and the value the
+    // idiom actually reverses is the post-truncation `x`, so a pre-truncation
+    // non-negativity proof does not transfer. Decline. (`i` needs no check:
+    // N <= 64 fits every narrow width.)
+    if (ctx.narrow_slots.contains(r_slot)) return false;
+    if (ctx.narrow_slots.contains(x_slot)) return false;
+    if (r_slot == x_slot or r_slot == i_slot or x_slot == i_slot) return false;
 
     // Hoist the five swap masks; each is used twice per step.
     const rev_masks = [_]i64{
@@ -8575,6 +8609,7 @@ fn tryEmitBitReversePrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
     for ([_][]const u8{ ap.acc, ap.src, idx }) |name| {
         if (ctx.const_ints.fetchRemove(name)) |kv| ctx.alloc.free(kv.key);
     }
+    return true;
 }
 
 const BitRevParts = struct { acc: []const u8, src: []const u8 };

@@ -1,0 +1,35 @@
+claim: i64 = ()
+  x = 255
+  r = 0
+  i = 0
+  while i < 8
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+guard: i64 = ()
+  x = 123456789
+  r = 0
+  i = 0
+  while i < 31
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+spare: i64 = ()
+  x = 255
+  r = 0
+  i = 0
+  while i < 8
+    i = i + 1
+    r = r * 2 + (x & 1)
+    x = x / 2
+  r
+
+main: i64 = ()
+  print(claim())
+  print(guard())
+  print(spare())
+  0

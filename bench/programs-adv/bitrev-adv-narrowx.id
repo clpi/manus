@@ -1,0 +1,110 @@
+pinch: i64 = ()
+  x: i8 = 0
+  x = 127
+  r = 0
+  i = 0
+  while i < 8
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+squeeze: i64 = ()
+  x: i8 = 0
+  x = 128
+  r = 0
+  i = 0
+  while i < 8
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+crush: i64 = ()
+  x: i8 = 0
+  x = 200
+  r = 0
+  i = 0
+  while i < 8
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+pack: i64 = ()
+  x: u8 = 0
+  x = 255
+  r = 0
+  i = 0
+  while i < 8
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+stuff: i64 = ()
+  x: u8 = 0
+  x = 256
+  r = 0
+  i = 0
+  while i < 8
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+press: i64 = ()
+  x: i16 = 0
+  x = 32768
+  r = 0
+  i = 0
+  while i < 16
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+cram: i64 = ()
+  x: u16 = 0
+  x = 65536
+  r = 0
+  i = 0
+  while i < 16
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+wedge: i64 = ()
+  x: i32 = 0
+  x = 2147483648
+  r = 0
+  i = 0
+  while i < 32
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+jam: i64 = ()
+  x: u32 = 0
+  x = 4294967296
+  r = 0
+  i = 0
+  while i < 32
+    r = r * 2 + (x & 1)
+    x = x / 2
+    i = i + 1
+  r
+
+main: i64 = ()
+  print(pinch())
+  print(squeeze())
+  print(crush())
+  print(pack())
+  print(stuff())
+  print(press())
+  print(cram())
+  print(wedge())
+  print(jam())
+  0
