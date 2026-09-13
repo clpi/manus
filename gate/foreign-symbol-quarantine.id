@@ -1,0 +1,115 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+refuse: i64 = (idol: str, work: str, label: str, args: str, artifact: str)
+  log = "{work}/{label}.log"
+  rc = digits(chomp(gatecap("timeout 300 '{idol}' compile {args} '{work}/invalid.id' -o '{artifact}' >'{log}' 2>&1; echo $?")))
+  if rc == 0
+    print("foreign-symbol-quarantine: FAIL {label} accepted malformed @ffi symbol")
+    return 1
+  if gatecap("grep -Fq \"invalid migration boundary attribute '@ffi'\" '{log}'; echo $?") != "0\n"
+    print("foreign-symbol-quarantine: FAIL {label} refused without the boundary diagnostic")
+    return 1
+  if gatecap("test -e '{artifact}'; echo $?") == "0\n"
+    print("foreign-symbol-quarantine: FAIL {label} wrote an artifact after refusal")
+    return 1
+  print("foreign-symbol-quarantine: PASS {label} refuses and writes no artifact")
+  0
+
+positive: i64 = (idol: str, work: str, label: str, args: str, src: str, artifact: str)
+  log = "{work}/positive-{label}.log"
+  rc = digits(chomp(gatecap("timeout 300 '{idol}' compile {args} '{src}' -o '{artifact}' >'{log}' 2>&1; echo $?")))
+  if rc != 0 or gatecap("test -s '{artifact}'; echo $?") != "0\n"
+    print("foreign-symbol-quarantine: FAIL {label} positive control did not reach an artifact")
+    shown = gatecap("sed 's/^/foreign-symbol-quarantine: {label}: /' '{log}'")
+    print(shown)
+    return 1
+  print("foreign-symbol-quarantine: PASS {label} positive control reaches an artifact")
+  0
+
+collision: i64 = (idol: str, root: str, work: str)
+  rc = digits(chomp(gatecap("timeout 300 '{idol}' check '{work}/collision.id' >'{work}/collision.log' 2>&1; echo $?")))
+  open = gatecap("grep -Fq '**Status:** OPEN' '{root}/gaps/GAP-211.md'; echo $?")
+  if rc == 0 and open == "0\n"
+    print("foreign-symbol-quarantine: PASS GAP-211 OPEN: cross-declaration physical-symbol collision remains unowned")
+    return 0
+  print("foreign-symbol-quarantine: FAIL GAP-211 nonclosure control moved without an explicit gap transition")
+  1
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  else
+    if idol:sub(1, 1) != "/"
+      idol = "{root}/{idol}"
+  if gatecap("test -x '{idol}'; echo $?") != "0\n"
+    print("foreign-symbol-quarantine: FAIL compiler is not executable: {idol}")
+    return 2
+  work = chomp(gatecap("mktemp -d /tmp/idol-foreign-symbol.XXXXXX"))
+  probes = gatecap("cat >'{work}/invalid.id' <<'PROBE'\n@ffi(\"bad-name\")\nbad: i64 = ()\n    0\nPROBE\ncat >'{work}/valid-c.id' <<'PROBE'\n@c.export(\"idol_gate_ok\")\nok: i64 = ()\n    7\nPROBE\ncat >'{work}/valid-wasm.id' <<'PROBE'\n@export\n_api: i64 = ()\n    7\n_api()\nPROBE\ncat >'{work}/collision.id' <<'PROBE'\n@c.export(\"shared\")\nfirst: i64 = ()\n    1\n@c.export(\"shared\")\nsecond: i64 = ()\n    2\nPROBE\necho $?")
+  pass = 0
+  fail = 0
+  if chomp(probes) != "0"
+    print("foreign-symbol-quarantine: FAIL could not write probe files")
+    fail = 1
+  else
+    if refuse(idol, work, "direct", "--backend=direct --lib", "{work}/invalid.o") == 0
+      pass = pass + 1
+    else
+      fail = fail + 1
+    if refuse(idol, work, "c", "--backend=c --emit=c", "{work}/invalid.c") == 0
+      pass = pass + 1
+    else
+      fail = fail + 1
+    if refuse(idol, work, "wasm", "--backend=wasm --target=wasm32-wasi", "{work}/invalid.wasm") == 0
+      pass = pass + 1
+    else
+      fail = fail + 1
+    if positive(idol, work, "direct", "--backend=direct --lib", "{work}/valid-c.id", "{work}/valid.o") == 0
+      pass = pass + 1
+    else
+      fail = fail + 1
+    if positive(idol, work, "c", "--backend=c --emit=c", "{work}/valid-c.id", "{work}/valid.c") == 0
+      pass = pass + 1
+    else
+      fail = fail + 1
+    if positive(idol, work, "wasm", "--backend=wasm --target=wasm32-wasi", "{work}/valid-wasm.id", "{work}/valid.wasm") == 0
+      pass = pass + 1
+    else
+      fail = fail + 1
+    if collision(idol, root, work) == 0
+      pass = pass + 1
+    else
+      fail = fail + 1
+  cleaned = gatecap("chmod -R u+w '{work}' 2>/dev/null; rm -rf '{work}'; echo $?")
+  print("foreign-symbol-quarantine: {pass} passed, {fail} failed")
+  if fail == 0
+    print("foreign-symbol-quarantine: PASS")
+    return 0
+  print("foreign-symbol-quarantine: FAIL")
+  1
