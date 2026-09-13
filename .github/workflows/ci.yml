@@ -103,6 +103,38 @@ jobs:
       - name: Build
         run: zig build
 
+      - name: Materialize pinned idol-native root
+        # The MCP gate pairs against an exact, clean idol-native worktree at
+        # the manifest-pinned revision (tools/node/dev/mcp.manifest.json),
+        # rooted at ${{ github.workspace }}/idol-native (IDOL_NATIVE_ROOT).
+        # clpi/idol-native is private: until a deploy key is provisioned as
+        # the IDOL_NATIVE_DEPLOY_KEY secret this step is a no-op and pairing
+        # fails closed with "root is missing". All paths are quoted: the
+        # runner work path contains a space (/Volumes/d 1/...).
+        env:
+          IDOL_NATIVE_DEPLOY_KEY: ${{ secrets.IDOL_NATIVE_DEPLOY_KEY }}
+        run: |
+          set -eu
+          if [ -z "${IDOL_NATIVE_DEPLOY_KEY:-}" ]; then
+            echo "idol-native deploy key not provisioned; skipping materialization (pairing will fail closed)"
+            exit 0
+          fi
+          rev="$(jq -r '.servers[] | select(.name == "idol-native") | .revision' tools/node/dev/mcp.manifest.json)"
+          case "$rev" in
+            ''|*[!0-9a-f]*) echo "bad pinned revision: $rev" >&2; exit 1 ;;
+          esac
+          keyfile="$(mktemp "${RUNNER_TEMP:-/tmp}/idol-native-key.XXXXXX")"
+          chmod 600 "$keyfile"
+          printf '%s' "$IDOL_NATIVE_DEPLOY_KEY" > "$keyfile"
+          trap 'rm -f "$keyfile"' EXIT
+          export GIT_SSH_COMMAND="ssh -i $keyfile -o StrictHostKeyChecking=accept-new"
+          rm -rf idol-native
+          git init -q idol-native
+          git -C idol-native remote add origin git@github.com:clpi/idol-native.git
+          git -C idol-native fetch --depth 1 origin "$rev"
+          git -C idol-native checkout -q "$rev"
+          IDOL_NATIVE_ROOT="$GITHUB_WORKSPACE/idol-native" ./tools/node/dev/mcp-pair validate ./tools/node/dev/mcp.manifest.json idol-native
+
       - name: Unit and compile-fail tests
         run: zig build test
         env:
