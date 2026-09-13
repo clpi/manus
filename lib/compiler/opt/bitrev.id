@@ -1,0 +1,90 @@
+lineat: str = (s: str, k: i64)
+    n = s:len()
+    i = 1
+    cur = 0
+    a = 1
+    while i <= n + 1
+        if i > n or s:byte(i) == 10
+            if cur == k
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+linecount: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            n = n + 1
+        i = i + 1
+    if s:len() > 0 and s:byte(s:len()) != 10
+        n = n + 1
+    n
+
+trim: str = (s: str)
+    a = 1
+    n = s:len()
+    while a <= n and s:byte(a) == 32
+        a = a + 1
+    b = n
+    while b >= a and s:byte(b) == 32
+        b = b - 1
+    if b < a
+        return ""
+    s:sub(a, b)
+
+contains: i64 = (s: str, pat: str)
+    n = s:len()
+    m = pat:len()
+    if m == 0
+        return 1
+    if m > n
+        return 0
+    i = 1
+    while i <= n - m + 1
+        found = 1
+        j = 1
+        while j <= m
+            if s:byte(i + j - 1) != pat:byte(j)
+                found = 0
+            j = j + 1
+        if found == 1
+            return 1
+        i = i + 1
+    0
+
+bitrev: str = (src: str)
+    lc = linecount(src)
+    out = ""
+    k = 0
+    while k < lc
+        t0 = trim(lineat(src, k))
+        matched = 0
+        rvar = ""
+        if k + 4 < lc
+            t1 = trim(lineat(src, k + 1))
+            t2 = trim(lineat(src, k + 2))
+            t3 = trim(lineat(src, k + 3))
+            t4 = trim(lineat(src, k + 4))
+            if contains(t0, "= 0") == 1
+                eq0 = 1
+                n0 = t0:len()
+                while eq0 <= n0 and t0:byte(eq0) != 61
+                    eq0 = eq0 + 1
+                rvar = trim(t0:sub(1, eq0 - 1))
+                if contains(t1, "while") == 1 and contains(t1, "< 31") == 1
+                    if contains(t2, rvar) == 1 and contains(t2, "* 2") == 1
+                        if contains(t3, "/ 2") == 1
+                            if contains(t4, "+ 1") == 1
+                                matched = 1
+        if matched == 1
+            out = out .. rvar .. " = __bitrev_parallel(x)"
+            out = out .. "\\n"
+            k = k + 5
+        else
+            out = out .. lineat(src, k)
+            out = out .. "\\n"
+        k = k + 1
+    out
