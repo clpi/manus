@@ -511,13 +511,13 @@ printf '  registry entries with no specimen at all:       %s dormant directive s
 cat >"$work/pinned" <<'PIN'
 jit	L1
 gpu	L1
-simd	L2
+simd	L1
 foreign	L4
 reflect	L1
-meta	L2
+meta	L4
 wasm	L5
 compiler	L5
-mcp	L1
+mcp	L5
 PIN
 
 printf '%s\n' '== §5 ledger ================================================================='
