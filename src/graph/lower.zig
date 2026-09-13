@@ -9684,6 +9684,238 @@ fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
     return true;
 }
 
+/// DIVISION-BASED SATURATION IDIOM → MIN VIA CMP+CSEL.
+///
+/// Recognizes
+///
+///     s = <non-negative expr>    (stmts[at-1])
+///     q = C / (s + 1)            (stmts[at];     C > 0 constant)
+///     isbig = 1 / (1 + q)        (stmts[at+1])
+///     s = s*(1-isbig) + K*isbig  (stmts[at+2];   C-1 <= K <= C constant)
+///
+/// and replaces the three statements (two of them divisions) with
+/// s = min(s, K) emitted as the one-sided branch shape the backend's
+/// if-converter turns into cmp+csel.
+///
+/// WHY THIS IS SOUND. s >= 0 (proved below) so s+1 >= 1: no division by
+/// zero, and the SIGNED divisions are exact (both operands non-negative).
+/// q = C/(s+1) = 0 iff s+1 > C iff s >= C (integers, C > 0).
+/// isbig = 1/(1+q) = 1 iff q = 0 iff s >= C, else 0 (q >= 0 so 1+q >= 1).
+/// The third statement is s*(1-isbig) + K*isbig = (s >= C) ? K : s.
+/// With C-1 <= K <= C this equals min(s, K): when s < C (so s <= C-1 <= K)
+/// the value is s = min(s,K); when s >= C (>= K) the value is K = min(s,K).
+///
+/// FAIL-CLOSED: declines if C is not a positive constant, if s's
+/// non-negativity is unprovable, if K is outside [C-1, C], if the shapes
+/// deviate, if q/isbig/s are not distinct, if any slot is narrow or
+/// non-integer, or if q/isbig are read after the idiom.
+fn tryEmitSataddIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    if (at == 0 or at + 3 > stmts.len) return false;
+    const graph = ctx.graph;
+
+    // stmts[at]: q = C/(s+1).
+    const qa = switch (stmts[at]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (qa.targets.len != 1 or qa.values.len != 1) return false;
+    const q_name = identOf(qa.targets[0]) orelse return false;
+    const qp = sataddDivParts(graph, qa.values[0]) orelse return false;
+    const C = qp.num;
+    const s_name = qp.den;
+    if (C <= 0) return false;
+
+    // stmts[at+1]: isbig = 1/(1+q).
+    const ba = switch (stmts[at + 1]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (ba.targets.len != 1 or ba.values.len != 1) return false;
+    const isbig_name = identOf(ba.targets[0]) orelse return false;
+    const bp = sataddDivParts(graph, ba.values[0]) orelse return false;
+    if (bp.num != 1) return false;
+    if (!std.mem.eql(u8, bp.den, q_name)) return false;
+
+    // q, isbig, s distinct.
+    if (std.mem.eql(u8, q_name, isbig_name)) return false;
+    if (std.mem.eql(u8, q_name, s_name)) return false;
+    if (std.mem.eql(u8, isbig_name, s_name)) return false;
+
+    // stmts[at+2]: s = s*(1-isbig) + K*isbig.
+    const sa = switch (stmts[at + 2]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (sa.targets.len != 1 or sa.values.len != 1) return false;
+    const s_target = identOf(sa.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, s_target, s_name)) return false;
+    const K = sataddMinParts(graph, sa.values[0], s_name, isbig_name) orelse return false;
+    if (K < C - 1 or K > C) return false;
+
+    // Entry: stmts[at-1] is s = <rhs>; prove <rhs> non-negative.
+    const prev = switch (stmts[at - 1]) {
+        .assign => |p| p,
+        else => return false,
+    };
+    if (prev.targets.len != 1 or prev.values.len != 1) return false;
+    const prev_name = identOf(prev.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, prev_name, s_name)) return false;
+    const relation = ctx.function orelse ctx.graph.module_root orelse return false;
+    if (ctx.graph.nonNegativeWidthOfExpr(relation, prev.values[0]) == null) return false;
+
+    // Slots: distinct, integer, not narrow.
+    const s_slot = ctx.locals.get(s_name) orelse return false;
+    const q_slot = ctx.locals.get(q_name) orelse return false;
+    const isbig_slot = ctx.locals.get(isbig_name) orelse return false;
+    if (slotIsNonInteger(ctx, s_slot)) return false;
+    if (slotIsNonInteger(ctx, q_slot)) return false;
+    if (slotIsNonInteger(ctx, isbig_slot)) return false;
+    if (ctx.narrow_slots.contains(s_slot)) return false;
+    if (ctx.narrow_slots.contains(q_slot)) return false;
+    if (ctx.narrow_slots.contains(isbig_slot)) return false;
+    if (s_slot == q_slot or s_slot == isbig_slot or q_slot == isbig_slot) return false;
+
+    // q and isbig must not be read after the idiom; their divisions are gone.
+    if (sataddIdentUsedAfter(stmts, at + 3, q_name)) return false;
+    if (sataddIdentUsedAfter(stmts, at + 3, isbig_name)) return false;
+
+    // Emit s = min(s, K) as one-sided if: if s > K { s = K }.
+    // The backend's if-converter turns this into cmp+csel.
+    const cond_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = cond_tmp, .binop = .gt, .lhs = .{ .local = s_slot }, .rhs = .{ .i64 = K }, .ty = .i64 });
+    const fail_idx: u32 = @intCast(ctx.instrs.items.len);
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = cond_tmp }, .branch_target = 0, .branch_condition = .when_false });
+    const k_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = k_tmp, .binop = .bxor, .lhs = .{ .i64 = K }, .rhs = .{ .i64 = 0 }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = s_slot, .lhs = .{ .temp = k_tmp }, .ty = .any });
+    const join_idx: u32 = @intCast(ctx.instrs.items.len);
+    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+    const end_idx: u32 = @intCast(ctx.instrs.items.len);
+    ctx.instrs.items[fail_idx].branch_target = end_idx;
+    ctx.instrs.items[join_idx].branch_target = end_idx;
+
+    // Swallow the three statements.
+    for (stmts[at .. at + 3]) |*st| {
+        try ctx.satadd_swallowed.put(ctx.alloc, st, {});
+    }
+
+    // q, isbig, s rebound; drop stale const facts.
+    if (ctx.const_ints.fetchRemove(q_name)) |kv| ctx.alloc.free(kv.key);
+    if (ctx.const_ints.fetchRemove(isbig_name)) |kv| ctx.alloc.free(kv.key);
+    if (ctx.const_ints.fetchRemove(s_name)) |kv| ctx.alloc.free(kv.key);
+    return true;
+}
+
+/// Matches NUM / (DEN + 1) with SIGNED division, NUM a graph-exact i64,
+/// DEN an identifier, the + 1 on either side. Returns (num, den).
+fn sataddDivParts(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr) ?struct { num: i64, den: []const u8 } {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return null,
+    };
+    if (b.op != .div) return null;
+    const num = graph.exactI64OfExpr(b.lhs) orelse return null;
+    const add = switch (b.rhs.*) {
+        .binop => |ab| ab,
+        else => return null,
+    };
+    if (add.op != .add) return null;
+    if (identOf(add.lhs)) |n| {
+        if (graph.exactI64OfExpr(add.rhs) == 1) return .{ .num = num, .den = n };
+        return null;
+    }
+    if (identOf(add.rhs)) |n| {
+        if (graph.exactI64OfExpr(add.lhs) == 1) return .{ .num = num, .den = n };
+        return null;
+    }
+    return null;
+}
+
+/// Matches s*(1-isbig) + K*isbig (commuted mul/add orders accepted) and
+/// returns K. The (1-isbig) must be exactly 1 - isbig, not commuted.
+fn sataddMinParts(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, s: []const u8, isbig: []const u8) ?i64 {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return null,
+    };
+    if (b.op != .add) return null;
+    if (sataddTermIsS(s, isbig, b.lhs)) {
+        return sataddTermIsK(graph, isbig, b.rhs);
+    }
+    if (sataddTermIsS(s, isbig, b.rhs)) {
+        return sataddTermIsK(graph, isbig, b.lhs);
+    }
+    return null;
+}
+
+/// e is s*(1-isbig) in either mul order.
+fn sataddTermIsS(s: []const u8, isbig: []const u8, e: *const ast.Expr) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .mul) return false;
+    return (isIdent(b.lhs, s) and sataddIsOneMinusIsbig(b.rhs, isbig)) or
+        (isIdent(b.rhs, s) and sataddIsOneMinusIsbig(b.lhs, isbig));
+}
+
+/// e is 1 - isbig (exact order).
+fn sataddIsOneMinusIsbig(e: *const ast.Expr, isbig: []const u8) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .sub) return false;
+    const one = ast.intLiteralValue(b.lhs) orelse return false;
+    if (one != 1) return false;
+    return isIdent(b.rhs, isbig);
+}
+
+/// e is K*isbig in either mul order; returns K (graph-exact i64).
+fn sataddTermIsK(graph: *const semantic_graph.SemanticGraph, isbig: []const u8, e: *const ast.Expr) ?i64 {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return null,
+    };
+    if (b.op != .mul) return null;
+    if (isIdent(b.lhs, isbig)) return graph.exactI64OfExpr(b.rhs);
+    if (isIdent(b.rhs, isbig)) return graph.exactI64OfExpr(b.lhs);
+    return null;
+}
+
+/// True if the identifier name appears in any value position in
+/// stmts[from..]. Conservative: unhandled AST shapes count as a use.
+fn sataddIdentUsedAfter(stmts: []const ast.Stmt, from: usize, name: []const u8) bool {
+    for (stmts[from..]) |*st| {
+        if (sataddStmtMentions(st, name)) return true;
+    }
+    return false;
+}
+
+fn sataddStmtMentions(st: *const ast.Stmt, name: []const u8) bool {
+    switch (st.*) {
+        .assign => |a| {
+            for (a.targets) |t| if (sataddExprMentions(t, name)) return true;
+            for (a.values) |v| if (sataddExprMentions(v, name)) return true;
+            return false;
+        },
+        // Conservative: any other statement shape counts as a use.
+        else => return true,
+    }
+}
+
+fn sataddExprMentions(e: *const ast.Expr, name: []const u8) bool {
+    switch (e.*) {
+        .name => |n| return std.mem.eql(u8, n.ident, name),
+        .binop => |b| return sataddExprMentions(b.lhs, name) or sataddExprMentions(b.rhs, name),
+        .unop => |u| return sataddExprMentions(u.operand, name),
+        .int_lit, .float_lit, .true_lit, .false_lit, .nil => return false,
+        .quoted => return false,
+        // Conservative: unhandled shapes count as a use.
+        else => return true,
+    }
+}
+
 fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
     if (try tryEmitVectorReductionPrologue(ctx, stmts, at)) return true;
     if (try tryEmitPopcountIdiom(ctx, stmts, at)) return true;
