@@ -10,15 +10,21 @@ Protocol:
     frequency scaling, and background load hit every binary equally
   - primary metric is the MEDIAN (robust; no outlier removal needed)
   - outliers are counted (Tukey: > Q3 + 3*IQR) and disclosed, never dropped
+  - the raw per-round samples for every binary are retained in the output
+    ("samples"), so any verdict can be re-derived and re-tested later
+  - win/loss verdicts are emitted ONLY when Welch's t-test is significant
+    (two-sided p < 0.05); otherwise the verdict is "tie". A median ordering
+    without significance is not a win or a loss.
 
-Writes JSON to stdout with per-binary stats and a Welch t-test of
-idol vs the best competitor, plus win/loss/tie verdicts.
+Writes JSON to stdout with per-binary stats and the idol-vs-best-rival test.
 """
 import json
 import math
 import subprocess
 import sys
 import time
+
+SIGNIFICANCE_LEVEL = 0.05
 
 
 def run_once(binary):
@@ -95,10 +101,12 @@ def main():
             times[n].append(dt)
             codes[n].add(rc)
 
-    out = {"binaries": {}, "rounds": rounds, "warmup": warmup}
+    out = {"binaries": {}, "rounds": rounds, "warmup": warmup,
+           "significance_level": SIGNIFICANCE_LEVEL}
     for n in names:
         st = stats(times[n])
         st["exit_codes"] = sorted(codes[n])
+        st["samples"] = list(times[n])  # raw samples retained per row
         out["binaries"][n] = st
 
     if "idol" in times:
@@ -110,14 +118,20 @@ def main():
             im = stats(idol)["median"]
             bm = stats(rivals[best])["median"]
             margin = (bm - im) / bm if bm else 0.0
-            verdict = "win" if im < bm else ("loss" if im > bm else "tie")
+            significant = p < SIGNIFICANCE_LEVEL
+            # No win/loss without significance: median ordering alone
+            # is not evidence of a real difference.
+            if significant:
+                verdict = "win" if im < bm else ("loss" if im > bm else "tie")
+            else:
+                verdict = "tie"
             out["vs_best"] = {
                 "rival": best,
                 "idol_median": im,
                 "rival_median": bm,
                 "margin": margin,
                 "p_value": p,
-                "significant": p < 0.05,
+                "significant": significant,
                 "verdict": verdict,
             }
 
