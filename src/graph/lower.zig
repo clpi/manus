@@ -5309,7 +5309,12 @@ fn root(
         .cinclude,
         .directive,
         => {},
-        else => try lowerStmt(&ctx, stmt, false),
+        // The module's value is the program's exit code, so the last
+        // statement (when there is no tail_expr) is in the tail slot.
+        // Without this a tail `if` with different-valued arms lowered its
+        // arms as effects and the module fell through to `ret 0`:
+        // `if 1 == 2 / 7 / else / 9` exited 0 instead of 9.
+        else => try lowerStmt(&ctx, stmt, stmtIsTailSlot(&mod.body, i)),
         }
     }
     if (tail_result_demand.blockTailResult(&mod.body)) |tail| {
