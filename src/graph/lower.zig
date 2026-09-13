@@ -9606,7 +9606,7 @@ fn isShiftAdd(e: *const ast.Expr, x: []const u8, k: i64) bool {
 /// does not terminate (iv resets to 1, and 1 < bound stays true), so the
 /// width proof is a termination proof, not just a bound.
 fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
-    const debug = true;
+    const debug = false;
     if (at < 1) { if (debug) std.debug.print("LS: at<1\n", .{}); return false; }
     const ws = switch (stmts[at]) {
         .while_loop => |w| w,
