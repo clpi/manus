@@ -4664,6 +4664,17 @@ pub const Sema = struct {
             const index = self.exprDescriptor(argument[0]) orelse return null;
             if (index == .i64) return .i64;
         }
+        // Text-returning string methods answer str. The producer must
+        // publish the authoritative result descriptor: without it the graph
+        // carries any on the application and the direct backend fails closed
+        // at generic-parameter validation. Same text roster the module face
+        // answers str for below, plus the method-face text relations.
+        if (std.mem.eql(u8, relation, "sub") or std.mem.eql(u8, relation, "rep") or
+            std.mem.eql(u8, relation, "match") or std.mem.eql(u8, relation, "lower") or
+            std.mem.eql(u8, relation, "upper") or std.mem.eql(u8, relation, "reverse") or
+            std.mem.eql(u8, relation, "trim") or std.mem.eql(u8, relation, "tail") or
+            std.mem.eql(u8, relation, "format") or std.mem.eql(u8, relation, "gsub"))
+            return .str;
         return null;
     }
 
