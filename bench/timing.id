@@ -1,3 +1,12 @@
+argn: i64 = ()
+  n = 1
+  while arg(n) != nil
+    n = n + 1
+  n - 1
+
+args: str = (i: i64)
+  arg(i + 1)
+
 digitstr: str = (d: i64)
   if d == 0
     "0"
@@ -17,78 +26,118 @@ digitstr: str = (d: i64)
     "7"
   else if d == 8
     "8"
-  else
+  else if d == 9
     "9"
+  else
+    "?"
 
 tostr: str = (v: i64)
   if v == 0
     "0"
   else
     neg = false
-    vv = v
-    if vv < 0
+    n = v
+    if n < 0
       neg = true
-      vv = 0 - vv
+      n = 0 - n
     s = ""
-    while vv > 0
-      d = vv - (vv / 10) * 10
-      dc = digitstr(d)
-      s = "{dc}{s}"
-      vv = vv / 10
+    while n > 0
+      d = n % 10
+      s = "{digitstr(d)}{s}"
+      n = n / 10
     if neg
       s = "-{s}"
     s
 
-parseint: i64 = (s: str, sfrom: i64, sto: i64)
-  neg = false
-  i = sfrom
-  if s:byte(i) == 45
-    neg = true
-    i = i + 1
+parseint: i64 = (s: str, from: i64, to: i64)
   v = 0
-  while i <= sto
-    v = v * 10 + (s:byte(i) - 48)
+  neg = false
+  i = from
+  if i <= to
+    if s:byte(i) == 45
+      neg = true
+      i = i + 1
+  while i <= to
+    b = s:byte(i)
+    if b >= 48
+      if b <= 57
+        v = v * 10 + (b - 48)
     i = i + 1
   if neg
-    0 - v
-  else
-    v
+    v = 0 - v
+  v
 
 pad20: str = (s: str)
-  n = s:len()
-  p = ""
-  i = n
-  while i < 20
-    p = "{p}0"
-    i = i + 1
-  "{p}{s}"
+  out = s
+  while out:len() < 20
+    out = "0{out}"
+  out
 
 hexval: i64 = (c: i64)
-  r = 0
   if c >= 48
     if c <= 57
-      r = c - 48
-  if c >= 97
-    if c <= 102
-      r = c - 87
-  if c >= 65
-    if c <= 70
-      r = c - 55
-  r
+      c - 48
+    else if c >= 65
+      if c <= 70
+        c - 55
+      else if c >= 97
+        if c <= 102
+          c - 87
+        else
+          0
+      else
+        0
+    else
+      0
+  else
+    0
 
-medianstr: i64 = (buf: str, n: i64)
-  sbuf = ""
-  i = 1
+sampat: i64 = (buf: str, idx: i64)
   pos = 1
   bl = buf:len()
-  while i <= n
+  cur = 1
+  while cur < idx
+    if pos > bl
+      cur = idx
+      pos = bl + 1
+    else
+      if buf:byte(pos) == 59
+        cur = cur + 1
+      pos = pos + 1
+  if pos > bl
+    0 - 1
+  else
+    send = bl
     epos = pos
     while epos <= bl
-      epos = epos + 1
-    vs = buf:sub(pos, epos - 1)
-    ps = pad20(vs)
+      if buf:byte(epos) == 59
+        send = epos - 1
+        epos = bl + 1
+      else
+        epos = epos + 1
+    parseint(buf, pos, send)
+
+nsamp: i64 = (buf: str)
+  n = 0
+  i = 1
+  bl = buf:len()
+  while i <= bl
+    if buf:byte(i) == 59
+      n = n + 1
+    i = i + 1
+  if bl > 0
+    if buf:byte(bl) != 59
+      n = n + 1
+  n
+
+sortsampstr: str = (buf: str, n: i64)
+  sbuf = ""
+  i = 1
+  while i <= n
+    vs = sampat(buf, i)
+    sv = tostr(vs)
+    ps = pad20(sv)
     sbuf = "{sbuf}{ps}"
-    pos = epos + 1
     i = i + 1
   ii = 1
   while ii <= n
@@ -121,6 +170,10 @@ medianstr: i64 = (buf: str, n: i64)
         sbuf = "{pre}{b}{a}{post}"
       jj = jj + 1
     ii = ii + 1
+  sbuf
+
+medianstr: i64 = (buf: str, n: i64)
+  sbuf = sortsampstr(buf, n)
   if n % 2 == 1
     mp = ((n + 1) / 2 - 1) * 20 + 1
     ms = sbuf:sub(mp, mp + 19)
@@ -134,240 +187,323 @@ medianstr: i64 = (buf: str, n: i64)
     v2 = parseint(m2s, 1, 20)
     (v1 + v2) / 2
 
+pctlstr: i64 = (buf: str, n: i64, which: i64)
+  k = 1
+  if which == 2
+    k = n
+  else if which == 3
+    k = (95 * n + 99) / 100
+  else if which == 4
+    k = n / 4 + 1
+  else if which == 5
+    k = 3 * n / 4 + 1
+  sbuf = sortsampstr(buf, n)
+  mp = (k - 1) * 20 + 1
+  ms = sbuf:sub(mp, mp + 19)
+  parseint(ms, 1, 20)
+
+meanstr: f64 = (buf: str, n: i64)
+  mean = 0.0
+  i = 1
+  while i <= n
+    sv = sampat(buf, i)
+    x = sv:to(f64) / 1000.0
+    fi = i:to(f64)
+    mean = mean + (x - mean) / fi
+    i = i + 1
+  mean
+
+varstr: f64 = (buf: str, n: i64)
+  mean = 0.0
+  m2 = 0.0
+  i = 1
+  while i <= n
+    sv = sampat(buf, i)
+    x = sv:to(f64) / 1000.0
+    fi = i:to(f64)
+    delta = x - mean
+    mean = mean + delta / fi
+    m2 = m2 + delta * (x - mean)
+    i = i + 1
+  if n < 2
+    0.0
+  else
+    m2 / (n:to(f64) - 1.0)
+
+outlierstr: i64 = (buf: str, n: i64)
+  q1 = pctlstr(buf, n, 4)
+  q3 = pctlstr(buf, n, 5)
+  iqr = q3 - q1
+  fence = q3 + 3 * iqr
+  c = 0
+  i = 1
+  while i <= n
+    if sampat(buf, i) > fence
+      c = c + 1
+    i = i + 1
+  c
+
+verdictstr: str = (buf1: str, buf2: str, n: i64)
+  m1 = meanstr(buf1, n)
+  m2 = meanstr(buf2, n)
+  v1 = varstr(buf1, n)
+  v2 = varstr(buf2, n)
+  med1 = medianstr(buf1, n)
+  med2 = medianstr(buf2, n)
+  n1 = n:to(f64)
+  se2t = v1 / n1 + v2 / n1
+  verdict = "degenerate"
+  if se2t > 0.0
+    dt = m1 - m2
+    tstat = dt / math.sqrt(se2t)
+    sig = false
+    if tstat > 1.96
+      sig = true
+    if tstat < 0.0 - 1.96
+      sig = true
+    verdict = "inconclusive"
+    if sig
+      if med1 < med2
+        verdict = "win"
+      else if med1 > med2
+        verdict = "loss"
+  verdict
+
 runone: i64 = (path: str, exitexp: i64, outhex: str, outlen: i64, phase: str, round: i64)
   t0 = monotime()
   raw = procrun(path, "", "")
-  nl = 0
-  i = 1
+  t1 = monotime()
   rn = raw:len()
-  while i <= rn
-    if raw:byte(i) == 10
-      nl = i
-      i = rn + 1
-    else
-      i = i + 1
-  code = parseint(raw, 1, nl - 1)
-  outstart = nl + 1
-  if code != exitexp
+  if rn == 0
     print("status: mismatch")
     print("binary: {path}")
     print("phase: {phase}")
     print("round: {round}")
-    print("expected_exit: {exitexp}")
-    print("actual_exit: {code}")
-    0 - 1
-  else if rn - nl != outlen
-    print("status: mismatch")
-    print("binary: {path}")
-    print("phase: {phase}")
-    print("round: {round}")
-    print("expected_len: {outlen}")
-    alen = rn - nl
-    print("actual_len: {alen}")
+    print("detail: empty procrun result")
     0 - 1
   else
-    ok = true
-    j = 1
-    while j <= outlen
-      ab = raw:byte(outstart + j - 1)
-      hp = (j - 1) * 2 + 1
-      eb = hexval(outhex:byte(hp)) * 16 + hexval(outhex:byte(hp + 1))
-      if ab != eb
-        ok = false
-        j = outlen + 1
+    nl = 0
+    i = 1
+    while i <= rn
+      if raw:byte(i) == 10
+        nl = i
+        i = rn + 1
       else
-        j = j + 1
-    if ok
-      t1 = monotime()
-      t1 - t0
-    else
+        i = i + 1
+    code = parseint(raw, 1, nl - 1)
+    outstart = nl + 1
+    allen = rn - nl
+    if code != exitexp
       print("status: mismatch")
       print("binary: {path}")
       print("phase: {phase}")
       print("round: {round}")
-      print("detail: stdout bytes differ")
+      print("expected_exit: {exitexp}")
+      print("actual_exit: {code}")
+      if code < 0
+        if code == 0 - 999
+          print("detail: spawn failed")
+        else
+          sig = 0 - code
+          print("detail: died from signal {sig}")
       0 - 1
+    else if allen != outlen
+      print("status: mismatch")
+      print("binary: {path}")
+      print("phase: {phase}")
+      print("round: {round}")
+      print("expected_exit: {exitexp}")
+      print("actual_exit: {code}")
+      print("detail: stdout length mismatch")
+      print("expected_len: {outlen}")
+      print("actual_len: {allen}")
+      0 - 1
+    else
+      oi = 0
+      ok = true
+      while oi < outlen
+        if ok
+          eb = hexval(outhex:byte(oi * 2 + 1)) * 16 + hexval(outhex:byte(oi * 2 + 2))
+          if raw:byte(nl + 1 + oi) != eb
+            print("status: mismatch")
+            print("binary: {path}")
+            print("phase: {phase}")
+            print("round: {round}")
+            print("expected_exit: {exitexp}")
+            print("actual_exit: {code}")
+            print("detail: stdout byte mismatch")
+            print("offset: {oi}")
+            ok = false
+        oi = oi + 1
+      if ok
+        t1 - t0
+      else
+        0 - 1
 
-pbucket: str = (p: f64)
-  if p < 0.00001
-    "<1e-5"
-  else if p < 0.0001
-    "<1e-4"
-  else if p < 0.001
-    "<1e-3"
-  else if p < 0.01
-    "<1e-2"
-  else if p < 0.05
-    "<0.05"
-  else
-    ">=0.05"
-
+statsjson: str = (buf: str, n: i64)
+  med = medianstr(buf, n)
+  mn = pctlstr(buf, n, 1)
+  mx = pctlstr(buf, n, 2)
+  p95 = pctlstr(buf, n, 3)
+  q1 = pctlstr(buf, n, 4)
+  q3 = pctlstr(buf, n, 5)
+  oc = outlierstr(buf, n)
+  js = "\{"
+  js = "{js}\"rounds\": {n}, "
+  js = "{js}\"median_ns\": {med}, "
+  js = "{js}\"min_ns\": {mn}, "
+  js = "{js}\"max_ns\": {mx}, "
+  js = "{js}\"p95_ns\": {p95}, "
+  js = "{js}\"q1_ns\": {q1}, "
+  js = "{js}\"q3_ns\": {q3}, "
+  js = "{js}\"outliers\": {oc}, "
+  js = "{js}\"samples_ns\": ["
+  i = 1
+  while i <= n
+    if i > 1
+      js = "{js}, "
+    sv = sampat(buf, i)
+    js = "{js}{sv}"
+    i = i + 1
+  js = "{js}]"
+  js = "{js}\}"
+  js
 main: i64 = ()
-  cand = os.args[1]
-  comp = os.args[2]
-  badargs = false
-  if cand == nil
-    badargs = true
-  if comp == nil
-    badargs = true
-  if badargs
-    print("status: error")
-    print("detail: candidate and comparator paths required")
+  if argn() < 10
+    print("usage: timing.id rounds warmup exitexp outhex compiler config revision nbin name0 path0 [name1 path1] [name2 path2]")
     1
   else
-    a3 = os.args[3]
-    rounds = a3:to(i64)
-    a4 = os.args[4]
-    warmup = a4:to(i64)
-    a5 = os.args[5]
-    exitexp = a5:to(i64)
-    outhex = os.args[6]
-    compiler = os.args[7]
-    buildcfg = os.args[8]
-    srcrev = os.args[9]
-    a10 = os.args[10]
-    tolbp = a10:to(i64)
+    arg0 = args(0)
+    rounds = parseint(arg0, 1, arg0:len())
+    arg1 = args(1)
+    warmups = parseint(arg1, 1, arg1:len())
+    arg2 = args(2)
+    exitexp = parseint(arg2, 1, arg2:len())
+    outhex = args(3)
+    outlen = outhex:len() / 2
+    compiler = args(4)
+    config = args(5)
+    revision = args(6)
+    arg7 = args(7)
+    nbin = parseint(arg7, 1, arg7:len())
     if rounds < 2
       print("status: error")
-      print("detail: rounds must be at least 2")
+      print("detail: rounds < 2")
       1
-    else if filesize(cand) < 0
+    else if warmups < 0
       print("status: error")
-      print("binary: {cand}")
-      print("detail: candidate not found")
+      print("detail: warmups < 0")
       1
-    else if filesize(comp) < 0
+    else if nbin < 1
       print("status: error")
-      print("binary: {comp}")
-      print("detail: comparator not found")
+      print("detail: nbin < 1")
       1
-    else if filesize(compiler) < 0
+    else if nbin > 3
       print("status: error")
-      print("binary: {compiler}")
-      print("detail: compiler not found")
+      print("detail: nbin > 3")
+      1
+    else if argn() != 8 + nbin * 2
+      print("status: error")
+      print("detail: arg count mismatch")
       1
     else
-      outlen = outhex:len() / 2
-      csize = filesize(cand)
-      psize = filesize(comp)
-      chash = sha256file(compiler)
-      cbuf = ""
-      pbuf = ""
-      csum = 0
-      psum = 0
-      csumsq = 0
-      psumsq = 0
+      name0 = args(8)
+      path0 = args(9)
+      name1 = ""
+      path1 = ""
+      name2 = ""
+      path2 = ""
+      if nbin >= 2
+        name1 = args(10)
+        path1 = args(11)
+      if nbin >= 3
+        name2 = args(12)
+        path2 = args(13)
       failed = false
-      w = 1
-      while w <= warmup
-        rw = runone(cand, exitexp, outhex, outlen, "warmup", w)
-        if rw < 0
-          failed = true
-        else
-          rw2 = runone(comp, exitexp, outhex, outlen, "warmup", w)
-          if rw2 < 0
-            failed = true
+      w = 0
+      while w < warmups
+        if ! failed
+          bi = 0
+          while bi < nbin
+            if ! failed
+              if bi == 0
+                rw = runone(path0, exitexp, outhex, outlen, "warmup", w)
+              else if bi == 1
+                rw = runone(path1, exitexp, outhex, outlen, "warmup", w)
+              else
+                rw = runone(path2, exitexp, outhex, outlen, "warmup", w)
+              if rw < 0
+                failed = true
+            bi = bi + 1
         w = w + 1
-      r = 1
-      while r <= rounds
-        if not failed
-          if r % 2 == 1
-            ct = runone(cand, exitexp, outhex, outlen, "timed", r)
-            pt = runone(comp, exitexp, outhex, outlen, "timed", r)
-          else
-            pt = runone(comp, exitexp, outhex, outlen, "timed", r)
-            ct = runone(cand, exitexp, outhex, outlen, "timed", r)
-          bad = false
-          if ct < 0
-            bad = true
-          if pt < 0
-            bad = true
-          if bad
-            failed = true
-          else
-            cts = tostr(ct)
-            cbuf = "{cbuf}{cts};"
-            csum = csum + ct
-            ctus = ct / 1000
-            csumsq = csumsq + ctus * ctus
-            pts = tostr(pt)
-            pbuf = "{pbuf}{pts};"
-            psum = psum + pt
-            ptus = pt / 1000
-            psumsq = psumsq + ptus * ptus
+      b0 = ""
+      b1 = ""
+      b2 = ""
+      r = 0
+      while r < rounds
+        if ! failed
+          bi = 0
+          while bi < nbin
+            if ! failed
+              if bi == 0
+                s = runone(path0, exitexp, outhex, outlen, "timed", r)
+              else if bi == 1
+                s = runone(path1, exitexp, outhex, outlen, "timed", r)
+              else
+                s = runone(path2, exitexp, outhex, outlen, "timed", r)
+              if s < 0
+                failed = true
+              else
+                if bi == 0
+                  b0 = "{b0}{s};"
+                else if bi == 1
+                  b1 = "{b1}{s};"
+                else
+                  b2 = "{b2}{s};"
+            bi = bi + 1
         r = r + 1
       if failed
         1
       else
-        med1 = medianstr(cbuf, rounds)
-        med2 = medianstr(pbuf, rounds)
-        n1 = rounds:to(f64)
-        csumf = csum:to(f64)
-        cmean = csumf / n1
-        psumf = psum:to(f64)
-        pmean = psumf / n1
-        csqf = csumsq:to(f64)
-        psqf = psumsq:to(f64)
-        cmeanus = csumf / 1000.0 / n1
-        pmeanus = psumf / 1000.0 / n1
-        v1 = (csqf - n1 * cmeanus * cmeanus) / (n1 - 1.0)
-        v2 = (psqf - n1 * pmeanus * pmeanus) / (n1 - 1.0)
-        se2t = v1 / n1 + v2 / n1
-        tstat = 0.0
-        if se2t > 0.0
-          dt = cmeanus - pmeanus
-          tstat = dt / math.sqrt(se2t)
-        a1 = v1 / n1
-        a2 = v2 / n1
-        se2d = a1 + a2
-        numd = se2d * se2d
-        d1 = a1 * a1 / (n1 - 1.0)
-        d2 = a2 * a2 / (n1 - 1.0)
-        df = numd / (d1 + d2)
-        critadj = 1.0 + 1.2104 / df
-        crit = 1.96 * critadj
-        sig = false
-        if tstat > crit
-          sig = true
-        if tstat < 0.0 - crit
-          sig = true
-        pct = (med2 - med1) * 100 / med2
-        verdict = "inconclusive"
-        if sig
-          if med1 < med2
-            verdict = "win"
-          else if med1 > med2
-            verdict = "loss"
-            verdict = "loss"
-        else if tolbp > 0
-          if med2 > 0
-            diff = med1 - med2
-            if diff < 0
-              diff = 0 - diff
-            if diff * 10000 <= med2 * tolbp
-              verdict = "tie"
-        print("status: ok")
-        print("verdict: {verdict}")
-        print("candidate: {cand}")
-        print("candidate_size: {csize}")
-        print("comparator: {comp}")
-        print("comparator_size: {psize}")
-        print("compiler: {compiler}")
-        print("compiler_sha256: {chash}")
-        print("build_config: {buildcfg}")
-        print("source_rev: {srcrev}")
-        print("rounds: {rounds}")
-        print("warmup: {warmup}")
-        print("expected_exit: {exitexp}")
-        print("candidate_median_ns: {med1}")
-        print("comparator_median_ns: {med2}")
-        print("speedup_pct: {pct}")
-        print("t_stat: {tstat}")
-        print("df: {df}")
-        sigs = "no"
-        if sig
-          sigs = "yes"
-        print("significant: {sigs}")
-        0
+        ok = true
+        if nsamp(b0) != rounds
+          print("status: error")
+          print("detail: binary 0 sample count mismatch")
+          ok = false
+        if nbin >= 2
+          if nsamp(b1) != rounds
+            print("status: error")
+            print("detail: binary 1 sample count mismatch")
+            ok = false
+        if nbin >= 3
+          if nsamp(b2) != rounds
+            print("status: error")
+            print("detail: binary 2 sample count mismatch")
+            ok = false
+        if ! ok
+          1
+        else
+          js = "\{"
+          js = "{js}\"timer\": \"idol-bench-timer\", "
+          js = "{js}\"version\": 2, "
+          js = "{js}\"rounds\": {rounds}, "
+          js = "{js}\"warmup\": {warmups}, "
+          js = "{js}\"alpha\": \"0.05\", "
+          js = "{js}\"decision_rule\": \"welch t-test normal approximation: significant when |t|>1.96; degenerate when both sample variances are zero; win/loss only when significant and candidate median orders\", "
+          js = "{js}\"timing_boundary\": \"t1 captured immediately after procrun returns; procrun drains child stdout to EOF then waits for child; per-invocation validation cost excluded from samples; rounds interleaved across binaries\", "
+          js = "{js}\"compiler\": \"{compiler}\", "
+          js = "{js}\"config\": \"{config}\", "
+          js = "{js}\"revision\": \"{revision}\", "
+          js = "{js}\"expected_exit\": {exitexp}, "
+          js = "{js}\"expected_stdout_len\": {outlen}, "
+          js = "{js}\"binaries\": \{"
+          js = "{js}\"{name0}\": {statsjson(b0, rounds)}"
+          if nbin >= 2
+            js = "{js}, \"{name1}\": {statsjson(b1, rounds)}"
+          if nbin >= 3
+            js = "{js}, \"{name2}\": {statsjson(b2, rounds)}"
+          js = "{js}\}\}"
+          print(js)
+          0
 
 main()

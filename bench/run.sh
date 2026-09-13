@@ -19,13 +19,18 @@
 #   3. CORRECTNESS GATE: every binary must exit with the same code AND emit
 #      byte-identical stdout vs the oracle (first of clang, gcc; idol only if
 #      no C compiler is present). A wrong answer is a bug, not data.
-#   4. Timing: 3 warmup runs, then N INTERLEAVED timed rounds
+#   4. Timing via the Idol benchmark timer (bench/timing.id, authoritative):
+#      3 warmup runs, then N INTERLEAVED timed rounds
 #      (idol, clang, gcc, idol, clang, gcc, ...) so thermal drift and
-#      background load affect all competitors equally.
-#   5. timing.py computes median/mean/stddev/min/max/p95, counts outliers
-#      (Tukey fence, disclosed not dropped), retains the raw per-round
-#      samples, and runs Welch's t-test. A win/loss verdict is emitted ONLY
-#      when the test is significant (p < 0.05); otherwise the verdict is tie.
+#      background load affect all competitors equally. The timer validates
+#      exit code and stdout on every invocation, captures t1 immediately
+#      after procrun returns, and reduces with separator-aware median,
+#      Welford variance, and percentiles.
+#   5. timing.py is now an independent cross-check verifier (not a timer):
+#      it recomputes every statistic from the timer's raw samples, verifies
+#      exact agreement, and emits the vs_best verdict via Welch's t-test.
+#      A win/loss verdict is emitted ONLY when the test is significant
+#      (p < 0.05); otherwise the verdict is "inconclusive" (never "tie").
 #   6. Static metrics: object size (.o bytes) and source-to-executable
 #      compile time (median of 5 interleaved attempts per compiler, produced
 #      by bench/ctime.py under a hard validation contract).
@@ -122,6 +127,16 @@ else
   echo "bench: production route: programs compile directly with $IDOL_BIN"
 fi
 
+# --- Build the Idol benchmark timer (authoritative timing path) ---
+# The timer (bench/timing.id) does all timing: interleaved rounds, per-invocation
+# validation, and statistical reduction. timing.py is now a verifier only.
+TIMER="$WORK/idol-timer"
+echo "bench: compiling bench/timing.id -> idol-timer (--no-cache)"
+"$IDOL_BIN" compile "$BENCH/timing.id" --backend native --no-cache -o "$TIMER"
+if [ ! -x "$TIMER" ] || [ ! -s "$TIMER" ]; then
+  echo "bench: idol-timer build failed (missing or empty)." >&2; exit 4
+fi
+
 # --- compiler discovery: identity from --version at run time, never assumed ---
 COMPILERS="idol"
 CLANG_VERSION=""; GCC_VERSION=""
@@ -203,12 +218,23 @@ for P in $PROGS; do
   done
   echo "bench: [$P] correctness ok vs oracle $ORACLE (exit $REF_RC, stdout byte-identical)"
 
-  # --- 4/5. timing (raw samples retained; verdicts significance-gated) ---
-  SPEC="$WORK/$P.spec.json"
-  { echo '{"binaries":{'; SEP="";
-    for C in $COMPILERS; do echo "${SEP}\"$C\":\"$WORK/$P.$C\""; SEP=","; done
-    echo "},\"rounds\":$ROUNDS,\"warmup\":3}"; } > "$SPEC"
-  python3 "$BENCH/timing.py" < "$SPEC" > "$WORK/$P.time.json"
+  # --- 4/5. timing via the Idol timer (authoritative); Python verifies ---
+  # The Idol timer does the timing: interleaved rounds, per-invocation exit/stdout
+  # validation, Welford variance, and percentile reduction. timing.py no longer
+  # times anything; it independently recomputes every stat from the timer's raw
+  # samples (cross-check) and emits the report JSON with the vs_best verdict.
+  # Nonsignificance is "inconclusive", never "tie".
+  REF_HEX=$(xxd -p "$REF_OUT" | tr -d '\n')
+  TIMER_NBIN=0
+  TIMER_BINS=""
+  for C in $COMPILERS; do
+    TIMER_BINS="$TIMER_BINS $C $WORK/$P.$C"
+    TIMER_NBIN=$((TIMER_NBIN+1))
+  done
+  TIMER_REV=$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo "unknown")
+  "$TIMER" $ROUNDS 3 $REF_RC "$REF_HEX" "idol" "$ROUTE" "$TIMER_REV" \
+    $TIMER_NBIN $TIMER_BINS > "$WORK/$P.timer.json"
+  python3 "$BENCH/timing.py" < "$WORK/$P.timer.json" > "$WORK/$P.time.json"
 
   # --- 6a. code size: object bytes ---
   if [ "$ROUTE" = "restricted" ]; then

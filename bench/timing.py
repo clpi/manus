@@ -1,52 +1,23 @@
 #!/usr/bin/env python3
-"""Interleaved benchmark timing with statistical analysis.
+"""Independent cross-check verifier for the Idol benchmark timer.
 
-Reads a JSON spec from stdin:
-  {"binaries": {"idol": "/path/a", "clang": "/path/b"}, "rounds": 21, "warmup": 3}
+Reads the Idol timer's JSON output from stdin (which contains raw per-binary
+nanosecond samples plus the timer's own computed stats). Independently
+recomputes every statistic from the raw samples, verifies exact agreement
+with the timer's reported values, and emits the vs_best verdict.
 
-Protocol:
-  - warmup runs per binary (untimed, discarded)
-  - timed rounds are INTERLEAVED (a,b,c,a,b,c...) so thermal drift,
-    frequency scaling, and background load hit every binary equally
-  - primary metric is the MEDIAN (robust; no outlier removal needed)
-  - outliers are counted (Tukey: > Q3 + 3*IQR) and disclosed, never dropped
-  - the raw per-round samples for every binary are retained in the output
-    ("samples"), so any verdict can be re-derived and re-tested later
-  - win/loss verdicts are emitted ONLY when Welch's t-test is significant
-    (two-sided p < 0.05); otherwise the verdict is "tie". A median ordering
-    without significance is not a win or a loss.
+This is NOT a timer: it performs no measurements. It is an explicit
+independent cross-check over the SAME raw samples produced by the Idol
+timer (bench/timing.id), which is the authoritative timing path.
 
-Writes JSON to stdout with per-binary stats and the idol-vs-best-rival test.
+Verdict language: nonsignificance is "inconclusive", never "tie".
+A tolerance margin cannot prove equivalence.
 """
 import json
 import math
-import subprocess
 import sys
-import time
 
 SIGNIFICANCE_LEVEL = 0.05
-
-
-RUN_TIMEOUT_S = 120
-
-
-def run_once(binary):
-    # Every benchmark binary runs under a timeout: a hung binary is failed
-    # measurement and must abort loudly, never hang the sweep.
-    try:
-        p = subprocess.run([binary], capture_output=True, timeout=RUN_TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        print(f"bench: FATAL: benchmark binary hung (>{RUN_TIMEOUT_S}s): {binary}",
-              file=sys.stderr)
-        sys.exit(7)
-    return p.returncode
-
-
-def time_once(binary):
-    t0 = time.perf_counter()
-    rc = run_once(binary)
-    t1 = time.perf_counter()
-    return (t1 - t0), rc
 
 
 def phi(x):
@@ -54,7 +25,7 @@ def phi(x):
 
 
 def welch_pvalue(a, b):
-    """Two-sided p-value, Welch's t-test with normal approximation (n>=20)."""
+    """Two-sided p-value, Welch's t-test with normal approximation."""
     n1, n2 = len(a), len(b)
     m1, m2 = sum(a) / n1, sum(b) / n2
     v1 = sum((x - m1) ** 2 for x in a) / (n1 - 1) if n1 > 1 else 0.0
@@ -66,75 +37,150 @@ def welch_pvalue(a, b):
     return 2.0 * (1.0 - phi(abs(t)))
 
 
-def stats(ts):
-    s = sorted(ts)
+def idol_median(s):
+    """Mirror bench/timing.id medianstr: average of two middles when even."""
     n = len(s)
-    mean = sum(s) / n
-    median = s[n // 2]
-    var = sum((x - mean) ** 2 for x in s) / n
-    std = math.sqrt(var)
-    q1 = s[n // 4]
-    q3 = s[3 * n // 4]
+    if (n // 2) * 2 == n:
+        return (s[n // 2 - 1] + s[n // 2]) // 2
+    else:
+        return s[n // 2]
+
+
+def idol_pctl(s, which, n):
+    """Mirror bench/timing.id pctlstr which-codes."""
+    if which == 1:
+        k = 1
+    elif which == 2:
+        k = n
+    elif which == 3:
+        k = (95 * n + 99) // 100
+    elif which == 4:
+        k = n // 4 + 1
+    elif which == 5:
+        k = 3 * n // 4 + 1
+    else:
+        raise ValueError(f"bad which: {which}")
+    return s[k - 1]
+
+
+def verify_stats(name, reported, samples_ns):
+    """Recompute stats from raw samples; return (ok, recomputed_dict)."""
+    s = sorted(samples_ns)
+    n = len(s)
+    errors = []
+    # median
+    med = idol_median(s)
+    if med != reported["median_ns"]:
+        errors.append(f"median_ns: timer={reported['median_ns']} recomputed={med}")
+    # min/max
+    if s[0] != reported["min_ns"]:
+        errors.append(f"min_ns: timer={reported['min_ns']} recomputed={s[0]}")
+    if s[-1] != reported["max_ns"]:
+        errors.append(f"max_ns: timer={reported['max_ns']} recomputed={s[-1]}")
+    # p95, q1, q3
+    p95 = idol_pctl(s, 3, n)
+    if p95 != reported["p95_ns"]:
+        errors.append(f"p95_ns: timer={reported['p95_ns']} recomputed={p95}")
+    q1 = idol_pctl(s, 4, n)
+    if q1 != reported["q1_ns"]:
+        errors.append(f"q1_ns: timer={reported['q1_ns']} recomputed={q1}")
+    q3 = idol_pctl(s, 5, n)
+    if q3 != reported["q3_ns"]:
+        errors.append(f"q3_ns: timer={reported['q3_ns']} recomputed={q3}")
+    # outliers (Tukey: > Q3 + 3*IQR, disclosed not dropped)
     iqr = q3 - q1
-    fence = q3 + 3.0 * iqr
+    fence = q3 + 3 * iqr
     outliers = sum(1 for x in s if x > fence)
-    return {
-        "rounds": n,
-        "mean": mean,
-        "median": median,
-        "stddev": std,
-        "min": s[0],
-        "max": s[-1],
-        "p95": s[min(n - 1, int(0.95 * n))],
-        "q1": q1,
-        "q3": q3,
-        "outliers": outliers,
-    }
+    if outliers != reported["outliers"]:
+        errors.append(f"outliers: timer={reported['outliers']} recomputed={outliers}")
+    # rounds
+    if n != reported["rounds"]:
+        errors.append(f"rounds: timer={reported['rounds']} recomputed={n}")
+    return errors
 
 
 def main():
-    spec = json.load(sys.stdin)
-    binaries = spec["binaries"]
-    rounds = int(spec.get("rounds", 21))
-    warmup = int(spec.get("warmup", 3))
-    names = list(binaries.keys())
+    timer_out = json.load(sys.stdin)
+    if timer_out.get("timer") != "idol-bench-timer":
+        print("verifier: FATAL: stdin is not idol-bench-timer JSON", file=sys.stderr)
+        sys.exit(10)
 
-    for _ in range(warmup):
-        for n in names:
-            run_once(binaries[n])
+    binaries = timer_out["binaries"]
+    rounds = timer_out["rounds"]
+    warmup = timer_out["warmup"]
 
-    times = {n: [] for n in names}
-    codes = {n: set() for n in names}
-    for _ in range(rounds):
-        for n in names:
-            dt, rc = time_once(binaries[n])
-            times[n].append(dt)
-            codes[n].add(rc)
+    # --- Independent cross-check: recompute every stat from raw samples ---
+    all_errors = []
+    for name, rep in binaries.items():
+        samples_ns = rep["samples_ns"]
+        errs = verify_stats(name, rep, samples_ns)
+        for e in errs:
+            all_errors.append(f"[{name}] {e}")
+    if all_errors:
+        print("verifier: FATAL: timer stats do not match recomputation:", file=sys.stderr)
+        for e in all_errors:
+            print(f"verifier:   {e}", file=sys.stderr)
+        sys.exit(11)
+    print(f"verifier: cross-check ok: {len(binaries)} binaries, "
+          f"{rounds} rounds each, all stats agree", file=sys.stderr)
 
+    # --- Emit run.sh-compatible JSON (float seconds) ---
     out = {"binaries": {}, "rounds": rounds, "warmup": warmup,
-           "significance_level": SIGNIFICANCE_LEVEL}
-    for n in names:
-        st = stats(times[n])
-        st["exit_codes"] = sorted(codes[n])
-        st["samples"] = list(times[n])  # raw samples retained per row
-        out["binaries"][n] = st
+           "significance_level": SIGNIFICANCE_LEVEL,
+           "timer_identity": {
+               "timer": timer_out["timer"],
+               "version": timer_out["version"],
+               "timing_boundary": timer_out["timing_boundary"],
+               "decision_rule": timer_out["decision_rule"],
+           }}
+    times_s = {}
+    for name, rep in binaries.items():
+        s_ns = sorted(rep["samples_ns"])
+        n = len(s_ns)
+        # float-second stats for the report (raw ns retained separately)
+        s_s = [x / 1e9 for x in s_ns]
+        mean_s = sum(s_s) / n
+        # sample variance (Welford-equivalent, for the report only)
+        var_s = sum((x - mean_s) ** 2 for x in s_s) / (n - 1) if n > 1 else 0.0
+        out["binaries"][name] = {
+            "rounds": n,
+            "mean": mean_s,
+            "median": idol_median(s_ns) / 1e9,
+            "stddev": math.sqrt(var_s),
+            "min": s_ns[0] / 1e9,
+            "max": s_ns[-1] / 1e9,
+            "p95": idol_pctl(s_ns, 3, n) / 1e9,
+            "q1": idol_pctl(s_ns, 4, n) / 1e9,
+            "q3": idol_pctl(s_ns, 5, n) / 1e9,
+            "outliers": rep["outliers"],
+            "exit_codes": [timer_out["expected_exit"]],
+            "samples": s_s,
+            "samples_ns": rep["samples_ns"],
+        }
+        times_s[name] = s_s
 
-    if "idol" in times:
-        idol = times["idol"]
-        rivals = {n: times[n] for n in names if n != "idol"}
+    # --- vs_best: idol vs fastest rival, significance-gated ---
+    # Nonsignificance is "inconclusive", never "tie" or equivalence.
+    if "idol" in times_s:
+        idol = times_s["idol"]
+        rivals = {n: t for n, t in times_s.items() if n != "idol"}
         if rivals:
-            best = min(rivals, key=lambda n: stats(times[n])["median"])
+            best = min(rivals, key=lambda n: idol_median(sorted(
+                [int(x * 1e9) for x in rivals[n]])))
             p = welch_pvalue(idol, rivals[best])
-            im = stats(idol)["median"]
-            bm = stats(rivals[best])["median"]
+            im = idol_median(sorted([int(x * 1e9) for x in idol])) / 1e9
+            bm = idol_median(sorted([int(x * 1e9) for x in rivals[best]])) / 1e9
             margin = (bm - im) / bm if bm else 0.0
             significant = p < SIGNIFICANCE_LEVEL
-            # No win/loss without significance: median ordering alone
-            # is not evidence of a real difference.
             if significant:
-                verdict = "win" if im < bm else ("loss" if im > bm else "tie")
+                if im < bm:
+                    verdict = "win"
+                elif im > bm:
+                    verdict = "loss"
+                else:
+                    verdict = "inconclusive"
             else:
-                verdict = "tie"
+                verdict = "inconclusive"
             out["vs_best"] = {
                 "rival": best,
                 "idol_median": im,
