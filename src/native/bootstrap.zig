@@ -330,6 +330,10 @@ fn callApplication(expr: *const Expr) bool {
             if (std.mem.eql(u8, n.ident, "close") and c.args.len == 1) return true;
             if (std.mem.eql(u8, n.ident, "incarnation") and c.args.len == 0) return true;
             if (std.mem.eql(u8, n.ident, "execap") and c.args.len == 3) return true;
+            if (std.mem.eql(u8, n.ident, "procrun") and c.args.len == 3) return true;
+            if (std.mem.eql(u8, n.ident, "monotime") and c.args.len == 0) return true;
+            if (std.mem.eql(u8, n.ident, "filesize") and c.args.len == 1) return true;
+            if (std.mem.eql(u8, n.ident, "sha256file") and c.args.len == 1) return true;
             return false;
         },
         // `to(str)(n)` — A CALL WHOSE CALLEE IS A CALL, which is the whole
