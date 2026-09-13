@@ -765,12 +765,11 @@ divlit: str = (c: str, rd: i64, ra: i64, dd: i64, names: str)
         pw = powtwo(ad)
         if pw > 0
             c = c .. word(2470445056 | (63 << 16) | (63 << 10) | (ra << 5) | 9)
-            c = c .. word(3544186880 | ((64 - pw) << 16) | (63 << 10) | (9 << 5) | 9)
-            c = c .. word(add(9, ra, 9))
-            c = c .. word(2470445056 | (pw << 16) | (63 << 10) | (9 << 5) | 9)
+            c = c .. word(2332033024 | (1 << 22) | (9 << 16) | ((64 - pw) << 10) | (ra << 5) | 9)
+            c = c .. word(2470445056 | (pw << 16) | (63 << 10) | (9 << 5) | rd)
             if dd < 0
-                return c .. word(minus(rd, 31, 9))
-            return c .. word(mov(rd, 9))
+                return c .. word(minus(rd, 31, rd))
+            return c
         if ad < 4294967296
             ms = divmagic(dd)
             mg = at(ms, 0)
