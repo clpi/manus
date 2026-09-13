@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Compile-time evidence producer for bench/run.sh.
+
+Measures source->executable compile time with HARD validation.
+
+Usage:
+    ctime.py <native> <benchdir> <prog> <sdk> <workdir> <out-json> <compilers>
+
+    <compilers> is a space-separated list drawn from run.sh's discovered set,
+    e.g. "idol clang gcc". "idol" takes the nativebench pipeline route;
+    every other name is invoked as "<cc> -O3 <prog>.c -o <artifact>".
+
+Measurement-integrity contract (the point of this file):
+  - A duration qualifies as a SUCCESSFUL compilation ONLY when every required
+    stage succeeds AND the artifact is validated:
+        idol : produce (nativebench rc 0) -> decode (valid nonempty hex) ->
+               link (ld rc 0) -> validate (executable exists, size > 0)
+        clang/gcc: compile (cc rc 0) -> validate (executable exists, size > 0)
+  - Failed attempts are recorded as FAILED work (stage, rc, stderr tail, and
+    the wall-clock cost of the failed attempt). They stay visible in the
+    output but are NEVER mixed into the success median.
+  - The producer exits 0 even when every attempt fails: a failed compilation
+    is data, not a harness crash. It exits nonzero only on harness errors
+    (bad arguments, missing inputs).
+  - Attempts are INTERLEAVED round-robin across compilers (idol, clang, gcc,
+    idol, clang, gcc, ...) so thermal drift and background load affect every
+    compiler's attempts equally.
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+
+ATTEMPTS = 5
+LD_FLAGS = ["-arch", "arm64", "-e", "_idolmain",
+            "-platform_version", "macos", "14.0", "14.0"]
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, capture_output=True, **kw)
+
+
+def validate_artifact(path):
+    """Return None when the artifact is acceptable, else a reason string."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return "missing"
+    if st.st_size == 0:
+        return "empty"
+    return None
+
+
+def failed(stage, rc, t0, stderr):
+    return {
+        "status": "failed",
+        "stage": stage,
+        "rc": rc,
+        "duration_s": time.perf_counter() - t0,
+        "stderr_tail": (stderr or b"")[-300:].decode("utf-8", "replace"),
+    }
+
+
+def succeeded(t0, artifact):
+    return {
+        "status": "success",
+        "duration_s": time.perf_counter() - t0,
+        "artifact_bytes": os.stat(artifact).st_size,
+    }
+
+
+def attempt_idol(native, prog_id, sdk, workdir, tag):
+    """One idol compile attempt: produce -> decode -> link -> validate."""
+    t0 = time.perf_counter()
+    obj = os.path.join(workdir, tag + ".cto.o")
+    exe = os.path.join(workdir, tag + ".cto")
+    with open(prog_id, "rb") as fh:
+        p1 = run([native], stdin=fh)
+    if p1.returncode != 0:
+        return failed("produce", p1.returncode, t0, p1.stderr)
+    try:
+        code = bytes.fromhex(p1.stdout.decode("ascii"))
+    except Exception as e:  # noqa: BLE001 - any decode failure is failed work
+        return failed("decode", "bad-hex", t0, str(e)[:200].encode())
+    if not code:
+        return failed("decode", "empty-object", t0, b"producer emitted no bytes")
+    with open(obj, "wb") as fh:
+        fh.write(code)
+    p3 = run(["ld"] + LD_FLAGS + ["-syslibroot", sdk, obj, "-lSystem", "-o", exe])
+    if p3.returncode != 0:
+        return failed("link", p3.returncode, t0, p3.stderr)
+    why = validate_artifact(exe)
+    if why is not None:
+        return failed("validate", why, t0, b"")
+    return succeeded(t0, exe)
+
+
+def attempt_cc(cc, prog_c, workdir, tag):
+    """One C-compiler attempt: compile -> validate."""
+    t0 = time.perf_counter()
+    exe = os.path.join(workdir, tag + ".cto-" + cc)
+    p = run([cc, "-O3", prog_c, "-o", exe])
+    if p.returncode != 0:
+        return failed("compile", p.returncode, t0, p.stderr)
+    why = validate_artifact(exe)
+    if why is not None:
+        return failed("validate", why, t0, b"")
+    return succeeded(t0, exe)
+
+
+def median(xs):
+    s = sorted(xs)
+    return s[len(s) // 2]
+
+
+def main():
+    if len(sys.argv) != 8:
+        print("usage: ctime.py <native> <benchdir> <prog> <sdk> "
+              "<workdir> <out-json> <compilers>", file=sys.stderr)
+        return 2
+    native, benchdir, prog, sdk, workdir, out_json, compilers = sys.argv[1:8]
+    compilers = compilers.split()
+    if "idol" not in compilers:
+        print("ctime: compilers must include idol", file=sys.stderr)
+        return 2
+    prog_id = os.path.join(benchdir, "programs", prog + ".id")
+    prog_c = os.path.join(benchdir, "programs", prog + ".c")
+    for req in (native, prog_id, prog_c, sdk, workdir):
+        if not os.path.exists(req):
+            print("ctime: missing input: " + req, file=sys.stderr)
+            return 2
+
+    attempts = {cc: [] for cc in compilers}
+    for _ in range(ATTEMPTS):  # interleaved round-robin across compilers
+        for cc in compilers:
+            tag = "%s.%s" % (prog, cc)
+            if cc == "idol":
+                attempts[cc].append(attempt_idol(native, prog_id, sdk, workdir, tag))
+            else:
+                attempts[cc].append(attempt_cc(cc, prog_c, workdir, tag))
+
+    results = {}
+    for cc in compilers:
+        atts = attempts[cc]
+        ok_ds = [a["duration_s"] for a in atts if a["status"] == "success"]
+        fails = [a for a in atts if a["status"] != "success"]
+        entry = {
+            "attempts": ATTEMPTS,
+            "succeeded": len(ok_ds),
+            "failed": len(fails),
+            "failures": fails,  # FAILED work: visible, never in the median
+        }
+        if ok_ds:
+            entry["status"] = "success"
+            entry["median_s"] = median(ok_ds)
+            entry["success_durations_s"] = ok_ds
+        else:
+            entry["status"] = "failed"
+            entry["median_s"] = None
+        results[cc] = entry
+
+    with open(out_json, "w") as fh:
+        json.dump({"compilers": results,
+                   "attempts_per_compiler": ATTEMPTS}, fh, indent=2)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
