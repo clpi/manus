@@ -217,14 +217,14 @@ fi
 printf '  dump-c   exit=%s  callee %s in the transfer unit\n' "$sib_dump" "$sib_dump_state"
 printf '  verdict  library modules are %s from a consumer on the DIRECT backend\n' "$sib_verdict"
 
-if [ "$sib_direct" -eq 0 ]; then
-    note "§1 cross-module linking now WORKS ON DIRECT — every library row below is stale; re-derive the ledger"
-else
-    grep -q 'Undefined symbols' "$work/sib/d.log" \
-        || note "§1 direct refused the consumer WITHOUT a link error; the named cause changed"
-    grep -q 'call-target-not-in-module' "$work/sib/c.log" \
-        || note "§1 the C99 realizer lost its named cause 'call-target-not-in-module'"
+# Cross-module linking WORKS on the direct backend as of the 2026-09-12
+# toolchain: the sibling callee links and runs. The C route still refuses
+# with its named cause; the two routes differ, which is what this row owns.
+if [ "$sib_direct" -ne 0 ]; then
+    note "§1 cross-module linking REGRESSED on DIRECT — it linked, now it does not"
 fi
+grep -q 'call-target-not-in-module' "$work/sib/c.log" \
+    || note "§1 the C99 realizer lost its named cause 'call-target-not-in-module'"
 # THIS ROW USED TO DEMAND `duo_fatal("unlowered native call")` IN THE EMITTED C,
 # and that was the DEFECT, not the cause: `dump-c` exited 0 with empty stderr
 # while the consumer's body became a runtime abort, so this gate was asserting
