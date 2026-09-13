@@ -10697,6 +10697,7 @@ fn holds(ctx: *const LowerCtx, v: dnir.Value) bool {
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (!ctx.require_graph_facts) return false;
     if (expr.* != .call and expr.* != .method_call) return false;
+    if (expr.* == .method_call and std.mem.eql(u8, expr.method_call.method, "from")) return false;
     if (ctx.occurrences.get(expr) != null) return false;
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
@@ -15288,7 +15289,11 @@ fn lowerSubjectCall(
                 bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
             }
+            // BYPASS: f64:from(x) is a special form, not a checked call.
+            const is_from_tn = expr.* == .method_call and std.mem.eql(u8, expr.method_call.method, "from");
+            if (!is_from_tn) {
             return lowerCheckedScalarCall(ctx, application, consumption);
+            }
         }
     }
     if (expr.* == .method_call) {
