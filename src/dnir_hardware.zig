@@ -188,7 +188,7 @@ pub const CatalogEntry = struct {
 pub const catalog: []const CatalogEntry = &.{
     .{ .intrinsic = .fence, .tier = .scalar, .arm64 = "dmb ish", .duo_surface = "@fence / @comp.hint.fence" },
     .{ .intrinsic = .spin_wait, .tier = .scalar, .arm64 = "yield", .duo_surface = "std.hardware.spin_wait" },
-    .{ .intrinsic = .popcount, .tier = .scalar, .arm64 = "gpr-loop", .duo_surface = "@popcount / @comp.bit.popcount" },
+    .{ .intrinsic = .popcount, .tier = .scalar, .arm64 = "neon-cnt-addv", .duo_surface = "@popcount / @comp.bit.popcount" },
     .{ .intrinsic = .clz, .tier = .scalar, .arm64 = "clz", .duo_surface = "@clz / @comp.bit.clz" },
     .{ .intrinsic = .ctz, .tier = .scalar, .arm64 = "rbit+clz", .duo_surface = "@ctz / @comp.bit.ctz" },
 };

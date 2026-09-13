@@ -6049,28 +6049,20 @@ const Arm64Compiler = struct {
         try self.emitFmt(word, "{s} x{d}, x{d}", .{ mnem, dst, src });
     }
 
-    /// Brian-Kernighan popcount — sovereign GPR loop (no `__builtin_popcountll`).
+    /// Population count via baseline AdvSIMD: `fmov dV,xS / cnt.8b / addv.8b / fmov xD,dV`.
+    /// Scalar CNT is FEAT_CSSC, which is 0 on this machine; the vector form is
+    /// ARMv8.0 base. The scratch comes from `allocFpReg` (d16-d30, caller-saved,
+    /// disjoint from the d0-d7 argument range) and is freed before return; no
+    /// slot names it, so its lifetime is exactly these four instructions.
     fn emitPopcountReg(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
-        const val = if (dst != src) src else blk: {
-            const copy = try self.allocReg();
-            try self.emitMovReg(copy, src);
-            break :blk copy;
-        };
-        try self.emitMovImm(dst, 0);
-        const loop_off: u32 = @intCast(self.code.items.len);
-        try self.emitCmpZero(val);
-        const done = try self.emitBCond(.eq, 0);
-        const one = try self.allocReg();
-        try self.emitMovImm(one, 1);
-        const tmp = try self.allocReg();
-        try self.emitSubReg(tmp, val, one);
-        try self.emitAndReg(val, val, tmp);
-        try self.emitAddReg(dst, dst, one);
-        self.releaseReg(one);
-        self.releaseReg(tmp);
-        const back = try self.emitB(0);
-        try self.patchB(back, loop_off);
-        try self.patchCondBranch(done, @intCast(self.code.items.len));
+        const v = try self.allocFpReg();
+        try self.emitFmovFromGpr(v, src);
+        // cnt Vd.8b, Vn.8b — ground-truth base 0x0E205800 (cnt v16.8b,v16.8b => 0x0E205A10).
+        try self.emitFmt(0x0e205800 | (@as(u32, v) << 5) | @as(u32, v), "cnt.8b v{d}, v{d}", .{ v, v });
+        // addv Bd, Vn.8b — ground-truth base 0x0E31B800 (addv b16,v16.8b => 0x0E31BA10).
+        try self.emitFmt(0x0e31b800 | (@as(u32, v) << 5) | @as(u32, v), "addv.8b b{d}, v{d}", .{ v, v });
+        try self.emitFmovToGpr(dst, v);
+        self.used_fp_regs[v] = false;
     }
 
     /// A read whose register FILE disagrees with the file the value lives in.

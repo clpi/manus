@@ -4603,6 +4603,11 @@ pub const LowerCtx = struct {
     /// definition and a `dnir.Value` both carry; a name that has been rebound
     /// to a different slot is a different fact and correctly misses.
     nonzero_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Statements swallowed by a multi-statement idiom prologue (currently the
+    /// popcount idiom): the prologue discharged their semantics up front, so
+    /// the block loop must not lower them. Keyed by statement pointer; the
+    /// prologue inserts them, the loop skips them.
+    popcount_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
@@ -4714,6 +4719,7 @@ pub const LowerCtx = struct {
         self.loop_heads.deinit(self.alloc);
         self.instrs.deinit(self.alloc);
         self.nonzero_slots.deinit(self.alloc);
+        self.popcount_swallowed.deinit(self.alloc);
         self.absent_applications.deinit(self.alloc);
     }
 
@@ -5823,11 +5829,17 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     ctx.block_answering = allow_return;
     defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
+        // A multi-statement idiom prologue (popcount) swallowed this statement;
+        // its semantics were discharged up front.
+        if (ctx.popcount_swallowed.contains(stmt)) continue;
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
         const claimed = try runAdditivePrologues(ctx, block.stmts, i);
         if (!claimed) tryArmCountedLoop(ctx, block.stmts, i);
+        // The prologue may have swallowed this statement itself (popcount
+        // discharges all six up front); do not lower it twice.
+        if (ctx.popcount_swallowed.contains(stmt)) continue;
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -7309,6 +7321,9 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
     try noteBlockDeclarations(ctx, block, &declarations);
     defer restoreBlockDeclarations(ctx, declarations.items);
     for (block.stmts, 0..) |*stmt, i| {
+        // A multi-statement idiom prologue (popcount) swallowed this statement;
+        // its semantics were discharged up front.
+        if (ctx.popcount_swallowed.contains(stmt)) continue;
         const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
             try lowerStmt(ctx, stmt, tail_here);
@@ -7319,6 +7334,9 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         // prologue already finalized (its trip test is false on entry).
         const claimed = try runAdditivePrologues(ctx, block.stmts, i);
         if (!claimed) tryArmCountedLoop(ctx, block.stmts, i);
+        // The prologue may have swallowed this statement itself (popcount
+        // discharges all six up front); do not lower it twice.
+        if (ctx.popcount_swallowed.contains(stmt)) continue;
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
@@ -9318,8 +9336,176 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
 /// statement's semantics are discharged up front, so structural loop
 /// transforms must not re-claim it — their arming is skipped when this
 /// returns true (the counted-loop arming takes that guard at its merge).
+/// POPCOUNT IDIOM -> HARDWARE POPCOUNT.
+///
+/// Recognizes the six-statement SWAR popcount idiom (Hacker's Delight 5-1):
+///
+///     x = x - ((x / 2) & 0x5555555555555555)
+///     x = (x & 0x3333333333333333) + ((x / 4) & 0x3333333333333333)
+///     x = (x + (x / 16)) & 0x0F0F0F0F0F0F0F0F
+///     x = x + (x / 256)
+///     x = x + (x / 65536)
+///     x = x + (x / 4294967296)
+///
+/// and replaces it with a single `.hw_unary .popcount`. The divisions are
+/// SIGNED (`/`), so the transform is valid only when the value entering the
+/// idiom is non-negative (then each `/ 2^k` is a logical shift). That fact
+/// must come from the graph: the statement immediately preceding the idiom
+/// has to be `x = <rhs>` with `nonNegativeWidthOfExpr` proving `<rhs>`
+/// non-negative. When any condition fails this emits nothing and returns
+/// false; the statements lower through the normal path unchanged.
+///
+/// On success the six statements are discharged up front: the popcount is
+/// emitted and stored to `x`, and the five FOLLOWING statements are recorded
+/// in `popcount_swallowed` so the block loop skips them.
+fn tryEmitPopcountIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    if (at == 0 or at + 6 > stmts.len) return false;
+    const graph = ctx.graph;
+
+    // All six must be `x = <expr>` for the same `x`, each matching its step.
+    var x_name: ?[]const u8 = null;
+    for (stmts[at .. at + 6], 0..) |*st, k| {
+        const a = switch (st.*) {
+            .assign => |x| x,
+            else => return false,
+        };
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const name = identOf(a.targets[0]) orelse return false;
+        if (x_name == null) {
+            x_name = name;
+        } else if (!std.mem.eql(u8, x_name.?, name)) {
+            return false;
+        }
+        if (!popcountStepMatches(graph, a.values[0], name, k)) return false;
+    }
+    const x = x_name.?;
+
+    // The entry value comes from the immediately preceding `x = <rhs>`.
+    const prev = switch (stmts[at - 1]) {
+        .assign => |p| p,
+        else => return false,
+    };
+    if (prev.targets.len != 1 or prev.values.len != 1) return false;
+    const prev_name = identOf(prev.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, prev_name, x)) return false;
+    const relation = ctx.function orelse return false;
+    if (ctx.graph.nonNegativeWidthOfExpr(relation, prev.values[0]) == null) return false;
+
+    // 64-bit idiom on a narrowed slot would count garbage high bits.
+    const x_slot = ctx.locals.get(x) orelse return false;
+    if (ctx.narrow_slots.contains(x_slot)) return false;
+
+    // t = popcount(x); x = t.
+    const t = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .hw_unary,
+        .hw = .popcount,
+        .result = t,
+        .lhs = .{ .local = x_slot },
+        .ty = .i64,
+    });
+    try ctx.emit(.{ .op = .store_local, .result = x_slot, .lhs = .{ .temp = t }, .ty = .any });
+
+    // Swallow all six statements; the block loop skips them. The current
+    // statement (`at`) is swallowed too, and the loop's post-prologue check
+    // below skips its `lowerStmt`.
+    for (stmts[at .. at + 6]) |*st| {
+        try ctx.popcount_swallowed.put(ctx.alloc, st, {});
+    }
+
+    // `x` is rebound; drop the stale const fact.
+    if (ctx.const_ints.fetchRemove(x)) |kv| ctx.alloc.free(kv.key);
+    return true;
+}
+
+/// Step `k` (0-5) of the SWAR popcount idiom, or false. Masks and divisors
+/// are graph exact-i64 facts; the AST supplies only shape and name identity.
+/// Commuted operand orders are accepted; anything else declines.
+fn popcountStepMatches(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, x: []const u8, k: usize) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    return switch (k) {
+        // x = x - ((x / 2) & 0x5555555555555555)
+        0 => b.op == .sub and isIdent(b.lhs, x) and isMaskedDiv(graph, b.rhs, x, 2, 0x5555555555555555),
+        // x = (x & 0x3333333333333333) + ((x / 4) & 0x3333333333333333)
+        1 => b.op == .add and isMaskedIdent(graph, b.lhs, x, 0x3333333333333333) and
+            isMaskedDiv(graph, b.rhs, x, 4, 0x3333333333333333),
+        // x = (x + (x / 16)) & 0x0F0F0F0F0F0F0F0F
+        2 => b.op == .band and isMask(graph, b.rhs, 0x0F0F0F0F0F0F0F0F) and isShiftAdd(b.lhs, x, 16),
+        // x = x + (x / 256)
+        3 => b.op == .add and isIdent(b.lhs, x) and isDivBy(b.rhs, x, 256),
+        // x = x + (x / 65536)
+        4 => b.op == .add and isIdent(b.lhs, x) and isDivBy(b.rhs, x, 65536),
+        // x = x + (x / 4294967296)
+        5 => b.op == .add and isIdent(b.lhs, x) and isDivBy(b.rhs, x, 4294967296),
+        else => false,
+    };
+}
+
+/// `e` is the identifier `x`.
+fn isIdent(e: *const ast.Expr, x: []const u8) bool {
+    const n = identOf(e) orelse return false;
+    return std.mem.eql(u8, n, x);
+}
+
+/// `e` is `x / k` with a SIGNED division.
+fn isDivBy(e: *const ast.Expr, x: []const u8, k: i64) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .div) return false;
+    if (!isIdent(b.lhs, x)) return false;
+    const d = ast.intLiteralValue(b.rhs) orelse return false;
+    return d == k;
+}
+
+/// `e` has exact i64 value `mask`.
+fn isMask(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, mask: i64) bool {
+    return graph.exactI64OfExpr(e) == mask;
+}
+
+/// `e` is `(x / k) & mask` in either `&` order.
+fn isMaskedDiv(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, x: []const u8, k: i64, mask: i64) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .band) return false;
+    if (isDivBy(b.lhs, x, k) and isMask(graph, b.rhs, mask)) return true;
+    if (isDivBy(b.rhs, x, k) and isMask(graph, b.lhs, mask)) return true;
+    return false;
+}
+
+/// `e` is `x & mask` in either `&` order.
+fn isMaskedIdent(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, x: []const u8, mask: i64) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .band) return false;
+    if (isIdent(b.lhs, x) and isMask(graph, b.rhs, mask)) return true;
+    if (isIdent(b.rhs, x) and isMask(graph, b.lhs, mask)) return true;
+    return false;
+}
+
+/// `e` is `x + (x / k)` in either `+` order.
+fn isShiftAdd(e: *const ast.Expr, x: []const u8, k: i64) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .add) return false;
+    if (isIdent(b.lhs, x) and isDivBy(b.rhs, x, k)) return true;
+    if (isIdent(b.rhs, x) and isDivBy(b.lhs, x, k)) return true;
+    return false;
+}
+
 fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
     if (try tryEmitVectorReductionPrologue(ctx, stmts, at)) return true;
+    if (try tryEmitPopcountIdiom(ctx, stmts, at)) return true;
     return try tryEmitBitReversePrologue(ctx, stmts, at);
 }
 
