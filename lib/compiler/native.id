@@ -730,6 +730,52 @@ esatfuse: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
         return c
     ""
 
+divlit: str = (c: str, rd: i64, ra: i64, dd: i64, names: str)
+    if dd == 1
+        return c .. word(mov(rd, ra))
+    if dd == 0 - 1
+        return c .. word(minus(rd, 31, ra))
+    ad = dd
+    if ad < 0
+        ad = 0 - ad
+    if ad > 0
+        pw = powtwo(ad)
+        if pw > 0
+            c = c .. word(2470445056 | (63 << 16) | (63 << 10) | (ra << 5) | 9)
+            c = c .. word(3544186880 | ((64 - pw) << 16) | (63 << 10) | (9 << 5) | 9)
+            c = c .. word(add(9, ra, 9))
+            c = c .. word(2470445056 | (pw << 16) | (63 << 10) | (9 << 5) | 9)
+            if dd < 0
+                return c .. word(minus(rd, 31, 9))
+            return c .. word(mov(rd, 9))
+        if ad < 4294967296
+            ms = divmagic(dd)
+            mg = at(ms, 0)
+            sh = at(ms, 1)
+            mgnm = "divmg:" .. dec(dd)
+            if hasname(names, mgnm) == 1
+                c = vget(c, 9, names, mgnm)
+                mr = 9
+                c = c .. word(2604662784 | (ra << 16) | (mr << 5) | rd)
+                if mg < 0
+                    c = c .. word(add(rd, rd, ra))
+                if sh > 0
+                    c = c .. word(2470445056 | (sh << 16) | (63 << 10) | (rd << 5) | rd)
+                c = c .. word((2332033024 | (1 << 22) | (63 << 10) | (rd << 16) | (rd << 5) | rd))
+                if dd < 0
+                    return c .. word(minus(rd, 31, rd))
+                return c
+            c = imm(c, 9, mg)
+            c = c .. word(2604662784 | (9 << 16) | (ra << 5) | 10)
+            if mg < 0
+                c = c .. word(add(10, 10, ra))
+            if sh > 0
+                c = c .. word(2470445056 | (sh << 16) | (63 << 10) | (10 << 5) | 10)
+            c = c .. word((2332033024 | (1 << 22) | (63 << 10) | (10 << 16) | (10 << 5) | 10))
+            if dd < 0
+                return c .. word(minus(rd, 31, 10))
+            return c .. word(mov(rd, 10))
+    ""
 calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
     sa = simple(a)
     se = simple(e)
@@ -758,6 +804,12 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
             return c .. word(mul(rd, base, base + 1))
         if o == 38
             return c .. word(band(rd, base, base + 1))
+        if o == 47 and base > 10
+            ee = trim(e)
+            if isnum(ee) == 1
+                dl = divlit(c, rd, base, num(ee), names)
+                if dl:len() > 0
+                    return dl
         c .. word(div(rd, base, base + 1))
     an = isnum(a)
     en = isnum(e)
@@ -807,52 +859,10 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
         if m:len() > 0
             return m
     if o == 47 and en == 1 and an == 0
-        dd = ev
         c = vget(c, 8, names, a)
-        ra = 8
-        if dd == 1
-            return c .. word(mov(rd, ra))
-        if dd == 0 - 1
-            return c .. word(minus(rd, 31, ra))
-        ad = dd
-        if ad < 0
-            ad = 0 - ad
-        if ad > 0 and ad < 4294967296
-            pw = powtwo(ad)
-            if pw > 0
-                c = c .. word(2470445056 | (63 << 16) | (63 << 10) | (ra << 5) | 9)
-                c = c .. word(3544186880 | ((64 - pw) << 16) | (63 << 10) | (9 << 5) | 9)
-                c = c .. word(add(9, ra, 9))
-                c = c .. word(2470445056 | (pw << 16) | (63 << 10) | (9 << 5) | 9)
-                if dd < 0
-                    return c .. word(minus(rd, 31, 9))
-                return c .. word(mov(rd, 9))
-            ms = divmagic(dd)
-            mg = at(ms, 0)
-            sh = at(ms, 1)
-            mgnm = "divmg:" .. dec(dd)
-            if hasname(names, mgnm) == 1
-                c = vget(c, 9, names, mgnm)
-                mr = 9
-                c = c .. word(2604662784 | (ra << 16) | (mr << 5) | rd)
-                if mg < 0
-                    c = c .. word(add(rd, rd, ra))
-                if sh > 0
-                    c = c .. word(2470445056 | (sh << 16) | (63 << 10) | (rd << 5) | rd)
-                c = c .. word((2332033024 | (1 << 22) | (63 << 10) | (rd << 16) | (rd << 5) | rd))
-                if dd < 0
-                    return c .. word(minus(rd, 31, rd))
-                return c
-            c = imm(c, 9, mg)
-            c = c .. word(2604662784 | (9 << 16) | (ra << 5) | 10)
-            if mg < 0
-                c = c .. word(add(10, 10, ra))
-            if sh > 0
-                c = c .. word(2470445056 | (sh << 16) | (63 << 10) | (10 << 5) | 10)
-            c = c .. word((2332033024 | (1 << 22) | (63 << 10) | (10 << 16) | (10 << 5) | 10))
-            if dd < 0
-                return c .. word(minus(rd, 31, 10))
-            return c .. word(mov(rd, 10))
+        dl = divlit(c, rd, 8, ev, names)
+        if dl:len() > 0
+            return dl
     ra = 0
     rb = 0
     if o == 43 or o == 45
@@ -1547,7 +1557,7 @@ main: i64 = ()
     pendkind = 0
     pendval = 0
     fix2 = "target=reassoc layer=emit merge=add,subneg,mul flush=read,write,loop,final arith=mod2p64 exclude=div,subreassoc,crossvar canon=egraph-distinct"
-    fix3 = "target=div layer=calc algo=hd10-signed-division domain=absdivisor-lt-2p32 emit=smulh,addsub,asr,lsrcorr special=d1-mov,dneg1-neg,pow2-biasshift negdiv=posmagic-negate fallback=sdiv verify=exhaustive32-sampled64 magichoist=prologue-hiddenvar-divmg-colon-unforgeable accum=rd fusecorr=add-rd-rd-rd-lsr63"
+    fix3 = "target=div layer=calc algo=hd10-signed-division domain=magic-lt-2p32-pow2-lt-2p63 emit=smulh,addsub,asr,lsrcorr special=d1-mov,dneg1-neg,pow2-biasshift negdiv=posmagic-negate fallback=sdiv verify=exhaustive32-sampled64 magichoist=prologue-hiddenvar-divmg-colon-unforgeable accum=rd fusecorr=add-rd-rd-rd-lsr63 cmpndnum=divlit-base-gt-10"
     lc = rows(src)
     k = 0
     while k < lc
