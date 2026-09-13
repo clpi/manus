@@ -1,0 +1,9 @@
+x = 42
+i = 0
+while i < 1000
+  x = x
+  i = i + 1
+if x == 42
+  print(0)
+else
+  print(1)

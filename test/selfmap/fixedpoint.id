@@ -1,0 +1,11 @@
+x = 1000000
+i = 0
+while i < 1000
+  x = x / 3
+  x = x * 3
+  x = x + 1
+  i = i + 1
+if x == 1000000
+  print(0)
+else
+  print(1)

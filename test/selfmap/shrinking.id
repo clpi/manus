@@ -1,0 +1,9 @@
+x = 1000000
+i = 0
+while i < 10
+  x = x / 2
+  i = i + 1
+if x == 976
+  print(0)
+else
+  print(1)
