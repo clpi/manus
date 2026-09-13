@@ -13637,6 +13637,18 @@ fn lowerExprCons(
                 });
                 break :blk dnir.Value{ .temp = t };
             }
+            // A string-literal index on a named-field table is field access by
+            // another spelling. `t["name"]` and `t.name` denote one semantic
+            // operation; routing through the field lowering preserves the
+            // descriptor instead of collapsing to `.any` in the dynamic path.
+            if (ix.key.* == .quoted) {
+                var field_expr = ast.Expr{ .field = .{
+                    .loc = ix.key.quoted.loc,
+                    .obj = ix.obj,
+                    .field = ix.key.quoted.val,
+                } };
+                break :blk try lowerField(ctx, &field_expr);
+            }
             const n = ast.intLiteralValue(ix.key) orelse
                 break :blk try lowerDynamicIndex(ctx, ix.obj.name.ident, ix.key);
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ ix.obj.name.ident, n });

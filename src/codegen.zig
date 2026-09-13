@@ -2706,6 +2706,32 @@ pub const CodeGen = struct {
                 }
             }
         }
+        // Index with a string-literal key on a statically-typed record: the
+        // same descriptor as field access, a different spelling. `t["name"]`
+        // and `t.name` are one semantic operation; the descriptor must survive
+        // both. Without this the index spelling collapsed to `.any` while the
+        // field spelling resolved -- a spelling-dependent descriptor.
+        if (e.* == .index and e.index.key.* == .quoted) {
+            const key = e.index.key.quoted.val;
+            const ot = self.expr_type(e.index.obj);
+            if (ot == .table_type) {
+                for (ot.table_type.fields) |fld| {
+                    if (std.mem.eql(u8, fld.name, key)) return fld.typ;
+                }
+            } else if (ot == .@"struct") {
+                if (self.record_aliases.get(ot.@"struct".name)) |alias_rt| {
+                    if (alias_rt == .table_type) {
+                        for (alias_rt.table_type.fields) |fld| {
+                            if (std.mem.eql(u8, fld.name, key)) return fld.typ;
+                        }
+                    }
+                }
+            } else if (e.index.obj.* == .name) {
+                if (self.lookup_tracked_table_field(e.index.obj.name.ident, key)) |ft| {
+                    if (ft != .any and ft != .nil) return ft;
+                }
+            }
+        }
         // Builtin module calls can recover native result types even when sema
         // recorded `.any` or no entry for this exact expression node.
         if (e.* == .call) {
