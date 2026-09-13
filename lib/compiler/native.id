@@ -1576,6 +1576,7 @@ main: i64 = ()
         print("native: indexed array memory unsupported")
         return 1
     src = compiler.opt.zerotrip.zerotrip(src)
+    src = compiler.opt.indred.indred(src)
     src = compiler.opt.licm.licm(src)
     src = compiler.opt.poly.poly(src)
     names = ""

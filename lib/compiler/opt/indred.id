@@ -1,0 +1,337 @@
+isdig: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+oknum: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    i = 1
+    while i <= n
+        if isdig(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+parsenum: i64 = (s: str)
+    v = 0
+    i = 1
+    n = s:len()
+    while i <= n
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    v
+
+unpad: str = (s: str)
+    a = 1
+    n = s:len()
+    while a <= n and s:byte(a) == 32
+        a = a + 1
+    b = n
+    while b >= a and s:byte(b) == 32
+        b = b - 1
+    if b < a
+        return ""
+    s:sub(a, b)
+
+indof: i64 = (s: str)
+    n = s:len()
+    i = 1
+    while i <= n and s:byte(i) == 32
+        i = i + 1
+    i - 1
+
+linecount: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            n = n + 1
+        i = i + 1
+    if s:len() > 0 and s:byte(s:len()) != 10
+        n = n + 1
+    n
+
+lineat: str = (s: str, k: i64)
+    n = s:len()
+    i = 1
+    cur = 0
+    a = 1
+    while i <= n + 1
+        if i > n or s:byte(i) == 10
+            if cur == k
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+cut: str = (s: str, a: i64, b: i64)
+    out = ""
+    k = a
+    while k <= b
+        out = out .. lineat(s, k) .. "\n"
+        k = k + 1
+    out
+
+iswhile: i64 = (t: str)
+    if t:len() > 6 and t:sub(1, 5) == "while" and t:byte(6) == 32
+        return 1
+    0
+
+loopend: i64 = (src: str, k: i64, lc: i64, ind: i64)
+    e = k
+    j = k + 1
+    while j < lc
+        r = lineat(src, j)
+        if unpad(r):len() > 0 and indof(r) <= ind
+            return e
+        e = j
+        j = j + 1
+    e
+
+nextnb: i64 = (src: str, k: i64, lc: i64)
+    p = k + 1
+    while p < lc
+        if unpad(lineat(src, p)):len() > 0
+            return p
+        p = p + 1
+    0 - 1
+
+oknamechar: i64 = (c: i64)
+    if c >= 65 and c <= 90
+        return 1
+    if c >= 97 and c <= 122
+        return 1
+    if c >= 48 and c <= 57
+        return 1
+    if c == 95
+        return 1
+    0
+
+okname: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    c = s:byte(1)
+    if c < 65 or c > 122
+        return 0
+    if c > 90 and c < 97
+        return 0
+    i = 2
+    while i <= n
+        if oknamechar(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+eqpos: i64 = (t: str)
+    i = 1
+    while i <= t:len()
+        if t:byte(i) == 61
+            return i
+        i = i + 1
+    0
+
+parseassign: str = (t: str)
+    e = eqpos(t)
+    if e == 0
+        return ""
+    q = e + 1
+    while q <= t:len()
+        if t:byte(q) == 61
+            return ""
+        q = q + 1
+    lhs = unpad(t:sub(1, e - 1))
+    rhs = unpad(t:sub(e + 1, t:len()))
+    if okname(lhs) == 0
+        return ""
+    if rhs:len() == 0
+        return ""
+    lhs .. "=" .. rhs
+
+pluspos: i64 = (t: str)
+    i = 1
+    while i <= t:len()
+        if t:byte(i) == 43
+            return i
+        i = i + 1
+    0
+
+accname: str = (t: str)
+    a = parseassign(t)
+    if a == ""
+        return ""
+    e = eqpos(a)
+    lhs = a:sub(1, e - 1)
+    rhs = a:sub(e + 1, a:len())
+    p = pluspos(rhs)
+    if p == 0
+        return ""
+    l = unpad(rhs:sub(1, p - 1))
+    r = unpad(rhs:sub(p + 1, rhs:len()))
+    if l == lhs and r == "1"
+        return lhs
+    if l == "1" and r == lhs
+        return lhs
+    ""
+
+boundnonneg: i64 = (rhs: str)
+    t = unpad(rhs)
+    if oknum(t) == 1
+        return 1
+    p = 0
+    i = 1
+    while i <= t:len()
+        if t:byte(i) == 38
+            p = i
+        i = i + 1
+    if p == 0
+        return 0
+    after = unpad(t:sub(p + 1, t:len()))
+    if oknum(after) == 1
+        return 1
+    0
+
+findbound: str = (src: str, k: i64, ind: i64, yn: str)
+    p = k - 1
+    while p >= 0
+        r = lineat(src, p)
+        t = unpad(r)
+        pi = indof(r)
+        done = 0
+        if t:len() == 0
+            done = 1
+        if done == 0 and pi > ind
+            return ""
+        if done == 0 and iswhile(t) == 1 and pi == ind
+            return ""
+        if done == 0 and iswhile(t) == 0
+            a = parseassign(t)
+            if a != ""
+                e = eqpos(a)
+                if a:sub(1, e - 1) == yn
+                    return a:sub(e + 1, a:len())
+        p = p - 1
+    ""
+
+tryred: str = (src: str, wk: i64, e: i64, ind: i64, jn: str)
+    t = unpad(lineat(src, wk))
+    rest = t:sub(7, t:len())
+    p = 0
+    i = 1
+    while i <= rest:len()
+        if rest:byte(i) == 60 and p == 0
+            p = i
+        i = i + 1
+    if p == 0
+        return ""
+    if p < rest:len() and rest:byte(p + 1) == 61
+        return ""
+    ln = unpad(rest:sub(1, p - 1))
+    yn = unpad(rest:sub(p + 1, rest:len()))
+    if ln != jn
+        return ""
+    if yn == jn
+        return ""
+    if okname(yn) == 0 and oknum(yn) == 0
+        return ""
+    n = 0
+    s1 = ""
+    s2 = ""
+    bi = 0 - 1
+    j = wk + 1
+    while j <= e
+        r = lineat(src, j)
+        u = unpad(r)
+        if u:len() > 0
+            if bi == 0 - 1
+                bi = indof(r)
+            if indof(r) != bi
+                return ""
+            if bi <= ind
+                return ""
+            n = n + 1
+            if n == 1
+                s1 = u
+            if n == 2
+                s2 = u
+            if n > 2
+                return ""
+        j = j + 1
+    if n != 2
+        return ""
+    c1 = accname(s1)
+    c2 = accname(s2)
+    tn = ""
+    if c1 == jn and c2 != "" and c2 != jn
+        tn = c2
+    else
+        if c2 == jn and c1 != "" and c1 != jn
+            tn = c1
+        else
+            return ""
+    if yn == tn
+        return ""
+    if oknum(yn) == 0
+        br = findbound(src, wk, ind, yn)
+        if br == ""
+            return ""
+        if boundnonneg(br) == 0
+            return ""
+    indstr = ""
+    if ind > 0
+        indstr = (lineat(src, wk)):sub(1, ind)
+    indstr .. tn .. " = " .. tn .. " + " .. yn .. "\n" .. indstr .. jn .. " = " .. yn .. "\n"
+
+tryat: str = (src: str, k: i64, lc: i64, r: str, t: str, ind: i64)
+    if iswhile(t) == 1
+        return ""
+    if t:len() == 0
+        return ""
+    a = parseassign(t)
+    if a == ""
+        return ""
+    e = eqpos(a)
+    lhs = a:sub(1, e - 1)
+    rhs = a:sub(e + 1, a:len())
+    if oknum(rhs) == 0 or parsenum(rhs) != 0
+        return ""
+    nk = nextnb(src, k, lc)
+    if nk < 0
+        return ""
+    nr = lineat(src, nk)
+    if indof(nr) != ind
+        return ""
+    if iswhile(unpad(nr)) == 0
+        return ""
+    tryred(src, nk, loopend(src, nk, lc, ind), ind, lhs)
+
+sweep: str = (src: str)
+    out = ""
+    lc = linecount(src)
+    k = 0
+    while k < lc
+        r = lineat(src, k)
+        t = unpad(r)
+        ind = indof(r)
+        rep = tryat(src, k, lc, r, t, ind)
+        if rep != ""
+            le = loopend(src, nextnb(src, k, lc), lc, ind)
+            out = out .. rep
+            k = le + 1
+        else
+            if iswhile(t) == 1
+                le = loopend(src, k, lc, ind)
+                out = out .. r .. "\n" .. sweep(cut(src, k + 1, le))
+                k = le + 1
+            else
+                out = out .. r .. "\n"
+                k = k + 1
+    out
+
+indred: str = (src: str)
+    fix6 = "target=indred layer=stream shape=counted-unit-incr cond=lt-zero-init pure=no-calls order=inside-out runs=after-zerotrip-before-licm"
+    rules = "entry=next-nonblank-line-same-indent|init=rhs-zero-literal|cond=counter-lt-bound|body=exactly-two-unit-incr|bound=unsigned-literal-or-bitand-unsigned|emit=acc-plus-bound-then-counter-eq-bound"
+    sweep(src)
