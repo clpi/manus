@@ -4831,10 +4831,69 @@ pub const SemanticGraph = struct {
                 try self.ranges.append(self.alloc, .{ .subject = entity, .nonneg_width = width });
             }
         }
+        // Module-scope bindings. A name assigned inside any relation body is
+        // foreign to the module body and seeded at top, so it can never enter
+        // the answer; only names the module body alone writes are published.
+        {
+            var foreign = std.ArrayListUnmanaged([]const u8).empty;
+            defer foreign.deinit(self.alloc);
+            for (mod.body.stmts) |*stmt| {
+                if (stmt.* != .func_decl) continue;
+                try collectAssignedNames(self.alloc, &foreign, &stmt.func_decl.func.body);
+            }
+            var widths = try value_range.widthsOfModule(self.alloc, &mod.body, foreign.items);
+            defer widths.deinit(self.alloc);
+            if (widths.count() > 0) {
+                for (self.nodes.items, 0..) |node, i| {
+                    if (node.kind != .local) continue;
+                    if (node.scope != self.module_root) continue;
+                    const name = node.name orelse continue;
+                    const entity = std.math.cast(id, i) orelse break;
+                    const width = widths.get(name) orelse continue;
+                    try self.ranges.append(self.alloc, .{ .subject = entity, .nonneg_width = width });
+                }
+            }
+        }
+    }
+
+    /// Collect every name assigned in a block (for module-foreign detection).
+    fn collectAssignedNames(alloc: std.mem.Allocator, out: *std.ArrayListUnmanaged([]const u8), body: *const ast.Block) !void {
+        for (body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .assign => |a| for (a.targets) |t| {
+                    switch (t.*) {
+                        .name => |n| try out.append(alloc, n.ident),
+                        else => {},
+                    }
+                },
+                .while_loop => |w| try collectAssignedNames(alloc, out, &w.body),
+                .if_stmt => |c| {
+                    try collectAssignedNames(alloc, out, &c.then);
+                    if (c.else_body) |*e| try collectAssignedNames(alloc, out, e);
+                },
+                .num_for => |f| try collectAssignedNames(alloc, out, &f.body),
+                else => {},
+            }
+        }
     }
 
     /// The proved bound on one entity, or null for UNKNOWN — which is not
     /// "negative", not "zero" and not "unbounded".
+    /// The proved non-negative width of a module-scope binding, or null.
+    /// Consumes the module column published by `publishBindingRanges`; the
+    /// backend must not re-derive this.
+    pub fn moduleBindingWidth(self: *const SemanticGraph, name: []const u8) ?u8 {
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind != .local) continue;
+            if (node.scope != self.module_root) continue;
+            const n = node.name orelse continue;
+            if (!std.mem.eql(u8, n, name)) continue;
+            const entity = std.math.cast(id, i) orelse return null;
+            return self.nonNegativeWidth(entity);
+        }
+        return null;
+    }
+
     pub fn nonNegativeWidth(self: *const SemanticGraph, subject: id) ?u8 {
         for (self.ranges.items) |fact| {
             if (fact.subject == subject) return fact.nonneg_width;

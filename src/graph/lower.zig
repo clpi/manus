@@ -4608,6 +4608,14 @@ pub const LowerCtx = struct {
     instrs: std.ArrayList(dnir.Instr) = .empty,
     /// Exact function entity being lowered. Name resolve walks this home only.
     function: ?semantic_graph.id = null,
+    /// A counted-loop reduction armed by the block prologue for the immediately
+    /// following `while` statement, or null. The prologue recognizes the shape
+    /// (`iv = 0` immediately before `while iv < bound` with a provably
+    /// non-negative bound and a trailing `iv = iv + 1` step); the while arm
+    /// consumes the plan after register promotion and either emits the
+    /// countdown or declines to the ordinary loop. Never survives past the
+    /// statement it was armed for.
+    counted_plan: ?CountedPlan = null,
     /// The function being lowered, when a self-call in TAIL position can be
     /// turned into a jump. Empty disables the rewrite — see `tryEmitSelfTail`.
     self_name: []const u8 = "",
@@ -5278,7 +5286,7 @@ fn root(
         .ret_record = null,
     };
     defer ctx.deinit();
-    for (mod.body.stmts) |*stmt| switch (stmt.*) {
+    for (mod.body.stmts, 0..) |*stmt, i| switch (stmt.*) {
         .func_decl,
         .const_decl,
         .global_decl,
@@ -5289,7 +5297,10 @@ fn root(
         .cinclude,
         .directive,
         => {},
-        else => try lowerStmt(&ctx, stmt, false),
+        else => {
+            tryArmCountedLoop(&ctx, mod.body.stmts, i);
+            try lowerStmt(&ctx, stmt, false);
+        },
     };
     if (tail_result_demand.blockTailResult(&mod.body)) |tail| {
         if (status(&ctx, tail.expr)) {
@@ -5809,6 +5820,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
         try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
+        tryArmCountedLoop(ctx, block.stmts, i);
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -6421,8 +6433,27 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // `emitUnrolledWhilePrologue` withdraws itself if the body lowering
             // registered a break against the ENCLOSING loop anyway. So the
             // unrolled loop has exactly the two exits named above.
-            try emitUnrolledWhilePrologue(ctx, ws);
-            try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+            ordinary: {
+                // COUNTED-LOOP REDUCTION. The block prologue armed a plan for
+                // exactly this statement (identity-checked below); the promotion
+                // shadows are installed above, so the induction variable and the
+                // bound resolve through `ctx.locals` exactly as the ordinary loop
+                // would see them. Success emits the countdown and shares the exit
+                // below; any doubt drops the plan and the loop lowers ordinarily.
+                const counted = ctx.counted_plan;
+                ctx.counted_plan = null;
+                if (counted) |plan| if (plan.stmt == stmt) {
+                    if (try lowerDirectCountedWhile(ctx, ws, plan)) {
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null);
+                        break :ordinary;
+                    }
+                    if (try lowerCountedWhile(ctx, ws, plan)) |cr| {
+                        try finishWhileLowering(ctx, cr.latch_fail, promo[0..promo_len], cr.wb_idx);
+                        break :ordinary;
+                    }
+                };
+                try emitUnrolledWhilePrologue(ctx, ws);
+                try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
             const head_idx: u32 = @intCast(ctx.instrs.items.len);
             try ctx.loop_heads.append(ctx.alloc, head_idx);
             defer _ = ctx.loop_heads.pop();
@@ -6451,30 +6482,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // Explicit `return` inside the body still lowers via the `.ret` arm.
             _ = try lowerBlockReturns(ctx, &ws.body, false);
             try ctx.emit(.{ .op = .br, .branch_target = head_idx });
-            const end_idx: u32 = @intCast(ctx.instrs.items.len);
-            ctx.instrs.items[fail_idx].branch_target = end_idx;
-            var breaks = ctx.loop_breaks.pop() orelse return bail(ctx.diagnostic, @src());
-            defer breaks.deinit(ctx.alloc);
-            for (breaks.items) |br_idx| {
-                ctx.instrs.items[br_idx].branch_target = end_idx;
-            }
-            for (promo[0..promo_len]) |p| {
-                // Retire the shadow FIRST, so nothing after the loop can reach
-                // the register instead of the word.
-                if (ctx.locals.fetchRemove(p.name)) |kv| ctx.alloc.free(kv.key);
-                // `lowerAssignTarget`'s local arm records a literal store in
-                // `const_ints`; the `store_global` arm it replaced records
-                // nothing. Dropping the entry keeps everything AFTER the loop
-                // reading exactly what it read before this pass existed.
-                if (ctx.const_ints.fetchRemove(p.name)) |kv| ctx.alloc.free(kv.key);
-                if (p.written) {
-                    try ctx.emit(.{
-                        .op = .store_global,
-                        .field = p.name,
-                        .lhs = .{ .local = p.slot },
-                        .ty = .i64,
-                    });
-                }
+                try finishWhileLowering(ctx, fail_idx, promo[0..promo_len], null);
             }
         },
         .num_for => |nf| try lowerNumFor(ctx, nf),
@@ -6540,7 +6548,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // scope machinery here would see staged place/value temporaries as
             // fresh declarations. Statements lower in sequence; the tail
             // expression, if any, is the enclosing statement's value.
-            for (db.body.stmts) |*inner| try lowerStmt(ctx, inner, false);
+            for (db.body.stmts, 0..) |*inner, i| {
+                tryArmCountedLoop(ctx, db.body.stmts, i);
+                try lowerStmt(ctx, inner, false);
+            }
             if (db.body.tail_expr) |te| _ = try lowerExprCons(ctx, te, .discard);
         },
         .brk => {
@@ -7289,6 +7300,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
             return true;
         }
         try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
+        tryArmCountedLoop(ctx, block.stmts, i);
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
@@ -8248,6 +8260,373 @@ fn loopUpperBound(graph: *const semantic_graph.SemanticGraph, cond: *const ast.E
         .lt => n - 1,
         else => null,
     };
+}
+
+// ── counted-loop reduction ───────────────────────────────────────────────────
+//
+// A `while` of the exact shape
+//
+//     iv = 0
+//     while iv < bound
+//         <body never reading iv>
+//         iv = iv + 1
+//
+// with `bound` provably non-negative runs its body exactly `bound` times and
+// leaves `iv == bound`. The production backend lowers it as a COUNTDOWN — one
+// register, no per-iteration comparison against the bound:
+//
+//     n = bound
+//     if n == 0 goto end     (cold pre-guard: the source loop runs zero times)
+// head:
+//     <body>
+//     n = n - 1
+//     if n != 0 goto head
+// end:
+//     iv = bound
+//
+// The trailing `iv = bound` preserves the source loop's exit state, which the
+// promotion write-back in the shared exit then carries to the module.
+//
+// LEGALITY is established before anything is emitted:
+//   - the induction variable starts at exactly 0 in the immediately preceding
+//     statement (`literalBindingOf` reads that statement, never `ctx.const_ints`,
+//     which is stale by design);
+//   - the comparison is `<` against a provably non-negative bound;
+//   - the bound is a literal (the graph's exact-i64 fact) or a name whose
+//     non-negativity the graph's own width transfer proves
+//     (`value_range.widthOfExpr` — the derivation the range producer settles
+//     its lattice with, never a second copy of it);
+//   - the body's only write to the induction variable is the terminal step
+//     (`unrollScanBlock` counts it; a second write declines);
+//   - nothing in the body reads the induction variable (a read would observe
+//     the countdown's reversed trip values);
+//   - the body performs no calls and touches no storage twice
+//     (`unrollExprIsCopyable`, shared with the unroller);
+//   - `break`, `continue`, `return`, nested loops and tail expressions decline.
+// Any doubt declines to the ordinary loop: less knowledge emits more
+// instructions, never a different answer.
+
+/// The plan the block prologue arms for the immediately following `while`.
+const CountedPlan = struct {
+    /// Identity with the `while` statement the prologue saw, so a plan is
+    /// never consumed by a different loop.
+    stmt: *const ast.Stmt,
+    /// The induction variable name.
+    iv: []const u8,
+    /// Bound when it is a literal (proven >= 0 by the graph's exact-i64 fact).
+    bound_lit: ?i64,
+    /// Bound when it is a name (proven non-negative by the width transfer).
+    bound_name: ?[]const u8,
+};
+
+/// Block-level recognition: `stmts[at]` is `iv = 0` followed by
+/// `while iv < bound` with a provably non-negative bound and a trailing
+/// `iv = iv + 1` step. Arms `ctx.counted_plan`; emits nothing. Any doubt
+/// leaves the plan disarmed and the loop lowers ordinarily.
+fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
+    const st = &stmts[at];
+    const ws = switch (st.*) {
+        .while_loop => |w| w,
+        else => return,
+    };
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return,
+    };
+    if (b.op != .lt) return;
+    const iv = identOf(b.lhs) orelse return;
+    // The induction variable starts at exactly 0 in the immediately preceding
+    // statement.
+    if (at == 0) return;
+    if (literalBindingOf(ctx.graph, &stmts[at - 1], iv) != @as(?i64, 0)) return;
+    var plan = CountedPlan{ .stmt = st, .iv = iv, .bound_lit = null, .bound_name = null };
+    if (ctx.graph.exactI64OfExpr(b.rhs)) |n| {
+        if (n < 0) return;
+        plan.bound_lit = n;
+    } else {
+        const bname = identOf(b.rhs) orelse return;
+        if (!countedBoundNonNeg(ctx, stmts, at, bname)) return;
+        plan.bound_name = bname;
+    }
+    // The body's last statement steps the induction variable by exactly one.
+    const n = ws.body.stmts.len;
+    if (n == 0 or ws.body.tail_expr != null) return;
+    if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[n - 1], iv)) return;
+    ctx.counted_plan = plan;
+}
+
+/// The bound name is provably non-negative.
+///   - Inside a relation the graph's own range column answers.
+///   - At module scope the graph publishes no ranges, so the nearest
+///     dominating store to the name is found by scanning back over statements
+///     that cannot have written it, and the graph's OWN width transfer runs
+///     over that store's right-hand side. A name met while its width is in
+///     flight answers unknown, exactly as the producer's in-flight lattice
+///     does. Absence of a proof declines; it never admits.
+fn countedBoundNonNeg(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, bound_name: []const u8) bool {
+    // Inside a relation the graph's own range column answers. ctx.function is
+    // not the discriminator: at module scope it may still carry the root id,
+    // while the graph publishes no ranges outside relations.
+    if (!ctx.module_root) {
+        if (ctx.function) |relation| {
+            const subject = ctx.graph.bindingNamedIn(relation, bound_name) orelse return false;
+            return ctx.graph.nonNegativeWidth(subject) != null;
+        }
+        return false;
+    }
+    // The semantic graph publishes module binding ranges; the backend
+    // consumes that column rather than re-deriving provenance.
+    _ = stmts;
+    _ = at;
+    return ctx.graph.moduleBindingWidth(bound_name) != null;
+}
+
+
+/// The right-hand side of the nearest store to `name` in `stmts[0..at]`, or
+/// null when no store dominates: any statement that is not a plain
+/// single-target store to a different plain name may have written `name` (a
+/// call, a branch, a loop, a computed target), and an unproven bound declines
+/// the transform.
+fn countedDominatingStoreRhs(stmts: []const ast.Stmt, at: usize, name: []const u8) ?*const ast.Expr {
+    var i = at;
+    while (i > 0) {
+        i -= 1;
+        switch (stmts[i]) {
+            .assign => |a| {
+                if (a.targets.len != 1 or a.values.len != 1) return null;
+                const t = identOf(a.targets[0]) orelse return null;
+                if (std.mem.eql(u8, t, name)) return a.values[0];
+            },
+            .local_decl => |d| {
+                if (d.names.len != d.inits.len) return null;
+                for (d.names, 0..) |nm, k| {
+                    if (std.mem.eql(u8, nm.ident, name)) return d.inits[k];
+                }
+            },
+            .const_decl => |d| {
+                if (std.mem.eql(u8, d.ident, name)) return d.val;
+            },
+            .global_decl => |d| {
+                if (d.names.len != d.inits.len) return null;
+                for (d.names, 0..) |nm, k| {
+                    if (std.mem.eql(u8, nm.ident, name)) return d.inits[k];
+                }
+            },
+            else => return null,
+        }
+    }
+    return null;
+}
+
+/// Shared exit of every `while` lowering: patch the failing head test and all
+/// `break`s to the end, retire the promotion shadows, and write promoted
+/// bindings back to the module. The ordinary loop and the counted countdown
+/// both land here, so the promotion write-back happens exactly once, at the
+/// end, on every path.
+fn finishWhileLowering(ctx: *LowerCtx, fail_idx: ?usize, promo: []const Promotion, wb_idx: ?usize) Error!void {
+    const end_idx: u32 = @intCast(ctx.instrs.items.len);
+    // A counted loop's induction-variable write-back precedes the shared exit;
+    // the failing latch must land ON it, not past it.
+    const target: u32 = if (wb_idx) |w| @intCast(w) else end_idx;
+    if (fail_idx) |fi| ctx.instrs.items[fi].branch_target = target;
+    var breaks = ctx.loop_breaks.pop() orelse return bail(ctx.diagnostic, @src());
+    defer breaks.deinit(ctx.alloc);
+    for (breaks.items) |br_idx| {
+        ctx.instrs.items[br_idx].branch_target = target;
+    }
+    for (promo) |p| {
+        // Retire the shadow FIRST, so nothing after the loop can reach
+        // the register instead of the word.
+        if (ctx.locals.fetchRemove(p.name)) |kv| ctx.alloc.free(kv.key);
+        // `lowerAssignTarget`'s local arm records a literal store in
+        // `const_ints`; the `store_global` arm it replaced records
+        // nothing. Dropping the entry keeps everything AFTER the loop
+        // reading exactly what it read before this pass existed.
+        if (ctx.const_ints.fetchRemove(p.name)) |kv| ctx.alloc.free(kv.key);
+        if (p.written) {
+            try ctx.emit(.{
+                .op = .store_global,
+                .field = p.name,
+                .lhs = .{ .local = p.slot },
+                .ty = .i64,
+            });
+        }
+    }
+}
+
+/// Emit the countdown for an armed plan. Returns the latch-test fail index and
+/// the induction-variable write-back index for the shared exit, or null when
+/// any check fails — in which case NOTHING is emitted and the caller lowers
+/// the loop ordinarily.
+///
+/// Runs inside the promotion's shadow scope (after the preloads, before the
+/// write-backs), so the induction variable and the bound resolve through
+/// `ctx.locals` exactly as the ordinary loop would see them.
+/// Direct reduction for the exact two-statement counted loop:
+///
+///   iv = 0
+///   while iv < bound
+///     acc = acc + 1
+///     iv = iv + 1
+///
+/// becomes `acc = acc + bound; iv = bound` with NO loop at all. Returns true
+/// when the shape matched and the direct form was emitted, false to fall back
+/// to the countdown (or the ordinary loop). The bound's non-negativity is
+/// established by the plan arming.
+fn lowerDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .lt) return false;
+    const iv = identOf(b.lhs) orelse return false;
+    if (!std.mem.eql(u8, iv, plan.iv)) return false;
+    if (plan.bound_lit) |n| {
+        if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return false;
+    } else if (plan.bound_name) |bn| {
+        const rhs_name = identOf(b.rhs) orelse return false;
+        if (!std.mem.eql(u8, rhs_name, bn)) return false;
+    } else return false;
+    // Body must be EXACTLY two increments, no tail, no other effects.
+    const body_n = ws.body.stmts.len;
+    if (body_n != 2 or ws.body.tail_expr != null) return false;
+    const s0 = &ws.body.stmts[0];
+    const s1 = &ws.body.stmts[1];
+    // One statement steps the iv; the other steps the accumulator.
+    var acc: ?[]const u8 = null;
+    var acc_stmt: ?*const ast.Stmt = null;
+    if (stepIsIncrementOfOne(ctx.graph, s0, iv)) {
+        acc = accNameOfIncrement(s1, iv);
+        acc_stmt = s1;
+    } else if (stepIsIncrementOfOne(ctx.graph, s1, iv)) {
+        acc = accNameOfIncrement(s0, iv);
+        acc_stmt = s0;
+    } else return false;
+    const acc_name = acc orelse return false;
+    // Distinct identities; the accumulator must not observe the counter.
+    if (std.mem.eql(u8, acc_name, iv)) return false;
+    if (plan.bound_name) |bn| if (std.mem.eql(u8, acc_name, bn)) return false;
+    if (stmtMentionsIdent(acc_stmt.?, iv)) return false;
+    const iv_slot = ctx.locals.get(plan.iv) orelse return false;
+    const acc_slot = ctx.locals.get(acc_name) orelse return false;
+    // ALL CHECKS PASSED - emit the direct form, no loop.
+    // Push an empty break list so finishWhileLowering's pop balances.
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    const bound_v = try lowerExpr(ctx, b.rhs);
+    const cur: dnir.Value = .{ .local = acc_slot };
+    const sum = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = cur, .rhs = bound_v, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
+    return true;
+}
+
+/// If `st` is `name = name + 1` (or `1 + name`) with no mention of `forbidden`,
+/// returns `name`. Otherwise null.
+fn accNameOfIncrement(st: *const ast.Stmt, forbidden: []const u8) ?[]const u8 {
+    const as = switch (st.*) {
+        .assign => |a| a,
+        else => return null,
+    };
+    if (as.targets.len != 1 or as.values.len != 1) return null;
+    const tname = identOf(as.targets[0]) orelse return null;
+    if (stmtMentionsIdent(st, forbidden)) return null;
+    const bo = switch (as.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .add) return null;
+    const is_one = struct {
+        fn f(e: *const ast.Expr) bool {
+            return switch (e.*) {
+                .int_lit => |l| l.val == 1,
+                else => false,
+            };
+        }
+    }.f;
+    if (is_one(bo.lhs)) {
+        if (identOf(bo.rhs)) |rn| if (std.mem.eql(u8, rn, tname)) return tname;
+    }
+    if (is_one(bo.rhs)) {
+        if (identOf(bo.lhs)) |ln| if (std.mem.eql(u8, ln, tname)) return tname;
+    }
+    return null;
+}
+
+const CountedResult = struct { latch_fail: usize, wb_idx: usize };
+fn lowerCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!?CountedResult {
+    // Re-verify the condition shape against the plan: the prologue armed it,
+    // the arm consumes it, and a loop rewritten in between declines here
+    // rather than emitting for a different shape.
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op != .lt) return null;
+    const iv = identOf(b.lhs) orelse return null;
+    if (!std.mem.eql(u8, iv, plan.iv)) return null;
+    if (plan.bound_lit) |n| {
+        if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return null;
+    } else if (plan.bound_name) |bn| {
+        const rhs_name = identOf(b.rhs) orelse return null;
+        if (!std.mem.eql(u8, rhs_name, bn)) return null;
+    } else return null;
+    // The induction variable's slot: a promoted module binding or a lexical
+    // local. Anything else (an unpromoted module binding, a fused literal)
+    // declines.
+    const iv_slot = ctx.locals.get(plan.iv) orelse return null;
+    // Body legality: exactly one write to the induction variable (the terminal
+    // step), no reads of it, no calls, no storage touched twice, no exits.
+    // `unrollScanBlock` refuses every statement kind that can leave the body,
+    // call, or touch storage twice; the pass below refuses reads of the
+    // induction variable, which would observe the countdown's reversed trip
+    // values.
+    var scan: UnrollBodyScan = .{};
+    unrollScanBlock(ctx, &ws.body, plan.iv, plan.bound_name, &scan);
+    if (!scan.ok) return null;
+    const body_n = ws.body.stmts.len;
+    if (body_n == 0 or ws.body.tail_expr != null) return null;
+    if (scan.iv_writes != 1) return null;
+    if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[body_n - 1], plan.iv)) return null;
+    for (ws.body.stmts[0 .. body_n - 1]) |*s| {
+        if (stmtMentionsIdent(s, plan.iv)) return null;
+    }
+
+    // ALL CHECKS PASSED — emit the countdown.
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    const bound_v = try lowerExpr(ctx, b.rhs);
+    const n = ctx.freshTemp();
+    try ctx.emit(.{ .op = .store_local, .result = n, .lhs = bound_v, .ty = .i64 });
+    // Cold pre-guard: the source loop runs zero times when the bound is zero;
+    // a bare do-while would run the body once.
+    const pre_t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = pre_t, .binop = .neq, .lhs = .{ .local = n }, .rhs = .{ .i64 = 0 } });
+    const pre_fail = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = pre_t }, .branch_target = 0, .branch_condition = .when_false });
+    const head_idx: u32 = @intCast(ctx.instrs.items.len);
+    try ctx.loop_heads.append(ctx.alloc, head_idx);
+    defer _ = ctx.loop_heads.pop();
+    // The body minus its terminal step, lowered exactly as the ordinary loop
+    // would lower it.
+    var sub = ws.body;
+    sub.stmts = ws.body.stmts[0 .. body_n - 1];
+    _ = try lowerBlockReturns(ctx, &sub, false);
+    // Countdown latch: n -= 1; loop while n != 0.
+    const dec = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = dec, .binop = .sub, .lhs = .{ .local = n }, .rhs = .{ .i64 = 1 } });
+    try ctx.emit(.{ .op = .store_local, .result = n, .lhs = .{ .temp = dec }, .ty = .i64 });
+    const latch_t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = latch_t, .binop = .neq, .lhs = .{ .local = n }, .rhs = .{ .i64 = 0 } });
+    const latch_fail = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = latch_t }, .branch_target = 0, .branch_condition = .when_false });
+    try ctx.emit(.{ .op = .br, .branch_target = head_idx });
+    // The source loop exits with iv == bound. The write-back sits BEFORE the
+    // shared exit target so the latch's failing branch lands on it; the
+    // pre-guard's target stays past it (bound == 0 leaves iv at 0 either way).
+    const wb_idx = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
+    ctx.instrs.items[pre_fail].branch_target = @intCast(ctx.instrs.items.len);
+    return .{ .latch_fail = latch_fail, .wb_idx = wb_idx };
 }
 
 /// `name = <int literal>` as the whole of `st`, or null.
