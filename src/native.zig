@@ -6138,7 +6138,15 @@ const Arm64Compiler = struct {
     /// location is carried by the assignment rather than restated by a map each
     /// reader has to remember to check against a second one.
     fn evalDnirValue(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
-        if (self.crossFile(v, false)) return self.refuse(@src());
+        // FP temp on GP path: convert via fmov instead of refusing.
+        // Under high register pressure, spill/reload can leave an FP-marked
+        // temp reaching a GP consumer; the bits conversion is lossless.
+        if (self.crossFile(v, false)) {
+            const d = try self.evalDnirValueFp(temps, v);
+            const bits = try self.allocReg();
+            try self.emitFmovToGpr(bits, d);
+            return bits;
+        }
         return switch (v) {
             .void => try self.allocReg(),
             .i64 => |n| blk: {
@@ -9574,7 +9582,7 @@ const Arm64Compiler = struct {
         while (i < self.pending_vararg_count) : (i += 1) {
             var slot = &self.pending_varargs[i];
             const v = slot.operand orelse continue;
-            var reg = try self.evalDnirValue(temps, v);
+            var reg = try self.evalDnirValueBits(temps, v);
             // A STACK-homed local is read by loadGpStackLocal into a FRESH register
             // that no map owns, so treating it as owned leaks one register per
             // stack argument per call — the pool drains and the body refuses with

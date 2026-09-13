@@ -6053,6 +6053,14 @@ fn exprReturnsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             expr.call.args.len == 1) return true;
     }
     if (expr.call.func.* != .name) return false;
+    // `__as(f64, x)` — the `@as` intrinsic — answers f64 when the target
+    // is "f64". The type arg is a quoted string; the value converts via
+    // `scvtf` in the native backend's `evalDnirValueFp`.
+    if (std.mem.eql(u8, expr.call.func.name.ident, "__as") and expr.call.args.len == 2) {
+        if (expr.call.args[0].* == .quoted and std.mem.eql(u8, expr.call.args[0].quoted.val, "f64")) {
+            return true;
+        }
+    }
     return functionResultIs(ctx, expr.call.func.name.ident, .f64);
 }
 
@@ -6304,6 +6312,14 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                     try noteConstNum(ctx, stmt, ln.ident, ld.inits[i], ln.typ);
                 }
                 if (ln.typ != .inferred and isFloatType(ln.typ)) {
+                    if (ctx.locals.get(ln.ident)) |slot| try ctx.f64_slots.put(ctx.alloc, slot, {});
+                }
+                // An unannotated binding takes its floatness from the
+                // initializer: `x = 0.1 + 0.2` is f64 even though no
+                // annotation says so. Without this, `exprIsF64` misses the
+                // name, `exprIsIntegral` admits it by elimination, and a
+                // concat prints the double's bits through `%lld`.
+                if (i < ld.inits.len and exprIsF64(ctx, ld.inits[i])) {
                     if (ctx.locals.get(ln.ident)) |slot| try ctx.f64_slots.put(ctx.alloc, slot, {});
                 }
                 // `ok: bool = f()` where `f` is not declared `: bool`. The
@@ -7814,6 +7830,27 @@ fn exprIsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return switch (expr.*) {
         .float_lit => true,
         .call => exprReturnsF64(ctx, expr),
+        .method_call => |m| blk: {
+            if (std.mem.eql(u8, m.method, "to") and m.args.len == 1) {
+                if (m.args[0].* == .name and std.mem.eql(u8, m.args[0].name.ident, "f64")) {
+                    break :blk true;
+                }
+            }
+            if (std.mem.eql(u8, m.method, "from") and m.args.len == 1) {
+                if (m.obj.* == .name and std.mem.eql(u8, m.obj.name.ident, "f64")) {
+                    break :blk true;
+                }
+            }
+            break :blk false;
+        },
+        // Arithmetic promotes: if either operand is f64, the result is f64.
+        // Without this, `x = 0.1 + 0.2` leaves the binop unrecognized, the
+        // binding never marks the slot, and a later concat prints the
+        // double's bits through `%lld`. Comparisons answer bool, not f64.
+        .binop => |b| switch (b.op) {
+            .add, .sub, .mul, .div, .mod => exprIsF64(ctx, b.lhs) or exprIsF64(ctx, b.rhs),
+            else => false,
+        },
         .name => |n| blk: {
             switch (graphNameDescriptor(ctx, expr)) {
                 .known => |descriptor| break :blk descriptor == .f64,
@@ -10351,7 +10388,7 @@ fn exprIsBoolish(ctx: *LowerCtx, expr: *const ast.Expr) bool {
 /// asked again, so a left-nested chain of N concats cost 2^N predicate calls
 /// and `gate/architecture.id` (which builds 20+ hole chains) never finished
 /// lowering. The class carries both answers out of one walk.
-const ConcatClass = enum { str, integral, other };
+const ConcatClass = enum { str, integral, f64, other };
 
 fn concatOperandClass(ctx: *LowerCtx, expr: *const ast.Expr) ConcatClass {
     const class = concatOperandClassInner(ctx, expr);
@@ -10375,6 +10412,12 @@ fn concatOperandClassInner(ctx: *LowerCtx, expr: *const ast.Expr) ConcatClass {
     // this pass can name, not a render. Without this line `exprIsIntegral`
     // admitted the `const char*` and `planConcat` printed it through `%lld`.
     if (exprIsByteSequence(ctx, expr)) return .other;
+    // An f64 renders through `%.17g` -- the language's f64 text rendering,
+    // the same conversion `duo_str_from_f64` uses to mirror `lua_to_str`
+    // (codegen.zig). It is a fourth class, not `.integral`: `%lld` on a
+    // double's bits is the plausible wrong answer the old refusal existed
+    // to prevent, and a bool stays `.other`.
+    if (exprIsF64(ctx, expr)) return .f64;
     if (exprIsIntegral(ctx, expr)) return .integral;
     return .other;
 }
@@ -10654,6 +10697,7 @@ fn holds(ctx: *const LowerCtx, v: dnir.Value) bool {
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (!ctx.require_graph_facts) return false;
     if (expr.* != .call and expr.* != .method_call) return false;
+    if (expr.* == .method_call and std.mem.eql(u8, expr.method_call.method, "from")) return false;
     if (ctx.occurrences.get(expr) != null) return false;
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
@@ -15245,7 +15289,11 @@ fn lowerSubjectCall(
                 bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
             }
+            // BYPASS: f64:from(x) is a special form, not a checked call.
+            const is_from_tn = expr.* == .method_call and std.mem.eql(u8, expr.method_call.method, "from");
+            if (!is_from_tn) {
             return lowerCheckedScalarCall(ctx, application, consumption);
+            }
         }
     }
     if (expr.* == .method_call) {
@@ -15346,6 +15394,24 @@ fn lowerSubjectCall(
                 }
             }
             return lowerSubjectTail(ctx, expr, consumption);
+        }
+        if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1) {
+            if (mc.args[0].* == .name) {
+                const target = mc.args[0].name.ident;
+                if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "i64")) {
+                    if (exprIsIntegral(ctx, mc.obj) or exprIsF64(ctx, mc.obj)) {
+                        return lowerNumericConvert(ctx, mc.obj, target, consumption);
+                    }
+                }
+            }
+        }
+        if (std.mem.eql(u8, mc.method, "from") and mc.args.len == 1) {
+            if (mc.obj.* == .name) {
+                const target = mc.obj.name.ident;
+                if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "i64")) {
+                    return lowerNumericConvert(ctx, mc.args[0], target, consumption);
+                }
+            }
         }
         if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and ctx.graph.bootstrapApplicationExpr(expr)) {
             return lowerSubjectTo(ctx, mc.obj, mc.args[0], consumption);
@@ -15527,11 +15593,24 @@ fn planConcat(ctx: *LowerCtx, parts: []const *const ast.Expr, newline: bool) Err
         }
         if (exprIsStr(ctx, p)) {
             try fmt.appendSlice(ctx.alloc, "%s");
-        } else if (concatOperandOk(ctx, p)) {
-            // `concatOperandOk` has already refused f64 and bool — the two
-            // shapes `%lld` renders into a plausible wrong answer.
-            try fmt.appendSlice(ctx.alloc, "%lld");
-        } else return null;
+        } else {
+            // One classification per hole: the class carries the render, so
+            // a second descent (via `concatOperandOk`) cannot disagree with
+            // the first. `.str` is unreachable here — `exprIsStr` above
+            // answered false — and `.other` (bool, byte sequence) refuses.
+            const class = concatOperandClass(ctx, p);
+            if (class == .f64) {
+                // `%.17g` is the language's f64 text rendering — the
+                // conversion `duo_str_from_f64` uses to mirror `lua_to_str`
+                // exactly (codegen.zig), so an interpolated f64 reads what
+                // `tostring` of the same value answers. `%lld` here would
+                // print the double's bits as an integer: the plausible
+                // wrong answer the old f64 refusal existed to prevent.
+                try fmt.appendSlice(ctx.alloc, "%.17g");
+            } else if (class == .integral) {
+                try fmt.appendSlice(ctx.alloc, "%lld");
+            } else return null;
+        }
         try holes.append(ctx.alloc, p);
     }
     if (newline) {
@@ -16562,6 +16641,52 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     };
 }
 
+/// Numeric type conversion for `:to` and `:from`.
+/// `x:to(f64)` converts numeric x to f64; `f64:from(x)` does the same.
+/// Pure value conversion, not bootstrap-gated.
+fn lowerNumericConvert(
+    ctx: *LowerCtx,
+    value_expr: *const ast.Expr,
+    target_name: []const u8,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    const v = try lowerExpr(ctx, value_expr);
+    if (std.mem.eql(u8, target_name, "f64")) {
+        switch (v) {
+            .i64 => |n| {
+                if (consumption == .discard) return .void;
+                return dnir.Value{ .f64 = @floatFromInt(n) };
+            },
+            .f64 => {
+                if (consumption == .discard) return .void;
+                return v;
+            },
+            else => {
+                if (consumption == .discard) return .void;
+                const t = try binopTemp(ctx, .add, v, .{ .f64 = 0.0 });
+                return dnir.Value{ .temp = t };
+            },
+        }
+    }
+    if (std.mem.eql(u8, target_name, "i64")) {
+        switch (v) {
+            .f64 => |x| {
+                if (consumption == .discard) return .void;
+                return dnir.Value{ .i64 = @intFromFloat(x) };
+            },
+            .i64 => {
+                if (consumption == .discard) return .void;
+                return v;
+            },
+            else => {
+                if (consumption == .discard) return .void;
+                return v;
+            },
+        }
+    }
+    return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
+}
+
 /// `value:to(i64)` — bootstrap text-to-integer edge for gate transport scripts.
 fn lowerSubjectTo(
     ctx: *LowerCtx,
@@ -16915,7 +17040,15 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         if (std.mem.eql(u8, target, "f64")) {
             switch (v) {
                 .i64 => |n| return dnir.Value{ .f64 = @floatFromInt(n) },
-                else => return v,
+                // A non-constant i64 must become an f64-valued temp. Emit
+                // `v + 0.0`: the binop is recognized as f64 (via exprIsF64),
+                // the native backend lowers it with `scvtf` for the i64
+                // operand, and the result temp is marked FP. Returning `v`
+                // unchanged leaves an i64 where f64 is expected.
+                else => {
+                    const t = try binopTemp(ctx, .add, v, .{ .f64 = 0.0 });
+                    return dnir.Value{ .temp = t };
+                },
             }
         }
         if (std.mem.eql(u8, target, "i64")) {

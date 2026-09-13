@@ -79,6 +79,12 @@ const Emitter = struct {
     /// the dnir lets `call_extern` print a fixed argument list without
     /// re-scanning.
     args_this_call: u32 = 0,
+    /// The format string of the in-progress variadic `printf`/`snprintf`
+    /// call, when the dnir carried it as a `mov_arg` (the `snprintf` shape:
+    /// `mov_arg result=2` holds the format; `printf` carries it on the call
+    /// instruction's `.lhs` instead). Set by `.mov_arg`, consumed and
+    /// cleared by `.call_extern`. Only variadic callees read it.
+    variadic_format: ?[]const u8 = null,
     /// Running index of the `alloc_slots` region currently being lowered.
     /// `emitFunction` declares one `m{d}` array per `alloc_slots` instruction
     /// in flat order, and the instruction arm consumes the same order, so the
@@ -130,6 +136,40 @@ fn scalarType(ty: RT) bool {
         .str => true,
         else => false,
     };
+}
+
+/// True when a `printf`-family format string contains a float conversion
+/// (`%f`, `%g`, `%e`, `%a` and uppercase). The dnir's `planConcat` escapes
+/// a literal `%` as `%%`, so a lone `%` always opens a conversion. Used to
+/// fail a variadic call closed before source exists when the conversion
+/// needs the FP argument class the C shim never populates.
+fn formatHasFloatConversion(fmt: []const u8) bool {
+    var i: usize = 0;
+    while (i < fmt.len) {
+        if (fmt[i] != '%') {
+            i += 1;
+            continue;
+        }
+        i += 1;
+        if (i >= fmt.len) break;
+        if (fmt[i] == '%') {
+            i += 1;
+            continue;
+        }
+        while (i < fmt.len) {
+            const c = fmt[i];
+            if (c == '-' or c == '+' or c == ' ' or c == '#' or c == '0' or
+                (c >= '0' and c <= '9') or c == '.' or
+                c == 'h' or c == 'l' or c == 'L' or c == 'j' or
+                c == 'z' or c == 't') i += 1 else break;
+        }
+        if (i >= fmt.len) break;
+        const conv = fmt[i];
+        if (conv == 'f' or conv == 'F' or conv == 'e' or conv == 'E' or
+            conv == 'g' or conv == 'G' or conv == 'a' or conv == 'A') return true;
+        i += 1;
+    }
+    return false;
 }
 
 fn writeFunctionName(w: *std.Io.Writer, name: []const u8) Error!void {
@@ -547,6 +587,13 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             // `call_extern`; the alternative was a per-call O(N) re-scan
             // over the same block.
             const is_variadic = std.mem.eql(u8, instruction.field, "vararg");
+            // A non-variadic `mov_arg` carrying a string is the `snprintf`
+            // format (`mov_arg result=2` in `lowerConcatSingle`); remember
+            // it so the `call_extern` site can refuse float conversions
+            // the C variadic shim cannot realize. Variadic string holes
+            // must not overwrite it.
+            if (!is_variadic and instruction.lhs == .str)
+                e.variadic_format = instruction.lhs.str;
             // `args_this_call` counts the FIXED arg slots the dnir
             // populates between two `call_extern`s, because those are
             // the slots the call site iterates over. Variadic args
@@ -632,6 +679,7 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             const argc = e.args_this_call;
             const has_lhs_arg = instruction.lhs != .void;
             e.args_this_call = 0;
+            e.variadic_format = null;
             const callee_name = externName(instruction.callee);
             if (instruction.result) |result| try w.print("  s{d} = ", .{result});
             try w.print("{s}(", .{callee_name});
@@ -661,6 +709,24 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
                 std.mem.eql(u8, callee_name, "snprintf") or
                 std.mem.eql(u8, callee_name, "idol_snprintf");
             if (is_variadic_callee) {
+                // The C variadic shim (`idol_snprintf` in the runtime)
+                // forwards every trailing argument as `(const char *)` —
+                // bit-correct for `%s` and `%lld`, which read the same
+                // 64-bit slot the dnir wrote. A float conversion (`%g`,
+                // `%f`, …) reads the FP register / FP stack class, which
+                // the shim never populates: on LP64 the value would come
+                // from an unrelated XMM register. An f64 hole would print
+                // garbage with no diagnostic, so refuse before source
+                // exists. The direct backend realizes the same dnir
+                // through `evalDnirValueBits` and never reaches this.
+                const fmt: ?[]const u8 = if (instruction.lhs == .str)
+                    instruction.lhs.str
+                else
+                    e.variadic_format;
+                if (fmt) |f| {
+                    if (formatHasFloatConversion(f))
+                        return e.refuse("extern-printf-f64-not-in-c99-slice");
+                }
                 var variadic_idx: u32 = 3;
                 while (variadic_idx <= 16) : (variadic_idx += 1) {
                     if (printed_any) try w.writeAll(", ");
