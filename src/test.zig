@@ -186,3 +186,28 @@ test "divisor obligation: IR and relation law agree" {
     try std.testing.expect(dnir.BinOpTag.requiresNonzeroDivisor(.idiv));
     try std.testing.expect(dnir.BinOpTag.requiresNonzeroDivisor(.mod));
 }
+
+test "completion/trap: divisor set agrees with relation law" {
+    // `graph.binopOwesNonzeroDivisor` names the divisor-carrying operators a
+    // second time across the layering firewall (graph cannot import
+    // demand_projection). This runner walks every `ast.BinOp` and fails if the
+    // two declarations ever disagree — the same shape as "divisor obligation:
+    // IR and relation law agree".
+    const ast = @import("ast.zig");
+    const graph = @import("graph.zig");
+    const demand_projection = @import("demand_projection.zig");
+
+    var carriers: usize = 0;
+    inline for (@typeInfo(ast.BinOp).@"enum".field_values) |value| {
+        const op: ast.BinOp = @fromBackingInt(@intCast(value));
+        try std.testing.expectEqual(
+            demand_projection.lawsOf(op).divisor_nonzero,
+            graph.SemanticGraph.binopOwesNonzeroDivisor(op),
+        );
+        if (demand_projection.lawsOf(op).divisor_nonzero) carriers += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 3), carriers);
+    try std.testing.expect(graph.SemanticGraph.binopOwesNonzeroDivisor(.div));
+    try std.testing.expect(graph.SemanticGraph.binopOwesNonzeroDivisor(.idiv));
+    try std.testing.expect(graph.SemanticGraph.binopOwesNonzeroDivisor(.mod));
+}
