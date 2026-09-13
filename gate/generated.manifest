@@ -1,29 +1,23 @@
-# gate/generated.manifest — files that are PROJECTIONS, and who projects them.
-#
-# A generated file edited by hand is the most durable kind of wrong answer in
-# this repository: the edit works, the tests pass, and the next generator run
-# silently deletes it. Worse, the hand edit becomes the de facto authority
-# while the generator -- the actual source of truth -- keeps saying something
-# else.
-#
-# THE RULE, enforced by gate/layering.sh:
-#   (1) A generated file must still carry its do-not-edit marker. Deleting the
-#       marker is the first move of anyone about to author inside one.
-#   (2) A diff that touches a generated file must touch its generator in the
-#       same diff. If the generator did not change, the projection had no
-#       reason to.
-#
-# FORMAT:  <generated-path>\t<generator-path>\t<marker-substring>
-
-src/lexer_tokenize.c	lib/compiler/lexer.id	do not edit
-src/parser/projection.c	lib/compiler/parser.id	do not edit
-src/keyword_classify.c	src/token_classify_gen.zig	do not edit by hand
-lib/token/classify.id	src/token_classify_gen.zig	do not edit by hand
-src/grammar_role_table.zig	lib/compiler/token.id	do not edit by hand
-lib/token/grammarrole.id	lib/compiler/token.id	do not edit by hand
-lib/wasm/opcode_lookup.id	src/wasm_semantic_gen.zig	do not edit by hand
-lib/wasm/ward_mvp_opcodes.id	src/wasm_semantic_gen.zig	do not edit by hand
-ext/tree-sitter-idol/grammar.js	scripts/treesitter_emit.id	GENERATED
-ext/tree-sitter-idol/src/grammar.json	ext/tree-sitter-idol/grammar.js	$schema
-tools/wasm/src/duo_keyword_classify.c	src/token_classify_gen.zig	do not edit by hand
-tools/lsp/src/duo_keyword_classify.c	src/token_classify_gen.zig	do not edit by hand
+# gate/generated.manifest — every generated file and the computation that owns it.
+# L2b: a diff touching column 1 must carry a dependency identity matching the
+# producing computation (gate/depid.sh); the generator filename in column 2 is
+# neither required nor sufficient.
+# Columns are TAB-separated:
+#   <generated> <generator> <marker> <emit> <regen> <inputs> <config> <target>
+# emit: idolbin | tool:<name>. regen: redir:<sh> | run:<sh> ($idolbin and $root
+# expand; run: executes with cwd=$root). inputs: space-separated tree paths,
+# a/**/*.b globs, self:prev (the artifact's pre-regen bytes), tool:<name>
+# (a versioned toolchain), or -. The identity is recorded in
+# gate/generated.depid. Keep this sorted by column 1; the L2 controls assert it.
+ext/tree-sitter-idol/grammar.js	scripts/treesitter_emit.id	GENERATED	idolbin	run:$idolbin run --backend=direct scripts/treesitter_emit.id	self:prev src/grammar_role_table.zig	-	js
+ext/tree-sitter-idol/src/grammar.json	ext/tree-sitter-idol/grammar.js	$schema	tool:tree-sitter	run:cd "$root/ext/tree-sitter-idol" && t=$(mktemp -d) && cp -r . "$t/" && (cd "$t" && tree-sitter generate) && cp "$t/src/grammar.json" src/grammar.json && rm -rf "$t"	-	-	json
+lib/token/classify.id	src/token_classify_gen.zig	do not edit by hand	idolbin	run:$idolbin token-tables emit	-	emit	id
+lib/token/grammarrole.id	lib/compiler/token.id	do not edit by hand	idolbin	run:IDOL=$idolbin $root/tools/node/dev/grammar/emit --write	lib/**/*.id tools/node/dev/grammar/emit tools/node/dev/grammar/idol_c_runtime_shim.c tool:zig	--write	id
+lib/wasm/opcode_lookup.id	src/wasm_semantic_gen.zig	do not edit by hand	idolbin	run:$idolbin wasm-tables emit	-	emit	id
+lib/wasm/ward_mvp_opcodes.id	src/wasm_semantic_gen.zig	do not edit by hand	idolbin	run:$idolbin wasm-tables emit	-	emit	id
+src/grammar_role_table.zig	lib/compiler/token.id	do not edit by hand	idolbin	run:IDOL=$idolbin $root/tools/node/dev/grammar/emit --write	lib/**/*.id tools/node/dev/grammar/emit tools/node/dev/grammar/idol_c_runtime_shim.c tool:zig	--write	zig
+src/keyword_classify.c	src/token_classify_gen.zig	do not edit by hand	idolbin	run:$idolbin token-tables emit	-	emit	c
+src/lexer_tokenize.c	lib/compiler/lexer.id	do not edit	idolbin	redir:$idolbin dump-c lib/compiler/lexer.id --lib	lib/**/*.id	--lib	c
+src/parser/projection.c	lib/compiler/parser.id	do not edit	idolbin	redir:$idolbin dump-c lib/compiler/parser.id --lib	lib/**/*.id	--lib	c
+tools/lsp/src/duo_keyword_classify.c	src/token_classify_gen.zig	do not edit by hand	idolbin	run:$idolbin token-tables emit	-	emit	c
+tools/wasm/src/duo_keyword_classify.c	src/token_classify_gen.zig	do not edit by hand	idolbin	run:$idolbin token-tables emit	-	emit	c
