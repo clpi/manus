@@ -5161,7 +5161,7 @@ static const char* idol_compiler_path(void) {
     return "idol";
 }
 
-/* IDOL_PRIVATE_TEMP_BEGIN -- GAP-141 executable extraction boundary. */
+/* IDOL_TEMP_SECTION_BEGIN -- GAP-141 executable extraction boundary. */
 #if defined(_WIN32)
 #include <direct.h>
 #endif
@@ -5238,7 +5238,7 @@ static int duo_make_temp_path(char* out, size_t out_sz, const char* suffix) {
     return 0;
 #endif
 }
-/* IDOL_PRIVATE_TEMP_END */
+/* IDOL_TEMP_SECTION_END */
 
 static int duo_read_file(const char* path, char** out, size_t* out_len) {
     FILE* f = fopen(path, "rb");
