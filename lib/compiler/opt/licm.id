@@ -199,7 +199,7 @@ opspot: i64 = (rhs: str)
     i = 1
     while i <= rhs:len()
         c = rhs:byte(i)
-        if c == 43 or c == 45 or c == 42 or c == 47
+        if c == 43 or c == 45 or c == 42 or c == 47 or c == 38
             return i
         i = i + 1
     0
@@ -227,6 +227,8 @@ opchar: str = (op: i64)
         return "+"
     if op == 45
         return "-"
+    if op == 38
+        return "&"
     "*"
 
 withcolon: i64 = (s: str)
@@ -331,6 +333,10 @@ splitconst: str = (rhs: str)
                 return k
             return ""
         return k
+    if op == 38
+        if bandbig(k) == 1
+            return k
+        return ""
     if kv < 2
         return ""
     if powt(kv) > 0
@@ -338,6 +344,71 @@ splitconst: str = (rhs: str)
     if kv == 3 or kv == 5 or kv == 7 or kv == 9
         return ""
     k
+
+bandbig: i64 = (num: str)
+    if oknum(num) == 0
+        return 0
+    kv = parsenum(num)
+    if kv < 65536
+        return 0
+    if powt(kv) > 0
+        return 0
+    1
+
+nestedband: str = (rhs: str)
+    out = ""
+    i = 1
+    n = rhs:len()
+    while i <= n
+        c = rhs:byte(i)
+        if c >= 48 and c <= 57
+            j = i
+            while j <= n and rhs:byte(j) >= 48 and rhs:byte(j) <= 57
+                j = j + 1
+            num = rhs:sub(i, j - 1)
+            pb = 0
+            p = i - 1
+            while p >= 1 and rhs:byte(p) == 32
+                p = p - 1
+            if p >= 1
+                pb = rhs:byte(p)
+            ab = 0
+            q = j
+            while q <= n and rhs:byte(q) == 32
+                q = q + 1
+            if q <= n
+                ab = rhs:byte(q)
+            if pb == 38 or ab == 38
+                if bandbig(num) == 1 and hasword(out, num) == 0
+                    out = out .. num .. "|"
+            i = j
+        else
+            i = i + 1
+    out
+
+repnum: str = (s: str, k: str, tn: str)
+    out = ""
+    i = 1
+    n = s:len()
+    m = k:len()
+    while i <= n
+        hit = 0
+        if i + m - 1 <= n and s:sub(i, i + m - 1) == k
+            bok = 1
+            aok = 1
+            if i > 1 and oknamechar(s:byte(i - 1)) == 1
+                bok = 0
+            if i + m <= n and oknamechar(s:byte(i + m)) == 1
+                aok = 0
+            if bok == 1 and aok == 1
+                hit = 1
+        if hit == 1
+            out = out .. tn
+            i = i + m
+        else
+            out = out .. s:sub(i, i)
+            i = i + 1
+    out
 
 canhoist: i64 = (tgt: str, rhs: str, defs: str, gain: str, cond: str, before: str, after: str)
     if countocc(defs, tgt) != 1
@@ -397,13 +468,42 @@ allcmap: str = (body: str, marks: str, loopkey: i64, wlist: str)
     while j < bc
         if marks:sub(j + 1, j + 1) == "s"
             rhs = asgrhs(unpad(lineat(body, j)))
-            k = splitconst(rhs)
-            if cmapget(cmap, k) == ""
-                tn = newtemp(loopkey, wlist, taken)
-                taken = taken .. tn .. "|"
-                cmap = cmap .. k .. "=" .. tn .. "|"
+            ks = splitconst(rhs)
+            nb = nestedband(rhs)
+            if nb != ""
+                if ks != ""
+                    ks = ks .. "|" .. nb
+                else
+                    ks = nb
+            q = 1
+            while q <= ks:len()
+                e = q
+                while e <= ks:len() and ks:byte(e) != 124
+                    e = e + 1
+                k = ks:sub(q, e - 1)
+                if k != "" and cmapget(cmap, k) == ""
+                    tn = newtemp(loopkey, wlist, taken)
+                    taken = taken .. tn .. "|"
+                    cmap = cmap .. k .. "=" .. tn .. "|"
+                q = e + 1
         j = j + 1
     cmap
+
+maybeassign: i64 = (t: str)
+    p = eqpos(t)
+    if p == 0
+        return 0
+    left = unpad(t:sub(1, p - 1))
+    if okname(left) == 0
+        return 0
+    rhs = unpad(t:sub(p + 1, t:len()))
+    if rhs:len() == 0
+        return 0
+    if withcolon(rhs) == 1
+        return 0
+    if eqpos(rhs) > 0
+        return 0
+    1
 
 decide: str = (body: str, ind: i64, cond: str, after: str)
     marks = ""
@@ -416,15 +516,19 @@ decide: str = (body: str, ind: i64, cond: str, after: str)
         r = lineat(body, j)
         t = unpad(r)
         mk = "k"
-        if t:len() > 0 and indof(r) == ind + step and okassign(t) == 1
-            tgt = asgtgt(t)
-            rhs = asgrhs(t)
-            before = cut(body, 0, j - 1)
-            if canhoist(tgt, rhs, defs, gain, cond, before, after) == 1
-                mk = "h"
-                gain = gain .. tgt .. "|"
+        if t:len() > 0 and indof(r) == ind + step
+            if okassign(t) == 1
+                tgt = asgtgt(t)
+                rhs = asgrhs(t)
+                before = cut(body, 0, j - 1)
+                if canhoist(tgt, rhs, defs, gain, cond, before, after) == 1
+                    mk = "h"
+                    gain = gain .. tgt .. "|"
+                else
+                    if splitconst(rhs) != "" or nestedband(rhs) != ""
+                        mk = "s"
             else
-                if splitconst(rhs) != ""
+                if maybeassign(t) == 1 and nestedband(asgrhs(t)) != ""
                     mk = "s"
         marks = marks .. mk
         j = j + 1
@@ -441,10 +545,23 @@ prepass: str = (body: str, ind: i64, marks: str, loopkey: i64, wlist: str)
         if mk == "h"
             pre = pre .. spaces(ind) .. unpad(lineat(body, j)) .. "\n"
         if mk == "s"
-            k = splitconst(asgrhs(unpad(lineat(body, j))))
-            if hasword(done, k) == 0
-                done = done .. k .. "|"
-                pre = pre .. spaces(ind) .. cmapget(cmap, k) .. " = " .. k .. "\n"
+            ks = splitconst(asgrhs(unpad(lineat(body, j))))
+            nb = nestedband(asgrhs(unpad(lineat(body, j))))
+            if nb != ""
+                if ks != ""
+                    ks = ks .. "|" .. nb
+                else
+                    ks = nb
+            q = 1
+            while q <= ks:len()
+                e = q
+                while e <= ks:len() and ks:byte(e) != 124
+                    e = e + 1
+                k = ks:sub(q, e - 1)
+                if k != "" and hasword(done, k) == 0
+                    done = done .. k .. "|"
+                    pre = pre .. spaces(ind) .. cmapget(cmap, k) .. " = " .. k .. "\n"
+                q = e + 1
         j = j + 1
     pre
 
@@ -461,17 +578,28 @@ keeppass: str = (body: str, marks: str, loopkey: i64, wlist: str)
                 t = unpad(r)
                 tgt = asgtgt(t)
                 rhs = asgrhs(t)
-                op = rhsop(rhs)
-                a = rhsa(rhs)
-                e = rhse(rhs)
+                nrhs = rhs
                 k = splitconst(rhs)
-                tn = cmapget(cmap, k)
-                nr = tgt .. " = "
-                if a == k
-                    nr = nr .. tn .. " " .. opchar(op) .. " " .. e
-                else
-                    nr = nr .. a .. " " .. opchar(op) .. " " .. tn
-                out = out .. spaces(indof(r)) .. nr .. "\n"
+                if k != ""
+                    op = rhsop(rhs)
+                    a = rhsa(rhs)
+                    e = rhse(rhs)
+                    tn = cmapget(cmap, k)
+                    if a == k
+                        nrhs = tn .. " " .. opchar(op) .. " " .. e
+                    else
+                        nrhs = a .. " " .. opchar(op) .. " " .. tn
+                nb = nestedband(rhs)
+                q = 1
+                while q <= nb:len()
+                    e2 = q
+                    while e2 <= nb:len() and nb:byte(e2) != 124
+                        e2 = e2 + 1
+                    k2 = nb:sub(q, e2 - 1)
+                    if k2 != "" and k2 != k
+                        nrhs = repnum(nrhs, k2, cmapget(cmap, k2))
+                    q = e2 + 1
+                out = out .. spaces(indof(r)) .. tgt .. " = " .. nrhs .. "\n"
             else
                 out = out .. r .. "\n"
         j = j + 1
