@@ -1,0 +1,126 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+digits: i64 = (text: str)
+  if !text or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + (text:byte(i) - 48)
+      i = i + 1
+    else
+      return -1
+  v
+
+scan: i64 = (root: str, work: str)
+  plant = "{work}/planted.sh"
+  wrote = gatecap("printf '#!/bin/sh\\n' >'{plant}'; printf 'printf x >%s/idol-planted-control.out\\n' /tmp >>'{plant}'; echo $?")
+  if gatecap("grep -qE '>>?[[:space:]]*/tmp/' '{plant}'; echo $?") != "0\n"
+    print("gap-115-evidence: FAIL scan positive control: detector missed the retired fixed-path shape")
+    return 1
+  hits = gatecap("git -C '{root}' ls-files gate tools/node/dev .githooks | xargs grep -nIE '>>?[[:space:]]*/tmp/' 2>/dev/null")
+  if chomp(hits) != ""
+    print("gap-115-evidence: FAIL fixed /tmp evidence path in tracked measurement code:")
+    print(chomp(hits))
+    return 1
+  0
+
+trial: i64 = (work: str, shared: str, script: str, log: str, poison: str, token: str, sed: str)
+  digits(chomp(gatecap("env TMPDIR='{shared}' \"PATH={work}/bin:$PATH\" IDOL='{work}/bin/idolstub' IDOL_GAP115_SHARED='{shared}' IDOL_GAP115_POISON='{poison}' IDOL_GAP115_TOKEN='{token}' IDOL_GAP115_REALSED='{sed}' timeout 120 sh '{script}' >'{log}' 2>&1; echo $?")))
+
+main: i64 = ()
+  root = chomp(gatecap("pwd"))
+  idol = os.env["IDOL_BIN"]
+  if idol == nil or idol == ""
+    idol = "{root}/zig-out/bin/idol"
+  else
+    if idol:sub(1, 1) != "/"
+      idol = "{root}/{idol}"
+  if gatecap("test -x '{idol}'; echo $?") != "0\n"
+    print("gap-115-evidence: FAIL compiler is not executable: {idol}")
+    return 2
+  work = chomp(gatecap("mktemp -d /tmp/idol-gap115.XXXXXX"))
+  if work == ""
+    print("gap-115-evidence: FAIL mktemp failed")
+    return 1
+  if scan(root, work) != 0
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  shared = "{work}/shared"
+  made = gatecap("mkdir -p '{shared}' '{work}/bin'")
+  poison = "POISON-ANOTHER-SESSIONS-BYTES-83f1"
+  pid = chomp(gatecap("echo $$"))
+  epoch = chomp(gatecap("date +%s"))
+  token = "gap115-{pid}-{epoch}"
+  staged = gatecap("cat >'{work}/bin/idolstub' <<'STUB'\n#!/bin/sh\nprintf '%s\\n' \"RESULT census evidence $IDOL_GAP115_TOKEN\"\nexit 0\nSTUB\nchmod +x '{work}/bin/idolstub'")
+  sed = chomp(gatecap("command -v sed"))
+  if sed == ""
+    print("gap-115-evidence: FAIL no sed on PATH")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  staged = gatecap("cat >'{work}/bin/sed' <<'INTER'\n#!/bin/sh\nprintf %s \"$IDOL_GAP115_POISON\" >\"$IDOL_GAP115_SHARED/idol-census-projection.out\"\n: >\"$IDOL_GAP115_SHARED/writer-ran\"\nexec \"$IDOL_GAP115_REALSED\" \"$@\"\nINTER\nchmod +x '{work}/bin/sed'")
+  log = "{work}/fixed.log"
+  rc = trial(work, shared, "{root}/tools/node/dev/census/projection", log, poison, token, sed)
+  if rc != 0
+    print("gap-115-evidence: FAIL census evidence run failed under a planted concurrent writer")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  if gatecap("test -e '{shared}/writer-ran'; echo $?") != "0\n"
+    print("gap-115-evidence: FAIL planted writer never fired — the isolation observation is vacuous")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  if gatecap("grep -Fq '{token}' '{log}'; echo $?") != "0\n"
+    print("gap-115-evidence: FAIL displayed evidence lost this run own bytes")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  if gatecap("grep -Fq '{poison}' '{log}'; echo $?") == "0\n"
+    print("gap-115-evidence: FAIL planted writer substituted the displayed evidence through a private name")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  gone = gatecap("rm -f '{shared}/writer-ran'")
+  damaged = "{work}/census-damaged"
+  rc = digits(chomp(gatecap("'{sed}' 's|^out=\"$(mktemp.*|out=\"$\{IDOL_GAP115_SHARED:?\}/idol-census-projection.out\"|' '{root}/tools/node/dev/census/projection' >'{damaged}'; echo $?")))
+  if rc != 0
+    print("gap-115-evidence: FAIL damage sed failed")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  if gatecap("grep -Fq 'IDOL_GAP115_SHARED' '{damaged}'; echo $?") != "0\n"
+    print("gap-115-evidence: FAIL fixed-name damage did not land")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  if gatecap("grep -Fq 'mktemp' '{damaged}'; echo $?") == "0\n"
+    print("gap-115-evidence: FAIL fixed-name damage left the private name in place")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  dlog = "{work}/damaged.log"
+  rc = trial(work, shared, damaged, dlog, poison, token, sed)
+  if rc != 0
+    print("gap-115-evidence: FAIL damaged census run failed outright instead of silently corrupting")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  if gatecap("test -e '{shared}/writer-ran'; echo $?") != "0\n"
+    print("gap-115-evidence: FAIL planted writer never fired against the damaged shape")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  if gatecap("grep -Fq '{poison}' '{dlog}'; echo $?") != "0\n"
+    print("gap-115-evidence: FAIL retired fixed-name shape was NOT corrupted by the planted writer — the control cannot fail")
+    gone = gatecap("rm -rf '{work}'")
+    return 1
+  rev = chomp(gatecap("git -C '{root}' rev-parse HEAD"))
+  dirty = chomp(gatecap("git -C '{root}' diff --quiet && git -C '{root}' diff --cached --quiet && printf clean || printf dirty"))
+  gone = gatecap("rm -rf '{work}'")
+  print("SUBJECT revision={rev} dirty={dirty}")
+  print("gap-115-evidence: PASS")
+  0
