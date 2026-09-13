@@ -72,8 +72,8 @@ failure:
 
 | # | directive |
 |---|---|
-| 1 | Static ratchets: `sh gate/architecture-negative.sh`. |
-| 2 | Behavioral companions: `sh gate/architecture-companion.sh`. |
+| 1 | Static ratchets: `idol run --backend=direct gate/architecture-negative.id`. |
+| 2 | Behavioral companions: `idol run --backend=direct gate/architecture-companion.id`. |
 
 | Control | Intent |
 |---|---|
@@ -145,11 +145,11 @@ failure:
 |---|---|
 | 1 | **Central overnight rule:** when a blocker disappears, name the **authority gained**. |
 | 2 | If the answer is "backend recognizes another AST/storage pattern," architecture got worse. |
-| 3 | Full manifest: `gate/architecture-negative.sh`. |
+| 3 | Full manifest: `gate/architecture-negative.id`. |
 
 | # | directive |
 |---|---|
-| 1 | Executable negative controls: `sh gate/architecture-negative.sh` (idol) and the sibling wrapper in idol-native. |
+| 1 | Executable negative controls: `idol run --backend=direct gate/architecture-negative.id` and the sibling wrapper in idol-native. |
 
 | section |
 |---|---|
@@ -197,7 +197,7 @@ failure:
 | # | directive |
 |---|---|
 | 1 | **Tonight's priority:** read the "Tonight's priority injection" section in `.agents/ARCHITECTURE_INJECTION.md` before any fix. |
-| 2 | **Architecture-negative controls:** `gate/architecture-negative.sh` / `gate/architecture-companion.sh` — run before claiming semantic progress; a passing fixture is not the objective. |
+| 2 | **Architecture-negative controls:** `gate/architecture-negative.id` / `gate/architecture-companion.id` — run before claiming semantic progress; a passing fixture is not the objective. |
 | 3 | **Canonical source debt:** `docs/projections/canonical-source-debt.md` — three states (canonical / migratable / debt) for every `lib/compiler/**` construct. |
 | 4 | DNIR must not silently drop semantic facts recoverable from the graph. |
 | 5 | Sema must not route meaning by hard-coded relation names. |
