@@ -6450,6 +6450,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 const counted = ctx.counted_plan;
                 ctx.counted_plan = null;
                 if (counted) |plan| if (plan.stmt == stmt) {
+                    if (try lowerSelfMapCountedWhile(ctx, ws, plan)) {
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null);
+                        break :ordinary;
+                    }
                     if (try lowerDirectCountedWhile(ctx, ws, plan)) {
                         try finishWhileLowering(ctx, null, promo[0..promo_len], null);
                         break :ordinary;
@@ -8332,6 +8336,11 @@ const CountedPlan = struct {
     /// the direct form must not fire. Settled here because promotion installs
     /// fresh unmarked slots before emission, so the markings are intact now.
     direct_acc: ?[]const u8,
+    /// Self-map deletion, settled at arm time: the body is straight-line pure
+    /// integer dataflow that reproduces the loop-entry state (proven by exact
+    /// evaluation), so the loop is dead and the induction variable is bound
+    /// to the trip count with no loop emitted. False unless proven.
+    self_map: bool = false,
 };
 
 /// The direct form's accumulator, settled at ARM time. The body must be
@@ -8396,7 +8405,165 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     if (n == 0 or ws.body.tail_expr != null) return;
     if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[n - 1], iv)) return;
     plan.direct_acc = directAccIfPlainInt(ctx, ws, iv, plan.bound_name);
+    if (plan.bound_lit) |bl| {
+        if (selfMapLoopProven(ctx, stmts, at, ws, iv, bl)) plan.self_map = true;
+    }
     ctx.counted_plan = plan;
+}
+
+/// Maximum distinct non-iv names a self-map proof tracks. Overflow declines
+/// the transform (fails closed); real counted loops stay far below it.
+const self_map_max_names = 32;
+
+/// Entry environment for the self-map proof: every non-iv name the body
+/// mentions, with its loop-entry constant and its value as the proof
+/// evaluates the body once on the entry state.
+const SelfMapEnv = struct {
+    names: [self_map_max_names][]const u8 = undefined,
+    entry: [self_map_max_names]i64 = undefined,
+    value: [self_map_max_names]i64 = undefined,
+    len: usize = 0,
+
+    fn indexOf(self: *const SelfMapEnv, name: []const u8) ?usize {
+        for (0..self.len) |i| {
+            if (std.mem.eql(u8, self.names[i], name)) return i;
+        }
+        return null;
+    }
+
+    /// Record a name; false when the environment is full (decline).
+    fn note(self: *SelfMapEnv, name: []const u8) bool {
+        if (self.indexOf(name) != null) return true;
+        if (self.len == self_map_max_names) return false;
+        self.names[self.len] = name;
+        self.len += 1;
+        return true;
+    }
+};
+
+/// Exact integer arithmetic for the self-map proof, mirroring the backend's
+/// own constant folder (`foldConstBinop` in native.zig): wrapping add/sub/mul
+/// and truncating division. The two shapes the folder refuses -- division by
+/// zero and minInt/-1 -- return null here as well, so a body that would trap
+/// (or whose trap the backend routes elsewhere) declines the transform and
+/// keeps its original trap behavior.
+fn selfMapFoldBinop(op: ast.BinOp, l: i64, r: i64) ?i64 {
+    return switch (op) {
+        .add => l +% r,
+        .sub => l -% r,
+        .mul => l *% r,
+        .div => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+            null
+        else
+            @divTrunc(l, r),
+        else => null,
+    };
+}
+
+/// Collect every `.name` under `e` into the environment; false on any shape
+/// outside int literal / name / whitelisted binop, on any read of the
+/// induction variable (its value varies by iteration, so it has no entry
+/// constant), and on any subexpression that carries a published application
+/// (the graph's own record, never a guess about syntax).
+fn selfMapCollectNames(ctx: *LowerCtx, e: *const ast.Expr, iv: []const u8, senv: *SelfMapEnv) bool {
+    if (ctx.occurrences.get(e) != null) return false;
+    switch (e.*) {
+        .int_lit => return true,
+        .name => |nm| {
+            if (std.mem.eql(u8, nm.ident, iv)) return false;
+            return senv.note(nm.ident);
+        },
+        .binop => |b| {
+            switch (b.op) {
+                .add, .sub, .mul, .div => {},
+                else => return false,
+            }
+            return selfMapCollectNames(ctx, b.lhs, iv, senv) and
+                selfMapCollectNames(ctx, b.rhs, iv, senv);
+        },
+        else => return false,
+    }
+}
+
+/// Evaluate `e` exactly on the environment's current values; null on any
+/// shape the collector declined (unreachable when the collector ran first)
+/// or any arithmetic the backend folder refuses.
+fn selfMapEvalExpr(ctx: *LowerCtx, e: *const ast.Expr, senv: *const SelfMapEnv) ?i64 {
+    if (ctx.occurrences.get(e) != null) return null;
+    switch (e.*) {
+        .int_lit => |l| return l.val,
+        .name => |nm| {
+            const i = senv.indexOf(nm.ident) orelse return null;
+            return senv.value[i];
+        },
+        .binop => |b| {
+            const l = selfMapEvalExpr(ctx, b.lhs, senv) orelse return null;
+            const r = selfMapEvalExpr(ctx, b.rhs, senv) orelse return null;
+            return selfMapFoldBinop(b.op, l, r);
+        },
+        else => return null,
+    }
+}
+
+/// SELF-MAP LOOP DELETION (arm-time proof).
+///
+/// A counted loop with a literal bound whose body is straight-line pure
+/// integer dataflow that reproduces the loop-entry state is dead: the first
+/// iteration sees the entry state and returns it unchanged, so by induction
+/// every iteration does, and the loop computes nothing. Proved here by exact
+/// evaluation of the body on the entry constants; anything the proof cannot
+/// follow exactly refuses the transform and the loop lowers through the other
+/// counted forms or ordinarily. In particular:
+///   - only `.assign` statements with a single plain-name target;
+///   - the induction variable is never read (no entry constant) and only the
+///     trailing step may write it;
+///   - every body name resolves to a plain-integer slot (no f64, str, bool,
+///     pointer, or declared-narrow binding) with a dominating constant store,
+///     settled at arm time while the slot markings are intact;
+///   - a name the dominating-store scan cannot pin to a constant (outer
+///     induction variables, calls, unknown values) declines.
+fn selfMapLoopProven(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, ws: anytype, iv: []const u8, bound: i64) bool {
+    if (bound < 0) return false;
+    const body = ws.body.stmts;
+    const n = body.len;
+    if (n == 0 or ws.body.tail_expr != null) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &body[n - 1], iv)) return false;
+    var senv = SelfMapEnv{};
+    for (body[0 .. n - 1]) |*st| {
+        const a = switch (st.*) {
+            .assign => |x| x,
+            else => return false,
+        };
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const target = identOf(a.targets[0]) orelse return false;
+        if (std.mem.eql(u8, target, iv)) return false;
+        if (!senv.note(target)) return false;
+        if (!selfMapCollectNames(ctx, a.values[0], iv, &senv)) return false;
+    }
+    for (0..senv.len) |k| {
+        const slot = ctx.locals.get(senv.names[k]) orelse return false;
+        if (!unrollPlainIntSlot(ctx, slot)) return false;
+        const rhs = countedDominatingStoreRhs(stmts, at, senv.names[k]) orelse return false;
+        const v = ctx.graph.exactI64OfExpr(rhs) orelse return false;
+        senv.entry[k] = v;
+        senv.value[k] = v;
+    }
+    for (body[0 .. n - 1]) |*st| {
+        const a = switch (st.*) {
+            .assign => |x| x,
+            else => return false,
+        };
+        const target = identOf(a.targets[0]) orelse return false;
+        const v = selfMapEvalExpr(ctx, a.values[0], &senv) orelse return false;
+        const i = senv.indexOf(target) orelse return false;
+        senv.value[i] = v;
+    }
+    // Dead iff every mentioned name reproduces its entry value. Names only
+    // read are never updated, so they compare equal trivially.
+    for (0..senv.len) |k| {
+        if (senv.value[k] != senv.entry[k]) return false;
+    }
+    return true;
 }
 
 /// The bound name is provably non-negative.
@@ -8508,6 +8675,39 @@ fn finishWhileLowering(ctx: *LowerCtx, fail_idx: ?usize, promo: []const Promotio
             });
         }
     }
+}
+
+/// Self-map deletion: the arm-time proof showed the body reproduces the
+/// loop-entry state on every iteration, so the loop computes nothing. Binds
+/// the induction variable to the trip count -- its value after the loop --
+/// and emits no loop. Returns true when the proven shape matched and the
+/// deletion was emitted, false to fall back to the direct form, the
+/// countdown, or the ordinary loop. Only the emission runs here; the proof
+/// itself settled at arm time (slot markings intact) and is re-verified
+/// below by structural identity only.
+///
+/// Runs inside the promotion's shadow scope (after the preloads, before the
+/// write-backs), so the induction variable and the bound resolve through
+/// `ctx.locals` exactly as the ordinary loop would see them. The surviving
+/// names keep their promoted values -- which equal the entry constants --
+/// and the write-backs carry them out unchanged.
+fn lowerSelfMapCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    if (!plan.self_map) return false;
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .lt) return false;
+    const iv = identOf(b.lhs) orelse return false;
+    if (!std.mem.eql(u8, iv, plan.iv)) return false;
+    const n = plan.bound_lit orelse return false;
+    if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return false;
+    const iv_slot = ctx.locals.get(plan.iv) orelse return false;
+    // Push an empty break list so finishWhileLowering's pop balances.
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    const bound_v = try lowerExpr(ctx, b.rhs);
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
+    return true;
 }
 
 /// Emit the countdown for an armed plan. Returns the latch-test fail index and
