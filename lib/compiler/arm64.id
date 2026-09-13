@@ -266,3 +266,21 @@ asm_for: str = (expr: str)
     return ""
   body = _asm .. "    mov x0, x" .. r:to(str) .. "\n    ret\n"
   ".text\n.global _duo_eval\n.align 2\n_duo_eval:\n" .. body
+
+encode_fmov_d_x: i64 = (d: i64, n: i64)
+  2650800128 | n << 5 | d
+
+encode_fmov_x_d: i64 = (d: i64, n: i64)
+  2650734592 | n << 5 | d
+
+encode_cnt_8b: i64 = (d: i64, n: i64)
+  236306432 | n << 5 | d
+
+encode_addv_8b: i64 = (d: i64, n: i64)
+  238026752 | n << 5 | d
+
+encode_lsr_imm: i64 = (d: i64, n: i64, sh: i64)
+  3537039360 | (64 - sh) << 16 | 63 << 10 | n << 5 | d
+
+encode_rbit: i64 = (d: i64, n: i64)
+  1522532352 | n << 5 | d

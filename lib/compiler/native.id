@@ -50,6 +50,24 @@ madd: i64 = (rd: i64, rn: i64, rm: i64, ra: i64)
 msub: i64 = (rd: i64, rn: i64, rm: i64, ra: i64)
     2600501248 | (rm << 16) | (ra << 10) | (rn << 5) | rd
 
+fmovdx: i64 = (d: i64, n: i64)
+    2650800128 | (n << 5) | d
+
+fmovxd: i64 = (d: i64, n: i64)
+    2650734592 | (n << 5) | d
+
+cnt8b: i64 = (d: i64, n: i64)
+    236306432 | (n << 5) | d
+
+addv8b: i64 = (d: i64, n: i64)
+    238026752 | (n << 5) | d
+
+rbit: i64 = (d: i64, n: i64)
+    1522532352 | (n << 5) | d
+
+lsrimm: i64 = (d: i64, n: i64, sh: i64)
+    3537039360 | ((64 - sh) << 16) | (63 << 10) | (n << 5) | d
+
 tbnz: i64 = (n: i64, bit: i64, off: i64)
     922746880 | (((bit >> 5) & 1) << 31) | ((bit & 31) << 19) | ((off & 16383) << 5) | n
 
@@ -424,6 +442,20 @@ deepexpr: str = (c: str, r: i64, a: str, o: i64, e: str, base: i64, names: str)
 
 expr: str = (c: str, t: str, r: i64, base: i64, names: str)
     t = trim(t)
+    if t:sub(1, 16) == "__popcount_neon("
+        arg = trim(t:sub(17, t:len() - 1))
+        c = vget(c, 9, names, arg)
+        c = c .. word(fmovdx(16, 9))
+        c = c .. word(cnt8b(16, 16))
+        c = c .. word(addv8b(16, 16))
+        c = c .. word(fmovxd(r, 16))
+        return c
+    if t:sub(1, 18) == "__bitrev_parallel("
+        arg = trim(t:sub(19, t:len() - 1))
+        c = vget(c, 9, names, arg)
+        c = c .. word(rbit(10, 9))
+        c = c .. word(lsrimm(r, 10, 33))
+        return c
     if isnum(t) == 1
         return imm(c, r, num(t))
     s = strip(t)
@@ -1580,6 +1612,8 @@ main: i64 = ()
     src = compiler.opt.licm.licm(src)
     src = compiler.opt.poly.poly(src)
     src = compiler.opt.unroll.unroll(src)
+    src = compiler.opt.popcount.popcount(src)
+    src = compiler.opt.bitrev.bitrev(src)
     names = ""
     code = ""
     code = code .. word(subi(31, 31, 2048))

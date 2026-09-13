@@ -5177,6 +5177,10 @@ pub const Sema = struct {
                     if (std.mem.eql(u8, bn, "gatecap") and c.args.len == 1) return .str;
                     if (std.mem.eql(u8, bn, "incarnation") and c.args.len == 0) return .str;
                     if (std.mem.eql(u8, bn, "execap") and c.args.len == 3) return .str;
+                    if (std.mem.eql(u8, bn, "procrun") and c.args.len == 3) return .str;
+                    if (std.mem.eql(u8, bn, "monotime") and c.args.len == 0) return .i64;
+                    if (std.mem.eql(u8, bn, "filesize") and c.args.len == 1) return .i64;
+                    if (std.mem.eql(u8, bn, "sha256file") and c.args.len == 1) return .str;
                     if (std.mem.eql(u8, bn, "__sizeof") or
                         std.mem.eql(u8, bn, "__alignof") or
                         std.mem.eql(u8, bn, "__offsetof"))

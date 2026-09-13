@@ -1,0 +1,100 @@
+hex: str = (v: i64)
+    digits = "0123456789abcdef"
+    d = 0
+    i = 0
+    while i < 1
+        d = (v & 15) + 1
+        i = i + 1
+    digits:sub(d, d)
+
+pair: str = (v: i64)
+    a = ""
+    i = 0
+    while i < 1
+        a = hex(v >> 4) .. hex(v)
+        i = i + 1
+    a
+
+padname: str = (name: str)
+    out = name
+    i = 0
+    while i < 1
+        while out:len() < 16
+            out = out .. " "
+        i = i + 1
+    out
+
+arnum: str = (v: i64, w: i64)
+    s = ""
+    i = 0
+    while i < 1
+        t = v
+        if t == 0
+            s = "0"
+        else
+            while t > 0
+                s = string.char(48 + (t % 10)) .. s
+                t = t / 10
+        while s:len() < w
+            s = s .. " "
+        i = i + 1
+    s
+
+arheader: str = (name: str, size: i64)
+    out = ""
+    i = 0
+    while i < 1
+        out = padname(name) .. arnum(0, 12) .. arnum(0, 6) .. arnum(0, 6) .. arnum(33188, 8) .. arnum(size, 10) .. "`\n"
+        i = i + 1
+    out
+
+w: i64 = (b: i64)
+    stdout:write(string.char(b))
+    0
+
+nib: i64 = (c: i64)
+    r = 0
+    i = 0
+    while i < 1
+        if c >= 48 and c <= 57
+            r = c - 48
+        else
+            if c >= 97 and c <= 102
+                r = c - 87
+        i = i + 1
+    r
+
+emithex: i64 = (h: str)
+    i = 1
+    n = h:len()
+    while i < n
+        w(nib(h:byte(i)) * 16 + nib(h:byte(i + 1)))
+        i = i + 2
+    0
+
+main: i64 = ()
+    stdout:write("!<arch>\n")
+    input = stdin:read()
+    i = 0
+    while i < 1
+        j = 1
+        start = 1
+        name = ""
+        while j <= input:len() + 1
+            if j > input:len() or input:byte(j) == 10
+                line = ""
+                if j > start
+                    line = input:sub(start, j - 1)
+                if line:len() > 5 and line:sub(1, 5) == "NAME:"
+                    name = line:sub(6, line:len())
+                if line:len() > 5 and line:sub(1, 5) == "DATA:"
+                    data = line:sub(6, line:len())
+                    hdr = arheader(name, data:len() / 2)
+                    stdout:write(hdr)
+                    emithex(data)
+                    if (data:len() / 2) & 1 == 1
+                        w(10)
+                start = j + 1
+            j = j + 1
+        i = i + 1
+    0
