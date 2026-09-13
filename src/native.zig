@@ -4754,7 +4754,7 @@ const Arm64Compiler = struct {
                     const lhs_held = self.holdReg(lhs, pinned);
                     const dst = preferred_result orelse try self.allocReg();
                     if (preferred_result != null) self.claimReg(dst);
-                    try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty);
+                    try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty, ins.dividend);
                     if (lhs_held) self.gp_reg_owner[lhs] = null;
                     if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
@@ -6958,6 +6958,7 @@ const Arm64Compiler = struct {
         k: i64,
         op: dnir.BinOpTag,
         ty: native_types.ResolvedType,
+        dividend: dnir.DivisorSign,
     ) Error!void {
         const w32 = wForm32(ty, op);
         var fitted = false;
@@ -7006,15 +7007,22 @@ const Arm64Compiler = struct {
             .div => {
                 if (k == 1) {
                     try self.emitMovReg(dst, lhs);
-                } else {
-                    // Z3-verified trunc div by 2^a: bias+asr.
-                    // Proofs: research/wsuperopt/proofs/div_pow2_*.
-                    const sh = powerOfTwoShift(k).?;
-                    try self.emitAsrImm(dst, lhs, 63);
-                    try self.emitLsrImm(dst, dst, @intCast(64 - @as(u7, sh)));
-                    try self.emitAddReg(dst, lhs, dst);
-                    try self.emitAsrImm(dst, dst, sh);
-                }
+                } else if (powerOfTwoShift(k)) |sh| {
+                    if (dividend.proved()) {
+                        // A non-negative dividend needs no bias correction:
+                        // trunc(x / 2^a) = x lsr a for x >= 0. The published
+                        // width bounds the true value below 2^63, so the
+                        // register holds the value itself, sign bit clear.
+                        try self.emitLsrImm(dst, lhs, sh);
+                    } else {
+                        // Z3-verified trunc div by 2^a: bias+asr.
+                        // Proofs: research/wsuperopt/proofs/div_pow2_*.
+                        try self.emitAsrImm(dst, lhs, 63);
+                        try self.emitLsrImm(dst, dst, @intCast(64 - @as(u7, sh)));
+                        try self.emitAddReg(dst, lhs, dst);
+                        try self.emitAsrImm(dst, dst, sh);
+                    }
+                } else unreachable; // constBinopRealization gates
             },
             // `x // 1 = x`; `x // 2^n = x asr n` under FLOORED law, for every
             // x, with no range fact. `asr` and not `lsr`: the arithmetic shift

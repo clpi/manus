@@ -15171,6 +15171,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
         // lowered value: a `dnir.Value` is a slot or an immediate and carries
         // no derivation, while the published fact is keyed on places.
         .divisor = divisorSign(ctx, f64_op, tag, rhs),
+        .dividend = dividendSign(ctx, f64_op, tag, lhs),
     });
     return .{ .temp = t };
 }
@@ -15210,6 +15211,32 @@ fn divisorSign(
         return .{ .binding = subject };
     }
     const width = ctx.graph.nonNegativeWidthOfExpr(relation, rhs) orelse return .unknown;
+    return .{ .derived = width };
+}
+
+/// WHY THE DIVIDEND OF THIS OPERATION IS NON-NEGATIVE — the mirror of
+/// `divisorSign`, asked of the dividend's source expression. Only the
+/// truncating `.div` with a constant power-of-two divisor consumes it: a
+/// non-negative dividend needs no bias correction, so the backend emits one
+/// `lsr` instead of the four-instruction bias+asr. The derivation stays in
+/// sema for the same reason as `divisorSign`'s: `gate/layering.sh` refuses
+/// the edge, and a backend re-deriving meaning at emission time is how two
+/// places come to decide the same thing and disagree.
+fn dividendSign(
+    ctx: *LowerCtx,
+    f64_op: bool,
+    tag: dnir.BinOpTag,
+    lhs: *const ast.Expr,
+) dnir.DivisorSign {
+    if (f64_op) return .unknown;
+    if (tag != .div) return .unknown;
+    const relation = ctx.function orelse return .unknown;
+    if (lhs.* == .name) {
+        const subject = ctx.graph.bindingNamedIn(relation, lhs.name.ident) orelse return .unknown;
+        if (ctx.graph.nonNegativeWidth(subject) == null) return .unknown;
+        return .{ .binding = subject };
+    }
+    const width = ctx.graph.nonNegativeWidthOfExpr(relation, lhs) orelse return .unknown;
     return .{ .derived = width };
 }
 
