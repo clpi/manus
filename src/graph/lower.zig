@@ -3086,7 +3086,7 @@ fn lowerModuleFromGraph(
         if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "function-provenance-collision");
         slot.value_ptr.* = entity;
     }
-    try Parameter.admit(graph, &declarations, diagnostic);
+    try Parameter.admit(alloc, graph, &declarations, diagnostic);
     var decl_it = declarations.iterator();
     while (decl_it.next()) |entry| {
         const fd = entry.key_ptr.*;
@@ -19217,7 +19217,7 @@ test "dnir_lower: inferred parameter and explicit any refuse floating or unknown
     for ([_][]const u8{ "", ": any" }) |annotation| {
         const source = try std.fmt.allocPrint(
             alloc,
-            "identity = (value{s}) value\nmain = () identity(7)\n" ++
+            "identity = (value{s}) value\nmain = (keep) identity(7)\n" ++
                 "floating: f64 = (value: f64) value\nother: f64 = () floating(7.5)\n",
             .{annotation},
         );
@@ -19269,14 +19269,14 @@ test "dnir_lower: inferred parameter and explicit any refuse floating or unknown
         try declarations.put(alloc, &module.body.stmts[0].func_decl, target);
         graph.nodes.items[subject].descriptor = .i64;
         var diagnostic: Diagnostic = .{};
-        try Parameter.admit(&graph, &declarations, &diagnostic);
+        try Parameter.admit(alloc, &graph, &declarations, &diagnostic);
         graph.nodes.items[subject].descriptor = .{ .pointer = &element };
-        try Parameter.admit(&graph, &declarations, &diagnostic);
+        try Parameter.admit(alloc, &graph, &declarations, &diagnostic);
         graph.nodes.items[subject].descriptor = .f64;
         const linkage = graph.callable_linkage_rows.get(target).?;
         graph.callable_linkages.items[linkage].origin = .c;
         graph.callable_linkages.items[linkage].exposure = .c_import;
-        try Parameter.admit(&graph, &declarations, &diagnostic);
+        try Parameter.admit(alloc, &graph, &declarations, &diagnostic);
     }
 }
 
@@ -21766,11 +21766,32 @@ const Parameter = struct {
     }
 
     fn admit(
+        alloc: std.mem.Allocator,
         graph: *const semantic_graph.SemanticGraph,
         declarations: *const std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.id),
         diagnostic: *Diagnostic,
     ) Error!void {
+        // Applications inside a relation that folds to a constant are realized
+        // nowhere: the folder replaces the whole body with the constant, so no
+        // runtime call survives and no arguments are passed anywhere. Admission
+        // guards runtime argument passing, so it must not see them. The fold
+        // predicate is the same one lowering uses (`foldRelationBody`), so a
+        // skip here and a fold there cannot disagree.
+        var folded_apps = std.AutoHashMapUnmanaged(semantic_graph.id, void){};
+        defer folded_apps.deinit(alloc);
+        var fold_it = declarations.iterator();
+        while (fold_it.next()) |entry| {
+            const fd = entry.key_ptr.*;
+            const entity = entry.value_ptr.*;
+            if (fd.func.params.len != 0 or fd.func.vararg or fd.func.vararg_name != null) continue;
+            if (comptime_eval.foldRelationBody(alloc, graph, entity, &fd.func) != null) {
+                for (graph.applicationsInCaller(entity)) |application| {
+                    try folded_apps.put(alloc, application, {});
+                }
+            }
+        }
         for (graph.application_facts.items) |application| {
+            if (folded_apps.contains(application.application)) continue;
             const target = graph.applicationTarget(application.application) orelse continue;
             const node = graph.get(target) orelse continue;
             if (node.kind != .func) continue;
@@ -21780,7 +21801,12 @@ const Parameter = struct {
             if (!shouldIncludeFuncDecl(declaration, graph)) continue;
             var untyped = false;
             for (declaration.func.params) |parameter| {
-                if (isAnyType(parameter.typ) or (parameter.typ == .inferred and resolveType(parameter.typ) == .any))
+                // `specialized` marks a parameter sema inferred from the body:
+                // the spelling now looks declared, but the type is still a
+                // guess, so the call site must be verified against it.
+                if (isAnyType(parameter.typ) or
+                    (parameter.typ == .inferred and resolveType(parameter.typ) == .any) or
+                    parameter.specialized)
                     untyped = true;
             }
             if (!untyped) continue;
@@ -21792,7 +21818,8 @@ const Parameter = struct {
             if (offset + arguments.len != declaration.func.params.len)
                 return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
             for (declaration.func.params, 0..) |parameter, index| {
-                if (!isAnyType(parameter.typ) and parameter.typ != .inferred) continue;
+                const inferred = isAnyType(parameter.typ) or parameter.typ == .inferred or parameter.specialized;
+                if (!inferred) continue;
                 const operand = if (index == 0 and subject != null) subject.? else arguments[index - offset];
                 const value = graph.get(operand) orelse
                     return invalidGraphFacts(diagnostic, @src(), "application-parameter-value");
@@ -21800,8 +21827,16 @@ const Parameter = struct {
                     return invalidGraphFacts(diagnostic, @src(), "application-parameter-descriptor");
                 if (descriptor == .any)
                     return invalidGraphFacts(diagnostic, @src(), "any-parameter-operand-unknown");
-                if (descriptor.is_float())
+                if (parameter.specialized) {
+                    // The parameter type is a compiler guess, not a declaration.
+                    // The call site must agree with the guess: crossing the
+                    // float/integral domain would silently reinterpret bits.
+                    const guessed = resolveType(parameter.typ);
+                    if (guessed.is_float() != descriptor.is_float())
+                        return invalidGraphFacts(diagnostic, @src(), "specialized-parameter-domain");
+                } else if (descriptor.is_float()) {
                     return invalidGraphFacts(diagnostic, @src(), "any-parameter-fp-operand");
+                }
                 if (descriptor != .pointer and !types.scalarRepr(descriptor))
                     return invalidGraphFacts(diagnostic, @src(), "any-parameter-operand-abi");
             }

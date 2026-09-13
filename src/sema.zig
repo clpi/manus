@@ -10689,6 +10689,7 @@ pub const Sema = struct {
 
     fn promote_native_i64_signature(fb: *ast.FuncBody) void {
         if (fb.params.len != 1) return;
+        if (fb.params[0].typ == .inferred) fb.params[0].specialized = true;
         fb.params[0].typ = .{ .named = "i64" };
         fb.ret_type = .{ .named = "i64" };
         fb.is_typed = true;
@@ -10696,6 +10697,7 @@ pub const Sema = struct {
 
     fn promote_native_f64_signature(fb: *ast.FuncBody) void {
         if (fb.params.len != 1) return;
+        if (fb.params[0].typ == .inferred) fb.params[0].specialized = true;
         fb.params[0].typ = .{ .named = "i64" };
         fb.ret_type = .{ .named = "f64" };
         fb.is_typed = true;
@@ -13509,6 +13511,7 @@ pub const Sema = struct {
         if (fb.params[0].typ != .inferred) return;
         if (self.alias_defs.contains(receiver)) {
             fb.params[0].typ = .{ .named = receiver };
+            fb.params[0].specialized = true;
         }
     }
 
@@ -13607,6 +13610,7 @@ pub const Sema = struct {
             if (p.typ != .inferred) continue;
             if (types.rt_to_type_name(pt)) |name| {
                 p.typ = .{ .named = name };
+                p.specialized = true;
             } else return;
         }
         if (types.rt_to_type_name(ret_t)) |name| {

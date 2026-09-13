@@ -311,6 +311,12 @@ pub const FuncParam = struct {
     typ: TypeExpr,
     default_val: ?*Expr = null,
     loc: Loc,
+    /// Set by sema when it rewrites an `.inferred` type to a concrete guess
+    /// (NativeInfer specialization, shape-based signature promotion, method
+    /// self seeding). The spelling no longer shows the inference, but backend
+    /// admission must still treat the type as a guess and verify call sites
+    /// against it instead of trusting it like a declaration.
+    specialized: bool = false,
 };
 
 pub const Upvalue = struct {

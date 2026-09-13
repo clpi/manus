@@ -1,0 +1,43 @@
+total: f64 = (a: f64, b: f64)
+  a + b
+uadd = (a, b)
+  a + b
+directlit: i64 = ()
+  if 0.1 + 0.2 == 0.3
+    1
+  else
+    0
+localbind: i64 = ()
+  la = 0.1
+  lb = 0.2
+  if la + lb == 0.3
+    1
+  else
+    0
+unanncall: i64 = ()
+  if uadd(0.1, 0.2) == 0.3
+    1
+  else
+    0
+f64call: i64 = ()
+  if total(0.1, 0.2) == 0.3
+    1
+  else
+    0
+strictlit: i64 = ()
+  if 0.1 + 1e-19 == 0.1
+    1
+  else
+    0
+strictlocal: i64 = ()
+  lx = 0.1
+  if lx + 1e-19 == 0.1
+    1
+  else
+    0
+print(directlit())
+print(localbind())
+print(unanncall())
+print(f64call())
+print(strictlit())
+print(strictlocal())
