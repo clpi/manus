@@ -16,9 +16,9 @@ Measurement-integrity contract (the point of this file):
         idol : produce (nativebench rc 0) -> decode (valid nonempty hex) ->
                link (ld rc 0) -> validate (executable exists, size > 0)
         clang/gcc: compile (cc rc 0) -> validate (executable exists, size > 0)
-  - Failed attempts are recorded as FAILED work (stage, rc, stderr tail, and
-    the wall-clock cost of the failed attempt). They stay visible in the
-    output but are NEVER mixed into the success median.
+  - Failed attempts are recorded as FAILED work (stage, rc, stderr tail,
+    stdout tail, and the wall-clock cost of the failed attempt). They stay
+    visible in the output but are NEVER mixed into the success median.
   - The producer exits 0 even when every attempt fails: a failed compilation
     is data, not a harness crash. It exits nonzero only on harness errors
     (bad arguments, missing inputs).
@@ -52,13 +52,17 @@ def validate_artifact(path):
     return None
 
 
-def failed(stage, rc, t0, stderr):
+def failed(stage, rc, t0, stderr, stdout=b""):
+    # stdout_tail: compilers may report the rejection on stdout (e.g. the
+    # native backend's "indexed array memory unsupported" goes to stdout);
+    # a failure record that cannot show the reason is failed evidence.
     return {
         "status": "failed",
         "stage": stage,
         "rc": rc,
         "duration_s": time.perf_counter() - t0,
         "stderr_tail": (stderr or b"")[-300:].decode("utf-8", "replace"),
+        "stdout_tail": (stdout or b"")[-300:].decode("utf-8", "replace"),
     }
 
 
@@ -78,7 +82,7 @@ def attempt_idol(native, prog_id, sdk, workdir, tag):
     with open(prog_id, "rb") as fh:
         p1 = run([native], stdin=fh)
     if p1.returncode != 0:
-        return failed("produce", p1.returncode, t0, p1.stderr)
+        return failed("produce", p1.returncode, t0, p1.stderr, p1.stdout)
     try:
         code = bytes.fromhex(p1.stdout.decode("ascii"))
     except Exception as e:  # noqa: BLE001 - any decode failure is failed work
@@ -89,7 +93,7 @@ def attempt_idol(native, prog_id, sdk, workdir, tag):
         fh.write(code)
     p3 = run(["ld"] + LD_FLAGS + ["-syslibroot", sdk, obj, "-lSystem", "-o", exe])
     if p3.returncode != 0:
-        return failed("link", p3.returncode, t0, p3.stderr)
+        return failed("link", p3.returncode, t0, p3.stderr, p3.stdout)
     why = validate_artifact(exe)
     if why is not None:
         return failed("validate", why, t0, b"")
@@ -102,7 +106,7 @@ def attempt_cc(cc, prog_c, workdir, tag):
     exe = os.path.join(workdir, tag + ".cto-" + cc)
     p = run([cc, "-O3", prog_c, "-o", exe])
     if p.returncode != 0:
-        return failed("compile", p.returncode, t0, p.stderr)
+        return failed("compile", p.returncode, t0, p.stderr, p.stdout)
     why = validate_artifact(exe)
     if why is not None:
         return failed("validate", why, t0, b"")
