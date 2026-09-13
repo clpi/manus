@@ -84,22 +84,22 @@ mkreq() {
 
 # Test 1: exact constant fold
 OUT=$(run_recover "$(mkreq "$SUBJ1" "$H1" "value" "x")")
-if echo "$OUT" | check_json; then
-  CLS=$(echo "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); print(p['classification'], p.get('value'), p.get('witness',{}).get('transform'))")
+if printf '%s\n' "$OUT" | check_json; then
+  CLS=$(printf '%s\n' "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); print(p['classification'], p.get('value'), p.get('witness',{}).get('transform'))")
   if [ "$CLS" = "exactly-recoverable 5 compiler.opt.licm.foldlit" ]; then ok "1 exact fold"; else fail "1 exact fold (got: $CLS)"; fi
 else fail "1 exact fold (invalid JSON)"; fi
 
 # Test 2: LICM hoist
 OUT=$(run_recover "$(mkreq "$SUBJ2" "$H2" "value" "t")")
-if echo "$OUT" | check_json; then
-  CLS=$(echo "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); print(p['classification'], p.get('value'))")
+if printf '%s\n' "$OUT" | check_json; then
+  CLS=$(printf '%s\n' "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); print(p['classification'], p.get('value'))")
   if [ "$CLS" = "exactly-recoverable 7" ]; then ok "2 licm hoist"; else fail "2 licm hoist (got: $CLS)"; fi
 else fail "2 licm hoist (invalid JSON)"; fi
 
 # Test 3: zero-trip eliminated (no guessed value)
 OUT=$(run_recover "$(mkreq "$SUBJ3" "$H3" "value" "s")")
-if echo "$OUT" | check_json; then
-  RES=$(echo "$OUT" | python3 -c "
+if printf '%s\n' "$OUT" | check_json; then
+  RES=$(printf '%s\n' "$OUT" | python3 -c "
 import sys,json
 d=json.loads(sys.stdin.read())
 p=json.loads(d['result']['content'][0]['text'])
@@ -112,22 +112,22 @@ else fail "3 zero-trip (invalid JSON)"; fi
 
 # Test 4: runtime-dependent
 OUT=$(run_recover "$(mkreq "$SUBJ4" "$H4" "value" "result")")
-if echo "$OUT" | check_json; then
-  CLS=$(echo "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); c=p['classification']; cost=p.get('cost',{}); print(c, 'cost' if cost.get('additional_bytes_per_event') else 'nocost')")
+if printf '%s\n' "$OUT" | check_json; then
+  CLS=$(printf '%s\n' "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); c=p['classification']; cost=p.get('cost',{}); print(c, 'cost' if cost.get('additional_bytes_per_event') else 'nocost')")
   if [ "$CLS" = "requires-additional-observation cost" ]; then ok "4 runtime observation"; else fail "4 runtime (got: $CLS)"; fi
 else fail "4 runtime (invalid JSON)"; fi
 
 # Test 5: mask partial
 OUT=$(run_recover "$(mkreq "$SUBJ5" "$H5" "value" "masked")")
-if echo "$OUT" | check_json; then
-  CLS=$(echo "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); b=p.get('bound',{}); print(p['classification'], b.get('min'), b.get('max'), 'hasvalue' if 'value' in p else 'novalue')")
+if printf '%s\n' "$OUT" | check_json; then
+  CLS=$(printf '%s\n' "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); b=p.get('bound',{}); print(p['classification'], b.get('min'), b.get('max'), 'hasvalue' if 'value' in p else 'novalue')")
   if [ "$CLS" = "partially-recoverable 0 255 novalue" ]; then ok "5 mask partial"; else fail "5 mask (got: $CLS)"; fi
 else fail "5 mask (invalid JSON)"; fi
 
 # Test 6: wrong hash -> refusal, no classification
 OUT=$(run_recover "$(mkreq "$SUBJ1" "0000000000000000000000000000000000000000000000000000000000000000" "value" "x")")
-if echo "$OUT" | check_json; then
-  RES=$(echo "$OUT" | python3 -c "
+if printf '%s\n' "$OUT" | check_json; then
+  RES=$(printf '%s\n' "$OUT" | python3 -c "
 import sys,json
 d=json.loads(sys.stdin.read())
 e=d.get('error',{})
@@ -140,8 +140,8 @@ else fail "6 wrong hash (invalid JSON)"; fi
 
 # Test 7: unreadable file -> refusal
 OUT=$(run_recover "$(mkreq "/tmp/nonexistent-xyz.id" "abcd" "value" "x")")
-if echo "$OUT" | check_json; then
-  RES=$(echo "$OUT" | python3 -c "
+if printf '%s\n' "$OUT" | check_json; then
+  RES=$(printf '%s\n' "$OUT" | python3 -c "
 import sys,json
 d=json.loads(sys.stdin.read())
 msg=json.loads(d['error']['message'])
@@ -154,24 +154,24 @@ else fail "7 unreadable (invalid JSON)"; fi
 # Test 8: missing target -> -32602
 REQ='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"recover","arguments":{"file":"/tmp/x","subject_hash":"y","query":{"kind":"value"}}}}'
 OUT=$(run_recover "$REQ")
-CODE=$(echo "$OUT" | python3 -c "import sys,json; print(json.loads(sys.stdin.read())['error']['code'])" 2>/dev/null)
+CODE=$(printf '%s\n' "$OUT" | python3 -c "import sys,json; print(json.loads(sys.stdin.read())['error']['code'])" 2>/dev/null)
 if [ "$CODE" = "-32602" ]; then ok "8 missing target"; else fail "8 missing target (got: $CODE)"; fi
 
 # Test 9: invalid kind -> -32602
 OUT=$(run_recover "$(mkreq "$SUBJ1" "$H1" "bogus" "x")")
-CODE=$(echo "$OUT" | python3 -c "import sys,json; print(json.loads(sys.stdin.read())['error']['code'])" 2>/dev/null)
+CODE=$(printf '%s\n' "$OUT" | python3 -c "import sys,json; print(json.loads(sys.stdin.read())['error']['code'])" 2>/dev/null)
 if [ "$CODE" = "-32602" ]; then ok "9 invalid kind"; else fail "9 invalid kind (got: $CODE)"; fi
 
 # Test 10: unknown target -> refusal (not a guess)
 OUT=$(run_recover "$(mkreq "$SUBJ1" "$H1" "value" "nonexistent")")
-if echo "$OUT" | check_json; then
-  CLS=$(echo "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); print(p['classification'], 'hasvalue' if 'value' in p else 'novalue')")
+if printf '%s\n' "$OUT" | check_json; then
+  CLS=$(printf '%s\n' "$OUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); p=json.loads(d['result']['content'][0]['text']); print(p['classification'], 'hasvalue' if 'value' in p else 'novalue')")
   if [ "$CLS" = "not-recoverable-from-this-run novalue" ]; then ok "10 unknown target"; else fail "10 unknown target (got: $CLS)"; fi
 else fail "10 unknown target (invalid JSON)"; fi
 
 # Test 11: 64-hex hashes and revision present
 OUT=$(run_recover "$(mkreq "$SUBJ1" "$H1" "value" "x")")
-RES=$(echo "$OUT" | python3 -c "
+RES=$(printf '%s\n' "$OUT" | python3 -c "
 import sys,json,re
 d=json.loads(sys.stdin.read())
 p=json.loads(d['result']['content'][0]['text'])
