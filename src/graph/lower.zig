@@ -15290,6 +15290,19 @@ fn lowerSubjectCall(
             }
         }
         if (std.mem.eql(u8, mc.method, "len") and mc.args.len == 0) {
+            // A positional table's length is its tracked descriptor, not a
+            // string scan. `t:len()` where `t` is a table answers the element
+            // count; routing it through `str_len` was a descriptor loss.
+            if (mc.obj.* == .name and nameIsPositionalTable(ctx, mc.obj.name.ident)) {
+                const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{mc.obj.name.ident});
+                defer ctx.alloc.free(len_key);
+                if (ctx.locals.get(len_key)) |len_slot| {
+                    if (ctx.table_lens.get(len_slot)) |n| {
+                        if (consumption == .discard) return .void;
+                        return .{ .i64 = n };
+                    }
+                }
+            }
             // THE LENGTH IS CARRIED WHEN THE PROGRAM ALREADY DETERMINES IT.
             // `str_len` is a scan to the first NUL in both realizations, so a
             // determined value must never reach it: `"a\0b":len()` answered 1
