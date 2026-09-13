@@ -470,16 +470,27 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
         // O3 lives here, and it is the whole reason the graph is threaded in.
         // `.none` is the only card that discharges it. `.unknown` is an effect.
         //
-        // It discharges ONLY O3. An effect-free relation may still trap or
-        // diverge, and the graph has no separate application facts proving
-        // either impossible. A recursive relation with no world interaction
-        // deliberately publishes `effect = .none`; treating that as totality
-        // changed a hang into a return. Keep every call until exact trap and
-        // completion facts discharge O2 and O4 independently.
+        // O2 AND O4 live here too, discharged by their OWN cards, never by
+        // O3's. An effect-free relation may still trap or diverge: a
+        // recursive relation with no world interaction deliberately publishes
+        // `effect = .none`, and treating that as totality changed a hang into
+        // a return. The call deletes only when all three hold — effect-free,
+        // provably trap-free, provably completing — with inert operands and
+        // receiver.
         .call, .method_call => blk: {
             const graph = opts.graph orelse break :blk .has_effect;
-            const fact = applicationOf(graph, e) orelse break :blk .has_effect;
+            // THE OCCURRENCE THE CALL IS. `callByAst` confirms the index
+            // against the node's own kind and ast_ref; a miss refuses.
+            const occurrence = graph.callByAst(e) orelse break :blk .has_effect;
+            const fact = graph.application(occurrence) orelse break :blk .has_effect;
             if (fact.effect != .none) break :blk .has_effect;
+            // O2: a trapping application stays a trap. `effect = .none`
+            // never proved trap-freedom; only the explicit trap card does.
+            if (fact.trap != .none) break :blk .may_trap;
+            // O4: a nonterminating application stays nonterminating.
+            // `effect = .none` never proved completion; only the explicit
+            // completion card does.
+            if (fact.completion != .none) break :blk .may_not_terminate;
             const args: []const *ast.Expr = switch (e.*) {
                 .call => |c| c.args,
                 .method_call => |m| m.args,
@@ -487,7 +498,7 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
             };
             for (args) |a| if (inert(opts, a)) |b| break :blk b;
             if (e.* == .method_call) if (inert(opts, e.method_call.obj)) |b| break :blk b;
-            break :blk .may_not_terminate;
+            break :blk null;
         },
 
         // Reads through a place. The graph cannot express a place, so
@@ -496,23 +507,6 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
 
         else => .unsupported_shape,
     };
-}
-
-/// The checked application fact for a call expression, when the graph has one.
-fn applicationOf(
-    graph: *const semantic_graph.SemanticGraph,
-    e: *const ast.Expr,
-) ?*const semantic_graph.ApplicationFact {
-    var i: usize = 0;
-    while (i < graph.nodes.items.len) : (i += 1) {
-        const node = graph.nodes.items[i];
-        if (node.kind != .call) continue;
-        const ref = node.ast_ref orelse continue;
-        if (@as(*const ast.Expr, @ptrCast(@alignCast(ref))) != e) continue;
-        const occurrence = std.math.cast(semantic_graph.id, i) orelse return null;
-        return graph.application(occurrence);
-    }
-    return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2438,7 +2432,12 @@ test "demand: O2 — effect-free application is not a trap proof" {
     try std.testing.expectEqual(@as(u32, 0), result.dead);
 }
 
-test "demand: an effect-free leaf still needs a completion proof" {
+test "demand: an effect-free leaf with completion and trap proofs deletes" {
+    // `triple` is effect-free, provably trap-free (`v * 3` cannot trap), and
+    // provably completing (no loop, no recursion, no unresolved calls), so
+    // the graph publishes all three cards and demand deletes the dead call.
+    // This is the optimization the O2/O4 negative controls bound: deletion
+    // happens if and only if all three facts hold.
     const result = try deadCountWithGraph(
         \\triple: i64 = (v: i64)
         \\    v * 3
@@ -2449,7 +2448,7 @@ test "demand: an effect-free leaf still needs a completion proof" {
         \\
     );
     try std.testing.expectEqual(@as(u32, 1), result.effect_free);
-    try std.testing.expectEqual(@as(u32, 0), result.dead);
+    try std.testing.expectEqual(@as(u32, 1), result.dead);
 }
 
 test "demand: O5 — a break inside the dead loop keeps it" {
