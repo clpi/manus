@@ -229,14 +229,14 @@ fn refuseMissingApplication(
 const ModuleConsts = struct {
     ints: std.StringHashMapUnmanaged(i64) = .empty,
     strs: std.StringHashMapUnmanaged([]const u8) = .empty,
-    /// Exact decimal value of a stable module-level decimal binding.
-    /// 0.1 names one tenth; the f64 nearest it does not, so a comparison
-    /// that lowers through f64 answers about the roundings. This table
-    /// carries the named value from the collection walk (which proves
-    /// stability -- see collectModuleConsts) to the comparison fold in
-    /// lowerBinop, which decides the comparison on the values named.
-    /// Values are copied decimal structs; keys are duped like the tables.
-    decimals: std.StringHashMapUnmanaged(decimal.Decimal) = .empty,
+    /// Stable module-level numeric bindings, in the one producer's carrier.
+    /// `ma = 0.1` records one tenth exactly; `fa: f64 = 0.1` records the f64
+    /// nearest it -- the binding's own float contract is applied at
+    /// population, so the fold in lowerBinop never re-derives it. This table
+    /// is a stability-checked cache, not a second numeric law: the values
+    /// come from comptime_eval and the comparisons are answered by it.
+    /// Keys are duped like the other tables; values are plain structs.
+    nums: std.StringHashMapUnmanaged(comptime_eval.Value) = .empty,
     /// Module-level positional tables whose every element is text. The function
     /// path carries this in `LowerCtx.str_tables` via `noteStrTable`; a module
     /// binding has no `LowerCtx`, so it is recorded here and read at the same
@@ -269,9 +269,9 @@ const ModuleConsts = struct {
         var sit = self.strs.iterator();
         while (sit.next()) |e| alloc.free(e.key_ptr.*);
         self.strs.deinit(alloc);
-        var decit = self.decimals.iterator();
-        while (decit.next()) |e| alloc.free(e.key_ptr.*);
-        self.decimals.deinit(alloc);
+        var numit = self.nums.iterator();
+        while (numit.next()) |e| alloc.free(e.key_ptr.*);
+        self.nums.deinit(alloc);
         var tit = self.str_tables.iterator();
         while (tit.next()) |e| alloc.free(e.key_ptr.*);
         self.str_tables.deinit(alloc);
@@ -1999,6 +1999,10 @@ fn constGlobalInit(init: *const Expr, ty: RT) ?dnir.Value {
             dnir.Value{ .f64 = @floatFromInt(n) }
         else
             dnir.Value{ .i64 = n },
+        .decimal => |d| if (ty == .f64)
+            dnir.Value{ .f64 = d.toFloat() }
+        else
+            null,
         .float => |f| if (ty == .f64) dnir.Value{ .f64 = f } else null,
         .bool => |b| if (ty == .f64) null else dnir.Value{ .i64 = @intFromBool(b) },
         .nil => dnir.Value{ .i64 = 0 },
@@ -2314,76 +2318,6 @@ pub fn moduleConstTableKind(
     return if (all_int) .int else .text;
 }
 
-/// How decimalOfExpr resolves a `.name`.
-const DecimalScope = union(enum) {
-    /// Population time (collectModuleConsts): names resolve through the
-    /// tables being built, so `b = a` chains onto an earlier binding.
-    /// Integer constants resolve through decimal.fromInt, which is exact.
-    init: struct {
-        decimals: *const std.StringHashMapUnmanaged(decimal.Decimal),
-        ints: *const std.StringHashMapUnmanaged(i64),
-    },
-    /// Fold time (lowerBinop): names resolve only through the finished
-    /// module tables, and only to decimals. A name that also names an
-    /// integer constant declines: mixed int/decimal comparisons are a
-    /// separate divergence the fold must not adjudicate, so they keep the
-    /// runtime answer.
-    fold: *const LowerCtx,
-};
-
-/// The exact decimal an expression names, or null when it names anything else.
-///
-/// A float literal carries its spelling value on the AST (float_lit.dec; a
-/// spelling the decimal carrier declined, like a hex float, has none and the
-/// fold declines). `+`, `-`, `*` and unary `-` stay exact through decimal.zig;
-/// division, calls and indexing are not exact-decimal facts and decline the
-/// whole comparison. Every decimal.zig relation is total and bounded: it
-/// answers, or declines with null -- never traps.
-fn decimalOfExpr(scope: DecimalScope, expr: *const Expr) ?decimal.Decimal {
-    return switch (expr.*) {
-        .float_lit => |fl| fl.dec,
-        .unop => |u| switch (u.op) {
-            .neg => (decimalOfExpr(scope, u.operand) orelse return null).neg(),
-            else => null,
-        },
-        .binop => |b| {
-            const l = decimalOfExpr(scope, b.lhs) orelse return null;
-            const r = decimalOfExpr(scope, b.rhs) orelse return null;
-            return switch (b.op) {
-                .add => decimal.add(l, r),
-                .sub => decimal.sub(l, r),
-                .mul => decimal.mul(l, r),
-                else => null,
-            };
-        },
-        .name => |nm| decimalOfName(scope, nm.ident),
-        else => null,
-    };
-}
-
-fn decimalOfName(scope: DecimalScope, name: []const u8) ?decimal.Decimal {
-    switch (scope) {
-        .init => |t| {
-            if (t.decimals.get(name)) |d| return d;
-            if (t.ints.get(name)) |v| return decimal.fromInt(v);
-            return null;
-        },
-        .fold => |ctx| {
-            // The read must answer for the module binding, never for a
-            // shadow: fused literals, written globals and -- inside a
-            // relation body -- any local all win over the module constant in
-            // the `.name` arm of lowerExprCons, so the fold declines exactly
-            // where that arm would read something else. At module root the
-            // map holds the module bindings themselves; their stability is
-            // established at population time (see collectModuleConsts).
-            if (ctx.fused_literals.contains(name)) return null;
-            if (ctx.module_globals.types.contains(name)) return null;
-            if (!ctx.module_root and ctx.locals.contains(name)) return null;
-            return ctx.module_consts.decimals.get(name);
-        },
-    }
-}
-
 /// Names bound as loop variables by a `for`/`gen for` at module root, outside
 /// any relation body. A loop variable reuses the slot of a same-named module
 /// binding (the first arm of lowerAssignTarget takes the existing slot), so
@@ -2391,8 +2325,8 @@ fn decimalOfName(scope: DecimalScope, name: []const u8) ?decimal.Decimal {
 /// but moduleConstIsStable counts only syntactic writes and never sees the
 /// loop-variable write. Recording such a name as an exact decimal would fold
 /// reads after the loop to the stale initializer. Function bodies are not
-/// descended into: there the !ctx.module_root guard in decimalOfName already
-/// declines shadowed names.
+/// descended into: there comparisonNameShadowed already declines shadowed
+/// names.
 fn collectModuleForVarNames(alloc: std.mem.Allocator, mod: *const ast.Module) Error!std.StringHashMapUnmanaged(void) {
     var out: std.StringHashMapUnmanaged(void) = .empty;
     errdefer {
@@ -2449,6 +2383,36 @@ fn forVarNamesInStmts(
     }
 }
 
+/// A stable module binding's numeric value in the producer's carrier, or
+/// null when the initializer is not an exact-decimal fact. Names chain on the
+/// tables built so far, so `b = a` sees an earlier binding; an integer
+/// constant chains as its exact decimal, the way the old init scope did.
+/// Anything else -- a rounded float, a string, a call the empty scope cannot
+/// answer -- declines, and the binding simply is not recorded.
+fn moduleConstNumeric(
+    alloc: std.mem.Allocator,
+    init: *const Expr,
+    nums: *const std.StringHashMapUnmanaged(comptime_eval.Value),
+    ints: *const std.StringHashMapUnmanaged(i64),
+) ?comptime_eval.Value {
+    var scope: std.StringHashMapUnmanaged(comptime_eval.Value) = .empty;
+    defer scope.deinit(alloc);
+    var nit = nums.iterator();
+    while (nit.next()) |e| scope.put(alloc, e.key_ptr.*, e.value_ptr.*) catch return null;
+    var iit = ints.iterator();
+    while (iit.next()) |e| scope.put(alloc, e.key_ptr.*, .{ .int = e.value_ptr.* }) catch return null;
+    const scopes = [_]std.StringHashMapUnmanaged(comptime_eval.Value){scope};
+    const v = comptime_eval.evalWithBindings(init, .{ .scopes = &scopes }, .{
+        .step_limit = 10_000,
+        .alloc = alloc,
+    }) catch return null;
+    return switch (v) {
+        .decimal => v,
+        .int => |n| .{ .decimal = decimal.fromInt(n) },
+        else => null,
+    };
+}
+
 fn collectModuleConsts(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -2469,6 +2433,7 @@ fn collectModuleConsts(
     for (mod.body.stmts) |*stmt| {
         var name: ?[]const u8 = null;
         var val: ?*const Expr = null;
+        var typ: ?ast.TypeExpr = null;
         switch (stmt.*) {
             .assign => |as| {
                 if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
@@ -2480,6 +2445,7 @@ fn collectModuleConsts(
                 if (ld.names.len == 1 and ld.inits.len == 1) {
                     name = ld.names[0].ident;
                     val = ld.inits[0];
+                    typ = ld.names[0].typ;
                 }
             },
             // `const WIDTH: i64 = 80` — the DECLARED form of the same thing
@@ -2490,11 +2456,13 @@ fn collectModuleConsts(
             .const_decl => |cd| {
                 name = cd.ident;
                 val = cd.val;
+                typ = cd.typ;
             },
             .global_decl => |gd| {
                 if (gd.names.len == 1 and gd.inits.len == 1) {
                     name = gd.names[0].ident;
                     val = gd.inits[0];
+                    typ = gd.names[0].typ;
                 }
             },
             .enum_def => |ed| {
@@ -2543,16 +2511,27 @@ fn collectModuleConsts(
             try out.strs.put(alloc, try alloc.dupe(u8, n), v.quoted.val);
             continue;
         }
-        // Exact decimal constants. moduleConstIsStable counts syntactic
-        // writes; the graph fact catches what it cannot see; loop
-        // variables are excluded outright (see
-        // collectModuleForVarNames). A name that survives all three
-        // names one value for the whole module, so the fold in
-        // lowerBinop may answer comparisons from it.
+        // Exact numeric constants, valued by the one producer. The guards are
+        // unchanged: moduleConstIsStable counts syntactic writes; the graph
+        // fact catches what it cannot see; loop variables are excluded
+        // outright (see collectModuleForVarNames). A name that survives all
+        // three names one value for the whole module, so the fold in
+        // lowerBinop may answer comparisons from it. The binding's own float
+        // contract is applied here: `fa: f64 = 0.1` records the f64 nearest
+        // one tenth, unqualified `ma = 0.1` records one tenth exactly.
         if (!for_var_names.contains(n) and graph.moduleBindingConstant(n)) {
-            if (decimalOfExpr(.{ .init = .{ .decimals = &out.decimals, .ints = &out.ints } }, v)) |d| {
-                try out.decimals.put(alloc, try alloc.dupe(u8, n), d);
-                continue;
+            if (moduleConstNumeric(alloc, v, &out.nums, &out.ints)) |num| {
+                if (num == .decimal) {
+                    const contracted = if (typ) |t|
+                        comptime_eval.Evaluator.applyFloatContract(
+                            num,
+                            comptime_eval.Evaluator.floatContractOfType(t),
+                        )
+                    else
+                        num;
+                    try out.nums.put(alloc, try alloc.dupe(u8, n), contracted);
+                    continue;
+                }
             }
         }
         // A descriptor is a bare `{ ... }`. `@({ ... })` is comptime eval of a
@@ -3072,7 +3051,7 @@ fn lowerModuleFromGraph(
         while (it.next()) |name| {
             if (module_consts.ints.fetchRemove(name.*)) |e| alloc.free(e.key);
             if (module_consts.strs.fetchRemove(name.*)) |e| alloc.free(e.key);
-            if (module_consts.decimals.fetchRemove(name.*)) |e| alloc.free(e.key);
+            if (module_consts.nums.fetchRemove(name.*)) |e| alloc.free(e.key);
         }
     }
     var records: std.ArrayList(dnir.RecordDesc) = .empty;
@@ -14126,41 +14105,68 @@ pub fn binopTagOf(op: ast.BinOp) ?dnir.BinOpTag {
     };
 }
 
-/// Decide a comparison on the exact decimals its operands name.
+/// Decide a comparison on the exact values its operands name.
 ///
 /// 0.1 names one tenth; the f64 nearest it does not. Ordinary lowering
 /// commits every float literal to f64 before comparing, so 0.1 + 0.2 == 0.3
 /// answered 0 on every backend -- the exact fact was discarded before
 /// emission and the backends correctly executed binary floating-point
-/// arithmetic on the roundings. Deciding the comparison on the decimals the
-/// spellings name restores the answer the source states. Fail-closed: any
-/// operand that is not an exact decimal leaves the comparison on the
-/// ordinary path. Strict exactness, never a tolerance: 0.1 + 1e-19 == 0.1
-/// stays false.
-fn foldDecimalCompare(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) ?bool {
-    const order = switch (op) {
-        .eq, .neq, .lt, .gt, .leq, .geq => decimal.compare(
-            decimalOfExpr(.{ .fold = ctx }, lhs) orelse return null,
-            decimalOfExpr(.{ .fold = ctx }, rhs) orelse return null,
-        ) orelse return null,
+/// arithmetic on the roundings. Deciding the comparison on the values the
+/// spellings name restores the answer the source states, under each binding's
+/// own contract. Fail-closed: any operand the producer cannot value leaves
+/// the comparison on the ordinary path. Strict exactness, never a tolerance:
+/// 0.1 + 1e-19 == 0.1 stays false.
+/// THE COMPARISON FOLD, ANSWERED BY THE ONE PRODUCER. lowerBinop asks
+/// comptime_eval -- the same evaluator that folds relation bodies -- to decide
+/// a comparison over the stable module numeric bindings. The values arrive in
+/// the producer's carrier with each binding's float contract already applied,
+/// so `fa: f64 = 0.1` compares as the f64 nearest one tenth while unqualified
+/// `ma = 0.1` compares as one tenth exactly. A name the read would not answer
+/// from the module binding (fused literal, stored global, or a shadowing
+/// local) declines the fold; anything the producer cannot evaluate declines
+/// too, and the ordinary runtime path below runs unchanged.
+fn foldNumericComparison(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) ?bool {
+    switch (op) {
+        .eq, .neq, .lt, .gt, .leq, .geq => {},
         else => return null,
-    };
-    return switch (op) {
-        .eq => order == .eq,
-        .neq => order != .eq,
-        .lt => order == .lt,
-        .gt => order == .gt,
-        .leq => order != .gt,
-        .geq => order != .lt,
-        else => unreachable,
-    };
+    }
+    if (comparisonNameShadowed(ctx, lhs) or comparisonNameShadowed(ctx, rhs)) return null;
+    var scope: std.StringHashMapUnmanaged(comptime_eval.Value) = .empty;
+    defer scope.deinit(ctx.alloc);
+    var it = ctx.module_consts.nums.iterator();
+    while (it.next()) |e| scope.put(ctx.alloc, e.key_ptr.*, e.value_ptr.*) catch return null;
+    const scopes = [_]std.StringHashMapUnmanaged(comptime_eval.Value){scope};
+    const opts = comptime_eval.Options{ .step_limit = 10_000, .alloc = ctx.alloc };
+    const l = comptime_eval.evalWithBindings(lhs, .{ .scopes = &scopes }, opts) catch return null;
+    const r = comptime_eval.evalWithBindings(rhs, .{ .scopes = &scopes }, opts) catch return null;
+    return comptime_eval.compareValues(op, l, r) catch return null;
+}
+
+/// True when any name inside the expression would NOT read the module binding
+/// at this lowering point: a fused literal, a stored module global, or --
+/// inside a relation body -- a shadowing local. The fold must decline there,
+/// because the value it would compare is not the one the read answers.
+fn comparisonNameShadowed(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    switch (expr.*) {
+        .name => |nm| {
+            const n = nm.ident;
+            if (ctx.fused_literals.contains(n)) return true;
+            if (ctx.module_globals.types.contains(n)) return true;
+            if (!ctx.module_root and ctx.locals.contains(n)) return true;
+            return false;
+        },
+        .binop => |b| return comparisonNameShadowed(ctx, b.lhs) or comparisonNameShadowed(ctx, b.rhs),
+        .unop => |u| return comparisonNameShadowed(ctx, u.operand),
+        else => return false,
+    }
 }
 
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
-    // Exact-decimal comparison fold. Decides the comparison on the
-    // decimals the operand spellings name; declines (null) for anything
-    // else and the ordinary f64 path below runs unchanged.
-    if (foldDecimalCompare(ctx, op, lhs, rhs)) |truth| return .{ .i64 = if (truth) 1 else 0 };
+    // Numeric comparison fold, answered by the one producer. Decides the
+    // comparison on the stable module numeric values the operand spellings
+    // name; declines (null) for anything else and the ordinary f64 path
+    // below runs unchanged.
+    if (foldNumericComparison(ctx, op, lhs, rhs)) |truth| return .{ .i64 = if (truth) 1 else 0 };
     if (op == .concat and concatOperandOk(ctx, lhs) and concatOperandOk(ctx, rhs) and
         (exprIsStr(ctx, lhs) or exprIsStr(ctx, rhs)))
     {
