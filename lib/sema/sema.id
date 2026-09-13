@@ -1,0 +1,72 @@
+ambient = "|io|os|fs|json|process|string|table|math|coroutine|mem|req|print|error|assert|type|tostring|tonumber|pairs|ipairs|next|select|rawlen|rawget|rawset|pcall|xpcall|setmetatable|getmetatable|require|to|from|len|arg|true|false|nil|self|debug|package|utf8|load|dofile|loadstring|unpack|collectgarbage|_G|_VERSION|"
+
+strtoint: i64 = (s: str)
+    v: i64 = 0
+    i: i64 = 1
+    n: i64 = s:len()
+    while i <= n
+        b = s:byte(i)
+        if b >= 48 and b <= 57
+            v = v * 10 + (b - 48)
+        i = i + 1
+    v
+
+seed_scope: str = ()
+    s = scope_new()
+    s = scope_push(s)
+    i: i64 = 1
+    n: i64 = ambient:len()
+    name = ""
+    while i <= n
+        b = ambient:byte(i)
+        if b == 124
+            if name != ""
+                s = scope_define(s, name, 6, 1)
+                name = ""
+        else
+            name = name .. ambient:sub(i, i)
+        i = i + 1
+    s
+
+exprtype: i64 = (s: str, tk: i64, text: str)
+    if tk == 1
+        1
+    else if tk == 2
+        2
+    else if tk == 3
+        3
+    else if tk == 4
+        4
+    else if tk == 5
+        5
+    else if tk == 0
+        t = scope_lookup(s, text)
+        if t == ""
+            6
+        else
+            strtoint(t)
+    else
+        6
+
+checkarith: i64 = (op: str, lt: i64, rt: i64)
+    if op == "+" or op == "-" or op == "*" or op == "%"
+        arithres(lt, rt)
+    else if op == "/"
+        if lt == 1 and rt == 1
+            1
+        else
+            arithres(lt, rt)
+    else if op == "&" or op == "|" or op == "^" or op == "<<" or op == ">>"
+        bitres(lt, rt)
+    else
+        6
+
+validassign: i64 = (lt: i64, rt: i64)
+    if lt == 6 or rt == 6
+        1
+    else if lt == rt
+        1
+    else if lt == 2 and rt == 1
+        1
+    else
+        0

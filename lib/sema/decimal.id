@@ -1,0 +1,52 @@
+decneg: i64 = (d: str)
+    if d:byte(1) == 45
+        1
+    else
+        0
+
+decunits: i64 = (d: str)
+    u: i64 = 0
+    i: i64 = 1
+    n: i64 = d:len()
+    while i <= n
+        b = d:byte(i)
+        if b >= 48 and b <= 57
+            u = u * 10 + (b - 48)
+        i = i + 1
+    u
+
+decexp: i64 = (d: str)
+    e: i64 = 0
+    i: i64 = 1
+    n: i64 = d:len()
+    dot: i64 = 0
+    while i <= n
+        b = d:byte(i)
+        if b == 46
+            dot = i
+        i = i + 1
+    if dot > 0
+        e = dot - n
+    e
+
+decfloat: f64 = (neg: i64, units: i64, exp: i64)
+    v: f64 = units * 1.0
+    if exp < 0
+        k: i64 = 0
+        while k > exp
+            v = v / 10.0
+            k = k - 1
+    else if exp > 0
+        k: i64 = 0
+        while k < exp
+            v = v * 10.0
+            k = k + 1
+    if neg == 1
+        v = 0.0 - v
+    v
+
+decsame: i64 = (n1: i64, u1: i64, e1: i64, n2: i64, u2: i64, e2: i64)
+    if n1 == n2 and u1 == u2 and e1 == e2
+        1
+    else
+        0
