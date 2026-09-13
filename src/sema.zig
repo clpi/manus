@@ -5175,6 +5175,8 @@ pub const Sema = struct {
                 if (c.func.* == .name) {
                     const bn = c.func.name.ident;
                     if (std.mem.eql(u8, bn, "gatecap") and c.args.len == 1) return .str;
+                    if (std.mem.eql(u8, bn, "incarnation") and c.args.len == 0) return .str;
+                    if (std.mem.eql(u8, bn, "execap") and c.args.len == 3) return .str;
                     if (std.mem.eql(u8, bn, "__sizeof") or
                         std.mem.eql(u8, bn, "__alignof") or
                         std.mem.eql(u8, bn, "__offsetof"))

@@ -145,6 +145,15 @@ extern "c" var __stderrp: *anyopaque; // Darwin's `stderr`
 const Handler = *const fn (c_int) callconv(.c) void;
 extern "c" fn signal(sig: c_int, handler: ?Handler) ?Handler;
 extern "c" fn raise(sig: c_int) c_int;
+extern "c" fn fork() c_int;
+extern "c" fn pipe(fds: *[2]c_int) c_int;
+extern "c" fn dup2(oldfd: c_int, newfd: c_int) c_int;
+extern "c" fn close(fd: c_int) c_int;
+extern "c" fn execvp(path: [*:0]const u8, argv: [*][*:0]u8) c_int;
+extern "c" fn waitpid(pid: c_int, status: *c_int, options: c_int) c_int;
+extern "c" fn _exit(code: c_int) noreturn;
+extern "c" fn getentropy(buf: *anyopaque, len: usize) c_int;
+extern "c" fn clock() c_long;
 
 const EOF: c_int = -1;
 const SEEK_SET: c_int = 0;
@@ -413,6 +422,119 @@ export fn idol_process_capture(cmd: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
     const out = readFd(fileno(f));
     _ = pclose(f);
     return out;
+}
+
+/// True per-process incarnation: 32 hex chars from 16 bytes of kernel entropy,
+/// generated ONCE per process and returned from static storage. Two server
+/// processes never share a token; one process never changes it. This replaces
+/// the `date +%s%N` boot marker the MCP tools previously shelled out for.
+var incarnation_token: [33]u8 = undefined;
+var incarnation_done: bool = false;
+
+export fn idol_incarnation() callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
+    if (!incarnation_done) {
+        var raw: [16]u8 = undefined;
+        if (getentropy(&raw, 16) != 0) {
+            var mixed: usize = @intFromPtr(&raw) ^ @as(usize, @bitCast(@as(isize, @intCast(clock()))));
+            var k: usize = 0;
+            while (k < 16) : (k += 1) {
+                raw[k] = @truncate((mixed >> @intCast((k % 8) * 8)) ^ (k *% 0x9e3779b9));
+                mixed = mixed *% 0x100000001b3 ^ @as(usize, raw[k]);
+            }
+        }
+        const hex = "0123456789abcdef";
+        var k: usize = 0;
+        while (k < 16) : (k += 1) {
+            incarnation_token[2 * k] = hex[raw[k] >> 4];
+            incarnation_token[2 * k + 1] = hex[raw[k] & 15];
+        }
+        incarnation_token[32] = 0;
+        incarnation_done = true;
+    }
+    return @ptrCast(&incarnation_token);
+}
+
+/// argv-exec: run `prog` with arguments, feed `input` on stdin, capture stdout.
+/// `args` carries the argument vector as elements separated by 0x1F (ASCII unit
+/// separator); the runtime splits on that byte and calls execvp with a real
+/// argv array. NO SHELL IS INVOLVED at any point: unlike gatecap, no command
+/// string is ever assembled or reinterpreted, so argument bytes cannot inject.
+/// Returns captured stdout, or "" when the spawn itself fails.
+export fn idol_process_execap(prog: ?[*:0]const u8, args: ?[*:0]const u8, input: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
+    ensureAbortFlush();
+    const p = prog orelse return emptyHeap();
+    const a = args orelse return emptyHeap();
+    const inp = input orelse "";
+    arrive(); // B4: the child inherits fd 1 and must not overtake our bytes.
+    var nargs: usize = 0;
+    if (a[0] != 0) {
+        nargs = 1;
+        var ci: usize = 0;
+        while (a[ci] != 0) : (ci += 1) {
+            if (a[ci] == 0x1f) nargs += 1;
+        }
+    }
+    var argv_buf: [34]?[*:0]u8 = undefined;
+    if (nargs + 2 > argv_buf.len) return emptyHeap();
+    const argv: [*]?[*:0]u8 = &argv_buf;
+    argv[0] = @ptrCast(@constCast(p));
+    var slot: usize = 1;
+    if (nargs > 0) {
+        var start: usize = 0;
+        var ai: usize = 0;
+        const amut: [*]u8 = @ptrCast(@constCast(a));
+        while (true) {
+            const b: u8 = a[ai];
+            if (b == 0x1f or b == 0) {
+                amut[ai] = 0;
+                argv[slot] = @ptrCast(amut + start);
+                slot += 1;
+                if (b == 0) break;
+                start = ai + 1;
+            }
+            ai += 1;
+        }
+    }
+    argv[nargs + 1] = null;
+    var in_pipe: [2]c_int = undefined;
+    var out_pipe: [2]c_int = undefined;
+    if (pipe(&in_pipe) != 0 or pipe(&out_pipe) != 0) {
+        return emptyHeap();
+    }
+    const pid = fork();
+    if (pid < 0) {
+        _ = close(in_pipe[0]);
+        _ = close(in_pipe[1]);
+        _ = close(out_pipe[0]);
+        _ = close(out_pipe[1]);
+        return emptyHeap();
+    }
+    if (pid == 0) {
+        _ = dup2(in_pipe[0], 0);
+        _ = dup2(out_pipe[1], 1);
+        _ = close(in_pipe[0]);
+        _ = close(in_pipe[1]);
+        _ = close(out_pipe[0]);
+        _ = close(out_pipe[1]);
+        _ = execvp(p, @ptrCast(argv));
+        _exit(127);
+    }
+    _ = close(in_pipe[0]);
+    _ = close(out_pipe[1]);
+    const inlen = strlen(inp);
+    var written: usize = 0;
+    while (written < inlen) {
+        const n = write(in_pipe[1], inp + written, inlen - written);
+        if (n <= 0) break;
+        written += @intCast(n);
+    }
+    _ = close(in_pipe[1]);
+    const out = readFd(out_pipe[0]);
+    _ = close(out_pipe[0]);
+    var status: c_int = 0;
+    _ = waitpid(pid, &status, 0);
+    return out orelse emptyHeap();
 }
 
 fn emptyHeap() ?[*:0]u8 {

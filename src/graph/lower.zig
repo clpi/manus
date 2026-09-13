@@ -8560,6 +8560,12 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 // `gatecap(cmd)` captures process stdout as text (GAP-155).
                 if (std.mem.eql(u8, n.ident, "gatecap") and c.args.len == 1)
                     break :blk true;
+                // `incarnation()` answers the per-process boot token as text.
+                if (std.mem.eql(u8, n.ident, "incarnation") and c.args.len == 0)
+                    break :blk true;
+                // `execap(prog, args, input)` captures process stdout as text.
+                if (std.mem.eql(u8, n.ident, "execap") and c.args.len == 3)
+                    break :blk true;
                 if (functionResultIs(ctx, n.ident, .str)) break :blk true;
                 // ANY-RETURNING IDENTITY ON A STRING. `box: any = (x: any) x`
                 // returns the descriptor of its argument unchanged; the runtime
@@ -14810,6 +14816,24 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         try ensureExtern(ctx, "gate", "cap", "idol_process_capture");
         const t = ctx.freshTemp();
         try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_process_capture", .lhs = arg, .ty = .str });
+        return .{ .temp = t };
+    }
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "incarnation") and c.args.len == 0) {
+        try ensureExtern(ctx, "os", "incarnation", "idol_incarnation");
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_incarnation", .ty = .str });
+        return .{ .temp = t };
+    }
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "execap") and c.args.len == 3) {
+        const eprog = try lowerExprCons(ctx, c.args[0], .single);
+        const eargs = try lowerExprCons(ctx, c.args[1], .single);
+        const einput = try lowerExprCons(ctx, c.args[2], .single);
+        try ensureExtern(ctx, "process", "execap", "idol_process_execap");
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = eprog });
+        try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = eargs });
+        try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = einput });
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_process_execap", .ty = .str });
         return .{ .temp = t };
     }
     // `tostring(n)` — the runtime/global-call spelling. Canonical Idol has no
