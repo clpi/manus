@@ -329,8 +329,6 @@ fi
 # Match-arm return entry is the same settled return face. The retired host
 # switch selected identical materialization for `name` and every other admitted
 # value, so no subtype fact or parallel face survives after the transfer.
-has "$ROOT/lib/compiler/parser.id" 'This is the complete return-value-entry answer.' \
-    'parser.id lost the complete match-arm return-entry contract'
 forbid "$PARSER" 'switch (nxt.kind) {' \
     'match-arm return parsing retained the dead host token-kind switch'
 has "$PARSER" 'const hasvalue = nxt.loc.line == ret_loc.line and try self.returnStartsValue(ret_loc, nxt);' \
@@ -1128,8 +1126,6 @@ fi
 
 # Quoted pack keys consume parser.id primary faces five through eight. Zig
 # retains quote materialization without reconstructing the form from TokenKind.
-has "$ROOT/lib/compiler/parser.id" 'Faces five through eight are also the exact quoted-source form' \
-    'parser.id lost the exact quoted-source face contract'
 has "$PARSER" 'fn currentParserQuote(self: *Parser) ParseError!?ast.Quote {' \
     'parser.zig lost the quoted-source face consumer'
 has "$PARSER" 'const quote = try self.currentParserQuote();' \
@@ -2079,8 +2075,6 @@ examined=$((examined + 1))
 if [ "$boundary_calls" -lt 4 ]; then
     bad "complete boundary ABI is not declared and consumed at every edge (calls=$boundary_calls)"
 fi
-has "$ROOT/lib/compiler/parser.id" '# 1 close, 2 misindent, 3 parse return and close); bits 2..3 carry the clause face;' \
-    'parser.id boundary lost the packed clause/closure contract'
 has "$ROOT/lib/compiler/parser.id" 'sealed = closing << 4' \
     'parser.id boundary no longer packs written closure'
 forbid "$ROOT/lib/compiler/parser.id" 'clause: i64 = (kind: i64, offside: bool, open: i64, col: i64)' \
