@@ -61,6 +61,7 @@
 | 2 | Edit-mode input is `{"file": "<subject .id>", "projection": "frontier", "edit": {"kind": "acquire", "unknown": "<stable-id>", "decision": "acquire\|decline"}}`; identify-mode input is `{"file": "<subject .id>", "projection": "concept", "edit": {"kind": "identify", "a": "<rowkey>", "b": "<rowkey>"}}`; output is `result.content [0].text`. |
 | 3 | Acquire proposals re-derive the frontier and refuse `projection-stale` when the unknown is gone; identify proposals require explain/graph face agreement and emit `ambiguous` with differing facets and explicit options, or the `unknown-concept` / `contradictory` / `face-disagreement` refusals. |
 | 4 | Every proposal carries `checks`, `affected_region`, `voi_basis`, and `provenance` (subject SHA-256, world binary hash, revision); refusals carry `reason`, `next`, `producer`, `not-performed`. |
+| 5 | Demand constrain edits (no-alloc, no-effect, no-io) produce proposals whose operation is explicitly impose-requirement: the demand is imposed as a requirement on the realization without silently selecting one or applying a mutation. Unknown demands are the unknown-concept refusal; demands contradicted by the subject are the contradictory refusal. Contrast merge edits revalidate the SHA-256 question identity (subject-changed on stale questions) and surface merge ambiguity with explicit options, or the face-disagreement refusal on incompatible observation shapes. |
 
 | # | directive |
 |---|---|
