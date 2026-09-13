@@ -5080,6 +5080,10 @@ fn lowerFunction(
         // A `str` parameter is a `const char*`, so `#p` inside the body can use
         // strlen just like a str local.
         if (resolveType(par.typ) == .str) try ctx.str_slots.put(alloc, param_slot_cursor, {});
+        // An `f64` parameter arrives in a double register; without this
+        // the body sees a GP slot and a conversion of the parameter
+        // moves its BITS (the f2i miscompile) instead of converting.
+        if (resolveType(par.typ) == .f64) try ctx.f64_slots.put(alloc, param_slot_cursor, {});
         // A `bool` parameter is an integer register the printer must not read as
         // a number.
         if (isBoolType(par.typ)) try ctx.bool_slots.put(alloc, param_slot_cursor, {});

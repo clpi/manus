@@ -1,0 +1,7 @@
+f: f64 = (x: i64)
+  return x:to(f64)
+main: i64 = ()
+  if f(3) == 3.0
+    if f(0 - 3) == 0.0 - 3.0
+      return 0
+  return 1

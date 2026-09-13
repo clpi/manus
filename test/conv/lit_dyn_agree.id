@@ -1,0 +1,7 @@
+f: i64 = (x: f64)
+  return i64:from(x)
+main: i64 = ()
+  if i64:from(2.7) == f(2.7)
+    if i64:from(0.0 - 2.7) == f(0.0 - 2.7)
+      return 0
+  return 1
