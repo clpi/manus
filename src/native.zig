@@ -9574,7 +9574,7 @@ const Arm64Compiler = struct {
         while (i < self.pending_vararg_count) : (i += 1) {
             var slot = &self.pending_varargs[i];
             const v = slot.operand orelse continue;
-            var reg = try self.evalDnirValue(temps, v);
+            var reg = try self.evalDnirValueBits(temps, v);
             // A STACK-homed local is read by loadGpStackLocal into a FRESH register
             // that no map owns, so treating it as owned leaks one register per
             // stack argument per call — the pool drains and the body refuses with

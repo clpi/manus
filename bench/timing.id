@@ -1,0 +1,373 @@
+digitstr: str = (d: i64)
+  if d == 0
+    "0"
+  else if d == 1
+    "1"
+  else if d == 2
+    "2"
+  else if d == 3
+    "3"
+  else if d == 4
+    "4"
+  else if d == 5
+    "5"
+  else if d == 6
+    "6"
+  else if d == 7
+    "7"
+  else if d == 8
+    "8"
+  else
+    "9"
+
+tostr: str = (v: i64)
+  if v == 0
+    "0"
+  else
+    neg = false
+    vv = v
+    if vv < 0
+      neg = true
+      vv = 0 - vv
+    s = ""
+    while vv > 0
+      d = vv - (vv / 10) * 10
+      dc = digitstr(d)
+      s = "{dc}{s}"
+      vv = vv / 10
+    if neg
+      s = "-{s}"
+    s
+
+parseint: i64 = (s: str, sfrom: i64, sto: i64)
+  neg = false
+  i = sfrom
+  if s:byte(i) == 45
+    neg = true
+    i = i + 1
+  v = 0
+  while i <= sto
+    v = v * 10 + (s:byte(i) - 48)
+    i = i + 1
+  if neg
+    0 - v
+  else
+    v
+
+pad20: str = (s: str)
+  n = s:len()
+  p = ""
+  i = n
+  while i < 20
+    p = "{p}0"
+    i = i + 1
+  "{p}{s}"
+
+hexval: i64 = (c: i64)
+  r = 0
+  if c >= 48
+    if c <= 57
+      r = c - 48
+  if c >= 97
+    if c <= 102
+      r = c - 87
+  if c >= 65
+    if c <= 70
+      r = c - 55
+  r
+
+medianstr: i64 = (buf: str, n: i64)
+  sbuf = ""
+  i = 1
+  pos = 1
+  bl = buf:len()
+  while i <= n
+    epos = pos
+    while epos <= bl
+      epos = epos + 1
+    vs = buf:sub(pos, epos - 1)
+    ps = pad20(vs)
+    sbuf = "{sbuf}{ps}"
+    pos = epos + 1
+    i = i + 1
+  ii = 1
+  while ii <= n
+    jj = 1
+    while jj <= n - ii
+      p1 = (jj - 1) * 20 + 1
+      p2 = jj * 20 + 1
+      a = sbuf:sub(p1, p1 + 19)
+      b = sbuf:sub(p2, p2 + 19)
+      swap = false
+      k = 1
+      while k <= 20
+        ca = a:byte(k)
+        cb = b:byte(k)
+        if ca > cb
+          swap = true
+          k = 21
+        else if ca < cb
+          k = 21
+        else
+          k = k + 1
+      if swap
+        pre = ""
+        if p1 > 1
+          pre = sbuf:sub(1, p1 - 1)
+        post = ""
+        pe = p2 + 19
+        if pe < sbuf:len()
+          post = sbuf:sub(pe + 1, sbuf:len())
+        sbuf = "{pre}{b}{a}{post}"
+      jj = jj + 1
+    ii = ii + 1
+  if n % 2 == 1
+    mp = ((n + 1) / 2 - 1) * 20 + 1
+    ms = sbuf:sub(mp, mp + 19)
+    parseint(ms, 1, 20)
+  else
+    mp1 = (n / 2 - 1) * 20 + 1
+    mp2 = (n / 2) * 20 + 1
+    m1s = sbuf:sub(mp1, mp1 + 19)
+    m2s = sbuf:sub(mp2, mp2 + 19)
+    v1 = parseint(m1s, 1, 20)
+    v2 = parseint(m2s, 1, 20)
+    (v1 + v2) / 2
+
+runone: i64 = (path: str, exitexp: i64, outhex: str, outlen: i64, phase: str, round: i64)
+  t0 = monotime()
+  raw = procrun(path, "", "")
+  nl = 0
+  i = 1
+  rn = raw:len()
+  while i <= rn
+    if raw:byte(i) == 10
+      nl = i
+      i = rn + 1
+    else
+      i = i + 1
+  code = parseint(raw, 1, nl - 1)
+  outstart = nl + 1
+  if code != exitexp
+    print("status: mismatch")
+    print("binary: {path}")
+    print("phase: {phase}")
+    print("round: {round}")
+    print("expected_exit: {exitexp}")
+    print("actual_exit: {code}")
+    0 - 1
+  else if rn - nl != outlen
+    print("status: mismatch")
+    print("binary: {path}")
+    print("phase: {phase}")
+    print("round: {round}")
+    print("expected_len: {outlen}")
+    alen = rn - nl
+    print("actual_len: {alen}")
+    0 - 1
+  else
+    ok = true
+    j = 1
+    while j <= outlen
+      ab = raw:byte(outstart + j - 1)
+      hp = (j - 1) * 2 + 1
+      eb = hexval(outhex:byte(hp)) * 16 + hexval(outhex:byte(hp + 1))
+      if ab != eb
+        ok = false
+        j = outlen + 1
+      else
+        j = j + 1
+    if ok
+      t1 = monotime()
+      t1 - t0
+    else
+      print("status: mismatch")
+      print("binary: {path}")
+      print("phase: {phase}")
+      print("round: {round}")
+      print("detail: stdout bytes differ")
+      0 - 1
+
+pbucket: str = (p: f64)
+  if p < 0.00001
+    "<1e-5"
+  else if p < 0.0001
+    "<1e-4"
+  else if p < 0.001
+    "<1e-3"
+  else if p < 0.01
+    "<1e-2"
+  else if p < 0.05
+    "<0.05"
+  else
+    ">=0.05"
+
+main: i64 = ()
+  cand = os.args[1]
+  comp = os.args[2]
+  badargs = false
+  if cand == nil
+    badargs = true
+  if comp == nil
+    badargs = true
+  if badargs
+    print("status: error")
+    print("detail: candidate and comparator paths required")
+    1
+  else
+    a3 = os.args[3]
+    rounds = a3:to(i64)
+    a4 = os.args[4]
+    warmup = a4:to(i64)
+    a5 = os.args[5]
+    exitexp = a5:to(i64)
+    outhex = os.args[6]
+    compiler = os.args[7]
+    buildcfg = os.args[8]
+    srcrev = os.args[9]
+    a10 = os.args[10]
+    tolbp = a10:to(i64)
+    if rounds < 2
+      print("status: error")
+      print("detail: rounds must be at least 2")
+      1
+    else if filesize(cand) < 0
+      print("status: error")
+      print("binary: {cand}")
+      print("detail: candidate not found")
+      1
+    else if filesize(comp) < 0
+      print("status: error")
+      print("binary: {comp}")
+      print("detail: comparator not found")
+      1
+    else if filesize(compiler) < 0
+      print("status: error")
+      print("binary: {compiler}")
+      print("detail: compiler not found")
+      1
+    else
+      outlen = outhex:len() / 2
+      csize = filesize(cand)
+      psize = filesize(comp)
+      chash = sha256file(compiler)
+      cbuf = ""
+      pbuf = ""
+      csum = 0
+      psum = 0
+      csumsq = 0
+      psumsq = 0
+      failed = false
+      w = 1
+      while w <= warmup
+        rw = runone(cand, exitexp, outhex, outlen, "warmup", w)
+        if rw < 0
+          failed = true
+        else
+          rw2 = runone(comp, exitexp, outhex, outlen, "warmup", w)
+          if rw2 < 0
+            failed = true
+        w = w + 1
+      r = 1
+      while r <= rounds
+        if not failed
+          if r % 2 == 1
+            ct = runone(cand, exitexp, outhex, outlen, "timed", r)
+            pt = runone(comp, exitexp, outhex, outlen, "timed", r)
+          else
+            pt = runone(comp, exitexp, outhex, outlen, "timed", r)
+            ct = runone(cand, exitexp, outhex, outlen, "timed", r)
+          bad = false
+          if ct < 0
+            bad = true
+          if pt < 0
+            bad = true
+          if bad
+            failed = true
+          else
+            cts = tostr(ct)
+            cbuf = "{cbuf}{cts};"
+            csum = csum + ct
+            ctus = ct / 1000
+            csumsq = csumsq + ctus * ctus
+            pts = tostr(pt)
+            pbuf = "{pbuf}{pts};"
+            psum = psum + pt
+            ptus = pt / 1000
+            psumsq = psumsq + ptus * ptus
+        r = r + 1
+      if failed
+        1
+      else
+        med1 = medianstr(cbuf, rounds)
+        med2 = medianstr(pbuf, rounds)
+        n1 = @as(f64, rounds)
+        csumf = @as(f64, csum)
+        cmean = csumf / n1
+        psumf = @as(f64, psum)
+        pmean = psumf / n1
+        csqf = @as(f64, csumsq)
+        psqf = @as(f64, psumsq)
+        cmeanus = csumf / 1000.0 / n1
+        pmeanus = psumf / 1000.0 / n1
+        v1 = (csqf - n1 * cmeanus * cmeanus) / (n1 - 1.0)
+        v2 = (psqf - n1 * pmeanus * pmeanus) / (n1 - 1.0)
+        se2t = v1 / n1 + v2 / n1
+        tstat = 0.0
+        if se2t > 0.0
+          dt = cmeanus - pmeanus
+          tstat = dt / math.sqrt(se2t)
+        a1 = v1 / n1
+        a2 = v2 / n1
+        se2d = a1 + a2
+        numd = se2d * se2d
+        d1 = a1 * a1 / (n1 - 1.0)
+        d2 = a2 * a2 / (n1 - 1.0)
+        df = numd / (d1 + d2)
+        critadj = 1.0 + 1.2104 / df
+        crit = 1.96 * critadj
+        sig = false
+        if tstat > crit
+          sig = true
+        if tstat < 0.0 - crit
+          sig = true
+        pct = (med2 - med1) * 100 / med2
+        verdict = "inconclusive"
+        if sig
+          if med1 < med2
+            verdict = "win"
+          else if med1 > med2
+            verdict = "loss"
+            verdict = "loss"
+        else if tolbp > 0
+          if med2 > 0
+            diff = med1 - med2
+            if diff < 0
+              diff = 0 - diff
+            if diff * 10000 <= med2 * tolbp
+              verdict = "tie"
+        print("status: ok")
+        print("verdict: {verdict}")
+        print("candidate: {cand}")
+        print("candidate_size: {csize}")
+        print("comparator: {comp}")
+        print("comparator_size: {psize}")
+        print("compiler: {compiler}")
+        print("compiler_sha256: {chash}")
+        print("build_config: {buildcfg}")
+        print("source_rev: {srcrev}")
+        print("rounds: {rounds}")
+        print("warmup: {warmup}")
+        print("expected_exit: {exitexp}")
+        print("candidate_median_ns: {med1}")
+        print("comparator_median_ns: {med2}")
+        print("speedup_pct: {pct}")
+        print("t_stat: {tstat}")
+        print("df: {df}")
+        sigs = "no"
+        if sig
+          sigs = "yes"
+        print("significant: {sigs}")
+        0
+
+main()
