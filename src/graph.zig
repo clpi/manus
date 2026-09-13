@@ -4973,7 +4973,21 @@ pub const SemanticGraph = struct {
             const self: *const RangeReach = @ptrCast(@alignCast(ctx));
             const subject = blk: {
                 if (self.graph.module_root) |mod_root| {
-                    if (self.relation == mod_root) break :blk self.graph.resolveBindingInScope(mod_root, name);
+                    if (self.relation == mod_root) {
+                        // Reverse iteration: latest binding wins (reassignment).
+                        const children = self.graph.nested.of(mod_root);
+                        var i = children.len;
+                        while (i > 0) {
+                            i -= 1;
+                            const child = children[i];
+                            const node = self.graph.get(child) orelse continue;
+                            if (node.kind != .local and node.kind != .param) continue;
+                            if (node.name) |n| {
+                                if (std.mem.eql(u8, n, name)) break :blk child;
+                            }
+                        }
+                        break :blk null;
+                    }
                 }
                 break :blk self.graph.bindingNamedIn(self.relation, name);
             };

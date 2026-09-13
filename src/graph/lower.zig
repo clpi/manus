@@ -9709,6 +9709,52 @@ fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
 /// non-negativity is unprovable, if K is outside [C-1, C], if the shapes
 /// deviate, if q/isbig/s are not distinct, if any slot is narrow or
 /// non-integer, or if q/isbig are read after the idiom.
+/// Robust non-negativity: tries graph proof first, then syntactic with
+/// backward scan for latest assignments. Sound: every accepted shape is
+/// provably >= 0.
+fn sataddNonNegative(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, expr: *const ast.Expr) bool {
+    const graph = ctx.graph;
+    const relation = ctx.function orelse ctx.graph.module_root orelse return false;
+    if (graph.nonNegativeWidthOfExpr(relation, expr) != null) return true;
+    return sataddSynNonNeg(graph, stmts, at, expr, 0);
+}
+
+fn sataddSynNonNeg(graph: *const semantic_graph.SemanticGraph, stmts: []const ast.Stmt, up_to: usize, expr: *const ast.Expr, depth: u8) bool {
+    if (depth > 8) return false;
+    switch (expr.*) {
+        .int_lit => |l| return l.val >= 0,
+        .name => |n| {
+            // Backward scan for latest assignment to name
+            var i = up_to;
+            while (i > 0) {
+                i -= 1;
+                const st = stmts[i];
+                if (st != .assign) continue;
+                const a = st.assign;
+                if (a.targets.len != 1 or a.values.len != 1) continue;
+                const t = identOf(a.targets[0]) orelse continue;
+                if (!std.mem.eql(u8, t, n.ident)) continue;
+                return sataddSynNonNeg(graph, stmts, i, a.values[0], depth + 1);
+            }
+            return false;
+        },
+        .binop => |b| {
+            if (b.op == .add or b.op == .mul) {
+                return sataddSynNonNeg(graph, stmts, up_to, b.lhs, depth + 1) and
+                    sataddSynNonNeg(graph, stmts, up_to, b.rhs, depth + 1);
+            }
+            if (b.op == .band) {
+                // x & mask with non-negative mask -> non-negative
+                if (graph.exactI64OfExpr(b.lhs)) |m| if (m >= 0) return true;
+                if (graph.exactI64OfExpr(b.rhs)) |m| if (m >= 0) return true;
+                return false;
+            }
+            return false;
+        },
+        else => return false,
+    }
+}
+
 fn tryEmitSataddIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
     if (at == 0 or at + 3 > stmts.len) return false;
     const graph = ctx.graph;
@@ -9760,12 +9806,7 @@ fn tryEmitSataddIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!
     if (prev.targets.len != 1 or prev.values.len != 1) return false;
     const prev_name = identOf(prev.targets[0]) orelse return false;
     if (!std.mem.eql(u8, prev_name, s_name)) return false;
-    const relation = ctx.function orelse ctx.graph.module_root orelse {
-        return false;
-    };
-    if (ctx.graph.nonNegativeWidthOfExpr(relation, prev.values[0]) == null) {
-        return false;
-    }
+    if (!sataddNonNegative(ctx, stmts, at - 1, prev.values[0])) return false;
 
     // Slot for s: must exist, be integer, and not narrowed. (q and isbig
     // have no slots yet -- their statements have not been lowered -- but
