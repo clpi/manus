@@ -26,6 +26,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Zig cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zig
+            .zig-cache
+          key: zig-cache-${{ runner.os }}-${{ runner.arch }}-${{ env.ZIG_VERSION }}
+          restore-keys: |
+            zig-cache-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Authority and semantic-graph regression gates
         run: |
           sh gate/authority.sh
@@ -35,6 +45,11 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+          # setup-zig's built-in cache save shells out to tar with the
+          # workspace path unquoted, which breaks on this runner's
+          # space-containing work path (/Volumes/d 1/...). Cache via
+          # actions/cache instead, which passes paths as argv.
+          use-cache: false
 
       - name: Build migration compiler for gates
         run: zig build
@@ -60,10 +75,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Zig cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zig
+            .zig-cache
+          key: zig-cache-${{ runner.os }}-${{ runner.arch }}-${{ env.ZIG_VERSION }}
+          restore-keys: |
+            zig-cache-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install Zig (pinned)
         uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+          # setup-zig's built-in cache save shells out to tar with the
+          # workspace path unquoted, which breaks on this runner's
+          # space-containing work path (/Volumes/d 1/...). Cache via
+          # actions/cache instead, which passes paths as argv.
+          use-cache: false
 
       - name: Record toolchain
         run: |
@@ -108,6 +138,11 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.17.0-dev.1567+f0354179a
+          # setup-zig's built-in cache save shells out to tar with the
+          # workspace path unquoted, which breaks on this runner's
+          # space-containing work path (/Volumes/d 1/...). Cache via
+          # actions/cache instead, which passes paths as argv.
+          use-cache: false
 
       - name: Build frozen Wart oracle
         run: |

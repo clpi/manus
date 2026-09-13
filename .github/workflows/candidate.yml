@@ -96,6 +96,10 @@ jobs:
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: 0.17.0-dev.1567+f0354179a
+          # setup-zig's built-in cache save shells out to tar with the
+          # workspace path unquoted, which breaks on this runner's
+          # space-containing work path (/Volumes/d 1/...).
+          use-cache: false
 
       - name: Build exact protected-base compiler
         shell: bash --noprofile --norc -e -o pipefail "{0}"
