@@ -9760,20 +9760,20 @@ fn tryEmitSataddIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!
     if (prev.targets.len != 1 or prev.values.len != 1) return false;
     const prev_name = identOf(prev.targets[0]) orelse return false;
     if (!std.mem.eql(u8, prev_name, s_name)) return false;
-    const relation = ctx.function orelse ctx.graph.module_root orelse return false;
-    if (ctx.graph.nonNegativeWidthOfExpr(relation, prev.values[0]) == null) return false;
+    const relation = ctx.function orelse ctx.graph.module_root orelse {
+        return false;
+    };
+    if (ctx.graph.nonNegativeWidthOfExpr(relation, prev.values[0]) == null) {
+        return false;
+    }
 
-    // Slots: distinct, integer, not narrow.
+    // Slot for s: must exist, be integer, and not narrowed. (q and isbig
+    // have no slots yet -- their statements have not been lowered -- but
+    // their names are already proven distinct above, and as pure integer
+    // divisions of an integer s they are integers by construction.)
     const s_slot = ctx.locals.get(s_name) orelse return false;
-    const q_slot = ctx.locals.get(q_name) orelse return false;
-    const isbig_slot = ctx.locals.get(isbig_name) orelse return false;
     if (slotIsNonInteger(ctx, s_slot)) return false;
-    if (slotIsNonInteger(ctx, q_slot)) return false;
-    if (slotIsNonInteger(ctx, isbig_slot)) return false;
     if (ctx.narrow_slots.contains(s_slot)) return false;
-    if (ctx.narrow_slots.contains(q_slot)) return false;
-    if (ctx.narrow_slots.contains(isbig_slot)) return false;
-    if (s_slot == q_slot or s_slot == isbig_slot or q_slot == isbig_slot) return false;
 
     // q and isbig must not be read after the idiom; their divisions are gone.
     if (sataddIdentUsedAfter(stmts, at + 3, q_name)) return false;
