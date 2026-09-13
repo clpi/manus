@@ -1,0 +1,62 @@
+findstr: i64 = (strtab: str, name: str)
+    i = 1
+    while i <= strtab:len()
+        j = 1
+        ok = 1
+        while j <= name:len()
+            if strtab:byte(i + j - 1) != name:byte(j)
+                ok = 0
+            j = j + 1
+        if ok == 1 and strtab:byte(i + name:len()) == 0
+            return i - 1
+        while i <= strtab:len() and strtab:byte(i) != 0
+            i = i + 1
+        i = i + 1
+    0 - 1
+
+symrec: str = (strtab: str, name: str, val: i64, size: i64, bind: i64, typ: i64, shndx: i64)
+    noff = findstr(strtab, name)
+    word(noff) .. pair(bind * 16 + typ) .. pair(0) .. half(shndx) .. quad(val) .. quad(size)
+
+relrec: str = (off: i64, sym: i64, typ: i64, addend: i64)
+    quad(off) .. quad((sym << 32) | typ) .. quad(addend)
+
+shdr: str = (name: i64, typ: i64, flags: i64, addr: i64, off: i64, size: i64, link: i64, info: i64, algn: i64, entsz: i64)
+    word(name) .. word(typ) .. quad(flags) .. quad(addr) .. quad(off) .. quad(size) .. word(link) .. word(info) .. quad(algn) .. quad(entsz)
+
+emitobj: str = (text: str, syms: str, rels: str, strtab: str)
+    textsize = text:len() / 2
+    symcount = syms:len() / 48
+    relcount = rels:len() / 48
+    textoff = 64
+    relaoff = align(textoff + textsize, 8)
+    relasize = relcount * 24
+    symoff = align(relaoff + relasize, 8)
+    symsize = symcount * 24
+    stroff = symoff + symsize
+    strsize = strtab:len()
+    shstroff = stroff + strsize
+    shstr = "002e74657874002e72656c612e74657874002e73796d746162002e737472746162002e736873747274616200"
+    shstrsize = shstr:len() / 2
+    shoff = align(shstroff + shstrsize, 8)
+    out = "7f454c46" .. pair(2) .. pair(1) .. pair(1) .. pair(0) .. pair(0)
+    out = out .. "00000000000000"
+    out = out .. half(1) .. half(183) .. word(1)
+    out = out .. quad(0) .. quad(0) .. quad(shoff)
+    out = out .. word(0) .. half(64) .. half(56) .. half(6) .. half(64) .. half(0) .. half(0)
+    out = out .. text
+    out = out .. pad(relaoff - textoff - textsize)
+    out = out .. rels
+    out = out .. pad(symoff - relaoff - relasize)
+    out = out .. syms
+    out = out .. strtab
+    out = out .. pad(shstroff - stroff - strsize)
+    out = out .. shstr
+    out = out .. pad(shoff - shstroff - shstrsize)
+    out = out .. shdr(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    out = out .. shdr(1, 1, 6, 0, textoff, textsize, 0, 0, 16, 0)
+    out = out .. shdr(7, 4, 0, 0, relaoff, relasize, 4, 1, 8, 24)
+    out = out .. shdr(23, 2, 0, 0, symoff, symsize, 3, 1, 8, 24)
+    out = out .. shdr(31, 3, 0, 0, stroff, strsize, 0, 0, 1, 0)
+    out = out .. shdr(39, 3, 0, 0, shstroff, shstrsize, 0, 0, 1, 0)
+    out
