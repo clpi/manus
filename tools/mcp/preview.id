@@ -698,6 +698,236 @@ pidentify: str = (idraw: str, edit: str, file: str, bin: str)
     return pok(idraw, "\{\"status\":\"proposal\",\"proposal\":" .. iprop .. ",\"provenance\":" .. prov .. "\}")
   pok(idraw, "\{\"status\":\"ambiguous\",\"subjects\":[" .. jesc(a) .. "," .. jesc(b) .. "],\"differing_facets\":" .. diff .. ",\"options\":" .. opts .. ",\"provenance\":" .. prov .. "\}")
 
+qt: str = "\""
+lbr: str = "{"
+rbr: str = "}"
+jstr: str = (s: str)
+  jesc(s)
+jkv: str = (k: str, v: str)
+  qt .. k .. qt .. ":" .. jstr(v)
+jarr2: str = (a: str, b: str)
+  "[" .. jstr(a) .. "," .. jstr(b) .. "]"
+
+cknown: i64 = (name: str)
+  if name == "no-alloc" 1
+  if name == "no-effect" 1
+  if name == "keep-first" 1
+  if name == "keep-last" 1
+  if name == "report-conflict" 1
+  if name == "merge-identical" 1
+  0
+
+cvalid: i64 = (demand: str)
+  if demand == "" 0
+  if jcountkey(demand, " ") == 1 0
+  cknown(demand)
+
+cregion: i64 = (r: str)
+  if r == "" 0
+  if jcountkey(r, " ") == 1 0
+  if r:find("..", 1, 1) != 0 0
+  1
+
+cregionv: i64 = (r: str)
+  i = 1
+  n = r:len()
+  while i <= n
+    c = r:sub(i, i)
+    ok = 0
+    if c >= "a" and c <= "z" ok = 1
+    if c >= "A" and c <= "Z" ok = 1
+    if c >= "0" and c <= "9" ok = 1
+    if c == "." ok = 1
+    if c == "_" ok = 1
+    if c == "-" ok = 1
+    if c == "/" ok = 1
+    if ok == 0 return 0
+    i = i + 1
+  1
+
+candsok: i64 = (cand: str)
+  if cand == "keep-first" 1
+  if cand == "keep-last" 1
+  if cand == "report-conflict" 1
+  if cand == "merge-identical" 1
+  0
+
+ckinds: i64 = (kinds: str)
+  rem = kinds
+  while true
+    c = rem:find(",", 1, 1)
+    if c == 0 break
+    k = rem:sub(1, c - 1)
+    if candsok(k) == 0 return 0
+    rem = rem:sub(c + 1, rem:len())
+  if rem == "" 0
+  candsok(rem)
+
+cshapes: i64 = (a: str, b: str)
+  if candsok(a) == 0 or candsok(b) == 0 return 0
+  1
+
+pbininfo: str = (bin: str)
+  qb = shq(bin)
+  hraw = gatecap("sha256sum -- " .. qb)
+  h = hraw:sub(1, 64)
+  if h == "" h = "unknown"
+  scar = gatecap("cat -- " .. qb .. ".buildid")
+  rev = "unknown"
+  if jcountkey(scar, "revision") == 1
+    r = jdec(jget(scar, "revision"))
+    if r != "" rev = r
+  h .. "|" .. rev
+
+pprov: str = (file: str, bin: str, tail: str)
+  bi = pbininfo(bin)
+  bar = bi:find("|", 1, 1)
+  h = bi:sub(1, bar - 1)
+  rev = bi:sub(bar + 1, bi:len())
+  lbr .. jkv("subject", file) .. "," .. jkv("subject_hash", phash(file)) .. "," .. jkv("world_bin", bin) .. "," .. jkv("world_binhash", h) .. "," .. jkv("revision", rev) .. tail .. rbr
+
+pfuncid: i64 = (body: str, region: str)
+  n = jcount(body, "applications")
+  i = 1
+  while i <= n
+    it = jitem(body, "applications", i)
+    id = jget(it, "application")
+    if id == region return 1
+    i = i + 1
+  0
+
+papps: str = (body: str, region: str)
+  out = ""
+  sep = ""
+  n = jcount(body, "applications")
+  i = 1
+  while i <= n
+    it = jitem(body, "applications", i)
+    id = jget(it, "application")
+    if id == region or region == "all"
+      out = out .. sep .. "app:" .. id
+      sep = ","
+    i = i + 1
+  out
+
+pappuid: str = (body: str, region: str)
+  n = jcount(body, "applications")
+  i = 1
+  while i <= n
+    it = jitem(body, "applications", i)
+    id = jget(it, "application")
+    if id == region return jget(it, "uid")
+    i = i + 1
+  ""
+
+pconok: i64 = (body: str, region: str, demand: str)
+  n = jcount(body, "applications")
+  i = 1
+  while i <= n
+    it = jitem(body, "applications", i)
+    id = jget(it, "application")
+    if id == region or region == "all"
+      ec = jget(jget(it, "effect"), "card")
+      rc = jget(jget(it, "realization"), "card")
+      if demand == "no-effect" and ec != "none" return 0
+      if demand == "no-alloc" and rc == "many" return 0
+    i = i + 1
+  1
+
+pconstrain: str = (idraw: str, edit: str, file: str, bin: str)
+  demand = jdec(jget(edit, "demand"))
+  if cvalid(demand) == 0
+    return prefuse("unknown-concept", "demand '" .. demand .. "' is not a known demand concept", "identify")
+  region = jdec(jget(edit, "region"))
+  if region == "" region = "all"
+  if cregion(region) == 0
+    return prefuse("unknown-concept", "region '" .. region .. "' is not a valid region", "identify")
+  if region != "all" and cregionv(region) == 0
+    return prefuse("unknown-concept", "region '" .. region .. "' contains invalid characters", "identify")
+  graw = pgraphraw(bin, file)
+  if wtexit(graw) != 0
+    return prefuse("projection-stale", "graph derivation failed for demand projection", "identify")
+  gbody = wtbody(graw)
+  if region != "all" and pfuncid(gbody, region) == 0
+    return prefuse("unknown-concept", "region '" .. region .. "' matches no application", "identify")
+  if pconok(gbody, region, demand) == 0
+    return prefuse("contradictory", "application " .. pappuid(gbody, region) .. " carries a required demand realization that '" .. demand .. "' forbids", "identify")
+  checks = "[" .. lbr .. jkv("id", "demand-realization") .. "," .. jkv("status", "pass") .. rbr .. "," .. lbr .. jkv("id", "demand-region") .. "," .. jkv("status", "pass") .. rbr .. "," .. lbr .. jkv("id", "demand-known") .. "," .. jkv("status", "pass") .. rbr .. "]"
+  applist = papps(gbody, region)
+  n = jcount(gbody, "applications")
+  voib = lbr .. jkv("basis", "demand-realization") .. rbr
+  prop = lbr .. jkv("kind", "proposal") .. "," .. jkv("operation", "impose-requirement") .. "," .. jkv("projection", "demand") .. "," .. jkv("demand", demand) .. "," .. jkv("region", region) .. "," .. jkv("applications", applist) .. "," .. qt .. "voi_basis" .. qt .. ":" .. voib .. "," .. qt .. "checks" .. qt .. ":" .. checks .. "," .. qt .. "provenance" .. qt .. ":" .. pprov(file, bin, "") .. rbr
+  lbr .. jkv("kind", "proposal") .. "," .. qt .. "proposal" .. qt .. ":" .. prop .. rbr
+
+cqid: str = (sha: str, region: str, kind: str, clist: str)
+  qs = shq(sha .. "|" .. region .. "|" .. kind .. "|" .. clist)
+  qraw = gatecap("printf '%s' " .. qs .. " | sha256sum 2>/dev/null")
+  qraw:sub(1, 64)
+
+cobs: str = (name: str)
+  if name == "keep-first"
+    return lbr .. qt .. "d1" .. qt .. ":" .. lbr .. qt .. "ts" .. qt .. ":100," .. qt .. "payload" .. qt .. ":" .. jstr("a") .. rbr .. rbr
+  if name == "keep-last"
+    return lbr .. qt .. "d1" .. qt .. ":" .. lbr .. qt .. "ts" .. qt .. ":100," .. qt .. "payload" .. qt .. ":" .. jstr("b") .. rbr .. rbr
+  lbr .. qt .. "conflict" .. qt .. ":" .. lbr .. qt .. "key" .. qt .. ":" .. jstr("d1") .. "," .. qt .. "ts" .. qt .. ":100," .. qt .. "payloads" .. qt .. ":" .. jarr2("a", "b") .. rbr .. rbr
+
+panswer: str = (idraw: str, edit: str, file: str, bin: str)
+  qid = jdec(jget(edit, "question_id"))
+  if qid == ""
+    return prefuse("unknown-concept", "contrast answer needs question_id", "identify")
+  kind = jdec(jget(edit, "merge_kind"))
+  if kind == "" kind = "tiebreak"
+  cands = jdec(jget(edit, "candidates"))
+  if cands == ""
+    return prefuse("unknown-concept", "contrast answer needs candidates", "identify")
+  if ckinds(cands) == 0
+    return prefuse("unknown-concept", "candidates contain unknown merge kinds", "identify")
+  region = jdec(jget(edit, "region"))
+  if region == "" region = "all"
+  sha = phash(file)
+  if sha == ""
+    return prefuse("projection-stale", "subject hash unavailable", "identify")
+  expect = cqid(sha, region, kind, cands)
+  if qid != expect
+    return prefuse("subject-changed", "question_id does not match current subject; recompute contrast", "identify")
+  checks = "[" .. lbr .. jkv("id", "contrast-question") .. "," .. jkv("status", "pass") .. rbr .. "," .. lbr .. jkv("id", "contrast-candidates") .. "," .. jkv("status", "pass") .. rbr .. "]"
+  prop = lbr .. jkv("kind", "proposal") .. "," .. jkv("operation", "impose-requirement") .. "," .. jkv("projection", "contrast") .. "," .. jkv("question_id", qid) .. "," .. jkv("merge_kind", kind) .. "," .. jkv("candidates", cands) .. "," .. jkv("region", region) .. "," .. qt .. "checks" .. qt .. ":" .. checks .. "," .. qt .. "provenance" .. qt .. ":" .. pprov(file, bin, "") .. rbr
+  lbr .. jkv("kind", "proposal") .. "," .. qt .. "proposal" .. qt .. ":" .. prop .. rbr
+
+pmerge: str = (idraw: str, edit: str, file: str, bin: str)
+  qid = jdec(jget(edit, "question_id"))
+  if qid == ""
+    return prefuse("unknown-concept", "contrast merge needs question_id", "identify")
+  a = jdec(jget(edit, "candidate_a"))
+  b = jdec(jget(edit, "candidate_b"))
+  if candsok(a) == 0 or candsok(b) == 0
+    return prefuse("unknown-concept", "merge candidates must be known merge kinds", "identify")
+  region = jdec(jget(edit, "region"))
+  if region == "" region = "all"
+  sha = phash(file)
+  if sha == ""
+    return prefuse("projection-stale", "subject hash unavailable", "identify")
+  clist = a .. "," .. b
+  expect = cqid(sha, region, "merge", clist)
+  if qid != expect
+    return prefuse("subject-changed", "question_id does not match current subject; recompute contrast", "identify")
+  oa = cobs(a)
+  ob = cobs(b)
+  if jget(oa, "d1") != "" and jget(ob, "conflict") != ""
+    return prefuse("face-disagreement", "merge candidate faces disagree on observation shape", "identify")
+  if jget(oa, "conflict") != "" and jget(ob, "d1") != ""
+    return prefuse("face-disagreement", "merge candidate faces disagree on observation shape", "identify")
+  checks = "[" .. lbr .. jkv("id", "contrast-question") .. "," .. jkv("status", "pass") .. rbr .. "," .. lbr .. jkv("id", "contrast-shapes") .. "," .. jkv("status", "pass") .. rbr .. "]"
+  if oa == ob
+    prop = lbr .. jkv("kind", "proposal") .. "," .. jkv("operation", "impose-requirement") .. "," .. jkv("projection", "contrast") .. "," .. jkv("question_id", qid) .. "," .. jkv("candidates", clist) .. "," .. jkv("region", region) .. "," .. qt .. "merged" .. qt .. ":" .. jstr(oa) .. "," .. qt .. "checks" .. qt .. ":" .. checks .. "," .. qt .. "provenance" .. qt .. ":" .. pprov(file, bin, "") .. rbr
+    return lbr .. jkv("kind", "proposal") .. "," .. qt .. "proposal" .. qt .. ":" .. prop .. rbr
+  opts = "[" .. lbr .. jkv("kind", "realization") .. "," .. jkv("candidate", a) .. "," .. qt .. "observation" .. qt .. ":" .. jstr(oa) .. rbr .. "," .. lbr .. jkv("kind", "realization") .. "," .. jkv("candidate", b) .. "," .. qt .. "observation" .. qt .. ":" .. jstr(ob) .. rbr .. "," .. lbr .. jkv("kind", "decline") .. rbr .. "]"
+  amb = lbr .. jkv("kind", "ambiguous") .. "," .. jkv("question_id", qid) .. "," .. qt .. "options" .. qt .. ":" .. opts .. "," .. qt .. "checks" .. qt .. ":" .. checks .. "," .. qt .. "provenance" .. qt .. ":" .. pprov(file, bin, "") .. rbr
+  lbr .. jkv("kind", "ambiguous") .. "," .. qt .. "proposal" .. qt .. ":" .. amb .. rbr
+
+prefuse: str = (code: str, msg: str, producer: str)
+  lbr .. jkv("kind", "refusal") .. "," .. jkv("reason", code) .. "," .. jkv("message", msg) .. "," .. jkv("next", "identify") .. "," .. jkv("producer", producer) .. "," .. qt .. "not-performed" .. qt .. ":true" .. rbr
+
 presp: str = (line: str, idraw: str)
   args = jget(line, "params.arguments")
   if args == ""
@@ -708,26 +938,41 @@ presp: str = (line: str, idraw: str)
   projection = jdec(jget(args, "projection"))
   if projection != "frontier"
     if projection != "concept"
-      return werr(idraw, -32602, "invalid-params", "supply arguments.projection as frontier or concept", "caller", "[\"preview\"]")
+      if projection != "demand"
+        if projection != "contrast"
+          return werr(idraw, -32602, "invalid-params", "supply arguments.projection as frontier, concept, demand, or contrast", "caller", "[\"preview\"]")
   edit = jget(args, "edit")
   if edit == ""
     return werr(idraw, -32602, "invalid-params", "supply arguments.edit as an object", "caller", "[\"preview\"]")
   kind = jdec(jget(edit, "kind"))
   if kind != "acquire"
     if kind != "identify"
-      return werr(idraw, -32602, "invalid-params", "supply edit.kind as acquire or identify", "caller", "[\"preview\"]")
-  if kind == "acquire"
-    if projection != "frontier"
-      return werr(idraw, -32602, "invalid-params", "acquire edits apply to the frontier projection", "caller", "[\"preview\"]")
-  else
-    if projection != "concept"
-      return werr(idraw, -32602, "invalid-params", "identify edits apply to the concept projection", "caller", "[\"preview\"]")
+      if kind != "constrain"
+        if kind != "answer"
+          if kind != "merge"
+            return werr(idraw, -32602, "invalid-params", "supply edit.kind as acquire, identify, constrain, answer, or merge", "caller", "[\"preview\"]")
+  if kind == "acquire" and projection != "frontier"
+    return werr(idraw, -32602, "invalid-params", "acquire edits apply to the frontier projection", "caller", "[\"preview\"]")
+  if kind == "identify" and projection != "concept"
+    return werr(idraw, -32602, "invalid-params", "identify edits apply to the concept projection", "caller", "[\"preview\"]")
+  if kind == "constrain" and projection != "demand"
+    return werr(idraw, -32602, "invalid-params", "constrain edits apply to the demand projection", "caller", "[\"preview\"]")
+  if kind == "answer" and projection != "contrast"
+    return werr(idraw, -32602, "invalid-params", "answer edits apply to the contrast projection", "caller", "[\"preview\"]")
+  if kind == "merge" and projection != "contrast"
+    return werr(idraw, -32602, "invalid-params", "merge edits apply to the contrast projection", "caller", "[\"preview\"]")
   bin = env("IDOL_WORLD_BIN") or ""
   if bin == ""
     bin = "./zig-out/bin/idol"
   if kind == "acquire"
     return pacquire(idraw, edit, file, bin)
-  pidentify(idraw, edit, file, bin)
+  if kind == "identify"
+    return pidentify(idraw, edit, file, bin)
+  if kind == "constrain"
+    return pok(idraw, pconstrain(idraw, edit, file, bin))
+  if kind == "answer"
+    return pok(idraw, panswer(idraw, edit, file, bin))
+  pok(idraw, pmerge(idraw, edit, file, bin))
 
 main: i64 = ()
   line = stdin:line()
