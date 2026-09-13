@@ -5317,7 +5317,10 @@ fn root(
         const claimed = try runAdditivePrologues(&ctx, mod.body.stmts, i);
         if (!claimed) tryArmCountedLoop(&ctx, mod.body.stmts, i);
         // A prologue may have swallowed this statement (bitrev swallows the
-        // loop it replaces); do not lower it.
+        // loop it replaces; satadd/popcount discharge their idioms up front);
+        // do not lower it.
+        if (ctx.popcount_swallowed.contains(stmt)) continue;
+        if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         switch (stmt.*) {
         .func_decl,
@@ -9734,10 +9737,28 @@ fn sataddNonNegative(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, expr: *
     return sataddSynNonNeg(graph, stmts, at, expr, 0);
 }
 
+/// SOUNDNESS: wrapping arithmetic means a+b >= 0 does NOT follow from
+/// a >= 0 and b >= 0. This fallback proves a WIDTH (value in [0, 2^w)),
+/// not just a sign: add widens by one, mul adds widths, and anything
+/// reaching width 64 is declined, so no accepted shape can wrap negative.
+/// Mirrors range.zig widthOfExpr transfer, over the syntactic backward scan.
 fn sataddSynNonNeg(graph: *const semantic_graph.SemanticGraph, stmts: []const ast.Stmt, up_to: usize, expr: *const ast.Expr, depth: u8) bool {
-    if (depth > 8) return false;
+    const w = sataddSynWidth(graph, stmts, up_to, expr, depth) orelse return false;
+    return w <= 63;
+}
+
+fn sataddIntLitWidth(v: i64) ?u8 {
+    if (v < 0) return null;
+    var w: u8 = 0;
+    var n: u64 = @intCast(v);
+    while (n != 0) : (n >>= 1) w += 1;
+    return w;
+}
+
+fn sataddSynWidth(graph: *const semantic_graph.SemanticGraph, stmts: []const ast.Stmt, up_to: usize, expr: *const ast.Expr, depth: u8) ?u8 {
+    if (depth > 8) return null;
     switch (expr.*) {
-        .int_lit => |l| return l.val >= 0,
+        .int_lit => |l| return sataddIntLitWidth(l.val),
         .name => |n| {
             // Backward scan for latest assignment to name
             var i = up_to;
@@ -9749,24 +9770,40 @@ fn sataddSynNonNeg(graph: *const semantic_graph.SemanticGraph, stmts: []const as
                 if (a.targets.len != 1 or a.values.len != 1) continue;
                 const t = identOf(a.targets[0]) orelse continue;
                 if (!std.mem.eql(u8, t, n.ident)) continue;
-                return sataddSynNonNeg(graph, stmts, i, a.values[0], depth + 1);
+                return sataddSynWidth(graph, stmts, i, a.values[0], depth + 1);
             }
-            return false;
+            return null;
         },
         .binop => |b| {
-            if (b.op == .add or b.op == .mul) {
-                return sataddSynNonNeg(graph, stmts, up_to, b.lhs, depth + 1) and
-                    sataddSynNonNeg(graph, stmts, up_to, b.rhs, depth + 1);
+            if (b.op == .add) {
+                const w1 = sataddSynWidth(graph, stmts, up_to, b.lhs, depth + 1) orelse return null;
+                const w2 = sataddSynWidth(graph, stmts, up_to, b.rhs, depth + 1) orelse return null;
+                const m = @max(w1, w2);
+                // [0,2^w1) + [0,2^w2) fits in [0,2^(m+1)); decline on overflow.
+                if (m >= 63) return null;
+                return m + 1;
+            }
+            if (b.op == .mul) {
+                const w1 = sataddSynWidth(graph, stmts, up_to, b.lhs, depth + 1) orelse return null;
+                const w2 = sataddSynWidth(graph, stmts, up_to, b.rhs, depth + 1) orelse return null;
+                const sum: u16 = @as(u16, w1) + @as(u16, w2);
+                if (sum > 63) return null;
+                return @intCast(sum);
             }
             if (b.op == .band) {
-                // x & mask with non-negative mask -> non-negative
-                if (graph.exactI64OfExpr(b.lhs)) |m| if (m >= 0) return true;
-                if (graph.exactI64OfExpr(b.rhs)) |m| if (m >= 0) return true;
-                return false;
+                // x & mask with non-negative literal mask: result <= mask,
+                // so the mask width bounds the result; bitwise-and cannot wrap.
+                if (graph.exactI64OfExpr(b.lhs)) |m| {
+                    if (sataddIntLitWidth(m)) |w| return w;
+                }
+                if (graph.exactI64OfExpr(b.rhs)) |m| {
+                    if (sataddIntLitWidth(m)) |w| return w;
+                }
+                return null;
             }
-            return false;
+            return null;
         },
-        else => return false,
+        else => return null,
     }
 }
 
