@@ -105,6 +105,15 @@ jobs:
 
       - name: Unit and compile-fail tests
         run: zig build test
+        env:
+          # Absolute path to the pinned idol-native worktree the MCP gate
+          # pairs against (see tools/node/dev/mcp.manifest.json), resolved
+          # from GITHUB_WORKSPACE at runtime. mcp-pair fails closed on
+          # relative paths. NOTE: the idol-native checkout must be
+          # materialized at this path at the manifest-pinned revision;
+          # clpi/idol-native is private and no credential is provisioned
+          # yet, so the gate will report "root is missing" until it is.
+          IDOL_NATIVE_ROOT: ${{ github.workspace }}/idol-native
 
       - name: G-061 metaprogramming smokes
         run: zig build meta-smoke
