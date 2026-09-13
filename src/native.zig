@@ -4576,6 +4576,17 @@ const Arm64Compiler = struct {
                 }
             },
             .binop => blk: {
+                // Both operands are integer literals: answer at compile time.
+                // `1000000 / 7` becomes a mov of 142857, never an `sdiv`.
+                if (ins.ty != .f64 and ins.lhs == .i64 and ins.rhs == .i64) {
+                    if (foldConstBinop(ins.binop, ins.lhs.i64, ins.rhs.i64)) |folded| {
+                        const dst = preferred_result orelse try self.allocReg();
+                        if (preferred_result != null) self.claimReg(dst);
+                        try self.emitMovImm(dst, folded);
+                        if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                        break :blk;
+                    }
+                }
                 if (ins.ty == .f64) {
                     const comparison = comparisonCondition(ins.binop);
                     // f64 ARITHMETIC outside a float-returning function. The
@@ -6683,6 +6694,35 @@ const Arm64Compiler = struct {
             33 => .{ .sh = 5, .neg = false },
             65 => .{ .sh = 6, .neg = false },
             -7 => .{ .sh = 3, .neg = true },
+            else => null,
+        };
+    }
+
+    /// Fold a binary operation on two integer literals to its compile-time
+    /// answer, so `1000000 / 7` never emits an `sdiv`. Division by zero and
+    /// `minInt / -1` are NOT folded -- null falls through to the hardware path,
+    /// preserving the trap the program would have executed. `.div` is
+    /// truncating, `.idiv`/`.mod` are floored, matching the emitted code.
+    fn foldConstBinop(op: dnir.BinOpTag, l: i64, r: i64) ?i64 {
+        return switch (op) {
+            .add => l +% r,
+            .sub => l -% r,
+            .mul => l *% r,
+            .div => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+                null
+            else
+                @divTrunc(l, r),
+            .idiv => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+                null
+            else
+                @divFloor(l, r),
+            .mod => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+                null
+            else
+                @mod(l, r),
+            .band => l & r,
+            .bor => l | r,
+            .bxor => l ^ r,
             else => null,
         };
     }
