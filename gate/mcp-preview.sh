@@ -208,6 +208,76 @@ case "$E" in
   *) bad "case12-derivation-failed" "wrong: [$E]" ;;
 esac
 
+# --- Adversarial fixtures ---
+printf 'main: i64 = ()\n  x = 1 + 2\n  y = x * 3\n  y\nmain()\n' > /tmp/tw.id
+printf 'main: i64 = ()\n  line = stdin:line()\n  stdout:write(line)\n  0\nmain()\n' > /tmp/io.id
+
+# --- Adversarial (a): demand unknown-concept ---
+R=$(preview_req '{"file":"/tmp/tw.id","projection":"demand","edit":{"kind":"constrain","demand":"bad-demand","region":"all"}}')
+T=$(printf '%s' "$R" | inner)
+V=$(printf '%s' "$T" | python3 -c "import sys,json; t=json.load(sys.stdin); print(t.get('kind',''), t.get('reason',''))" 2>/dev/null)
+case "$V" in
+  "refusal unknown-concept") ok "adv-a-unknown-concept" ;;
+  *) bad "adv-a-unknown-concept" "wrong: [$V]" ;;
+esac
+
+# --- Adversarial (b): demand contradictory (no-effect on io.id with effect) ---
+R=$(preview_req '{"file":"/tmp/io.id","projection":"demand","edit":{"kind":"constrain","demand":"no-effect","region":"all"}}')
+T=$(printf '%s' "$R" | inner)
+V=$(printf '%s' "$T" | python3 -c "import sys,json; t=json.load(sys.stdin); print(t.get('kind',''), t.get('reason',''))" 2>/dev/null)
+case "$V" in
+  "refusal contradictory") ok "adv-b-contradictory" ;;
+  *) bad "adv-b-contradictory" "wrong: [$V]" ;;
+esac
+
+# --- Adversarial (c): contrast subject-changed (stale question_id) ---
+R=$(preview_req '{"file":"/tmp/tw.id","projection":"contrast","edit":{"kind":"answer","question_id":"0000000000000000000000000000000000000000000000000000000000000000","merge_kind":"tiebreak","candidates":"keep-first,keep-last,report-conflict","region":"all"}}')
+T=$(printf '%s' "$R" | inner)
+V=$(printf '%s' "$T" | python3 -c "import sys,json; t=json.load(sys.stdin); print(t.get('kind',''), t.get('reason',''))" 2>/dev/null)
+case "$V" in
+  "refusal subject-changed") ok "adv-c-subject-changed" ;;
+  *) bad "adv-c-subject-changed" "wrong: [$V]" ;;
+esac
+
+# --- Adversarial (d): demand projection-stale (unreadable file) ---
+printf 'secret' > /tmp/pv-secret2.id; chmod 000 /tmp/pv-secret2.id
+R=$(preview_req '{"file":"/tmp/pv-secret2.id","projection":"demand","edit":{"kind":"constrain","demand":"no-alloc","region":"all"}}')
+T=$(printf '%s' "$R" | inner)
+V=$(printf '%s' "$T" | python3 -c "import sys,json; t=json.load(sys.stdin); print(t.get('kind',''), t.get('reason',''))" 2>/dev/null)
+chmod 644 /tmp/pv-secret2.id; rm -f /tmp/pv-secret2.id
+case "$V" in
+  "refusal projection-stale") ok "adv-d-projection-stale" ;;
+  *) bad "adv-d-projection-stale" "wrong: [$V]" ;;
+esac
+
+# --- Adversarial (e): contrast face-disagreement (incompatible merge shapes) ---
+TW_HASH=$(sha256sum /tmp/tw.id | cut -d' ' -f1)
+QID_E=$(printf '%s' "$TW_HASH|all|merge|keep-first,report-conflict" | sha256sum | cut -d' ' -f1)
+R=$(preview_req "{\"file\":\"/tmp/tw.id\",\"projection\":\"contrast\",\"edit\":{\"kind\":\"merge\",\"question_id\":\"$QID_E\",\"candidate_a\":\"keep-first\",\"candidate_b\":\"report-conflict\",\"region\":\"all\"}}")
+T=$(printf '%s' "$R" | inner)
+V=$(printf '%s' "$T" | python3 -c "import sys,json; t=json.load(sys.stdin); print(t.get('kind',''), t.get('reason',''))" 2>/dev/null)
+case "$V" in
+  "refusal face-disagreement") ok "adv-e-face-disagreement" ;;
+  *) bad "adv-e-face-disagreement" "wrong: [$V]" ;;
+esac
+
+# --- Adversarial (f): contrast ambiguous merge exposes options (no silent selection) ---
+QID_F=$(printf '%s' "$TW_HASH|all|merge|keep-first,keep-last" | sha256sum | cut -d' ' -f1)
+R=$(preview_req "{\"file\":\"/tmp/tw.id\",\"projection\":\"contrast\",\"edit\":{\"kind\":\"merge\",\"question_id\":\"$QID_F\",\"candidate_a\":\"keep-first\",\"candidate_b\":\"keep-last\",\"region\":\"all\"}}")
+T=$(printf '%s' "$R" | inner)
+V=$(printf '%s' "$T" | python3 -c "
+import sys,json
+t=json.load(sys.stdin)
+k=t.get('kind','')
+p=t.get('proposal',{})
+opts=p.get('options',[]) if isinstance(p,dict) else []
+print(k, len(opts))
+" 2>/dev/null)
+case "$V" in
+  "ambiguous 3") ok "adv-f-ambiguous-options" ;;
+  *) bad "adv-f-ambiguous-options" "wrong: [$V]" ;;
+esac
+
 rm -f /tmp/pv-u1.id /tmp/pv-simp.id /tmp/pv-m1.id /tmp/pv-m2.id /tmp/pv-two.id
 
 printf 'pass=%d fail=%d\n' "$PASS" "$FAIL"
