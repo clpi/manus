@@ -1,0 +1,57 @@
+scope_new: str = ()
+    "||"
+
+scope_push: str = (s: str)
+    s .. "||"
+
+scope_pop: str = (s: str)
+    n: i64 = s:len()
+    i: i64 = n
+    depth: i64 = 0
+    while i >= 1
+        if s:byte(i) == 124 and i < n and s:byte(i + 1) == 124
+            depth = depth + 1
+            if depth == 2
+                return s:sub(1, i - 1) .. "|"
+        else if s:byte(i) == 124 and s:byte(i + 1) != 124
+            depth = 0
+        i = i - 1
+    "||"
+
+scope_define: str = (s: str, name: str, tk: i64, flags: i64)
+    n: i64 = s:len()
+    i: i64 = n
+    while i >= 1
+        if s:byte(i) == 124 and i < n and s:byte(i + 1) == 124
+            return s:sub(1, i) .. name .. ":" .. tk .. ":" .. flags .. "|" .. s:sub(i + 2, n)
+        i = i - 1
+    s .. name .. ":" .. tk .. ":" .. flags .. "|"
+
+scope_lookup: str = (s: str, name: str)
+    needle = "|" .. name .. ":"
+    nn: i64 = needle:len()
+    hn: i64 = s:len()
+    i: i64 = hn - nn + 1
+    while i >= 1
+        hit: i64 = 1
+        j: i64 = 0
+        while j < nn
+            if s:byte(i + j) != needle:byte(j + 1)
+                hit = 0
+                j = nn
+            j = j + 1
+        if hit == 1
+            k: i64 = i + nn
+            tks = ""
+            while k <= hn and s:byte(k) != 58
+                tks = tks .. s:sub(k, k)
+                k = k + 1
+            return tks
+        i = i - 1
+    ""
+
+scope_has: i64 = (s: str, name: str)
+    if scope_lookup(s, name) == ""
+        0
+    else
+        1
