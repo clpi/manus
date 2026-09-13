@@ -1,6 +1,6 @@
 
 chomp: str = (text: str)
-  if not text:len()
+  if !text:len()
     return ""
   n = text:len()
   while n > 0

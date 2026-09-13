@@ -20,7 +20,7 @@ ok: bool = (cmd: str)
 must = (cmd: str)
   if !ok(cmd)
     echo("FAIL: " .. cmd)
-    os:exit(1)
+    os.exit(1)
 
 capture: str = (cmd: str)
   h = io.popen(cmd .. " 2>/dev/null", "r")

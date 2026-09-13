@@ -1,33 +1,33 @@
 local sub = setmetatable({}, {
-  __sub: any = (a: any, b: any)
+  __sub = (a: any, b: any)
     "sub"
   end
 })
 sub = sub - 1
 
 local mul = setmetatable({}, {
-  __mul: any = (a: any, b: any)
+  __mul = (a: any, b: any)
     "mul"
   end
 })
 mul = mul * 1
 
 local div = setmetatable({}, {
-  __div: any = (a: any, b: any)
+  __div = (a: any, b: any)
     "div"
   end
 })
 div = div / 1
 
 local mod = setmetatable({}, {
-  __mod: any = (a: any, b: any)
+  __mod = (a: any, b: any)
     "mod"
   end
 })
 mod = mod % 1
 
 local pow = setmetatable({}, {
-  __pow: any = (a: any, b: any)
+  __pow = (a: any, b: any)
     "pow"
   end
 })

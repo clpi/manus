@@ -1,29 +1,48 @@
+capture: str = (shellline: str)
+  gatecap(shellline)
+
+chomp: str = (text: str)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
+
+status: i64 = (shellline: str)
+  chomp(capture("{shellline} >/dev/null 2>&1; printf \"%d\" $?")):to(i64)
+
+run: i64 = (shellline: str)
+  capture(shellline)
+  0
 
 here: str = ()
-  std.script.chomp(std.script.capture("pwd"))
+  chomp(capture("pwd"))
 
 compiler: str = (root: str)
   "{root}/zig-out/bin/idol"
 
-shout = (msg: str)
+shout: i64 = (msg: str)
   print("luahost: {msg}")
+  0
 
 tally: i64 = (cmd: str)
-  std.script.chomp(std.script.capture(cmd)):to(i64)
+  chomp(capture(cmd)):to(i64)
 
 present: bool = (path: str)
-  std.script.status("test -e {path}") == 0
+  status("test -e {path}") == 0
 
 main: i64 = ()
   root = here()
   bin = compiler(root)
   bad = 0
 
-  if std.script.status("false") == 0
+  if status("false") == 0
     shout("FAIL — control: status() called `false` a success")
     bad = bad + 1
 
-  if not present(bin)
+  if !present(bin)
     shout("FAIL — no compiler at {bin}; run `zig build` first")
     bad = bad + 1
 
@@ -32,23 +51,23 @@ main: i64 = ()
     shout("FAIL — corpus holds {total} case(s), fewer than the 12 ported")
     bad = bad + 1
 
-  work = std.script.chomp(std.script.capture("mktemp -d"))
+  work = chomp(capture("mktemp -d"))
   deny = "{work}/deny.id"
-  std.script.run("printf 'x = [[unterminated\\n' > {deny}")
-  if std.script.status("{bin} check {deny} >/dev/null 2>&1") == 0
+  run("printf 'x = [[unterminated\\n' > {deny}")
+  if status("{bin} check {deny} >/dev/null 2>&1") == 0
     shout("FAIL — control: an unterminated long string was ACCEPTED")
     bad = bad + 1
-  std.script.run("rm -rf {work}")
+  run("rm -rf {work}")
 
   fails = tally("cd {root} && n=0; for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || n=$((n+1)); done; echo $n")
   if fails != 0
     shout("FAIL — {fails} of {total} corpus case(s) rejected")
     shout("the rejected cases, with their diagnostics:")
-    std.script.run("cd {root} && for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || {bin} check $f 2>&1 | grep error: | head -2; done")
+    print(capture("cd {root} && for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || {bin} check $f 2>&1 | grep error: | head -2; done"))
     bad = bad + 1
 
   if bad == 0
     shout("PASS — {total} hosted-language cases accepted, 4 controls held")
-  bad
+  return bad
 
 os.exit(main())

@@ -1,65 +1,65 @@
 local concat_obj = setmetatable({}, {
-  __concat: str = (a: any, b: any)
+  __concat = (a: any, b: any)
     "concat"
   end
 })
 
 local lt_obj = setmetatable({}, {
-  __lt: bool = (a: any, b: any)
+  __lt = (a: any, b: any)
     true
   end
 })
 
 local le_obj = setmetatable({}, {
-  __le: bool = (a: any, b: any)
+  __le = (a: any, b: any)
     true
   end
 })
 
 local unm_obj = setmetatable({}, {
-  __unm: any = (a: any)
+  __unm = (a: any)
     "unm"
   end
 })
 
 local idiv_obj = setmetatable({}, {
-  __idiv: any = (a: any, b: any)
+  __idiv = (a: any, b: any)
     "idiv"
   end
 })
 
 local band_obj = setmetatable({}, {
-  __band: any = (a: any, b: any)
+  __band = (a: any, b: any)
     "band"
   end
 })
 
 local bor_obj = setmetatable({}, {
-  __bor: any = (a: any, b: any)
+  __bor = (a: any, b: any)
     "bor"
   end
 })
 
 local bxor_obj = setmetatable({}, {
-  __bxor: any = (a: any, b: any)
+  __bxor = (a: any, b: any)
     "bxor"
   end
 })
 
 local bnot_obj = setmetatable({}, {
-  __bnot: any = (a: any)
+  __bnot = (a: any)
     "bnot"
   end
 })
 
 local shl_obj = setmetatable({}, {
-  __shl: any = (a: any, b: any)
+  __shl = (a: any, b: any)
     "shl"
   end
 })
 
 local shr_obj = setmetatable({}, {
-  __shr: any = (a: any, b: any)
+  __shr = (a: any, b: any)
     "shr"
   end
 })
