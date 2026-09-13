@@ -4,18 +4,23 @@
 
 | # | directive |
 |---|---|
-| 1 | Generated 2026-09-12T01:40:52 by `bench/verify/verify.py` (platform arm64-macos, seeds=40, full=True). |
-
+| 1 | Generated 2026-09-12T20:41:37 by `bench/verify/verify.py` (platform arm64-macos, seeds=8, full=False). |
 
 | # | directive |
 |---|---|
 | 1 | Policy: every mismatch is a compiler bug report. |
 | 2 | Cases tagged EXPECTED-ADVERSARIAL were designed to defeat a specific optimization; their mismatch confirms the suspected unsoundness. |
 
-
 | opt | cases | pass | mismatch | build_fail | hang |
 |---|---|---|---|---|---|
-| div | 83 | 62 | 4 | 17 | 0 |
+| fold | 57 | 56 | 1 | 0 | 0 |
+| simp | 35 | 32 | 3 | 0 | 0 |
+| imm | 55 | 51 | 4 | 0 | 0 |
+| mulred | 69 | 63 | 6 | 0 | 0 |
+| countdown | 22 | 21 | 1 | 0 | 0 |
+| copy | 19 | 19 | 0 | 0 | 0 |
+| div | 51 | 51 | 0 | 0 | 0 |
+| nest | 20 | 20 | 0 | 0 | 0 |
 
 | section |
 |---|---|
@@ -23,92 +28,63 @@
 
 | # | directive |
 |---|---|
-| 1 | [mismatch] div/neg: byte 0: idol exit 73 != clang exit 244 — known-32bit-limitation: negative folded dividend is zero-extended, not sign-extended |
-| 2 | [mismatch] div/neg2: byte 0: idol exit 22 != clang exit 242 — known-32bit-limitation |
-| 3 | [mismatch] div/negchain0: byte 0: idol exit 7 != clang exit 252 — known-32bit-limitation: negative folded dividend is zero-extended, then chained through division |
-| 4 | [mismatch] div/negchain1: byte 0: idol exit 149 != clang exit 253 — known-32bit-limitation |
-| 5 | [build_fail] div/d0023: idol build failed (byte 5): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0023_b5.o'
+| 1 | [mismatch] fold/mulwrap2: byte 1: idol exit 1 != clang exit 0 — known-32bit-limitation: compile-time arithmetic wraps at 32 bits (see bench/README.md Known limitations) |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/r0024: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0024_b0.o'
+| 1 | [mismatch] simp/r0001: byte 1: idol exit 85 != clang exit 84 |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/d0025: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0025_b0.o'
+| 1 | [mismatch] simp/r0002: byte 1: idol exit 119 != clang exit 118 |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/r0026: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0026_b0.o'
+| 1 | [mismatch] simp/r0005: byte 1: idol exit 107 != clang exit 106 |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/d0027: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0027_b0.o'
+| 1 | [mismatch] imm/sub_wrap: byte 1: idol exit 0 != clang exit 255 — 64-bit wrap on immediate sub |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/d0028: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0028_b0.o'
+| 1 | [mismatch] imm/wrap2: byte 1: idol exit 0 != clang exit 255 — no wrap on sub from max. known-32bit-limitation: integer literals above 4294967295 are truncated at compile time (bench/README.md); this 64-bit wrap probe mismatches until literals go 64-bit |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/r0029: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0029_b0.o'
+| 1 | [mismatch] imm/chain21: byte 1: idol exit 240 != clang exit 239 — wrap: max-4096 across the boundary. known-32bit-limitation: integer literals above 4294967295 are truncated at compile time (bench/README.md); this 64-bit wrap probe mismatches until literals go 64-bit |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/d0030: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0030_b0.o'
+| 1 | [mismatch] imm/r0006: byte 1: idol exit 190 != clang exit 189 |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/r0031: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0031_b0.o'
+| 1 | [mismatch] mulred/wrap3: byte 1: idol exit 0 != clang exit 255 — x*3 near 2^64-1 |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/r0032: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0032_b0.o'
+| 1 | [mismatch] mulred/wrap7: byte 1: idol exit 0 != clang exit 255 — x*7 near 2^64-1 |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/d0033: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0033_b0.o'
+| 1 | [mismatch] mulred/w35: byte 1: idol exit 0 != clang exit 255 — mul chain wrapping 2^64. known-32bit-limitation: integer literals above 4294967295 are truncated at compile time (bench/README.md); this 64-bit wrap probe mismatches until literals go 64-bit |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/r0034: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0034_b0.o'
+| 1 | [mismatch] mulred/w22: byte 1: idol exit 0 != clang exit 255 — mul chain wrapping 2^64. known-32bit-limitation: integer literals above 4294967295 are truncated at compile time (bench/README.md); this 64-bit wrap probe mismatches until literals go 64-bit |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/r0035: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0035_b0.o'
+| 1 | [mismatch] mulred/w79: byte 1: idol exit 0 != clang exit 255 — mul chain wrapping 2^64. known-32bit-limitation: integer literals above 4294967295 are truncated at compile time (bench/README.md); this 64-bit wrap probe mismatches until literals go 64-bit |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/d0036: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0036_b0.o'
+| 1 | [mismatch] mulred/r0006: byte 1: idol exit 66 != clang exit 65 |
 
 | # | directive |
 |---|---|
-| 1 | [build_fail] div/r0037: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0037_b0.o'
-
-| # | directive |
-|---|---|
-| 1 | [build_fail] div/r0038: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_r0038_b0.o'
-
-| # | directive |
-|---|---|
-| 1 | [build_fail] div/d0039: idol build failed (byte 0): plat_link failed: |
-ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0039_b0.o'
+| 1 | [mismatch] countdown/double_inc: byte 0: idol exit 100 != clang exit 50 (expected adversarial) — ADVERSARIAL: two increments per iteration |
 
 | section |
 |---|---|
@@ -124,11 +100,11 @@ ld: file is empty in '$HOME/work/idol-main/bench/verify/.work/v_div_d0039_b0.o'
 |---|---|---|---|---|---|---|
 | arith | 1 | 2026-09-12T00:11:52 | loss | -0.85% | -0.85% | -0.85% |
 | bigconst | 1 | 2026-09-12T00:11:52 | loss | -0.35% | -0.35% | -0.35% |
-| div | 1 | 2026-09-12T00:11:52 | loss | -35.72% | -35.72% | -35.72% |
+| div | 2 | 2026-09-12T00:11:52 | win | +0.15% | -35.72% | +0.15% |
 | fib | 1 | 2026-09-12T00:11:52 | win | +2.31% | +2.31% | +2.31% |
-| mul13 | 1 | 2026-09-12T00:11:52 | loss | -7.52% | -7.52% | -7.52% |
-| nest | 1 | 2026-09-12T00:11:52 | loss | -44.04% | -44.04% | -44.04% |
+| mul13 | 2 | 2026-09-12T00:11:52 | win | +1.26% | -7.52% | +1.26% |
+| nest | 2 | 2026-09-12T00:11:52 | loss | -3.31% | -44.04% | -3.31% |
 | startup | 1 | 2026-09-12T00:11:52 | loss | -4.38% | -4.38% | -4.38% |
 | sum | 1 | 2026-09-12T00:11:52 | loss | -2.95% | -2.95% | -2.95% |
-| upbranch | 1 | 2026-09-12T00:11:52 | loss | -24.09% | -24.09% | -24.09% |
-| zerotrip | 1 | 2026-09-12T00:11:52 | loss | -120.32% | -120.32% | -120.32% |
+| upbranch | 2 | 2026-09-12T00:11:52 | loss | -19.86% | -24.09% | -19.86% |
+| zerotrip | 2 | 2026-09-12T00:11:52 | loss | -4.32% | -120.32% | -4.32% |
