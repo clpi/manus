@@ -527,7 +527,7 @@ worldresp: str = (line: str, idraw: str, bootmark: str)
 
 main: i64 = ()
   line = stdin:line()
-  bm = gatecap("printf '%s' \"$(date +%s%N 2>/dev/null)\"")
+  bm = env("IDOL_SERVER_INCARNATION") or incarnation()
   idraw = jget(line, "id")
   stdout:write(worldresp(line, idraw, bm))
   0

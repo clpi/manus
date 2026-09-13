@@ -50,14 +50,14 @@
 
 | # | directive |
 |---|---|
-| 1 | The `contrast` tool turns unresolved intent into a minimal behavioral question: `tools/mcp/contrast.id`, held by `gate/mcp-contrast.sh`; `native.id` dispatch wiring is pending. |
+| 1 | The `contrast` tool turns unresolved intent into a minimal behavioral question: `tools/mcp/contrast.id` via `tools/mcp/native.id` dispatch, held by `gate/mcp-contrast.sh`. |
 | 2 | Question-mode input is `{"file": "<subject .id>", "ambiguity": {"kind": "tiebreak", "region": "<region>", "candidates": ["keep-first", "keep-last", "report-conflict"]}}`; answer-mode input is `{"file": "<subject .id>", "answer": {"question_id": "<hex>", "candidate": "<name>", "candidates": [...], "region": "<region>", "kind": "tiebreak"}}`; output is `result.content [0].text`. |
 | 3 | The tool is stateless: `question_id` is the SHA-256 of `subject_hash|region|kind|candidates`, recomputed on answer; a mismatch is the `subject-changed` refusal naming re-derivation as the next action. |
 | 4 | `unsupported-ambiguity` (any kind but `tiebreak`) is a tool limitation with next "supply kind tiebreak", not a user question; unreadable subjects and hash failures are refusals, never questions. |
 
 | # | directive |
 |---|---|
-| 1 | The `preview` tool produces checked semantic-change proposals for projection edits: `tools/mcp/preview.id`, held by `gate/mcp-preview.sh`. |
+| 1 | The `preview` tool produces checked semantic-change proposals for projection edits: `tools/mcp/preview.id` via `tools/mcp/native.id` dispatch, held by `gate/mcp-preview.sh`. |
 | 2 | Edit-mode input is `{"file": "<subject .id>", "projection": "frontier", "edit": {"kind": "acquire", "unknown": "<stable-id>", "decision": "acquire\|decline"}}`; identify-mode input is `{"file": "<subject .id>", "projection": "concept", "edit": {"kind": "identify", "a": "<rowkey>", "b": "<rowkey>"}}`; output is `result.content [0].text`. |
 | 3 | Acquire proposals re-derive the frontier and refuse `projection-stale` when the unknown is gone; identify proposals require explain/graph face agreement and emit `ambiguous` with differing facets and explicit options, or the `unknown-concept` / `contradictory` / `face-disagreement` refusals. |
 | 4 | Every proposal carries `checks`, `affected_region`, `voi_basis`, and `provenance` (subject SHA-256, world binary hash, revision); refusals carry `reason`, `next`, `producer`, `not-performed`. |
