@@ -1,0 +1,167 @@
+chomp: str = (text: str)
+  if text == nil or text == ""
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:sub(n, n)
+    if c != "\n" and c != "\r" and c != " " and c != "\t"
+      break
+    n = n - 1
+  text:sub(1, n)
+
+nlines: i64 = (text: str)
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    if text:sub(i, i) == "\n"
+      v = v + 1
+    i = i + 1
+  v
+
+getline: str = (text: str, want: i64)
+  n = 1
+  i = 1
+  len = text:len()
+  start = 1
+  while i <= len
+    if text:sub(i, i) == "\n"
+      if n == want
+        return text:sub(start, i - 1)
+      n = n + 1
+      start = i + 1
+    i = i + 1
+  if n == want
+    return text:sub(start, len)
+  ""
+
+headtab: str = (line: str)
+  i = 1
+  n = line:len()
+  while i <= n
+    if line:sub(i, i) == "\t"
+      return line:sub(1, i - 1)
+    i = i + 1
+  line
+
+tailtab: str = (line: str)
+  i = 1
+  n = line:len()
+  while i <= n
+    if line:sub(i, i) == "\t"
+      return line:sub(i + 1, n)
+    i = i + 1
+  ""
+
+findspace: i64 = (line: str)
+  i = 1
+  n = line:len()
+  while i <= n
+    if line:sub(i, i) == " "
+      return i
+    i = i + 1
+  0
+
+derive: str = (table: str, path: str)
+  total = nlines(table)
+  n = 1
+  while n <= total
+    line = getline(table, n)
+    sp = findspace(line)
+    if sp > 0
+      cls = line:sub(1, sp - 1)
+      prefix = line:sub(sp + 1, line:len())
+      if path == prefix
+        return cls
+      if prefix:len() <= path:len()
+        if path:sub(1, prefix:len()) == prefix
+          return cls
+    n = n + 1
+  ""
+
+mapstatus: str = (cls: str)
+  if cls == "canonical"
+    return "canonical"
+  if cls == "compatibility"
+    return "compat"
+  if cls == "foreign"
+    return "foreign"
+  if cls == "generated"
+    return "scenery"
+  if cls == "negative"
+    return "fixture"
+  ""
+
+valid: i64 = (word: str)
+  if word == "canonical" or word == "compat" or word == "fixture" or word == "foreign" or word == "migration" or word == "scenery"
+    return 1
+  0
+
+main: i64 = ()
+  root = chomp(gatecap("git rev-parse --show-toplevel 2>/dev/null"))
+  if root == ""
+    root = chomp(gatecap("pwd"))
+  manifest = "{root}/docs/spec/corpus.md"
+  defaults = "{root}/docs/source-corpus-classification.md"
+  if gatecap("test -f '{manifest}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("corpus-status gate: FAIL — missing docs/spec/corpus.md")
+    return 2
+  if gatecap("test -f '{defaults}' >/dev/null 2>&1; echo $?") != "0\n"
+    print("corpus-status gate: FAIL — missing docs/source-corpus-classification.md")
+    return 2
+  rules = gatecap("awk '/^```text$/ \{ inb = !inb; next \} inb && /[[:space:]]/ \{ cls = $1; sub(/^[[:space:]]*/, \"\", $0); prefix = $2; if (prefix != \"\") print cls \" \" prefix \}' '{manifest}'")
+  if chomp(rules) == ""
+    print("corpus-status gate: FAIL — manifest yielded 0 rules")
+    return 2
+  defs = gatecap("awk '/^\\|[ \\t]*Derived defaults[ \\t]*\\|/ \{ ind = 1; next \} /^\\|[ \\t]*section[ \\t]*\\|/ \{ ind = 0 \} ind && /^```text$/ \{ inb = !inb; next \} inb && /^[a-z]/ \{ print $1 \" \" $2 \}' '{defaults}'")
+  if chomp(defs) == ""
+    print("corpus-status gate: FAIL — derived defaults yielded 0 rules")
+    return 2
+  files = gatecap("cd '{root}' && git ls-files -- '*.id' | sort")
+  total = nlines(files)
+  if total <= 0
+    print("corpus-status gate: FAIL — no tracked .id files")
+    return 2
+  headers = gatecap("cd '{root}' && git ls-files -- '*.id' | sort | while IFS= read -r f; do h=$(head -n 4 \"$f\" | sed -n 's/^## TEACHING-STATUS:[[:space:]]*\\([a-z]*\\).*/\\1/p' | head -n 1); printf '%s\\t%s\\n' \"$f\" \"$h\"; done")
+  unclassified = 0
+  invalid = 0
+  overrides = 0
+  counts = ""
+  n = 1
+  while n <= total
+    line = getline(headers, n)
+    f = headtab(line)
+    header = tailtab(line)
+    if header != ""
+      if valid(header) == 1
+        overrides = overrides + 1
+        counts = "{counts}{header}\n"
+      else
+        print("  FAIL {f}: invalid TEACHING-STATUS [{header}]")
+        invalid = invalid + 1
+    else
+      cls = derive(rules, f)
+      if cls != ""
+        st = mapstatus(cls)
+        if st == ""
+          print("  FAIL {f}: manifest class [{cls}] has no status mapping")
+          unclassified = unclassified + 1
+        else
+          counts = "{counts}{st}\n"
+      else
+        st = derive(defs, f)
+        if st != ""
+          if valid(st) == 1
+            counts = "{counts}{st}\n"
+          else
+            print("  FAIL {f}: derived default [{st}] is not a status")
+            invalid = invalid + 1
+        else
+          print("  FAIL {f}: no header, no manifest rule, no derived default")
+          unclassified = unclassified + 1
+    n = n + 1
+  print("corpus-status gate: {total} tracked .id files, {overrides} override headers, {unclassified} unclassified, {invalid} invalid")
+  if counts != ""
+    dist = gatecap("printf '%s' '{counts}' | sort | uniq -c | sed 's/^/  /'")
+    print(chomp(dist))
+  unclassified + invalid
