@@ -1,0 +1,1054 @@
+jws: i64 = (text: str, pos: i64)
+  n = text:len()
+  i = pos
+  while i <= n
+    c = text:byte(i)
+    if c == 32 or c == 9 or c == 10 or c == 13
+      i = i + 1
+    else
+      return i
+  i
+
+jstrend: i64 = (text: str, pos: i64)
+  n = text:len()
+  i = pos + 1
+  while i <= n
+    c = text:byte(i)
+    if c == 92
+      i = i + 2
+    else
+      if c == 34
+        return i + 1
+      i = i + 1
+  0
+
+jclose: i64 = (text: str, pos: i64, open: i64, close: i64)
+  n = text:len()
+  depth = 1
+  i = pos + 1
+  while i <= n
+    d = text:byte(i)
+    if d == 34
+      e = jstrend(text, i)
+      if e == 0
+        return 0
+      i = e
+    else
+      if d == open
+        depth = depth + 1
+        i = i + 1
+      else
+        if d == close
+          depth = depth - 1
+          if depth == 0
+            return i + 1
+          i = i + 1
+        else
+          i = i + 1
+  0
+
+jskip: i64 = (text: str, pos: i64)
+  i = jws(text, pos)
+  n = text:len()
+  if i > n
+    return 0
+  c = text:byte(i)
+  if c == 34
+    return jstrend(text, i)
+  if c == 123
+    return jclose(text, i, 123, 125)
+  if c == 91
+    return jclose(text, i, 91, 93)
+  i = i + 1
+  while i <= n
+    d = text:byte(i)
+    if d == 44 or d == 125 or d == 93 or d == 32 or d == 9 or d == 10 or d == 13
+      return i
+    i = i + 1
+  i
+
+jhexdig: i64 = (c: i64)
+  if c >= 48 and c <= 57
+    return c - 48
+  if c >= 97 and c <= 102
+    return c - 87
+  if c >= 65 and c <= 70
+    return c - 55
+  -1
+
+jhex4: i64 = (raw: str, pos: i64)
+  v = 0
+  k = 0
+  while k < 4
+    d = jhexdig(raw:byte(pos + k))
+    if d < 0
+      return -1
+    v = v * 16 + d
+    k = k + 1
+  v
+
+jdec: str = (raw: str)
+  asc = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz\{|\}~"
+  n = raw:len()
+  if n < 2
+    return raw
+  if raw:byte(1) != 34
+    return raw
+  if raw:byte(n) != 34
+    return raw
+  out = ""
+  i = 2
+  while i < n
+    c = raw:byte(i)
+    if c == 92
+      i = i + 1
+      e = raw:byte(i)
+      if e == 110
+        out = out .. "\n"
+      else
+        if e == 116
+          out = out .. "\t"
+        else
+          if e == 114
+            out = out .. "\r"
+          else
+            if e == 117
+              v = jhex4(raw, i + 1)
+              if v >= 32 and v <= 126
+                out = out .. asc:sub(v - 31, v - 31)
+              else
+                out = out .. "?"
+              i = i + 4
+            else
+              if e >= 32 and e <= 126
+                out = out .. asc:sub(e - 31, e - 31)
+              else
+                out = out .. "?"
+    else
+      out = out .. raw:sub(i, i)
+    i = i + 1
+  out
+
+jesc: str = (s: str)
+  hex = "0123456789abcdef"
+  out = "\""
+  i = 1
+  n = s:len()
+  while i <= n
+    c = s:byte(i)
+    if c == 34
+      out = out .. "\\\""
+    else
+      if c == 92
+        out = out .. "\\\\"
+      else
+        if c == 10
+          out = out .. "\\n"
+        else
+          if c == 13
+            out = out .. "\\r"
+          else
+            if c == 9
+              out = out .. "\\t"
+            else
+              if c < 32
+                out = out .. "\\u00" .. hex:sub(c / 16 + 1, c / 16 + 1) .. hex:sub(c % 16 + 1, c % 16 + 1)
+              else
+                out = out .. s:sub(i, i)
+    i = i + 1
+  out .. "\""
+
+jget: str = (text: str, path: str)
+  dot = path:find(".", 1, 1)
+  head = path
+  rest = ""
+  if dot > 0
+    head = path:sub(1, dot - 1)
+    rest = path:sub(dot + 1, path:len())
+  n = text:len()
+  i = jws(text, 1)
+  if i > n
+    return ""
+  if text:byte(i) != 123
+    return ""
+  i = i + 1
+  while true
+    i = jws(text, i)
+    if i > n
+      return ""
+    b = text:byte(i)
+    if b == 125
+      return ""
+    if b != 34
+      return ""
+    e = jstrend(text, i)
+    if e == 0
+      return ""
+    k = jdec(text:sub(i, e - 1))
+    i = jws(text, e)
+    if i > n
+      return ""
+    if text:byte(i) != 58
+      return ""
+    vs = jws(text, i + 1)
+    ve = jskip(text, vs)
+    if ve == 0
+      return ""
+    if k == head
+      if rest == ""
+        return text:sub(vs, ve - 1)
+      return jget(text:sub(vs, ve - 1), rest)
+    i = jws(text, ve)
+    if i > n
+      return ""
+    b2 = text:byte(i)
+    if b2 == 44
+      i = i + 1
+    else
+      return ""
+  ""
+
+jhas: i64 = (text: str, path: str)
+  if jget(text, path) == ""
+    0
+  else
+    1
+
+jcount: i64 = (text: str, path: str)
+  raw = jget(text, path)
+  if raw == ""
+    return -1
+  n = raw:len()
+  i = jws(raw, 1)
+  if i > n
+    return -1
+  if raw:byte(i) != 91
+    return -1
+  i = jws(raw, i + 1)
+  if i > n
+    return -1
+  if raw:byte(i) == 93
+    return 0
+  count = 0
+  while true
+    ve = jskip(raw, i)
+    if ve == 0
+      return -1
+    count = count + 1
+    i = jws(raw, ve)
+    if i > n
+      return -1
+    b = raw:byte(i)
+    if b == 44
+      i = jws(raw, i + 1)
+    else
+      if b == 93
+        return count
+      return -1
+  -1
+
+jitem: str = (text: str, path: str, idx: i64)
+  raw = jget(text, path)
+  if raw == ""
+    return ""
+  n = raw:len()
+  i = jws(raw, 1)
+  if i > n
+    return ""
+  if raw:byte(i) != 91
+    return ""
+  i = jws(raw, i + 1)
+  if i > n
+    return ""
+  k = 1
+  while true
+    ve = jskip(raw, i)
+    if ve == 0
+      return ""
+    if k == idx
+      return raw:sub(i, ve - 1)
+    k = k + 1
+    i = jws(raw, ve)
+    if i > n
+      return ""
+    b = raw:byte(i)
+    if b == 44
+      i = jws(raw, i + 1)
+      if i > n
+        return ""
+    else
+      return ""
+  ""
+
+jcountkey: i64 = (text: str, key: str)
+  n = text:len()
+  i = jws(text, 1)
+  if i > n
+    return -1
+  if text:byte(i) != 123
+    return -1
+  i = i + 1
+  found = 0
+  while true
+    i = jws(text, i)
+    if i > n
+      return -1
+    b = text:byte(i)
+    if b == 125
+      return found
+    if b != 34
+      return -1
+    e = jstrend(text, i)
+    if e == 0
+      return -1
+    if jdec(text:sub(i, e - 1)) == key
+      found = found + 1
+    i = jws(text, e)
+    if i > n
+      return -1
+    if text:byte(i) != 58
+      return -1
+    ve = jskip(text, jws(text, i + 1))
+    if ve == 0
+      return -1
+    i = jws(text, ve)
+    if i > n
+      return -1
+    b2 = text:byte(i)
+    if b2 == 44
+      i = i + 1
+    else
+      if b2 == 125
+        return found
+      return -1
+  -1
+
+shq: str = (s: str)
+  out = "'"
+  i = 1
+  n = s:len()
+  while i <= n
+    c = s:sub(i, i)
+    if c == "'"
+      out = out .. "'\\''"
+    else
+      out = out .. c
+    i = i + 1
+  out .. "'"
+
+wvalidline: i64 = (line: str)
+  n = line:len()
+  i = jws(line, 1)
+  if i > n
+    return 0
+  if line:byte(i) != 123
+    return 0
+  e = jskip(line, i)
+  if e == 0
+    return 0
+  if jws(line, e) <= n
+    return 0
+  1
+
+werr: str = (idraw: str, code: i64, reason: str, next: str, producer: str, notdone: str)
+  msg = "\{\"reason\":" .. jesc(reason) .. ",\"next\":" .. jesc(next) .. ",\"producer\":" .. jesc(producer) .. ",\"not-performed\":" .. notdone .. "\}"
+  "\{\"jsonrpc\":\"2.0\",\"id\":" .. idraw .. ",\"error\":\{\"code\":" .. "{code}" .. ",\"message\":" .. jesc(msg) .. "\}\}"
+
+wob: str = (oid: str, status: str, producer: str, evidence: str)
+  "\{\"id\":" .. jesc(oid) .. ",\"status\":" .. jesc(status) .. ",\"producer\":" .. jesc(producer) .. ",\"evidence\":" .. jesc(evidence) .. "\}"
+
+wrowkey: str = (row: str)
+  jget(row, "module") .. "|" .. jdec(jget(row, "home")) .. "|" .. jget(row, "relations") .. "|" .. jget(row, "shapes") .. "|" .. jget(row, "applications") .. "|" .. jget(row, "shared_demand")
+
+wrefkey: str = (row: str)
+  jget(row, "module") .. "|" .. jdec(jget(row, "reason")) .. "|" .. jget(row, "split")
+
+wdigits: i64 = (text: str)
+  if text == ""
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:byte(i)
+    if c < 48 or c > 57
+      return -1
+    v = v * 10 + c - 48
+    i = i + 1
+  v
+
+wtexit: i64 = (out: str)
+  pos = 0
+  i = 1
+  while true
+    f = out:find("__exit:", i, 1)
+    if f == 0
+      break
+    pos = f
+    i = f + 1
+  if pos == 0
+    return -1
+  wdigits(out:sub(pos + 7, out:len()))
+
+wchomp: str = (text: str)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c == 10 or c == 13
+      n = n - 1
+    else
+      break
+  if n <= 0
+    return ""
+  text:sub(1, n)
+
+wtbody: str = (out: str)
+  pos = 0
+  i = 1
+  while true
+    f = out:find("__exit:", i, 1)
+    if f == 0
+      break
+    pos = f
+    i = f + 1
+  if pos <= 2
+    return ""
+  wchomp(out:sub(1, pos - 2))
+pfacet: str = (text: str, idx: i64)
+  n = text:len()
+  start = 1
+  k = 1
+  i = 1
+  while i <= n
+    if text:byte(i) == 124
+      if k == idx
+        return text:sub(start, i - 1)
+      k = k + 1
+      start = i + 1
+    i = i + 1
+  if k == idx
+    return text:sub(start, n)
+  ""
+
+pnfacets: i64 = (text: str)
+  if text == ""
+    return 0
+  n = 1
+  i = 1
+  while i <= text:len()
+    if text:byte(i) == 124
+      n = n + 1
+    i = i + 1
+  n
+
+pfname: str = (idx: i64)
+  if idx == 1
+    return "module"
+  if idx == 2
+    return "home"
+  if idx == 3
+    return "relations"
+  if idx == 4
+    return "shapes"
+  if idx == 5
+    return "applications"
+  "shared_demand"
+
+pnodefor: str = (body: str, idstr: str)
+  n = jcount(body, "nodes")
+  i = 1
+  while i <= n
+    row = jitem(body, "nodes", i)
+    if jget(row, "id") == idstr
+      return row
+    i = i + 1
+  ""
+
+puid: str = (node: str)
+  ck = jdec(jget(node, "callee_kind"))
+  ac = jget(node, "arg_count")
+  ln = jget(node, "line")
+  co = jget(node, "col")
+  if ck == ""
+    return ""
+  if ac == ""
+    return ""
+  if ln == ""
+    return ""
+  if co == ""
+    return ""
+  "call|" .. ck .. "|" .. ac .. "|" .. ln .. "|" .. co
+
+plisted: i64 = (body: str, path: str, uid: str)
+  n = jcount(body, path)
+  if n < 0
+    return 0
+  i = 1
+  while i <= n
+    idstr = jdec(jitem(body, path, i))
+    node = pnodefor(body, idstr)
+    if node != ""
+      if puid(node) == uid
+        return 1
+    i = i + 1
+  0
+
+pblockedjson: str = (body: str)
+  out = "["
+  first = 1
+  nb = jcount(body, "blocking_applications")
+  i = 1
+  while i <= nb
+    idstr = jdec(jitem(body, "blocking_applications", i))
+    node = pnodefor(body, idstr)
+    if node != ""
+      u = puid(node)
+      if u != ""
+        if first == 0
+          out = out .. ","
+        first = 0
+        out = out .. jesc(u)
+    i = i + 1
+  out .. "]"
+
+pgraphraw: str = (bin: str, file: str)
+  qf = shq(file)
+  gatecap("timeout 60 \"" .. bin .. "\" graph " .. qf .. " 2>/dev/null; printf '\\n__exit:%d' \"$?\"")
+
+pexplainraw: str = (bin: str, file: str)
+  qf = shq(file)
+  gatecap("timeout 60 \"" .. bin .. "\" explain " .. qf .. " 2>/dev/null; printf '\\n__exit:%d' \"$?\"")
+
+phash: str = (file: str)
+  qf = shq(file)
+  line = gatecap("sha256sum -- " .. qf .. " 2>/dev/null")
+  if line:len() >= 64
+    return line:sub(1, 64)
+  ""
+
+pok: str = (idraw: str, payload: str)
+  "\{\"jsonrpc\":\"2.0\",\"id\":" .. idraw .. ",\"result\":\{\"content\":[\{\"type\":\"text\",\"text\":" .. jesc(payload) .. "\}]\}\}"
+
+thex: i64 = (s: str)
+  if s == ""
+    return 0
+  i = 1
+  n = s:len()
+  while i <= n
+    if jhexdig(s:byte(i)) < 0
+      return 0
+    i = i + 1
+  1
+
+tsh8: str = (s: str)
+  if s:len() < 8
+    return s
+  s:sub(1, 8)
+
+tbinhash: str = (bin: str)
+  qb = shq(bin)
+  if os.execute("test -r " .. qb) != 0
+    return ""
+  line = gatecap("sha256sum -- " .. qb .. " 2>/dev/null")
+  if line:len() >= 64
+    return line:sub(1, 64)
+  ""
+
+trevision: str = ()
+  rev = wchomp(gatecap("git rev-parse HEAD 2>/dev/null"))
+  if rev == ""
+    return "unknown"
+  rev
+
+tboot: str = ()
+  b = env("IDOL_SERVER_INCARNATION") or ""
+  b
+
+tprovjson: str = (file: str, sh: str, deriv: str, bin: str, bh: str, rev: str, boot: str)
+  "\{\"subject\":" .. jesc(file) .. ",\"subject_hash\":\"" .. sh .. "\",\"derivation\":" .. jesc(deriv) .. ",\"world\":\{\"bin\":" .. jesc(bin) .. ",\"binhash\":\"" .. bh .. "\",\"revision\":" .. jesc(rev) .. ",\"incarnation\":" .. jesc(boot) .. "\}\}"
+
+tattempt: str = (seed: str)
+  qs = shq(seed)
+  wchomp(gatecap("printf '%s' " .. qs .. " | sha256sum 2>/dev/null | cut -c1-16"))
+
+tob: str = (oid: str, status: str, producer: str, evidence: str, next: str)
+  "\{\"id\":" .. jesc(oid) .. ",\"status\":" .. jesc(status) .. ",\"producer\":" .. jesc(producer) .. ",\"evidence\":" .. jesc(evidence) .. ",\"next\":" .. jesc(next) .. "\}"
+
+tnuids: i64 = (body: str)
+  n = jcount(body, "unresolved_applications")
+  if n < 0
+    return 0
+  n
+
+tuidat: str = (body: str, idx: i64)
+  idstr = jdec(jitem(body, "unresolved_applications", idx))
+  node = pnodefor(body, idstr)
+  if node == ""
+    return ""
+  puid(node)
+
+tvoi: i64 = (body: str, uid: str)
+  v = 0
+  if plisted(body, "unresolved_applications", uid) == 1
+    v = v + 50
+  if plisted(body, "blocking_applications", uid) == 1
+    v = v + 100
+  v
+
+tmodof: str = (body: str, idstr: str)
+  cur = idstr
+  while true
+    node = pnodefor(body, cur)
+    if node == ""
+      return ""
+    if jdec(jget(node, "kind")) == "module"
+      return cur
+    cur = jdec(jget(node, "scope"))
+    if cur == ""
+      return ""
+  ""
+
+trefkeys: str = (body: str)
+  out = "["
+  first = 1
+  n = jcount(body, "refusals")
+  i = 1
+  while i <= n
+    if first == 0
+      out = out .. ","
+    first = 0
+    out = out .. jesc(wrefkey(jitem(body, "refusals", i)))
+    i = i + 1
+  out .. "]"
+
+trowfor: str = (body: str, key: str)
+  n = jcount(body, "concepts")
+  i = 1
+  while i <= n
+    row = jitem(body, "concepts", i)
+    if wrowkey(row) == key
+      return row
+    i = i + 1
+  ""
+
+tisref: i64 = (body: str, key: str)
+  n = jcount(body, "refusals")
+  i = 1
+  while i <= n
+    if wrefkey(jitem(body, "refusals", i)) == key
+      return 1
+    i = i + 1
+  0
+
+tisrefmod: i64 = (body: str, mod: str)
+  n = jcount(body, "refusals")
+  i = 1
+  while i <= n
+    rk = wrefkey(jitem(body, "refusals", i))
+    if pfacet(rk, 1) == mod
+      return 1
+    i = i + 1
+  0
+
+trefreason: str = (body: str, mod: str)
+  n = jcount(body, "refusals")
+  i = 1
+  while i <= n
+    rk = wrefkey(jitem(body, "refusals", i))
+    if pfacet(rk, 1) == mod
+      return pfacet(rk, 2)
+    i = i + 1
+  ""
+
+tctxok: str = (ctx: str)
+  if wvalidline(ctx) == 0
+    return "not a single JSON value"
+  if ctx:byte(jws(ctx, 1)) != 123
+    return "not a JSON object"
+  if jdec(jget(ctx, "attempt_id")) == ""
+    return "attempt_id"
+  if jdec(jget(ctx, "owner")) == ""
+    return "owner"
+  rsh = jdec(jget(ctx, "subject_hash"))
+  if rsh == ""
+    return "subject_hash"
+  if thex(rsh) == 0
+    return "subject_hash"
+  if rsh:len() != 64
+    return "subject_hash"
+  rbh = jdec(jget(ctx, "world.binhash"))
+  if rbh == ""
+    return "world.binhash"
+  if thex(rbh) == 0
+    return "world.binhash"
+  if rbh:len() != 64
+    return "world.binhash"
+  if jcount(ctx, "verified") < 0
+    return "verified"
+  if jcount(ctx, "outstanding") < 0
+    return "outstanding"
+  if jcount(ctx, "not_claimed") < 0
+    return "not_claimed"
+  ""
+
+tcap: i64 = (cap: str)
+  if cap == "derive-frontier"
+    return 1
+  if cap == "read-subject"
+    return 1
+  if cap == "retain-context"
+    return 1
+  if cap == "acquire-unknown"
+    return 0
+  if cap == "execute-unresolved"
+    return 0
+  if cap == "default-unknown"
+    return 0
+  if cap == "network"
+    return 0
+  if cap == "deploy-effect"
+    return 0
+  -1
+
+tcapnext: str = (cap: str)
+  if cap == "acquire-unknown"
+    return "acquire the unknown via the preview tool (runtime-guard or static-proof), then re-run retain"
+  if cap == "execute-unresolved"
+    return "resolve the unknown first: execution of unresolved applications is never performed"
+  if cap == "default-unknown"
+    return "resolve the unknown: an uncertain value stays uncertain and is never defaulted"
+  if cap == "network"
+    return "no network-capable producer is bound in this tool"
+  "invoke the capability-holding producer directly: the partial tool performs no effects"
+
+tprologue: str = (idraw: str, file: str, bin: str)
+  qf = shq(file)
+  orc = os.execute("test -r " .. qf)
+  if orc != 0
+    return werr(idraw, -32000, "unreadable-subject", "supply a readable subject file", "caller", "[\"partial\"]")
+  qb = shq(bin)
+  xrc = os.execute("test -x " .. qb)
+  if xrc != 0
+    return werr(idraw, -32000, "derivation-unavailable", "make the world binary executable: " .. bin, "launcher/build", "[\"partial\"]")
+  ""
+
+tgraph: str = (idraw: str, bin: str, file: str)
+  raw = pgraphraw(bin, file)
+  if wtexit(raw) != 0
+    return ""
+  wtbody(raw)
+
+tretain: str = (idraw: str, args: str, file: str, bin: str)
+  owner = jdec(jget(args, "owner"))
+  if owner == ""
+    return werr(idraw, -32602, "invalid-params", "supply arguments.owner as a non-empty string", "caller", "[\"partial\"]")
+  braw = jdec(jget(args, "budget"))
+  b = wdigits(braw)
+  if b < 0
+    return werr(idraw, -32602, "invalid-params", "supply arguments.budget as a non-negative integer", "caller", "[\"partial\"]")
+  perr = tprologue(idraw, file, bin)
+  if perr != ""
+    return perr
+  body = tgraph(idraw, bin, file)
+  if body == ""
+    return werr(idraw, -32000, "derivation-failed", "inspect the world binary at " .. bin .. ": graph did not complete for this subject", "world-binary", "[\"partial\"]")
+  sh = phash(file)
+  bh = tbinhash(bin)
+  rev = trevision()
+  boot = tboot()
+  m = tnuids(body)
+  if b > m
+    b = m
+  verified = "["
+  outstanding = "["
+  i = 1
+  while i <= m
+    uid = tuidat(body, i)
+    if uid == ""
+      return werr(idraw, -32000, "derivation-failed", "the world binary produced an unidentifiable application node", "world-binary", "[\"partial\"]")
+    if i <= b
+      v = tvoi(body, uid)
+      ev = "present-in-frontier@" .. tsh8(sh) .. ";identity-stable;voi_cents:" .. "{v}"
+      ob = tob(uid, "verified", "partial", ev, "none: this subresult is retained")
+      if i > 1
+        verified = verified .. ","
+      verified = verified .. ob
+    else
+      ev = "unchecked: beyond budget " .. "{b}"
+      nx = "retain with a larger budget, or load this context and continue at " .. uid
+      ob = tob(uid, "outstanding", "partial", ev, nx)
+      if i > b + 1
+        outstanding = outstanding .. ","
+      outstanding = outstanding .. ob
+    i = i + 1
+  verified = verified .. "]"
+  outstanding = outstanding .. "]"
+  nref = jcount(body, "refusals")
+  if nref < 0
+    nref = 0
+  status = "partial"
+  if m - b == 0
+    if nref == 0
+      status = "complete"
+  seed = sh .. "|" .. owner .. "|retain|" .. "{b}"
+  aid = tattempt(seed)
+  nc = "[\"concept-verdict\",\"acquisition-of-unknowns\",\"execution-of-unresolved-applications\",\"deployment-effect\"]"
+  payload = "\{\"status\":\"" .. status .. "\",\"scope\":\"retention-search\",\"attempt_id\":\"" .. aid .. "\",\"owner\":" .. jesc(owner) .. ",\"subject\":" .. jesc(file) .. ",\"subject_hash\":\"" .. sh .. "\",\"derivation\":\"idol graph\",\"world\":\{\"bin\":" .. jesc(bin) .. ",\"binhash\":\"" .. bh .. "\",\"revision\":" .. jesc(rev) .. ",\"incarnation\":" .. jesc(boot) .. "\},\"verified\":" .. verified .. ",\"outstanding\":" .. outstanding .. ",\"blocking\":" .. trefkeys(body) .. ",\"not_claimed\":" .. nc .. "\}"
+  pok(idraw, payload)
+
+tload: str = (idraw: str, args: str, file: str, bin: str)
+  orc = os.execute("test -r " .. shq(file))
+  if orc != 0
+    return werr(idraw, -32000, "unreadable-subject", "supply a readable subject file", "caller", "[\"partial\"]")
+  craw = jget(args, "context")
+  if craw == ""
+    return werr(idraw, -32602, "invalid-params", "supply arguments.context as the retained context JSON string", "caller", "[\"partial\"]")
+  ctx = jdec(craw)
+  bad = tctxok(ctx)
+  if bad != ""
+    return werr(idraw, -32000, "context-corrupt", "the retained context is missing or malformed: " .. bad .. "; retain a fresh context", "caller", "[\"load\"]")
+  sh = phash(file)
+  rsh = jdec(jget(ctx, "subject_hash"))
+  if sh != rsh
+    return werr(idraw, -32000, "context-stale", "the subject changed since the attempt was retained: re-run retain on the current subject", "partial", "[\"load\"]")
+  bh = tbinhash(bin)
+  rbh = jdec(jget(ctx, "world.binhash"))
+  if bh == ""
+    return werr(idraw, -32000, "world-moved", "the world binary is unreadable: re-run retain under a readable world binary", "partial", "[\"load\"]")
+  if bh != rbh
+    return werr(idraw, -32000, "world-moved", "the world binary changed since the attempt was retained: re-run retain under the current binary", "partial", "[\"load\"]")
+  rev = trevision()
+  rrev = jdec(jget(ctx, "world.revision"))
+  rnote = "null"
+  if rev != rrev
+    rnote = jesc("revision advanced from " .. rrev .. " to " .. rev .. " without binary change; verified subresults retained")
+  ver = jget(ctx, "verified")
+  out = jget(ctx, "outstanding")
+  ncl = jget(ctx, "not_claimed")
+  aid = jdec(jget(ctx, "attempt_id"))
+  owner = jdec(jget(ctx, "owner"))
+  nout = jcount(ctx, "outstanding")
+  nx = "no outstanding obligations remain; consult not_claimed before any completion claim"
+  if nout > 0
+    first = jdec(jget(jitem(ctx, "outstanding", 1), "id"))
+    nx = "resume at " .. first
+  payload = "\{\"status\":\"continue\",\"attempt_id\":" .. jesc(aid) .. ",\"owner\":" .. jesc(owner) .. ",\"verified\":" .. ver .. ",\"outstanding\":" .. out .. ",\"not_claimed\":" .. ncl .. ",\"next\":" .. jesc(nx) .. ",\"provenance\":\{\"subject\":" .. jesc(file) .. ",\"subject_hash\":\"" .. sh .. "\",\"world\":" .. jget(ctx, "world") .. ",\"revision_note\":" .. rnote .. "\}\}"
+  pok(idraw, payload)
+
+tdeploy: str = (idraw: str, args: str, file: str, bin: str)
+  cap = jdec(jget(args, "capability"))
+  if cap == ""
+    return werr(idraw, -32602, "invalid-params", "supply arguments.capability as a string", "caller", "[\"partial\"]")
+  avail = tcap(cap)
+  if avail < 0
+    return werr(idraw, -32000, "unknown-capability", "the partial tool knows: derive-frontier, read-subject, retain-context, acquire-unknown, execute-unresolved, default-unknown, network, deploy-effect", "partial", "[\"partial\"]")
+  perr = tprologue(idraw, file, bin)
+  if perr != ""
+    return perr
+  body = tgraph(idraw, bin, file)
+  if body == ""
+    return werr(idraw, -32000, "derivation-failed", "inspect the world binary at " .. bin .. ": graph did not complete for this subject", "world-binary", "[\"partial\"]")
+  sh = phash(file)
+  bh = tbinhash(bin)
+  rev = trevision()
+  boot = tboot()
+  nu = tnuids(body)
+  nb = jcount(body, "blocking_applications")
+  if nb < 0
+    nb = 0
+  nco = jcount(body, "concepts")
+  if nco < 0
+    nco = 0
+  nrf = jcount(body, "refusals")
+  if nrf < 0
+    nrf = 0
+  art = tob("artifact:" .. tsh8(sh), "verified", "partial", "derived by " .. tsh8(bh) .. " over subject " .. tsh8(sh) .. ": concepts=" .. "{nco} refusals=" .. "{nrf} unresolved=" .. "{nu} blocking=" .. "{nb}", "none: this artifact is retained")
+  did = "deploy:" .. cap .. ":" .. tsh8(sh)
+  reason = "capability-unavailable"
+  if avail == 1
+    reason = "effect-not-performed"
+  nx = tcapnext(cap)
+  dem = tob(did, "unresolved", "partial", reason, nx)
+  prov = tprovjson(file, sh, "idol graph", bin, bh, rev, boot)
+  ncl = "[\"deployment-effect\",\"concept-verdict\",\"acquisition-of-unknowns\",\"execution-of-unresolved-applications\"]"
+  payload = "\{\"status\":\"partial\",\"demand\":" .. dem .. ",\"verified\":[" .. art .. "],\"outstanding\":[" .. dem .. "],\"not_claimed\":" .. ncl .. ",\"provenance\":" .. prov .. "\}"
+  pok(idraw, payload)
+
+tevaluate: str = (idraw: str, args: str, file: str, bin: str)
+  region = jdec(jget(args, "region"))
+  if region == ""
+    return werr(idraw, -32602, "invalid-params", "supply arguments.region as a concept rowkey", "caller", "[\"partial\"]")
+  perr = tprologue(idraw, file, bin)
+  if perr != ""
+    return perr
+  expraw = pexplainraw(bin, file)
+  if wtexit(expraw) != 0
+    return werr(idraw, -32000, "derivation-failed", "inspect the world binary at " .. bin .. ": explain did not complete for this subject", "world-binary", "[\"partial\"]")
+  body = tgraph(idraw, bin, file)
+  if body == ""
+    return werr(idraw, -32000, "derivation-failed", "inspect the world binary at " .. bin .. ": graph did not complete for this subject", "world-binary", "[\"partial\"]")
+  expbody = wtbody(expraw)
+  ne = jcount(expbody, "concept.concepts")
+  ng = jcount(body, "concepts")
+  if ne < 1
+    return werr(idraw, -32000, "face-disagreement", "re-run derivation: the produced faces disagree on concept rows", "world-binary", "[\"partial\"]")
+  if ne != ng
+    return werr(idraw, -32000, "face-disagreement", "re-run derivation: the produced faces disagree on concept rows", "world-binary", "[\"partial\"]")
+  i = 1
+  while i <= ne
+    if wrowkey(jitem(expbody, "concept.concepts", i)) != wrowkey(jitem(body, "concepts", i))
+      return werr(idraw, -32000, "face-disagreement", "re-run derivation: the produced faces disagree on concept rows", "world-binary", "[\"partial\"]")
+    i = i + 1
+  re = jcount(expbody, "concept.refusals")
+  rg = jcount(body, "refusals")
+  if re < 0
+    return werr(idraw, -32000, "face-disagreement", "re-run derivation: the produced faces disagree on refusal rows", "world-binary", "[\"partial\"]")
+  if re != rg
+    return werr(idraw, -32000, "face-disagreement", "re-run derivation: the produced faces disagree on refusal rows", "world-binary", "[\"partial\"]")
+  i = 1
+  while i <= re
+    if wrefkey(jitem(expbody, "concept.refusals", i)) != wrefkey(jitem(body, "refusals", i))
+      return werr(idraw, -32000, "face-disagreement", "re-run derivation: the produced faces disagree on refusal rows", "world-binary", "[\"partial\"]")
+    i = i + 1
+  row = trowfor(body, region)
+  if row == ""
+    if tisref(body, region) == 1
+      return werr(idraw, -32000, "region-refused", "the region is a refusal row: it cannot be evaluated; resolve the refusal first", "partial", "[\"partial\"]")
+    return werr(idraw, -32000, "unknown-concept", "supply a concept rowkey from the current concept projection", "partial", "[\"partial\"]")
+  rmod = pfacet(region, 1)
+  m = tnuids(body)
+  blockers = ""
+  i = 1
+  while i <= m
+    idstr = jdec(jitem(body, "unresolved_applications", i))
+    if tmodof(body, idstr) == rmod
+      uid = tuidat(body, i)
+      if blockers != ""
+        blockers = blockers .. ","
+      blockers = blockers .. uid
+    i = i + 1
+  if blockers != ""
+    return werr(idraw, -32000, "region-not-closed", "resolve the region's unresolved applications (" .. blockers .. "), then re-run evaluate", "partial", "[\"partial\"]")
+  verdict = "held"
+  rdet = ""
+  if tisrefmod(body, rmod) == 1
+    verdict = "refused"
+    rdet = ",\"refusal_reason\":" .. jesc(trefreason(body, rmod))
+  dependents = "["
+  first = 1
+  n = jcount(body, "concepts")
+  i = 1
+  while i <= n
+    k = wrowkey(jitem(body, "concepts", i))
+    if k != region
+      if first == 0
+        dependents = dependents .. ","
+      first = 0
+      dependents = dependents .. tob(k, "partial", "partial", "not evaluated in this call", "evaluate this region explicitly")
+    i = i + 1
+  i = 1
+  while i <= m
+    uid = tuidat(body, i)
+    if first == 0
+      dependents = dependents .. ","
+    first = 0
+    dependents = dependents .. tob(uid, "partial", "partial", "unresolved application", "acquire via the preview tool, then re-run retain")
+    i = i + 1
+  dependents = dependents .. "]"
+  sh = phash(file)
+  bh = tbinhash(bin)
+  rev = trevision()
+  boot = tboot()
+  prov = tprovjson(file, sh, "idol explain + idol graph", bin, bh, rev, boot)
+  ev = "\{\"region\":" .. jesc(region) .. ",\"row\":" .. row .. ",\"faces\":\"agree\",\"region_verdict\":\"" .. verdict .. "\"" .. rdet .. "\}"
+  ncl = "[\"subject-verdict\",\"evaluation-of-dependent-regions\",\"acquisition-of-unknowns\",\"execution-of-unresolved-applications\"]"
+  payload = "\{\"status\":\"partial\",\"evaluated\":" .. ev .. ",\"dependents\":" .. dependents .. ",\"not_claimed\":" .. ncl .. ",\"provenance\":" .. prov .. "\}"
+  pok(idraw, payload)
+
+tadmit: str = (idraw: str, args: str)
+  craw = jget(args, "context")
+  nx = "retain a context to expose the outstanding obligations"
+  if craw != ""
+    ctx = jdec(craw)
+    if tctxok(ctx) == ""
+      nout = jcount(ctx, "outstanding")
+      if nout > 0
+        first = jdec(jget(jitem(ctx, "outstanding", 1), "id"))
+        nx = "resolve outstanding obligation " .. first .. ": a partial result is never admitted as complete"
+      else
+        nx = "consult not_claimed: even a fully retained search is not an admission of the subject"
+  werr(idraw, -32000, "admission-requires-completion", nx, "partial", "[\"admit\"]")
+
+texecute: str = (idraw: str, args: str, file: str, bin: str)
+  uid = jdec(jget(args, "unknown"))
+  if uid == ""
+    return werr(idraw, -32602, "invalid-params", "supply arguments.unknown as a stable unknown id", "caller", "[\"partial\"]")
+  if pnfacets(uid) != 5
+    return werr(idraw, -32602, "invalid-params", "supply arguments.unknown as a stable unknown id", "caller", "[\"partial\"]")
+  if pfacet(uid, 1) != "call"
+    return werr(idraw, -32602, "invalid-params", "supply arguments.unknown as a stable unknown id", "caller", "[\"partial\"]")
+  perr = tprologue(idraw, file, bin)
+  if perr != ""
+    return perr
+  body = tgraph(idraw, bin, file)
+  if body == ""
+    return werr(idraw, -32000, "derivation-failed", "inspect the world binary at " .. bin .. ": graph did not complete for this subject", "world-binary", "[\"partial\"]")
+  if plisted(body, "unresolved_applications", uid) == 0
+    if plisted(body, "blocking_applications", uid) == 0
+      return werr(idraw, -32000, "projection-stale", "re-derive the frontier: the unknown is no longer listed", "partial", "[\"execute\"]")
+  werr(idraw, -32000, "unresolved-application", "acquire " .. uid .. " via the preview tool before any execution: an unperformed effect stays unperformed", "partial", "[\"execute\"]")
+
+tdefault: str = (idraw: str, args: str, file: str, bin: str)
+  uid = jdec(jget(args, "unknown"))
+  if uid == ""
+    return werr(idraw, -32602, "invalid-params", "supply arguments.unknown as a stable unknown id", "caller", "[\"partial\"]")
+  if pnfacets(uid) != 5
+    return werr(idraw, -32602, "invalid-params", "supply arguments.unknown as a stable unknown id", "caller", "[\"partial\"]")
+  if pfacet(uid, 1) != "call"
+    return werr(idraw, -32602, "invalid-params", "supply arguments.unknown as a stable unknown id", "caller", "[\"partial\"]")
+  perr = tprologue(idraw, file, bin)
+  if perr != ""
+    return perr
+  body = tgraph(idraw, bin, file)
+  if body == ""
+    return werr(idraw, -32000, "derivation-failed", "inspect the world binary at " .. bin .. ": graph did not complete for this subject", "world-binary", "[\"partial\"]")
+  if plisted(body, "unresolved_applications", uid) == 0
+    if plisted(body, "blocking_applications", uid) == 0
+      return werr(idraw, -32000, "projection-stale", "re-derive the frontier: the unknown is no longer listed", "partial", "[\"default\"]")
+  werr(idraw, -32000, "unknowns-are-not-defaulted", "resolve " .. uid .. ": an uncertain value stays uncertain; no missing requirement is silently replaced by a default", "partial", "[\"default\"]")
+
+tresp: str = (line: str, idraw: str)
+  args = jget(line, "params.arguments")
+  if args == ""
+    return werr(idraw, -32602, "invalid-params", "supply params.arguments as an object", "caller", "[\"partial\"]")
+  file = jdec(jget(args, "file"))
+  if file == ""
+    return werr(idraw, -32602, "invalid-params", "supply arguments.file as a subject path string", "caller", "[\"partial\"]")
+  action = jdec(jget(args, "action"))
+  bin = env("IDOL_WORLD_BIN") or ""
+  if bin == ""
+    bin = "./zig-out/bin/idol"
+  if action == "retain"
+    return tretain(idraw, args, file, bin)
+  if action == "load"
+    return tload(idraw, args, file, bin)
+  if action == "deploy"
+    return tdeploy(idraw, args, file, bin)
+  if action == "evaluate"
+    return tevaluate(idraw, args, file, bin)
+  if action == "admit"
+    return tadmit(idraw, args)
+  if action == "complete"
+    return tadmit(idraw, args)
+  if action == "execute"
+    return texecute(idraw, args, file, bin)
+  if action == "default"
+    return tdefault(idraw, args, file, bin)
+  werr(idraw, -32602, "invalid-params", "supply arguments.action as retain, load, deploy, evaluate, admit, execute, or default", "caller", "[\"partial\"]")
+
+main: i64 = ()
+  line = stdin:line()
+  idraw = jget(line, "id")
+  stdout:write(tresp(line, idraw))
+  0
+main()
