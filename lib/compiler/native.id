@@ -117,6 +117,7 @@ global _lslpos: i64 = 0 - 1
 global _lslrd: i64 = 0
 global _lslrn: i64 = 0
 global _lslsh: i64 = 0
+global _dlive: i64 = 0
 
 digit: i64 = (c: i64)
     if c >= 48 and c <= 57
@@ -369,38 +370,56 @@ splitop: str = (t: str)
         q = q + 1
     dec(oppos) .. "|" .. dec(op)
 
-spilln: i64 = (base: i64)
-    (base - 11) >> 1
+spilln: i64 = ()
+    n = 0
+    k = 11
+    while k < 31
+        v = (_dlive >> k) & 1
+        if v == 1
+            n = n + 1
+        k = k + 1
+    n
 
 spillb: i64 = (n: i64)
     b = (n + 1) * 8
     b + ((16 - (b & 15)) & 15)
 
-spillpush: str = (c: str, base: i64)
-    n = spilln(base)
+spillpush: str = (c: str)
+    n = spilln()
     b = spillb(n)
     c = c .. word(subi(31, 31, b))
-    i = 0
-    while i < n
-        c = c .. word(stx(11 + (i * 2), 31, 8 + (i * 8)))
-        i = i + 1
+    j = 0
+    k = 11
+    while k < 31
+        v = (_dlive >> k) & 1
+        if v == 1
+            c = c .. word(stx(k, 31, 8 + (j * 8)))
+            j = j + 1
+        k = k + 1
     c
 
-spillpop: str = (c: str, base: i64, r: i64)
-    n = spilln(base)
+spillpop: str = (c: str, r: i64)
+    n = spilln()
     b = spillb(n)
-    i = 0
-    while i < n
-        c = c .. word(ldx(11 + (i * 2), 31, 8 + (i * 8)))
-        i = i + 1
+    j = 0
+    k = 11
+    while k < 31
+        v = (_dlive >> k) & 1
+        if v == 1
+            c = c .. word(ldx(k, 31, 8 + (j * 8)))
+            j = j + 1
+        k = k + 1
     c = c .. word(ldx(r, 31, 0))
     c .. word(addi(31, 31, b))
 
 deepexpr: str = (c: str, r: i64, a: str, o: i64, e: str, base: i64, names: str)
-    c = spillpush(c, base)
+    c = spillpush(c)
+    saved = _dlive
+    _dlive = 0
     c = calc(c, 11, a, o, e, 11, names)
     c = c .. word(stx(11, 31, 0))
-    c = spillpop(c, base, r)
+    _dlive = saved
+    c = spillpop(c, r)
     c
 
 expr: str = (c: str, t: str, r: i64, base: i64, names: str)
@@ -718,8 +737,12 @@ esatfuse: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
         if esatmulred(mx) == 1 or esatmulred(my) == 1
             return ""
         c = esatemitexpr(c, mx, base, base + 3, names)
+        _dlive = _dlive | (1 << base)
         c = esatemitexpr(c, my, base + 1, base + 3, names)
+        _dlive = _dlive | (1 << (base + 1))
         c = esatemitexpr(c, mz, base + 2, base + 3, names)
+        _dlive = _dlive | (1 << (base + 2))
+        _dlive = _dlive - ((1 << base) | (1 << (base + 1)) | (1 << (base + 2)))
         if issub == 1
             return c .. word(msub(rd, base, base + 1, base + 2))
         return c .. word(madd(rd, base, base + 1, base + 2))
@@ -785,14 +808,19 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
             if ef != ""
                 return ef
         c = expr(c, a, base, base + 2, names)
+        _dlive = _dlive | (1 << base)
         c = expr(c, e, base + 1, base + 2, names)
+        _dlive = _dlive | (1 << (base + 1))
+        clr = (1 << base) | (1 << (base + 1))
         if o == 43
             sff = shfold(c, rd, base, base + 1, 43)
+            _dlive = _dlive - clr
             if sff:len() > 0
                 return sff
             return c .. word(add(rd, base, base + 1))
         if o == 45
             sff = shfold(c, rd, base, base + 1, 45)
+            _dlive = _dlive - clr
             if sff:len() > 0
                 return sff
             return c .. word(minus(rd, base, base + 1))
@@ -801,15 +829,19 @@ calc: str = (c: str, rd: i64, a: str, o: i64, e: str, base: i64, names: str)
             _lmulrd = rd
             _lmulrn = base
             _lmulrm = base + 1
+            _dlive = _dlive - clr
             return c .. word(mul(rd, base, base + 1))
         if o == 38
+            _dlive = _dlive - clr
             return c .. word(band(rd, base, base + 1))
         if o == 47 and base > 10
             ee = trim(e)
             if isnum(ee) == 1
                 dl = divlit(c, rd, base, num(ee), names)
                 if dl:len() > 0
+                    _dlive = _dlive - clr
                     return dl
+        _dlive = _dlive - clr
         c .. word(div(rd, base, base + 1))
     an = isnum(a)
     en = isnum(e)
