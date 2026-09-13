@@ -4616,6 +4616,11 @@ pub const LowerCtx = struct {
     /// prologue inserts them, the loop skips them.
     popcount_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     satadd_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Statements swallowed by the bit-reverse idiom prologue: it discharged
+    /// the loop's whole semantics up front (post-loop r/x/i values stored),
+    /// so the dispatch loop must not lower the vacuous `while`. Keyed by
+    /// statement pointer; the prologue inserts, the loop skips.
+    bitrev_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
@@ -4732,6 +4737,7 @@ pub const LowerCtx = struct {
         self.nonzero_slots.deinit(self.alloc);
         self.popcount_swallowed.deinit(self.alloc);
         self.satadd_swallowed.deinit(self.alloc);
+        self.bitrev_swallowed.deinit(self.alloc);
         self.absent_applications.deinit(self.alloc);
     }
 
@@ -5310,6 +5316,9 @@ fn root(
         // prologue already finalized (its trip test is false on entry).
         const claimed = try runAdditivePrologues(&ctx, mod.body.stmts, i);
         if (!claimed) tryArmCountedLoop(&ctx, mod.body.stmts, i);
+        // A prologue may have swallowed this statement (bitrev swallows the
+        // loop it replaces); do not lower it.
+        if (ctx.bitrev_swallowed.contains(stmt)) continue;
         switch (stmt.*) {
         .func_decl,
         .const_decl,
@@ -5850,15 +5859,18 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         // its semantics were discharged up front.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.bitrev_swallowed.contains(stmt)) continue;
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
         const claimed = try runAdditivePrologues(ctx, block.stmts, i);
         if (!claimed) tryArmCountedLoop(ctx, block.stmts, i);
         // The prologue may have swallowed this statement itself (popcount
-        // discharges all six up front); do not lower it twice.
+        // discharges all six up front; bitrev swallows the loop it replaces);
+        // do not lower it twice.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.bitrev_swallowed.contains(stmt)) continue;
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -7349,6 +7361,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         // its semantics were discharged up front.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.bitrev_swallowed.contains(stmt)) continue;
         const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
             try lowerStmt(ctx, stmt, tail_here);
@@ -7360,9 +7373,11 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         const claimed = try runAdditivePrologues(ctx, block.stmts, i);
         if (!claimed) tryArmCountedLoop(ctx, block.stmts, i);
         // The prologue may have swallowed this statement itself (popcount
-        // discharges all six up front); do not lower it twice.
+        // discharges all six up front; bitrev swallows the loop it replaces);
+        // do not lower it twice.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.bitrev_swallowed.contains(stmt)) continue;
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
@@ -9999,13 +10014,16 @@ fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Erro
 /// expression, the same `ranges` column the divisor-sign machinery reads. A
 /// null answer declines the transform; nothing is re-derived here.
 ///
-/// THE PROLOGUE IS ADDITIVE, like the vector reduction above it: it stores
-/// the reversed value into `r`, the shifted value into `x`, and N into `i`,
-/// and then the ordinary lowering of the SAME loop runs unchanged — with the
-/// trip test false on entry, so zero iterations execute. Every observable
-/// behavior of the loop (values on exit; no break/continue admitted) is
-/// whatever it already was. When any condition fails this emits nothing and
-/// the loop lowers exactly as it does today.
+/// THE PROLOGUE REPLACES THE LOOP. It stores the reversed value into `r`,
+/// the shifted value into `x`, and N into `i` — exactly the post-loop state
+/// the serial recurrence would have produced — and records the `while` in
+/// `bitrev_swallowed` so the dispatch loop never lowers it. No vacuous loop
+/// is emitted: the trip test would be false on entry, so lowering it would
+/// only emit dead entry scaffolding per outer iteration plus a dead body.
+/// Every observable behavior is the three post-loop values (no
+/// break/continue admitted: the body is exactly the three idiom statements
+/// and the condition is pure). When any condition fails this emits nothing
+/// and the loop lowers exactly as it does today.
 ///
 /// CLAIM PROTOCOL — returns true when the prologue fired, claiming
 /// `stmts[at]`. Narrow `r`/`x` decline: their stores truncate per iteration
@@ -10141,7 +10159,9 @@ fn tryEmitBitReversePrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
         try ctx.emit(.{ .op = .binop, .result = x_new, .binop = .shr, .lhs = .{ .local = x_slot }, .rhs = .{ .i64 = n }, .ty = .i64 });
         try ctx.emit(.{ .op = .store_local, .result = x_slot, .lhs = .{ .temp = x_new }, .ty = .any });
     }
-    // i = n: the loop below is then vacuous and lowers unchanged.
+    // i = n: the loop's post-state. The `while` itself is swallowed below —
+    // the prologue discharged its whole semantics — so no vacuous loop is
+    // emitted for a trip test to reject.
     try ctx.emit(.{ .op = .store_local, .result = i_slot, .lhs = .{ .i64 = n }, .ty = .any });
 
     // r, x and i are no longer the values the preceding statements bound.
@@ -10150,6 +10170,10 @@ fn tryEmitBitReversePrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
     for ([_][]const u8{ ap.acc, ap.src, idx }) |name| {
         if (ctx.const_ints.fetchRemove(name)) |kv| ctx.alloc.free(kv.key);
     }
+    // The loop is fully replaced: its post-state (r, x, i) is stored above.
+    // Swallow the `while` so the dispatch loop never lowers the vacuous husk
+    // (dead entry scaffolding per outer iteration, dead body in code size).
+    try ctx.bitrev_swallowed.put(ctx.alloc, &stmts[at], {});
     return true;
 }
 
