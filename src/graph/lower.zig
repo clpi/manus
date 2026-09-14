@@ -5394,6 +5394,8 @@ fn root(
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
+        // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
+        if (try trySkipInt64MaxMask(&ctx, mod.body.stmts, i, stmtIsTailSlot(&mod.body, i))) continue;
         switch (stmt.*) {
         .func_decl,
         .const_decl,
@@ -5963,6 +5965,8 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
+        // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
+        if (try trySkipInt64MaxMask(ctx, block.stmts, i, allow_return and stmtIsTailSlot(block, i))) continue;
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -7505,6 +7509,8 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
+        // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
+        if (try trySkipInt64MaxMask(ctx, block.stmts, i, tail_here)) continue;
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
@@ -9620,6 +9626,55 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
 /// statement's semantics are discharged up front, so structural loop
 /// transforms must not re-claim it — their arming is skipped when this
 /// returns true (the counted-loop arming takes that guard at its merge).
+/// `x = x & 0x7FFFFFFFFFFFFFFF` IDENTITY SKIP.
+///
+/// When the value of `x` at this point is provably non-negative with width
+/// <= 63, masking with INT64_MAX is identity (x in [0, 2^63)), so the
+/// statement is skipped instead of emitted. The width proof is the
+/// established producer fact (`nonNegativeWidthOfExpr` on the name) with
+/// the defining-assignment backward scan (`loopSelectSynWidth`) as the
+/// fallback; anything unproved declines. Either operand order is accepted.
+/// Tail-position statements decline: skipping must not drop a block value.
+/// Value in one sentence: "a provably-redundant x & INT64_MAX mask is not
+/// emitted."
+fn trySkipInt64MaxMask(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, is_tail: bool) Error!bool {
+    if (is_tail) return false;
+    const a = switch (stmts[at]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return false;
+    const x = identOf(a.targets[0]) orelse return false;
+    const b = switch (a.values[0].*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .band) return false;
+    const mask_is_int64max: bool = blk: {
+        if (isIdent(b.lhs, x)) {
+            const m = ctx.graph.exactI64OfExpr(b.rhs) orelse break :blk false;
+            break :blk m == 0x7FFFFFFFFFFFFFFF;
+        }
+        if (isIdent(b.rhs, x)) {
+            const m = ctx.graph.exactI64OfExpr(b.lhs) orelse break :blk false;
+            break :blk m == 0x7FFFFFFFFFFFFFFF;
+        }
+        break :blk false;
+    };
+    if (!mask_is_int64max) return false;
+    const relation = ctx.function orelse return false;
+    // The producer's name width is a sound whole-relation over-approximation
+    // at any point; the defining-assignment scan is the point-precise
+    // fallback. Either proving width <= 63 makes the mask identity.
+    if (ctx.graph.nonNegativeWidthOfExpr(relation, a.targets[0])) |w| {
+        if (w <= 63) return true;
+    }
+    if (loopSelectSynWidth(ctx, stmts, at, relation, a.targets[0], 0)) |w| {
+        if (w <= 63) return true;
+    }
+    return false;
+}
+
 /// POPCOUNT IDIOM -> HARDWARE POPCOUNT.
 ///
 /// Recognizes the six-statement SWAR popcount idiom (Hacker's Delight 5-1):
@@ -9969,10 +10024,11 @@ fn loopSelectBoundWidth(
 }
 
 /// Syntactic non-negative width over the backward scan. Arms mirror the
-/// range.zig transfer for exactly the shapes the loopselect fallback needs:
+/// range.zig transfer for exactly the shapes the two consumers need:
 /// int literals, names (via their defining assignment), bitwise-and (the
-/// narrower side survives; a literal mask bounds the result), and the `L - x`
-/// rule. Anything else answers null -- fail closed.
+/// narrower side survives; a literal mask bounds the result), the `L - x`
+/// rule, and bounded-growth `.add`/`.mul` (clamped to <= 63 like every
+/// widthOfExprIn answer). Anything else answers null -- fail closed.
 fn loopSelectSynWidth(
     ctx: *LowerCtx,
     stmts: []const ast.Stmt,
@@ -10031,6 +10087,22 @@ fn loopSelectSynWidth(
                 const pow2w: u64 = @as(u64, 1) << @intCast(w);
                 if (pow2w > @as(u64, @intCast(L)) + 1) return null;
                 return loopSelectSynWidth(ctx, stmts, up_to, relation, b.lhs, depth + 1);
+            }
+            // Bounded growth, mirroring range.zig: add is max+1, mul is the
+            // width sum; both need both sides proved, clamped to <= 63.
+            if (b.op == .add) {
+                const x = loopSelectSynWidth(ctx, stmts, up_to, relation, b.lhs, depth + 1) orelse return null;
+                const y = loopSelectSynWidth(ctx, stmts, up_to, relation, b.rhs, depth + 1) orelse return null;
+                const m: u16 = @as(u16, @max(x, y)) + 1;
+                if (m > 63) return null;
+                return @intCast(m);
+            }
+            if (b.op == .mul) {
+                const x = loopSelectSynWidth(ctx, stmts, up_to, relation, b.lhs, depth + 1) orelse return null;
+                const y = loopSelectSynWidth(ctx, stmts, up_to, relation, b.rhs, depth + 1) orelse return null;
+                const s: u16 = @as(u16, x) + @as(u16, y);
+                if (s > 63) return null;
+                return @intCast(s);
             }
             return null;
         },
