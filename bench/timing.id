@@ -185,7 +185,7 @@ medianstr: i64 = (buf: str, n: i64)
     m2s = sbuf:sub(mp2, mp2 + 19)
     v1 = parseint(m1s, 1, 20)
     v2 = parseint(m2s, 1, 20)
-    (v1 + v2) / 2
+    v1 + (v2 - v1) / 2
 
 pctlstr: i64 = (buf: str, n: i64, which: i64)
   k = 1

@@ -20,11 +20,6 @@ fn linkProductionIdolFrontend(b: *std.Build, mod: *std.Build.Module) void {
         // symbol to avoid collision with the Zig test runner / exe root.
         .flags = &.{ "-std=c11", "-w", "-Dmain=duo_lexer_tokenize_main" },
     });
-    // Add exported wrappers for lexer symbols required by test harness
-    mod.addCSourceFile(.{
-        .file = b.path("src/parser/exported_wrappers.c"),
-        .flags = &.{ "-std=c11", "-w" },
-    });
     mod.addCSourceFile(.{
         .file = b.path("src/parser/projection.c"),
         // `entry` is the one primitive ABI projected for the Zig bootstrap;

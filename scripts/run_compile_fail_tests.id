@@ -141,6 +141,7 @@ run_output("examples/layout/refine.id", "6\n")
 print("")
 if any_failed == 0
     print("All compile-fail tests passed")
+    os.exit(0)
 else
     print("Some tests FAILED")
     os.exit(1)

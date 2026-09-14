@@ -5426,7 +5426,20 @@ fn root(
             _ = try lowerExprCons(&ctx, tail.expr, .discard);
         }
     }
-    if (ctx.instrs.items.len == 0 or ctx.instrs.items[ctx.instrs.items.len - 1].op != .ret) {
+    // A trailing control-flow statement may leave its `ret` INSIDE a branch
+    // (the tail-if whose then-arm returns), with the fall-through `br`
+    // targeting the past-the-end sentinel. The `last op != .ret` check cannot
+    // see into branches; a trailing conditional always needs its join point
+    // materialized as a real instruction, or the false edge falls through
+    // into whatever symbol the linker placed next.
+    const last_is_branch = blk: {
+        if (mod.body.stmts.len == 0) break :blk false;
+        break :blk switch (mod.body.stmts[mod.body.stmts.len - 1]) {
+            .if_stmt, .while_loop, .num_for, .gen_for => true,
+            else => false,
+        };
+    };
+    if (ctx.instrs.items.len == 0 or last_is_branch or ctx.instrs.items[ctx.instrs.items.len - 1].op != .ret) {
         try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .any });
     }
     const owned_instrs = try ctx.instrs.toOwnedSlice(alloc);
@@ -10897,6 +10910,12 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                     break :blk true;
                 // `execap(prog, args, input)` captures process stdout as text.
                 if (std.mem.eql(u8, n.ident, "execap") and c.args.len == 3)
+                    break :blk true;
+                // `sha256file(path)` answers the lowercase hex digest as text.
+                // Without this arm the binding fell through to `.any`, the
+                // slot never entered `str_slots`, and interpolation printed
+                // the digest pointer as an integer (observed `4299405008`).
+                if (std.mem.eql(u8, n.ident, "sha256file") and c.args.len == 1)
                     break :blk true;
                 if (functionResultIs(ctx, n.ident, .str)) break :blk true;
                 // ANY-RETURNING IDENTITY ON A STRING. `box: any = (x: any) x`
