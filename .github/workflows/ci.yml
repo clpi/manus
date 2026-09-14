@@ -57,6 +57,7 @@ jobs:
 
   build:
     runs-on: [self-hosted, macOS, ARM64, mac-mini, idol]
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash --noprofile --norc -e -o pipefail "{0}"
@@ -86,6 +87,16 @@ jobs:
         run: |
           echo "ZIG_VERSION=$(zig version)" >> "$GITHUB_ENV"
           zig version | tee toolchain.txt
+          git rev-parse HEAD | tee -a toolchain.txt
+          shasum -a 256 build.zig bench/timing.id .github/workflows/ci.yml | tee -a toolchain.txt
+
+      - name: Upload toolchain record
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-ubuntu
+          path: |
+            toolchain.txt
+            build.zig
 
       - name: Build
         run: zig build
@@ -244,7 +255,7 @@ jobs:
           git -C idol-native remote add origin git@github.com:clpi/idol-native.git
           git -C idol-native fetch --depth 1 origin "$rev"
           git -C idol-native checkout -q "$rev"
-          IDOL_NATIVE_ROOT="$GITHUB_WORKSPACE/idol-native" ./tools/node/dev/mcp-pair validate ./tools/node/dev/mcp.manifest.json idol-native
+          IDOL_NATIVE_ROOT="$GITHUB_WORKSPACE/idol-native" ./tools/node/dev/mcp-pair validate ./tools/node/dev/mcp.manifest.json) idol-native
 
       - name: Unit and compile-fail tests
         run: zig build test
@@ -311,11 +322,6 @@ jobs:
       - name: WASM focused evidence against frozen oracles
         run: '"$IDOL_ZIG" build wasm-test'
 
-      - name: Upload toolchain record
-        uses: actions/upload-artifact@v4
-        with:
-          name: toolchain-ubuntu
-          path: toolchain.txt
 
   reproducibility:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
