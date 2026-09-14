@@ -4801,6 +4801,32 @@ const Arm64Compiler = struct {
                     // line below the emit, before the releases, because
                     // `releaseReg` returns above an owner and would leak the
                     // register the drop hands back.
+                    //
+                    // `1/x` OVER A RUNTIME DIVISOR. `emitDivisorZeroTrap` in
+                    // lower.zig emits the zero guard ahead of every `.div`
+                    // (deleted only when a dominating `x != 0` proved the
+                    // slot via `nonzero_slots`), so x != 0 on every path that
+                    // reaches the division, and truncating `1/x` is then
+                    // exactly `x == 1 ? 1 : (x == -1 ? -1 : 0)`: two compares
+                    // and two conditional selects against `sdiv`'s ~20-cycle
+                    // latency. (Evidence: cltz's `is1 = 1/n` inner loop, where
+                    // clang emits `cmp; csinc` for the same shape.) The guard
+                    // is untouched: x == 0 still traps exactly as before.
+                    if (ins.binop == .div and ins.lhs == .i64 and ins.lhs.i64 == 1) {
+                        const rhs = try self.evalDnirValue(temps, ins.rhs);
+                        const rhs_held = self.holdReg(rhs, pinned);
+                        const dst = preferred_result orelse try self.allocReg();
+                        if (preferred_result != null) self.claimReg(dst);
+                        try self.emitCmpImm(rhs, 1);
+                        try self.emitFmt(encodeCset(dst, .eq), "cset x{d}, eq", .{dst});
+                        try self.emitCmnImm(rhs, 1);
+                        try self.emitFmt(encodeCsinv(dst, dst, dst, .ne), "csinv x{d}, x{d}, x{d}, ne", .{ dst, dst, dst });
+                        _ = try self.emitNarrowFit(dst, dst, ins.ty);
+                        if (rhs_held) self.gp_reg_owner[rhs] = null;
+                        if (rhs != dst and !Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
+                        if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                        break :blk;
+                    }
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const lhs_held = self.holdReg(lhs, pinned);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
@@ -10315,6 +10341,18 @@ const Arm64Compiler = struct {
         );
     }
 
+    /// `cmn xn, #imm12` is ADDS XZR, Xn, #imm: the add twin of `emitCmpImm`,
+    /// same encoding with bit 29 set (`0xb100001f`), flags set from `xn+imm`.
+    /// `cmn xd, #1` tests `xd == -1` with no materialized constant.
+    fn emitCmnImm(self: *Arm64Compiler, reg: u5, imm: u12) Error!void {
+        try self.ensureRegLive(reg);
+        try self.emitFmt(
+            0xb100001f | (@as(u32, imm) << 10) | (@as(u32, reg) << 5),
+            "cmn x{d}, #{d}",
+            .{ reg, imm },
+        );
+    }
+
     fn emitCompareResult(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, cond: Condition) Error!void {
         try self.emitCmpReg(lhs, rhs);
         try self.emitFmt(encodeCset(dst, cond), "cset x{d}, {s}", .{ dst, conditionName(cond) });
@@ -12239,6 +12277,18 @@ fn encodeCset(dst: u5, cond: Condition) u32 {
 fn encodeCsel(dst: u5, n: u5, m: u5, cond: Condition) u32 {
     const CSEL_BASE: u32 = 0x9a800000;
     return CSEL_BASE | (@as(u32, m) << 16) |
+        (@as(u32, @intFromEnum(cond)) << 12) | (@as(u32, n) << 5) | @as(u32, dst);
+}
+
+/// `CSINV Xd, Xn, Xm, cond` is `Xd = cond ? Xn : ~Xm`: CSEL with bit 30 set
+/// (`0xDA800000`), everything else identical, and the inversion is on the
+/// ELSE operand (verified on hardware: `csinv x0,x1,x2,eq` with Z=1 answers
+/// x1, with Z=0 answers ~x2). So `encodeCsinv(d, d, d, .ne)` after
+/// `cmn xd, #1` turns a `cset`-produced 0/1 into -1 exactly when the divisor
+/// is -1: ne true keeps the value, ne false (x == -1) inverts it.
+fn encodeCsinv(dst: u5, n: u5, m: u5, cond: Condition) u32 {
+    const CSINV_BASE: u32 = 0xda800000;
+    return CSINV_BASE | (@as(u32, m) << 16) |
         (@as(u32, @intFromEnum(cond)) << 12) | (@as(u32, n) << 5) | @as(u32, dst);
 }
 
