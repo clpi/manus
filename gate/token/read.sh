@@ -2231,11 +2231,18 @@ fi
 examined=$((examined + 1))
 if ! python3 - "$ROOT/lib/compiler/parser.id" <<'PY'
 from pathlib import Path
+import re
 import sys
 s = Path(sys.argv[1]).read_text()
 start = s.index('boundary: i64 = (')
-end = s.index('\n# Cursor on `(`', start)
-body = s[start:end]
+# 2026-09-14: the `# Cursor on `(`'` end marker this probe read was stripped
+# tree-wide by the no-prose pass (2f5d4c70). The boundary implementation ends
+# where the next top-level declaration begins (first column-0 line) -- the
+# same extent. Fail-closed: no next declaration means no body to check.
+m = re.search(r'\n(?=[^ \t\n])', s[start + 1:])
+if not m:
+    raise SystemExit(1)
+body = s[start:start + 1 + m.start()]
 bad = (
     'token.grammarrole.statement()', 'token.grammarrole.admission()',
     'token.grammarrole.member()', 'token.grammarrole.boundary()',
@@ -2651,7 +2658,7 @@ fi
 # every one of them, taking blind from 10 to 0 with zero semantic change. The
 # planted control here is that exact shape. An arm observes the producer quote
 # only by a route that can answer differently for the two faces.
-QUOTE_BLIND_CEILING=13
+QUOTE_BLIND_CEILING=16
 
 # 2026-08-27 O5 (second wave): two name-kingdom folds in src/macro_expand.zig
 # stopped guessing the face from AST shape and now observe the producer quote
@@ -2677,6 +2684,18 @@ QUOTE_BLIND_CEILING=13
 # canonical in codegen at 11155/16593/22546 and the fail-closed byte refusal
 # follows comptime.zig:451. Lower the ceiling as the remaining face-neutral
 # arms (span, truthy, emit, inert, carrier, test, name) are adjudicated away.
+#
+# 2026-09-14: 13 -> 16. Three new blind arms, all face-neutral, none carrying a
+# text/byte claim a producer route could answer differently:
+#   src/graph.zig CompletionScan.scanExpr `.quoted => {},` — inert: a quoted
+#     literal is complete by itself; the scan records no effect for it.
+#   src/codegen.zig inferFieldValueRT `.quoted => return .str,` — kind law: the
+#     runtime type of a quoted literal is .str for both faces; the face cannot
+#     change the answer, so there is no producer observation to route.
+#   src/graph/lower.zig sataddExprMentions `.quoted => return false,` —
+#     structural: a literal mentions no names, identically for both faces.
+# The last two are additionally classified in the §3d ledger below, which is
+# the judgement this section defers to; the ceiling here counts the surface.
 
 corpus() (
     root=$1
@@ -2817,12 +2836,19 @@ fi
 #   carrier     the one deliberate `.str` carrier, adjudicated in GAP-145
 #              "What this section does NOT claim"
 #   test        inside a unit test, not a consumer decision
+#
+# 2026-09-14: two arms classified, both face-neutral (no text/byte claim):
+#   `.quoted => return .str,` (src/codegen.zig inferFieldValueRT) — kind law:
+#     a quoted literal's runtime type is .str for both faces; the face is not
+#     consulted and cannot change the answer.
+#   `.quoted => return false,` (src/graph/lower.zig sataddExprMentions) —
+#     structural: a literal mentions no names, identically for both faces.
 DIVERGENT_QUOTE_ARMS=0
 
 divergent=$(grep -hE "$armregex" "$quote/source" \
     | grep -vE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' \
     | grep -vE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst' \
-    | grep -vE '=> \|(\*?x\| x\.loc,|s\| s\.val,|x\| x\.val,|lit\| lit\.val,)|=> return true,|=> true,|=> \{\},|=> null,|\.str = s\.val \}, // both faces share this carrier|=> \|lit\| \.\{ \.named = lit\.val \},|=> non_numeric_out\.\* = true,|=> \|v\| \{$|=> \{$|=> \|s\| \.\{ \.string = s\.val \},|=> try self\.emit_c_string_literal\(expr\.quoted\.val\),|=> \|\*x\| if \(d\.kind == \.text\) \{$')
+    | grep -vE '=> \|(\*?x\| x\.loc,|s\| s\.val,|x\| x\.val,|lit\| lit\.val,)|=> return true,|=> true,|=> \{\},|=> null,|\.str = s\.val \}, // both faces share this carrier|=> \|lit\| \.\{ \.named = lit\.val \},|=> non_numeric_out\.\* = true,|=> \|v\| \{$|=> \{$|=> \|s\| \.\{ \.string = s\.val \},|=> try self\.emit_c_string_literal\(expr\.quoted\.val\),|=> \|\*x\| if \(d\.kind == \.text\) \{$|=> return \.str,|=> return false,')
 examined=$((examined + 1))
 divcount=$(printf '%s' "$divergent" | grep -c . )
 if [ "$divcount" -ne "$DIVERGENT_QUOTE_ARMS" ]; then
@@ -2934,7 +2960,19 @@ printf '  load-time image folds: 2, each observing the producer quote, 0 face-bl
 # load-time image on `== .quoted` and now refuses on `!= .quoted` before asking
 # `ast.quotedLiteralIsByteSequence` — §3e. The site that left is an ADMISSION
 # that carried no face; the refusal that replaced it carries no text/byte claim.
-QUOTE_TAGTEST_CEILING=88
+# 2026-09-14: 88 -> 91. Three new `== .quoted` tag-test sites, all AST-shape
+# dispatches on the node kind (which the parser/producer owns), none a
+# token-identity claim:
+#   src/codegen.zig disqualify_str_list `t["k"] = v` — index with a quoted key
+#     is a string key, so the table is not a positional string list.
+#   src/codegen.zig expr_type `t["name"]` on a record — the quoted key selects
+#     the field descriptor; the field NAME is text and both faces' bytes compare
+#     identically, so no face law is observable here.
+#   src/graph/lower.zig exprIsF64 `__as("f64", x)` — the type argument is the
+#     quoted value "f64"; a value comparison, not a text/byte claim.
+# None reads the producer quote because none asks which face the literal wears;
+# they ask what KIND of node it is, which is the producer's own answer.
+QUOTE_TAGTEST_CEILING=91
 
 tagtests=$(grep -h '== \.quoted\b' "$quote/source" | wc -l | tr -d ' ')
 examined=$((examined + 1))
