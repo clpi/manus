@@ -269,6 +269,16 @@ fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?u8 {
                 // divisor guard, which has already refused zero on this path.
                 .idiv, .div => {
                     const x = widthOfExprIn(lookup, b.lhs, fuel) orelse break :blk null;
+                    // A positive LITERAL divisor shrinks the bound: with
+                    // k = floor(log2 b), trunc(a/b) <= a/b < 2^w / b <=
+                    // 2^(w-k); and a < 2^w <= 2^k <= b gives exactly 0.
+                    if (ast.intLiteralValue(b.rhs)) |lit| {
+                        if (lit >= 1) {
+                            const u: u64 = @intCast(lit);
+                            const k: u8 = @intCast(63 - @clz(u));
+                            break :blk if (k >= x) 0 else x - k;
+                        }
+                    }
                     _ = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
                     break :blk x;
                 },
@@ -681,11 +691,336 @@ fn matchBoundedWhile(
     return BoundedIV{ .name = iv, .cap = cap };
 }
 
+/// A loop-carried name the induction proved: every value it takes inside this
+/// `while` lies in `[0, 2^bound)`, where `bound` is the entry width the body
+/// preserves. The `.assign` arm observes `min(rhs, bound)` for in-loop writes
+/// instead of `rhs` — which is what stops `x = x + 1000` from widening the
+/// join one bit per fixpoint round and taking the name to top.
+///
+/// WHY THE FIXPOINT CANNOT DO THIS ALONE. The join is widen-only and the
+/// transfer for `x + k` answers one bit wider than `x`; on a loop-carried name
+/// that is a divergence the round cap answers by discarding the whole map.
+/// `BoundedIV` already admits this for the counter via the loop's shape; the
+/// induction is the general form: the entry bound is the hypothesis and the
+/// body is checked assignment-by-assignment, flow-sensitively, once per round.
+/// What it proves is a fact about the loop's values, established by the
+/// producer and read by every consumer through the published column — never a
+/// per-scope recovery table.
+const InductionCap = struct {
+    name: []const u8,
+    bound: u8,
+};
+
+fn capOf(caps: []const InductionCap, name: []const u8) ?u8 {
+    for (caps) |c| if (std.mem.eql(u8, c.name, name)) return c.bound;
+    return null;
+}
+
+/// The induction proof's flow-sensitive view of one loop body. Every carried
+/// name starts at its hypothesis (the entry width from the settled map) and
+/// each assignment checks `rhs <= hyp` at its own point; `cur` narrows along
+/// the way so `x = x / 16` then `x = x + 1000` checks against 26, not 30.
+/// Reads of a declined name fall back to the map, which bounds every value
+/// flow-insensitively.
+const IndState = struct {
+    alloc: std.mem.Allocator,
+    names: std.ArrayListUnmanaged([]const u8) = .empty,
+    hyp: std.ArrayListUnmanaged(u8) = .empty,
+    ok: std.ArrayListUnmanaged(bool) = .empty,
+    cur: std.ArrayListUnmanaged(u8) = .empty,
+    widths: *const NonNegEnv,
+    results: ?Results,
+
+    fn deinit(self: *IndState) void {
+        self.names.deinit(self.alloc);
+        self.hyp.deinit(self.alloc);
+        self.ok.deinit(self.alloc);
+        self.cur.deinit(self.alloc);
+    }
+
+    fn find(self: *const IndState, name: []const u8) ?usize {
+        for (self.names.items, 0..) |n, i| {
+            if (self.ok.items[i] and std.mem.eql(u8, n, name)) return i;
+        }
+        return null;
+    }
+
+    fn declineName(self: *IndState, name: []const u8) void {
+        if (self.find(name)) |i| self.ok.items[i] = false;
+    }
+
+    fn declineAll(self: *IndState) void {
+        for (self.ok.items) |*o| o.* = false;
+    }
+
+    fn lookup(self: *const IndState) Lookup {
+        return .{
+            .ctx = self,
+            .of = indWidthOfName,
+            .result = if (self.results == null) null else indDerivationOf,
+        };
+    }
+
+    fn indWidthOfName(ctx: *const anyopaque, name: []const u8) ?u8 {
+        const self: *const IndState = @ptrCast(@alignCast(ctx));
+        if (self.find(name)) |i| return self.cur.items[i];
+        return self.widths.get(name);
+    }
+
+    fn indDerivationOf(ctx: *const anyopaque, callee: []const u8) ?Derivation {
+        const self: *const IndState = @ptrCast(@alignCast(ctx));
+        const results = self.results orelse return null;
+        return results.of(results.ctx, callee);
+    }
+};
+
+/// Check one binding against its hypothesis: the bound value must fit.
+fn inductBind(st: *IndState, name: []const u8, init: *const ast.Expr) void {
+    const i = st.find(name) orelse return;
+    const w = widthOfExpr(st.lookup(), init);
+    if (w == null or w.? > st.hyp.items[i]) {
+        st.ok.items[i] = false;
+    } else {
+        st.cur.items[i] = w.?;
+    }
+}
+
+/// Names written directly in this loop body vs inside a nested loop. A name a
+/// nested loop writes cannot be induction-capped by the outer loop: the outer
+/// proof cannot see the inner loop's writes, so it declines them fail-closed.
+const WriteSets = struct {
+    direct: std.ArrayListUnmanaged([]const u8) = .empty,
+    nested: std.ArrayListUnmanaged([]const u8) = .empty,
+    hard: bool = false,
+};
+
+fn collectWrites(
+    alloc: std.mem.Allocator,
+    blk: *const ast.Block,
+    out: *WriteSets,
+    in_nested: bool,
+) std.mem.Allocator.Error!void {
+    for (blk.stmts) |st| switch (st) {
+        .assign => |a| {
+            const dst = if (in_nested) &out.nested else &out.direct;
+            for (a.targets) |t| if (t.* == .name) try dst.append(alloc, t.name.ident);
+        },
+        .local_decl => |d| {
+            const dst = if (in_nested) &out.nested else &out.direct;
+            for (d.names) |n| try dst.append(alloc, n.ident);
+        },
+        .const_decl => |d| {
+            const dst = if (in_nested) &out.nested else &out.direct;
+            try dst.append(alloc, d.ident);
+        },
+        .global_decl => |d| {
+            const dst = if (in_nested) &out.nested else &out.direct;
+            for (d.names) |n| try dst.append(alloc, n.ident);
+        },
+        .do_block => |d| try collectWrites(alloc, &d.body, out, in_nested),
+        .if_stmt => |f| {
+            try collectWrites(alloc, &f.then, out, in_nested);
+            for (f.elseifs) |ei| try collectWrites(alloc, &ei.body, out, in_nested);
+            if (f.else_body) |eb| try collectWrites(alloc, &eb, out, in_nested);
+        },
+        .while_loop => |w| try collectWrites(alloc, &w.body, out, true),
+        .repeat_loop => |r| try collectWrites(alloc, &r.body, out, true),
+        .num_for => |f| {
+            try out.nested.append(alloc, f.var_name);
+            try collectWrites(alloc, &f.body, out, true);
+        },
+        .gen_for => |f| {
+            for (f.vars) |v| try out.nested.append(alloc, v);
+            try collectWrites(alloc, &f.body, out, true);
+        },
+        .func_decl, .match_stmt, .try_stmt, .defer_stmt, .goto_stmt, .label_stmt => out.hard = true,
+        else => {},
+    };
+}
+
+/// A nested loop inside the induction walk: the outer proof cannot see the
+/// inner loop's writes, so every carried name the inner loop writes is
+/// declined. Anything the walk does not model declines everything.
+fn inductWalkNested(st: *IndState, alloc: std.mem.Allocator, body: *const ast.Block) std.mem.Allocator.Error!void {
+    var sub = WriteSets{};
+    defer sub.direct.deinit(alloc);
+    defer sub.nested.deinit(alloc);
+    try collectWrites(alloc, body, &sub, true);
+    if (sub.hard) {
+        st.declineAll();
+        return;
+    }
+    for (sub.nested.items) |wn| st.declineName(wn);
+}
+
+/// One branch of an `if` inside the induction walk: restore the pre-branch
+/// state, walk the branch, and join its outcome into the accumulator. The join
+/// is max over widths and AND over provability — whichever branch ran, its
+/// bounds hold, and a name unprovable on any branch is unprovable. Walking
+/// each branch from the snapshot (not threaded) is the soundness of this
+/// function: an else-branch read must see the pre-if value, not the
+/// then-branch's.
+fn inductWalkBranch(
+    st: *IndState,
+    alloc: std.mem.Allocator,
+    blk: *const ast.Block,
+    base_cur: []const u8,
+    base_ok: []const bool,
+    acc_cur: []u8,
+    acc_ok: []bool,
+    is_first: *bool,
+) std.mem.Allocator.Error!void {
+    @memcpy(st.cur.items, base_cur);
+    @memcpy(st.ok.items, base_ok);
+    try inductWalk(st, alloc, blk);
+    for (0..st.cur.items.len) |i| {
+        if (is_first.*) {
+            acc_cur[i] = st.cur.items[i];
+            acc_ok[i] = st.ok.items[i];
+        } else {
+            acc_cur[i] = @max(acc_cur[i], st.cur.items[i]);
+            acc_ok[i] = acc_ok[i] and st.ok.items[i];
+        }
+    }
+    is_first.* = false;
+}
+
+/// The induction proof walk: flow-sensitive, read-only against the settled
+/// map, and it declines (never widens) — every `ok` that survives has had each
+/// of its body assignments prove `rhs <= hyp` in order. Checking every textual
+/// assignment over-approximates the executed ones, which is the sound
+/// direction.
+fn inductWalk(st: *IndState, alloc: std.mem.Allocator, blk: *const ast.Block) std.mem.Allocator.Error!void {
+    for (blk.stmts) |s| switch (s) {
+        .assign => |a| {
+            if (a.targets.len != a.values.len) {
+                for (a.targets) |t| if (t.* == .name) st.declineName(t.name.ident);
+                continue;
+            }
+            for (a.targets, a.values) |t, v| {
+                if (t.* != .name) continue;
+                inductBind(st, t.name.ident, v);
+            }
+        },
+        .local_decl => |d| {
+            if (d.names.len != d.inits.len) {
+                for (d.names) |n| st.declineName(n.ident);
+                continue;
+            }
+            for (d.names, d.inits) |n, init| inductBind(st, n.ident, init);
+        },
+        .const_decl => |d| inductBind(st, d.ident, d.val),
+        .global_decl => |d| {
+            if (d.names.len != d.inits.len) {
+                for (d.names) |n| st.declineName(n.ident);
+                continue;
+            }
+            for (d.names, d.inits) |n, init| inductBind(st, n.ident, init);
+        },
+        .do_block => |d| try inductWalk(st, alloc, &d.body),
+        .if_stmt => |f| {
+            if (f.binding) |b| st.declineName(b.name);
+            const base_cur = try alloc.dupe(u8, st.cur.items);
+            defer alloc.free(base_cur);
+            const base_ok = try alloc.dupe(bool, st.ok.items);
+            defer alloc.free(base_ok);
+            const acc_cur = try alloc.dupe(u8, st.cur.items);
+            defer alloc.free(acc_cur);
+            const acc_ok = try alloc.dupe(bool, st.ok.items);
+            defer alloc.free(acc_ok);
+            var is_first = true;
+            try inductWalkBranch(st, alloc, &f.then, base_cur, base_ok, acc_cur, acc_ok, &is_first);
+            for (f.elseifs) |ei| try inductWalkBranch(st, alloc, &ei.body, base_cur, base_ok, acc_cur, acc_ok, &is_first);
+            if (f.else_body) |eb| {
+                try inductWalkBranch(st, alloc, &eb, base_cur, base_ok, acc_cur, acc_ok, &is_first);
+            } else {
+                // The untaken path keeps the pre-branch state.
+                for (0..st.cur.items.len) |i| {
+                    acc_cur[i] = @max(acc_cur[i], base_cur[i]);
+                    acc_ok[i] = acc_ok[i] and base_ok[i];
+                }
+            }
+            @memcpy(st.cur.items, acc_cur);
+            @memcpy(st.ok.items, acc_ok);
+        },
+        .while_loop => |w| try inductWalkNested(st, alloc, &w.body),
+        .repeat_loop => |r| try inductWalkNested(st, alloc, &r.body),
+        .num_for => |f| try inductWalkNested(st, alloc, &f.body),
+        .gen_for => |f| try inductWalkNested(st, alloc, &f.body),
+        .call_stmt, .expr_stmt, .ret, .brk, .cont, .label_stmt => {},
+        else => st.declineAll(),
+    };
+}
+
+/// Loop induction for non-negativity. A name the body carries is provable when
+/// its entry width (from the map, settled before the body in scan order) is
+/// bounded and the flow-sensitive walk checks every body assignment against
+/// it. Names a nested loop writes are declined: the outer proof cannot see
+/// them. The bounded IV is excluded — its bound comes from the loop's shape,
+/// not from preservation.
+///
+/// Recomputed every fixpoint round against that round's widths: a cap is only
+/// ever observed beside the proof that justifies it, so a later round's wider
+/// widths cannot strand a stale bound in the map.
+fn matchInduction(
+    alloc: std.mem.Allocator,
+    widths: *const NonNegEnv,
+    results: ?Results,
+    body: *const ast.Block,
+    biv_iv: ?[]const u8,
+) std.mem.Allocator.Error!?[]InductionCap {
+    var sets = WriteSets{};
+    defer sets.direct.deinit(alloc);
+    defer sets.nested.deinit(alloc);
+    try collectWrites(alloc, body, &sets, false);
+    if (sets.hard) return null;
+
+    var st = IndState{ .alloc = alloc, .widths = widths, .results = results };
+    defer st.deinit();
+    for (sets.direct.items) |name| {
+        if (biv_iv != null and std.mem.eql(u8, name, biv_iv.?)) continue;
+        var nested = false;
+        for (sets.nested.items) |n| if (std.mem.eql(u8, n, name)) {
+            nested = true;
+            break;
+        };
+        if (nested) continue;
+        var seen = false;
+        for (st.names.items) |n| if (std.mem.eql(u8, n, name)) {
+            seen = true;
+            break;
+        };
+        if (seen) continue;
+        const h = widths.get(name) orelse continue;
+        if (h >= nonneg_top) continue;
+        try st.names.append(alloc, name);
+        try st.hyp.append(alloc, h);
+        try st.ok.append(alloc, true);
+        try st.cur.append(alloc, h);
+    }
+    if (st.names.items.len == 0) return null;
+    try inductWalk(&st, alloc, body);
+
+    var out: std.ArrayListUnmanaged(InductionCap) = .empty;
+    errdefer out.deinit(alloc);
+    for (st.names.items, st.hyp.items, st.ok.items) |name, h, ok| {
+        if (ok) try out.append(alloc, .{ .name = name, .bound = h });
+    }
+    if (out.items.len == 0) {
+        out.deinit(alloc);
+        return null;
+    }
+    const owned = try out.toOwnedSlice(alloc);
+    return owned;
+}
+
 /// One pass of the transfer function over every assignment in `blk`.
 /// `changed` is set when a name's width grew. `unmodeled` is set when the body
 /// contains a construct this pass does not model, which discards everything.
 /// `biv` is the bounded induction variable of an enclosing `while`, whose
-/// increment holds its cap instead of widening past it.
+/// increment holds its cap instead of widening past it. `ind` is the enclosing
+/// `while`'s induction caps (innermost wins): in-loop writes to a capped name
+/// observe the proven bound instead of the right-hand side's width.
 fn nonNegScanBlock(
     alloc: std.mem.Allocator,
     widths: *NonNegEnv,
@@ -694,6 +1029,7 @@ fn nonNegScanBlock(
     changed: *bool,
     unmodeled: *bool,
     biv: ?BoundedIV,
+    ind: ?[]const InductionCap,
 ) std.mem.Allocator.Error!void {
     for (blk.stmts) |st| switch (st) {
         .local_decl => |d| {
@@ -723,6 +1059,16 @@ fn nonNegScanBlock(
                         continue;
                     }
                 }
+                // The induction proved this loop preserves the entry bound;
+                // observe the capped width so the join cannot widen past it.
+                // A null right-hand side here is transfer imprecision on
+                // coarser inputs, not a bigger value: the proof just
+                // established the bound for this round's widths.
+                if (ind) |caps| if (capOf(caps, t.name.ident)) |cap| {
+                    const w = nonNegWidth(widths, results, v);
+                    try nonNegObserve(alloc, widths, t.name.ident, @min(w orelse cap, cap), changed);
+                    continue;
+                };
                 try nonNegObserve(alloc, widths, t.name.ident, nonNegWidth(widths, results, v), changed);
             }
         },
@@ -740,23 +1086,27 @@ fn nonNegScanBlock(
             } else {
                 try nonNegRaise(alloc, widths, f.var_name, changed);
             }
-            try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv);
+            try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv, ind);
         },
         .gen_for => |f| {
             for (f.vars) |v| try nonNegRaise(alloc, widths, v, changed);
-            try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv);
+            try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv, ind);
         },
         .while_loop => |w| {
             const inner = try matchBoundedWhile(alloc, widths, results, w.cond, &w.body, changed);
-            try nonNegScanBlock(alloc, widths, results, &w.body, changed, unmodeled, inner orelse biv);
+            // Re-proved every round against that round's widths: a cap is
+            // only ever observed beside the proof that justifies it.
+            const caps = try matchInduction(alloc, widths, results, &w.body, if (inner) |b| b.name else null);
+            defer if (caps) |c| alloc.free(c);
+            try nonNegScanBlock(alloc, widths, results, &w.body, changed, unmodeled, inner orelse biv, caps orelse ind);
         },
-        .repeat_loop => |r| try nonNegScanBlock(alloc, widths, results, &r.body, changed, unmodeled, biv),
-        .do_block => |d| try nonNegScanBlock(alloc, widths, results, &d.body, changed, unmodeled, biv),
+        .repeat_loop => |r| try nonNegScanBlock(alloc, widths, results, &r.body, changed, unmodeled, biv, ind),
+        .do_block => |d| try nonNegScanBlock(alloc, widths, results, &d.body, changed, unmodeled, biv, ind),
         .if_stmt => |f| {
             if (f.binding) |b| try nonNegRaise(alloc, widths, b.name, changed);
-            try nonNegScanBlock(alloc, widths, results, &f.then, changed, unmodeled, biv);
-            for (f.elseifs) |ei| try nonNegScanBlock(alloc, widths, results, &ei.body, changed, unmodeled, biv);
-            if (f.else_body) |eb| try nonNegScanBlock(alloc, widths, results, &eb, changed, unmodeled, biv);
+            try nonNegScanBlock(alloc, widths, results, &f.then, changed, unmodeled, biv, ind);
+            for (f.elseifs) |ei| try nonNegScanBlock(alloc, widths, results, &ei.body, changed, unmodeled, biv, ind);
+            if (f.else_body) |eb| try nonNegScanBlock(alloc, widths, results, &eb, changed, unmodeled, biv, ind);
         },
         // A nested function body can rebind names this one holds, and this pass
         // does not follow it. Refuse the WHOLE function rather than answer for
@@ -814,7 +1164,7 @@ fn nonNegativeNames(
     var round: usize = 0;
     while (changed and !unmodeled and round < nonneg_rounds) : (round += 1) {
         changed = false;
-        try nonNegScanBlock(alloc, &widths, results, body, &changed, &unmodeled, null);
+        try nonNegScanBlock(alloc, &widths, results, body, &changed, &unmodeled, null, null);
     }
     // Not converged, or a construct this pass does not model: answer nothing.
     if (unmodeled or changed) {
