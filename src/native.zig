@@ -1275,6 +1275,7 @@ const Arm64Compiler = struct {
     /// a body with heavy expression pressure compiles at four homes and refuses
     /// with DNB003 at ten. `sha.id` and `tree.id` are both that shape.
     gp_call_home_budget: u32 = callee_save_count,
+    cur_loop_ranges: std.ArrayList([2]u32) = .empty,
     spill_frame_budget: u16 = 65520,
     /// Gate/ledger transport: allow reclaiming spilled temp registers when the
     /// pool is exhausted instead of refusing with DNB003.
@@ -3190,6 +3191,8 @@ const Arm64Compiler = struct {
                 }
             }
         }
+        self.cur_loop_ranges.clearRetainingCapacity();
+        try self.cur_loop_ranges.appendSlice(self.alloc, loop_ranges.items);
         const carried = struct {
             fn at(ranges: []const [2]u32, idx: u32) bool {
                 for (ranges) |r| if (idx >= r[0] and idx <= r[1]) return true;
@@ -5143,7 +5146,23 @@ const Arm64Compiler = struct {
                     }
                     if (ins.result) |result| {
                         if (call_result) |dst| {
-                            try temps.put(self.alloc, result, dst);
+                            var loop_carried = false;
+                            if (self.value_free_at.get(result)) |last| {
+                                for (self.cur_loop_ranges.items) |range| {
+                                    if (at < range[0] and last >= range[1]) {
+                                        loop_carried = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (loop_carried and dst < 19) {
+                                const home = try self.allocHomeReg();
+                                try self.emitMovReg(home, dst);
+                                try temps.put(self.alloc, result, home);
+                                if (!Arm64Compiler.regIsPinned(pinned, dst)) self.releaseReg(dst);
+                            } else {
+                                try temps.put(self.alloc, result, dst);
+                            }
                         }
                     }
                     self.releaseStagedArgRegs(staged_args, call_result);
