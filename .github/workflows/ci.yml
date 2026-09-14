@@ -255,7 +255,7 @@ jobs:
           git -C idol-native remote add origin git@github.com:clpi/idol-native.git
           git -C idol-native fetch --depth 1 origin "$rev"
           git -C idol-native checkout -q "$rev"
-          IDOL_NATIVE_ROOT="$GITHUB_WORKSPACE/idol-native" ./tools/node/dev/mcp-pair validate ./tools/node/dev/mcp.manifest.json) idol-native
+          IDOL_NATIVE_ROOT="$GITHUB_WORKSPACE/idol-native" ./tools/node/dev/mcp-pair validate ./tools/node/dev/mcp.manifest.json idol-native
 
       - name: Unit and compile-fail tests
         run: zig build test
