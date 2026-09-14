@@ -3948,6 +3948,13 @@ const Arm64Compiler = struct {
                 // identity `lsr`+`and` computes; see `ubfxFusible`).
                 const fuse_ubfx = !fuse_branch and !fuse_named and !fuse_madd and ins.op == .binop and bi + 1 < b.instrs.len and
                     self.ubfxFusible(ins, b.instrs[bi + 1], flat_idx);
+                // R15-style named variant: `div(X, 2^k) -> T ; store_local L <- T ;
+                // band(L, 2^w - 1) -> D ; store_local L <- D` folds to the same
+                // `ubfx D, X, #k, #w` when the shift passes through a named local
+                // (see `namedUbfxFusible`).
+                const fuse_named_ubfx = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and
+                    ins.op == .binop and bi + 3 < b.instrs.len and
+                    self.namedUbfxFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
                 // §12 TAIL: `call_direct -> T ; ret T` is a JUMP, not a frame.
                 // The pair is folded into `restore the frame; b <callee>` — see
                 // `tailCallFusible` for every ground on which it is declined.
@@ -4008,6 +4015,9 @@ const Arm64Compiler = struct {
                 } else if (fuse_ubfx) {
                     try self.emitFusedUbfx(&temps, &pinned, ins, b.instrs[bi + 1]);
                     extra_consumed = 1;
+                } else if (fuse_named_ubfx) {
+                    try self.emitFusedUbfx(&temps, &pinned, ins, b.instrs[bi + 2]);
+                    extra_consumed = 2;
                 } else if (fuse_tail) {
                     try self.emitTailCallDirect(&temps, &pinned, ins, flat_idx);
                     extra_consumed = 1;
@@ -11769,6 +11779,111 @@ const Arm64Compiler = struct {
         return last == flat_idx + 1;
     }
 
+    /// Named variant of the `ubfx` peephole, following the R15
+    /// (`namedCompareBranchFusible`) pattern: the shift-then-mask passes
+    /// through a named local —
+    /// `div(X, 2^k) -> T ; store_local L <- T ; band(L, 2^w - 1) -> D ;
+    /// store_local L <- D` — because `L = X >> k ; L = L & w` names the
+    /// intermediate. Folds to the same `ubfx D, X, #k, #w` the unnamed form
+    /// gets. brm2's bit-test `c = (x & 2147483647) / 65536 ; c = c & 1`
+    /// is this shape: the two names force the unnamed fusion's adjacency
+    /// test to fail.
+    ///
+    /// Admissible only when, over the whole function:
+    /// - the div meets every `ubfxFusible` ground (truncating `.div`,
+    ///   constant power-of-two divisor, dividend proved non-negative, full
+    ///   width, no f64) — the dividend proof is load-bearing, not a
+    ///   tolerance: without it the original is a truncating division of a
+    ///   possibly-negative value, not a logical shift;
+    /// - the div temp's single reader is the naming store
+    ///   (`singleReaderByTightDef`, the R15 ground);
+    /// - the band reads exactly the named local on one side and a low-run
+    ///   immediate mask on the other, `k + w <= 64`;
+    /// - the band's store writes back to the SAME local: the intermediate
+    ///   shifted value is then unobservable. The three consumed instructions
+    ///   are straight-line by shape and no branch lands inside the window,
+    ///   so the window executes atomically — every read before it sees the
+    ///   pre-window value in both versions, every read after the band's
+    ///   store sees the band's value in both;
+    /// - neither the div nor the naming store reads the local (conservative:
+    ///   the value would still be the same, but the census stays a simple
+    ///   positional check);
+    /// - the three consumed instructions carry no application lineage of
+    ///   their own to lose (the fused instruction is emitted without it,
+    ///   exactly like the unnamed form).
+    /// Where it stops: a different-name write-back (`e = c & 1`), any
+    /// lineage on a consumed instruction, a non-low-run mask, `k + w > 64`,
+    /// a narrowed div, or any branch landing in the consumed window.
+    fn namedUbfxFusible(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        div_ins: dnir.Instr,
+        st: dnir.Instr,
+        nx: dnir.Instr,
+        st2: dnir.Instr,
+        flat_idx: u32,
+    ) bool {
+        if (div_ins.op != .binop or div_ins.binop != .div) return false;
+        if (div_ins.ty == .f64 or self.cur_func_float) return false;
+        if (narrowFit(div_ins.ty) != null) return false;
+        if (!div_ins.dividend.proved()) return false;
+        if (div_ins.application != null or div_ins.relation != null or div_ins.value != null) return false;
+        const t = div_ins.result orelse return false;
+        const ck = switch (div_ins.rhs) {
+            .i64 => |v| v,
+            else => return false,
+        };
+        const k = powerOfTwoShift(ck) orelse return false;
+        if (self.valueIsFp(div_ins.lhs) or self.valueIsFp(div_ins.rhs)) return false;
+
+        if (st.op != .store_local) return false;
+        if (st.ty == .f64) return false;
+        if (st.application != null or st.relation != null or st.value != null) return false;
+        if (st.lhs != .temp or st.lhs.temp != t) return false;
+        const l = st.result orelse return false;
+
+        if (nx.op != .binop or nx.binop != .band) return false;
+        if (nx.ty == .f64) return false;
+        if (nx.application != null or nx.relation != null or nx.value != null) return false;
+        if (nx.result == null) return false;
+        const l_is_lhs = nx.lhs == .local and nx.lhs.local == l;
+        const l_is_rhs = nx.rhs == .local and nx.rhs.local == l;
+        if (l_is_lhs == l_is_rhs) return false;
+        const mask_val = if (l_is_lhs) nx.rhs else nx.lhs;
+        const cm = switch (mask_val) {
+            .i64 => |v| v,
+            else => return false,
+        };
+        const w = lowMaskWidth(cm) orelse return false;
+        if (@as(u32, k) + @as(u32, w) > 64) return false;
+        if (self.valueIsFp(nx.lhs) or self.valueIsFp(nx.rhs)) return false;
+
+        // Same-name write-back: the band's store must overwrite the local
+        // the div's store named. The shifted intermediate then has no
+        // observer left, and the band's value reaches every later reader
+        // through the kept store, identically in both versions.
+        if (st2.op != .store_local) return false;
+        if (st2.ty == .f64) return false;
+        if (st2.result == null or st2.result.? != l) return false;
+        const d = nx.result.?;
+        if (st2.lhs != .temp or st2.lhs.temp != d) return false;
+
+        // Neither the div nor the naming store may read the local: its value
+        // is being replaced under it. (The band's own read is the shape; reads
+        // before the window and after the band's store are unaffected — see the
+        // atomicity argument above.)
+        if (dnirInstrReadsValue(div_ins, true, l)) return false;
+        if (dnirInstrReadsValue(st, true, l)) return false;
+
+        // The div temp's only reader is the naming store (R15 ground).
+        if (!self.singleReaderByTightDef(t, flat_idx)) return false;
+
+        // Nothing may branch into the consumed window: every consumed index
+        // collapses onto one code offset.
+        if (dnirBranchLandsWithin(f, flat_idx, flat_idx + 2)) return false;
+        return true;
+    }
+
     /// Emit the fused `ubfx` for a `ubfxFusible` pair. The shift temp is never
     /// materialized; the destination owns the `and`'s result temp.
     fn emitFusedUbfx(
@@ -11784,8 +11899,12 @@ const Arm64Compiler = struct {
         };
         const k = powerOfTwoShift(ck) orelse return self.refuse(@src());
         const t = ins.result orelse return self.refuse(@src());
-        const t_is_lhs = nx.lhs == .temp and nx.lhs.temp == t;
-        const mask_val = if (t_is_lhs) nx.rhs else nx.lhs;
+        // The band's non-shift operand: the shift temp in the unnamed form,
+        // the named local in the named form (`namedUbfxFusible`). The firing
+        // predicate has proved exactly one side is that operand and the other
+        // is the i64 mask, so this selection is exact in both forms.
+        const shift_is_lhs = (nx.lhs == .temp and nx.lhs.temp == t) or nx.lhs == .local;
+        const mask_val = if (shift_is_lhs) nx.rhs else nx.lhs;
         const cm = switch (mask_val) {
             .i64 => |v| v,
             else => return self.refuse(@src()),
