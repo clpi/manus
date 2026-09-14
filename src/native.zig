@@ -5165,7 +5165,7 @@ const Arm64Compiler = struct {
                             }
                         }
                     }
-                    self.releaseStagedArgRegs(staged_args, call_result);
+                    self.releaseStagedArgRegs(staged_args, call_result, temps, at);
                 }
             },
             .init_record => {
@@ -8447,13 +8447,50 @@ const Arm64Compiler = struct {
         if (slot < 8) self.pending_arg_regs |= (@as(u8, 1) << @as(u3, @intCast(slot)));
     }
 
-    fn releaseStagedArgRegs(self: *Arm64Compiler, staged: u8, call_result: ?u5) void {
+    fn releaseStagedArgRegs(
+        self: *Arm64Compiler,
+        staged: u8,
+        call_result: ?u5,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        at: u32,
+    ) void {
         var r: u5 = 0;
         while (r < 8) : (r += 1) {
             if (staged & (@as(u8, 1) << @as(u3, @intCast(r))) == 0) continue;
-            if (call_result != r) self.used_regs[r] = false;
+            if (call_result == r) continue;
+            // A staged register still holds its pre-call value: the save around
+            // the call preserved it and the restore put it back. Releasing the
+            // register while a live temps id still names it orphans the name:
+            // the next call's save set skips the register (it reads used_regs),
+            // the callee clobbers it, and the surviving name reads the clobbered
+            // value. staleGpName cannot see this -- it covers x9..x28 only, and
+            // an ABI-placed value carries no gp_reg_owner at all. So the release
+            // is conditional on no live claim surviving. temps entries are never
+            // removed when their value dies, so the name alone cannot tell live
+            // from dead; value_free_at against this call's index does, the same
+            // reading preserveArgReg's victim scan uses.
+            if (self.stagedRegHoldsLiveValue(temps, r, at)) continue;
+            self.used_regs[r] = false;
         }
         self.pending_arg_regs &= ~staged;
+    }
+
+    // Does a live value still claim reg through temps after the call at index
+    // at? x0..x7 never carry gp_reg_owner (it is only ever set for x9..x28),
+    // so for a staged argument register the temps name is the whole claim.
+    fn stagedRegHoldsLiveValue(
+        self: *const Arm64Compiler,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        reg: u5,
+        at: u32,
+    ) bool {
+        var it = temps.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.* != reg) continue;
+            const last = self.value_free_at.get(entry.key_ptr.*) orelse std.math.maxInt(u32);
+            if (last > at) return true;
+        }
+        return false;
     }
 
     /// The same question `pending_arg_regs` answers for x0..x7, asked for the
@@ -25324,6 +25361,9 @@ test "staged argument registers return to the pool after the call" {
     };
     defer compiler.deinit();
 
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+
     compiler.used_regs[2] = true;
     compiler.used_regs[3] = true;
     compiler.used_regs[5] = true;
@@ -25331,7 +25371,7 @@ test "staged argument registers return to the pool after the call" {
     compiler.markStagedArgReg(3);
     compiler.markStagedArgReg(5);
 
-    compiler.releaseStagedArgRegs(compiler.pending_arg_regs, null);
+    compiler.releaseStagedArgRegs(compiler.pending_arg_regs, null, &temps, 0);
     try std.testing.expect(!compiler.used_regs[2]);
     try std.testing.expect(!compiler.used_regs[3]);
     try std.testing.expect(!compiler.used_regs[5]);
@@ -25341,9 +25381,49 @@ test "staged argument registers return to the pool after the call" {
     compiler.used_regs[3] = true;
     compiler.markStagedArgReg(2);
     compiler.markStagedArgReg(3);
-    compiler.releaseStagedArgRegs(compiler.pending_arg_regs, 2);
+    compiler.releaseStagedArgRegs(compiler.pending_arg_regs, 2, &temps, 0);
     try std.testing.expect(compiler.used_regs[2]);
     try std.testing.expect(!compiler.used_regs[3]);
+    try std.testing.expectEqual(@as(u8, 0), compiler.pending_arg_regs);
+}
+
+test "releaseStagedArgRegs keeps a register a live temps value still claims" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+
+    // x0 holds a value live past the call at index 7 (last use at 9); x1
+    // holds a value whose last use was the call itself (dead after it).
+    // The save around the call preserved both and the restore put them
+    // back, so x0's claim survives the release and x1's does not.
+    compiler.used_regs[0] = true;
+    compiler.used_regs[1] = true;
+    compiler.markStagedArgReg(0);
+    compiler.markStagedArgReg(1);
+    try temps.put(alloc, 100, 0);
+    try temps.put(alloc, 101, 1);
+    try compiler.value_free_at.put(alloc, 100, 9);
+    try compiler.value_free_at.put(alloc, 101, 7);
+
+    compiler.releaseStagedArgRegs(compiler.pending_arg_regs, null, &temps, 7);
+
+    try std.testing.expect(compiler.used_regs[0]);
+    try std.testing.expect(!compiler.used_regs[1]);
     try std.testing.expectEqual(@as(u8, 0), compiler.pending_arg_regs);
 }
 
@@ -25492,7 +25572,7 @@ test "the allocator drains after representative call sequences" {
         try temps.put(alloc, base + 3, 0);
         try compiler.restorePreservedX0(&temps, base + 3);
 
-        compiler.releaseStagedArgRegs(compiler.pending_arg_regs, null);
+        compiler.releaseStagedArgRegs(compiler.pending_arg_regs, null, &temps, iter);
 
         var k: u32 = 0;
         while (k < 4) : (k += 1) {

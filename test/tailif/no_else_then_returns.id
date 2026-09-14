@@ -1,0 +1,4 @@
+fails = 0
+if fails != 0
+    print("FAIL")
+    os.exit(1)

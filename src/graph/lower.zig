@@ -5389,7 +5389,20 @@ fn root(
             _ = try lowerExprCons(&ctx, tail.expr, .discard);
         }
     }
-    if (ctx.instrs.items.len == 0 or ctx.instrs.items[ctx.instrs.items.len - 1].op != .ret) {
+    // A trailing control-flow statement may leave its `ret` INSIDE a branch
+    // (the tail-if whose then-arm returns), with the fall-through `br`
+    // targeting the past-the-end sentinel. The `last op != .ret` check cannot
+    // see into branches; a trailing conditional always needs its join point
+    // materialized as a real instruction, or the false edge falls through
+    // into whatever symbol the linker placed next.
+    const last_is_branch = blk: {
+        if (mod.body.stmts.len == 0) break :blk false;
+        break :blk switch (mod.body.stmts[mod.body.stmts.len - 1]) {
+            .if_stmt, .while_loop, .num_for, .gen_for => true,
+            else => false,
+        };
+    };
+    if (ctx.instrs.items.len == 0 or last_is_branch or ctx.instrs.items[ctx.instrs.items.len - 1].op != .ret) {
         try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .any });
     }
     const owned_instrs = try ctx.instrs.toOwnedSlice(alloc);
