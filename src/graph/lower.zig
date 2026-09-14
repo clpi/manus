@@ -4489,6 +4489,57 @@ const NestedFoldLiveness = struct {
     inner_dead: bool,
 };
 
+/// Block-scoped value numbering for pure binary operations.
+///
+/// A `dnir.Value` operand that is a temp is write-once, and a slot is written
+/// only by an instruction that passes through `LowerCtx.emit`, so the triple
+/// (op, lhs, rhs) names a value that is stable until something redefines one
+/// of its local operands. `emit` retracts every entry that mentions a stored
+/// local, and any call or heap write retracts the whole table, so a hit can
+/// only reuse a temp whose operands still hold the same values. Block entry
+/// clears the table: no fact crosses a control-flow edge, which keeps every
+/// reuse inside straight-line code where domination is textual.
+///
+/// Admitted only when the operation cannot fault: arithmetic and logic ops,
+/// plus division-family ops with a statically nonzero literal divisor (the
+/// zero trap is then not emitted at all) or on the float path (IEEE defines
+/// division by zero, so there is no trap to preserve). Comparisons are
+/// excluded — their C-unsigned refits rewrite the operands, which would make
+/// the key lie about what was computed.
+const CseKey = struct {
+    op: dnir.BinOpTag,
+    lhs: CseOperand,
+    rhs: CseOperand,
+    f64: bool,
+};
+
+const CseOperand = struct {
+    kind: u8, // 0=i64, 1=temp, 2=local, 3=f64, 4=f32
+    bits: u64,
+};
+
+fn cseOperand(v: dnir.Value) ?CseOperand {
+    return switch (v) {
+        .i64 => |x| .{ .kind = 0, .bits = @bitCast(x) },
+        .temp => |t| .{ .kind = 1, .bits = t },
+        .local => |s| .{ .kind = 2, .bits = s },
+        .f64 => |x| .{ .kind = 3, .bits = @bitCast(x) },
+        .f32 => |x| .{ .kind = 4, .bits = @as(u64, @as(u32, @bitCast(x))) },
+        else => null,
+    };
+}
+
+fn cseAdmits(tag: dnir.BinOpTag, f64_op: bool, rhs: dnir.Value) bool {
+    switch (tag) {
+        .add, .sub, .mul, .band, .bor, .bxor, .shl, .shr => return true,
+        .div, .idiv, .mod => {
+            if (f64_op) return true;
+            return rhs == .i64 and rhs.i64 != 0;
+        },
+        else => return false,
+    }
+}
+
 pub const LowerCtx = struct {
     alloc: std.mem.Allocator,
     diagnostic: *Diagnostic,
@@ -4667,6 +4718,11 @@ pub const LowerCtx = struct {
     /// definition and a `dnir.Value` both carry; a name that has been rebound
     /// to a different slot is a different fact and correctly misses.
     nonzero_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Block-scoped value numbering: (op, lhs, rhs, f64) -> temp, for pure
+    /// binops only (see `cseAdmits`). Cleared at every block entry; `emit`
+    /// retracts entries on stores and calls. A hit reuses the earlier temp
+    /// instead of emitting the operation a second time.
+    cse: std.HashMapUnmanaged(CseKey, dnir.Value, std.hash_map.AutoContext(CseKey), std.hash_map.default_max_load_percentage) = .empty,
     /// Statements swallowed by a multi-statement idiom prologue (currently the
     /// popcount idiom): the prologue discharged their semantics up front, so
     /// the block loop must not lower them. Keyed by statement pointer; the
@@ -4799,6 +4855,7 @@ pub const LowerCtx = struct {
         self.loop_heads.deinit(self.alloc);
         self.instrs.deinit(self.alloc);
         self.nonzero_slots.deinit(self.alloc);
+        self.cse.deinit(self.alloc);
         self.popcount_swallowed.deinit(self.alloc);
         self.satadd_swallowed.deinit(self.alloc);
         self.bitrev_swallowed.deinit(self.alloc);
@@ -4826,7 +4883,37 @@ pub const LowerCtx = struct {
                 _ = self.nonzero_slots.remove(t);
             };
         }
+        // VALUE-NUMBER INVALIDATION. A stored local retracts every numbered
+        // expression that names it; a call or a heap write retracts the whole
+        // table, since an unknown callee or an aliased write may redefine any
+        // slot. `load_global` can also carry a slot in `result` (the
+        // while-loop module-binding promotion preloads into fresh slots).
+        if (self.cse.count() != 0) {
+            switch (instr.op) {
+                .store_local, .load_global => if (instr.result) |r| try self.cseKillLocal(r),
+                .store_global, .store_index, .call_direct, .call_extern => self.cse.clearRetainingCapacity(),
+                else => {},
+            }
+        }
         try self.instrs.append(self.alloc, instr);
+    }
+
+    /// Retract every value-numbered expression that reads `slot`. Temps are
+    /// write-once so they need no retraction; only `.local` operands can
+    /// change under a numbered entry.
+    fn cseKillLocal(self: *LowerCtx, slot: u32) Error!void {
+        var dead = std.ArrayListUnmanaged(CseKey).empty;
+        defer dead.deinit(self.alloc);
+        var it = self.cse.iterator();
+        while (it.next()) |e| {
+            const k = e.key_ptr.*;
+            if ((k.lhs.kind == 2 and k.lhs.bits == slot) or
+                (k.rhs.kind == 2 and k.rhs.bits == slot))
+            {
+                try dead.append(self.alloc, k);
+            }
+        }
+        for (dead.items) |k| _ = self.cse.remove(k);
     }
 };
 
@@ -5944,6 +6031,9 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     const saved_answering = ctx.block_answering;
     ctx.block_answering = allow_return;
     defer ctx.block_answering = saved_answering;
+    // No value-numbered fact crosses a control-flow edge: every reuse stays
+    // inside straight-line code where domination is textual.
+    ctx.cse.clearRetainingCapacity();
     for (block.stmts, 0..) |*stmt, i| {
         try pushEnclosingFrame(ctx, block, i);
         defer popEnclosingFrame(ctx);
@@ -7479,6 +7569,9 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
     const saved_answering = ctx.block_answering;
     ctx.block_answering = allow_return;
     defer ctx.block_answering = saved_answering;
+    // No value-numbered fact crosses a control-flow edge: every reuse stays
+    // inside straight-line code where domination is textual.
+    ctx.cse.clearRetainingCapacity();
     var declarations: std.ArrayListUnmanaged(BlockDeclaration) = .empty;
     defer declarations.deinit(ctx.alloc);
     try noteBlockDeclarations(ctx, block, &declarations);
@@ -16755,7 +16848,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
         }
         return bailNamed(ctx.diagnostic, @src(), "binop-not-lowered", @tagName(op));
     };
-    const t = ctx.freshTemp();
+    var cse_key: ?CseKey = null;
     var a = try lowerExpr(ctx, lhs);
     var b = try lowerExpr(ctx, rhs);
     // WHICH RELATIONS OWE A NON-ZERO DIVISOR IS NOT DECIDED HERE. This line
@@ -16791,6 +16884,21 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
             result_ty = binopResultWidth(ctx, op, lhs, rhs);
         }
     }
+    // BLOCK-SCOPED VALUE NUMBERING. The lookup runs after the operands are
+    // lowered and the trap is emitted: lowering an operand may itself
+    // invalidate (a call in an operand clears the table), and the trap is
+    // emitted unconditionally — only the arithmetic is shared, never the
+    // guard. On a hit the earlier temp is reused and nothing is emitted.
+    if (cseAdmits(tag, f64_op, b)) {
+        if (cseOperand(a)) |ca| {
+            if (cseOperand(b)) |cb| {
+                const key = CseKey{ .op = tag, .lhs = ca, .rhs = cb, .f64 = f64_op };
+                if (ctx.cse.get(key)) |hit| return hit;
+                cse_key = key;
+            }
+        }
+    }
+    const t = ctx.freshTemp();
     try ctx.emit(.{
         .op = .binop,
         .result = t,
@@ -16804,6 +16912,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
         .divisor = divisorSign(ctx, f64_op, tag, rhs),
         .dividend = dividendSign(ctx, f64_op, tag, lhs),
     });
+    if (cse_key) |key| try ctx.cse.put(ctx.alloc, key, .{ .temp = t });
     return .{ .temp = t };
 }
 
