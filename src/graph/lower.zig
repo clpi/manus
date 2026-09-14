@@ -9642,8 +9642,10 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
 /// On success the six SWAR statements are discharged up front: the popcount
 /// is emitted and stored to `x`, and the six statements are recorded in
 /// `popcount_swallowed` so the block loop skips them. The trailing
-/// `x = x & k` (0 <= k <= 127) is required for soundness but is NOT
-/// swallowed; it lowers normally and executes on the clean popcount.
+/// x = x & k (0 <= k <= 127) is required for soundness; for k == 127 it
+/// is also swallowed (identity on the clean hardware popcount [0,64]);
+/// for k < 127 it lowers normally and executes on the clean popcount.
+
 /// Sound because for k <= 127, raw & k == popcount & k: k < 128, so only
 /// the low 7 bits of the raw result affect the mask, and they hold the
 /// true count. Without the mask the raw idiom upper-bit garbage is
@@ -9721,15 +9723,16 @@ fn tryEmitPopcountIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Erro
     });
     try ctx.emit(.{ .op = .store_local, .result = x_slot, .lhs = .{ .temp = t }, .ty = .any });
 
-    // Swallow only the six SWAR steps. The trailing mask is NOT swallowed:
-    // it lowers normally and executes on the clean popcount. Sound because
-    // for 0 <= k <= 127, raw & k == popcount & k (k < 128, so only the low
-    // 7 bits of the raw result matter, and they hold the true count).
-    // Swallowing the mask is unsound for k < 127. The current statement
-    // (at) is swallowed too, and the post-prologue check below skips its
-    // lowerStmt.
+    // Swallow the six SWAR steps. The trailing mask is swallowed only when
+    // it is a no-op on a clean hardware popcount: x = x & 127 is identity
+    // for every reachable x in [0,64]. Swallowing the mask is unsound for
+    // k < 127, so only k == 127. The current statement (at) is swallowed
+    // too, and the post-prologue check below skips its lowerStmt.
     for (stmts[at .. at + 6]) |*st| {
         try ctx.popcount_swallowed.put(ctx.alloc, st, {});
+    }
+    if (mask_val == 127) {
+        try ctx.popcount_swallowed.put(ctx.alloc, &stmts[at + 6], {});
     }
 
     // `x` is rebound; drop the stale const fact.
