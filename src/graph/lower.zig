@@ -2717,6 +2717,37 @@ fn exprMentionsIdent(expr: *const ast.Expr, ident: []const u8) bool {
     };
 }
 
+/// True when `expr` may evaluate a call or method call. The loopselect
+/// defining-RHS scan refuses any intervening statement whose value may call:
+/// a call can rebind a module binding, which would break the "bound at the
+/// loop IS the RHS value" claim. Unhandled composite shapes answer true --
+/// fail closed; only pure leaves and call-free composites answer false.
+fn exprHasCall(expr: *const ast.Expr) bool {
+    return switch (expr.*) {
+        .call, .method_call => true,
+        .index => |x| exprHasCall(x.obj) or exprHasCall(x.key),
+        .field => |x| exprHasCall(x.obj),
+        .binop => |b| exprHasCall(b.lhs) or exprHasCall(b.rhs),
+        .unop => |u| exprHasCall(u.operand),
+        .if_expr => |ie| exprHasCall(ie.cond) or exprHasCall(ie.then_expr) or exprHasCall(ie.else_expr),
+        .try_expr => |x| exprHasCall(x.operand),
+        .unwrap_expr => |x| exprHasCall(x.operand),
+        .await_expr => |x| exprHasCall(x.operand),
+        .contains_expr => |x| exprHasCall(x.lhs) or exprHasCall(x.rhs),
+        .sequence => |s| blk: {
+            for (s.exprs) |e| if (exprHasCall(e)) break :blk true;
+            break :blk false;
+        },
+        .range => |r| exprHasCall(r.start) or exprHasCall(r.end) or
+            (if (r.step) |st| exprHasCall(st) else false),
+        .quote => |q| exprHasCall(q.expr),
+        .unquote => |u| exprHasCall(u.expr),
+        .int_lit, .float_lit, .true_lit, .false_lit, .nil, .quoted, .vararg, .func_expr => false,
+        .name => false,
+        else => true,
+    };
+}
+
 fn blockMentionsIdent(block: *const ast.Block, ident: []const u8) bool {
     for (block.stmts) |*s| if (stmtMentionsIdent(s, ident)) return true;
     if (block.tail_expr) |t| return exprMentionsIdent(t, ident);
@@ -9646,6 +9677,196 @@ fn isShiftAdd(e: *const ast.Expr, x: []const u8, k: i64) bool {
 /// SOUNDNESS: `bound <= 1` is load-bearing. If bound >= 2 the source loop
 /// does not terminate (iv resets to 1, and 1 < bound stays true), so the
 /// width proof is a termination proof, not just a bound.
+/// True when executing `st` might rebind `name`: an assignment to it, a
+/// declaration of it, any call (which can rebind a module binding), or any
+/// statement shape this check does not model (fail closed). Pure control flow
+/// (break/continue/goto/labels) and call-free expressions do not rebind. The
+/// loopselect defining-RHS scan skips a statement only when this answers
+/// false, so the nearest dominating assignment it finds truly dominates.
+fn stmtMayRebind(st: *const ast.Stmt, name: []const u8) bool {
+    return switch (st.*) {
+        .assign => |a| {
+            for (a.targets) |t| {
+                if (identOf(t)) |tn| {
+                    if (std.mem.eql(u8, tn, name)) return true;
+                } else return true;
+            }
+            for (a.values) |v| if (exprHasCall(v)) return true;
+            return false;
+        },
+        .call_stmt => true,
+        .expr_stmt => |x| return exprHasCall(x.expr),
+        .local_decl => |d| {
+            for (d.names) |n| if (std.mem.eql(u8, n.ident, name)) return true;
+            for (d.inits) |v| if (exprHasCall(v)) return true;
+            return false;
+        },
+        .const_decl => |d| {
+            if (std.mem.eql(u8, d.ident, name)) return true;
+            return exprHasCall(d.val);
+        },
+        .global_decl => |d| {
+            for (d.names) |n| if (std.mem.eql(u8, n.ident, name)) return true;
+            for (d.inits) |v| if (exprHasCall(v)) return true;
+            return false;
+        },
+        .do_block => |d| return blockMayRebind(&d.body, name),
+        .while_loop => |w| return exprHasCall(w.cond) or blockMayRebind(&w.body, name),
+        .repeat_loop => |r| return exprHasCall(r.cond) or blockMayRebind(&r.body, name),
+        .if_stmt => |f| {
+            if (exprHasCall(f.cond)) return true;
+            if (f.binding) |b| {
+                if (std.mem.eql(u8, b.name, name)) return true;
+                if (exprHasCall(b.expr)) return true;
+            }
+            if (blockMayRebind(&f.then, name)) return true;
+            for (f.elseifs) |ei| {
+                if (exprHasCall(ei.cond)) return true;
+                if (blockMayRebind(&ei.body, name)) return true;
+            }
+            if (f.else_body) |eb| if (blockMayRebind(&eb, name)) return true;
+            return false;
+        },
+        .num_for => |f| {
+            if (std.mem.eql(u8, f.var_name, name)) return true;
+            if (exprHasCall(f.start) or exprHasCall(f.stop)) return true;
+            if (f.step) |sp| if (exprHasCall(sp)) return true;
+            return blockMayRebind(&f.body, name);
+        },
+        .gen_for => |f| {
+            for (f.vars) |v| if (std.mem.eql(u8, v, name)) return true;
+            for (f.iters) |it| if (exprHasCall(it)) return true;
+            return blockMayRebind(&f.body, name);
+        },
+        .brk, .cont, .goto_stmt, .label_stmt => false,
+        .ret => |r| {
+            for (r.vals) |v| if (exprHasCall(v)) return true;
+            return false;
+        },
+        else => true,
+    };
+}
+
+fn blockMayRebind(blk: *const ast.Block, name: []const u8) bool {
+    for (blk.stmts) |*st| if (stmtMayRebind(st, name)) return true;
+    return false;
+}
+
+/// The literal the iv is bound to at the loop: the nearest dominating
+/// `iv = <int literal>` scanning back from `at`, skipping statements that
+/// provably cannot rebind the iv (fail closed on anything else). The init
+/// need not sit immediately before the loop -- the bound's own definition may
+/// sit between, as in `k = 0; m = 1 - c; while k < m`. Answers null when no
+/// dominating literal binding exists.
+fn loopSelectIvInit(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, iv: []const u8) ?i64 {
+    var i = at;
+    while (i > 0) {
+        i -= 1;
+        const st = stmts[i];
+        if (literalBindingOf(ctx.graph, &st, iv)) |lit| return lit;
+        if (stmtMayRebind(&st, iv)) return null;
+    }
+    return null;
+}
+
+/// The loopselect bound width. The producer's name-keyed lattice is
+/// flow-insensitive and join-widened, so a name rebound wide-then-narrow
+/// (`c = wide; c = c & 1`) publishes the WIDE width at the loop even though
+/// the value there is the narrow RHS. When the producer's name query cannot
+/// prove width <= 1, scan stmts[..at] backward for the nearest dominating
+/// `bound = RHS` assignment: every statement between it and the loop must be
+/// a plain single-target `.assign` with a call-free value (a call could
+/// rebind a module binding -- fail closed), and then the bound at the loop IS
+/// the RHS value. The width is computed syntactically from the RHS with names
+/// resolved to THEIR defining assignments (same dominance argument,
+/// recursively; statement indices strictly decrease, so it terminates). A
+/// name with no defining assignment in the scanned prefix falls back to the
+/// published column -- a sound whole-body over-approximation at any point.
+/// The producer query runs first (the established fact); the scan is the
+/// fallback. Precedent: sataddSynWidth.
+fn loopSelectBoundWidth(
+    ctx: *LowerCtx,
+    stmts: []const ast.Stmt,
+    at: usize,
+    relation: semantic_graph.id,
+    bound_expr: *const ast.Expr,
+) ?u8 {
+    if (ctx.graph.nonNegativeWidthOfExpr(relation, bound_expr)) |w| {
+        if (w <= 1) return w;
+    }
+    return loopSelectSynWidth(ctx, stmts, at, relation, bound_expr, 0);
+}
+
+/// Syntactic non-negative width over the backward scan. Arms mirror the
+/// range.zig transfer for exactly the shapes the loopselect fallback needs:
+/// int literals, names (via their defining assignment), bitwise-and (the
+/// narrower side survives; a literal mask bounds the result), and the `L - x`
+/// rule. Anything else answers null -- fail closed.
+fn loopSelectSynWidth(
+    ctx: *LowerCtx,
+    stmts: []const ast.Stmt,
+    up_to: usize,
+    relation: semantic_graph.id,
+    expr: *const ast.Expr,
+    depth: u8,
+) ?u8 {
+    if (depth > 32) return null;
+    const graph = ctx.graph;
+    switch (expr.*) {
+        .int_lit => |l| {
+            if (l.val < 0) return null;
+            var w: u8 = 0;
+            var n: u64 = @intCast(l.val);
+            while (n != 0) : (n >>= 1) w += 1;
+            return w;
+        },
+        .name => |n| {
+            var i = up_to;
+            while (i > 0) {
+                i -= 1;
+                const st = stmts[i];
+                // The defining assignment itself must be recognized before the
+                // rebind check: assigning the name is what we are looking for.
+                // Its value must be call-free (a call could rebind a module
+                // binding mid-evaluation).
+                if (st == .assign and st.assign.targets.len == 1 and st.assign.values.len == 1) {
+                    if (identOf(st.assign.targets[0])) |t| {
+                        if (std.mem.eql(u8, t, n.ident)) {
+                            if (exprHasCall(st.assign.values[0])) break;
+                            return loopSelectSynWidth(ctx, stmts, i, relation, st.assign.values[0], depth + 1);
+                        }
+                    }
+                }
+                // Not the definition: skip only statements that provably
+                // cannot rebind the name; anything else ends the scan
+                // (fail closed).
+                if (stmtMayRebind(&st, n.ident)) break;
+            }
+            return graph.nonNegativeWidthOfExpr(relation, expr);
+        },
+        .binop => |b| {
+            if (b.op == .band) {
+                const x = loopSelectSynWidth(ctx, stmts, up_to, relation, b.lhs, depth + 1);
+                const y = loopSelectSynWidth(ctx, stmts, up_to, relation, b.rhs, depth + 1);
+                if (x == null) return y;
+                if (y == null) return x;
+                return @min(x.?, y.?);
+            }
+            if (b.op == .sub) {
+                const L = ast.intLiteralValue(b.lhs) orelse return null;
+                if (L < 0) return null;
+                const w = loopSelectSynWidth(ctx, stmts, up_to, relation, b.rhs, depth + 1) orelse return null;
+                if (w > 63) return null;
+                const pow2w: u64 = @as(u64, 1) << @intCast(w);
+                if (pow2w > @as(u64, @intCast(L)) + 1) return null;
+                return loopSelectSynWidth(ctx, stmts, up_to, relation, b.lhs, depth + 1);
+            }
+            return null;
+        },
+        else => return null,
+    }
+}
+
 fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
     const debug = false;
     if (at < 1) { if (debug) std.debug.print("LS: at<1\n", .{}); return false; }
@@ -9668,7 +9889,7 @@ fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
     // prologue single evaluation differs from per-trip evaluation.
     const bound_name = identOf(bound_expr) orelse return false;
 
-    const iv_init = literalBindingOf(ctx.graph, &stmts[at - 1], iv) orelse return false;
+    const iv_init = loopSelectIvInit(ctx, stmts, at, iv) orelse return false;
     if (iv_init != 0) return false;
 
     var acc: ?[]const u8 = null;
@@ -9713,7 +9934,7 @@ fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
     // Prove bound <= 1: a 1-bit non-negative width means bound in {0,1}.
     // Width 0 means bound == 0; the if folds to skip.
     const relation = ctx.function orelse return false;
-    const w_opt = ctx.graph.nonNegativeWidthOfExpr(relation, bound_expr);
+    const w_opt = loopSelectBoundWidth(ctx, stmts, at, relation, bound_expr);
     if (debug) std.debug.print("LS: width of bound={s} = {?}\n", .{bound_name, w_opt});
     const w = w_opt orelse return false;
     if (w > 1) return false;

@@ -45,21 +45,12 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-          # setup-zig's built-in cache save shells out to tar with the
-          # workspace path unquoted, which breaks on this runner's
-          # space-containing work path (/Volumes/d 1/...). Cache via
-          # actions/cache instead, which passes paths as argv.
           use-cache: false
 
       - name: Build migration compiler for gates
         run: zig build
 
       - name: Repository admission
-        # public-safety runs as gate/public-safety.id so a host with no
-        # direct-native realization reports the exact DNB004 host fact (NOT
-        # MEASURED) instead of a bare `run ./zig-out/bin/idol failure` that
-        # reads as a scan finding. The step still fails on such a host: NOT
-        # MEASURED is honest attribution, not admission.
         run: |
           zig build repo-hygiene
           ./zig-out/bin/idol run --backend=direct gate/public-safety.id
@@ -89,10 +80,6 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-          # setup-zig's built-in cache save shells out to tar with the
-          # workspace path unquoted, which breaks on this runner's
-          # space-containing work path (/Volumes/d 1/...). Cache via
-          # actions/cache instead, which passes paths as argv.
           use-cache: false
 
       - name: Record toolchain
@@ -111,77 +98,130 @@ jobs:
           import math
           import os
           from pathlib import Path
+          import re
           import shutil
+          import signal
           import statistics
           import subprocess
           import tempfile
           
-          root = Path.cwd()
-          compiler = root / "zig-out/bin/idol"
-          source = root / "bench/timing.id"
           
           def require(condition, detail):
               if not condition:
                   raise RuntimeError(detail)
           
-          def run(args, success=True):
-              result = subprocess.run(args, capture_output=True, timeout=120)
-              if success:
-                  require(result.returncode == 0, repr(args) + "\n" + result.stdout.decode(errors="replace") + "\n" + result.stderr.decode(errors="replace"))
-              return result
           
-          with tempfile.TemporaryDirectory(prefix="timing-check-", dir=os.environ["RUNNER_TEMP"]) as directory:
-              work = Path(directory)
-              text = source.read_text()
-              helpers = text[:text.index("runone:")]
-              cases = [("10;20;30;", 3, 20), ("30;10;20;", 3, 20),
-                       ("10;20;30;40;", 4, 25), ("0;0;", 2, 0),
-                       ("9223372036854775806;9223372036854775807;", 2, 9223372036854775806)]
-              probe = work / "median.id"
-              probe.write_text(helpers + "\n" + "\n".join(f'print(medianstr("{samples}", {count}))' for samples, count, _ in cases) + "\n")
-              median = work / "median"
-              run([str(compiler), "compile", str(probe), "--backend", "native", "--no-cache", "-o", str(median)])
-              expected = "".join(str(value) + "\n" for _, _, value in cases).encode()
-              require(run([str(median)]).stdout == expected, "compiled median disagrees with independent expected values")
-              timer = work / "timing"
-              run([str(compiler), "compile", str(source), "--backend", "native", "--no-cache", "-o", str(timer)])
-              good = shutil.which("true")
-              bad = shutil.which("false")
-              require(good and bad, "positive and negative process controls unavailable")
-              args = [str(timer), good, good, "21", "3", "0", "", str(compiler), "native-no-cache", os.environ["GITHUB_SHA"], "200"]
-              result = run(args)
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          
+          
+          def run(args, success=True):
+              with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+                  process = subprocess.Popen(args, stdout=out, stderr=err, start_new_session=True)
+                  try:
+                      process.wait(timeout=120)
+                  except subprocess.TimeoutExpired:
+                      try:
+                          os.killpg(process.pid, signal.SIGKILL)
+                      except ProcessLookupError:
+                          pass
+                      process.wait()
+                      raise RuntimeError('process group timed out: ' + repr(args))
+                  out.seek(0)
+                  err.seek(0)
+                  stdout = out.read(1048577)
+                  stderr = err.read(1048577)
+                  require(len(stdout) <= 1048576 and len(stderr) <= 1048576, 'evidence exceeds observer limit: ' + repr(args))
+                  result = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+                  if success:
+                      require(result.returncode == 0, repr(args) + '\n' + stdout.decode(errors='replace') + '\n' + stderr.decode(errors='replace'))
+                  return result
+          
+          
+          def check(body, expected, rounds):
               fields = {}
-              for line in result.stdout.decode().splitlines():
-                  key, sep, value = line.partition(": ")
-                  require(sep and key not in fields, "malformed or duplicate output: " + line)
+              for line in body.decode().splitlines():
+                  key, sep, value = line.partition(': ')
+                  require(sep and key not in fields, 'malformed or duplicate output: ' + line)
                   fields[key] = value
-              require(fields.get("status") == "ok", "timer did not complete successfully")
-              for face in ("candidate", "comparator"):
-                  raw = fields[face + "_samples_ns"]
-                  require(raw.endswith(";"), "missing sample terminator")
-                  samples = [int(value) for value in raw[:-1].split(";")]
-                  require(len(samples) == 21 and all(value >= 0 for value in samples), "invalid sample count or value")
-                  require(int(fields[face + "_median_ns"]) == sorted(samples)[10], "native median does not match its own raw samples")
+              for key, value in expected.items():
+                  require(fields.get(key) == str(value), 'incorrect field: ' + key)
+              require(re.fullmatch('[0-9a-f]{64}', fields.get('compiler_sha256', '')), 'invalid compiler digest')
+              for face in ('candidate', 'comparator'):
+                  raw = fields[face + '_samples_ns']
+                  require(re.fullmatch(r'(?:[0-9]+;)+', raw), 'malformed samples')
+                  samples = [int(value) for value in raw[:-1].split(';')]
+                  require(len(samples) == rounds and all(value <= 9223372036854775807 for value in samples), 'invalid sample count or value')
+                  ordered = sorted(samples)
+                  center = ordered[rounds // 2] if rounds % 2 else ordered[rounds // 2 - 1] + (ordered[rounds // 2] - ordered[rounds // 2 - 1]) // 2
+                  require(int(fields[face + '_median_ns']) == center, 'native median does not match its samples')
                   reference = statistics.variance([value / 1000.0 for value in samples])
-                  actual = float(fields[face + "_variance_us2"])
-                  require(math.isfinite(actual) and actual >= 0 and math.isclose(actual, reference, rel_tol=1e-7, abs_tol=1e-6), "native variance does not match independent reference")
-              require(fields.get("verdict") == "inconclusive" and fields.get("significant") == "unverified", "unqualified inference was promoted")
-              wrong = list(args)
-              wrong[1] = bad
-              rejected = run(wrong, success=False)
-              require(rejected.returncode == 1 and b"status: mismatch" in rejected.stdout, "wrong process result was not rejected at the requested boundary")
-              print(result.stdout.decode())
-              print(json.dumps({"outcome": "pass", "scope": "compiled median helpers and full native timer; not performance qualification", "median_controls": len(cases), "timed_invocations": 42, "wrong_exit": "rejected", "compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest(), "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(), "revision": os.environ["GITHUB_SHA"]}))
+                  actual = float(fields[face + '_variance_us2'])
+                  require(math.isfinite(actual) and actual >= 0 and math.isclose(actual, reference, rel_tol=1e-7, abs_tol=1e-6), 'native variance does not match independent reference')
+              return fields
+          
+          
+          def exercise():
+              root = Path.cwd()
+              compiler = root / 'zig-out/bin/idol'
+              source = root / 'bench/timing.id'
+              revision = os.environ['GITHUB_SHA']
+              before = digest(compiler)
+              with tempfile.TemporaryDirectory(prefix='timing-check-', dir=os.environ['RUNNER_TEMP']) as directory:
+                  work = Path(directory)
+                  text = source.read_text()
+                  helpers = text[:text.index('runone:')]
+                  cases = [('10;20;30;', 3, 20), ('30;10;20;', 3, 20), ('10;20;30;40;', 4, 25), ('0;0;', 2, 0), ('9223372036854775806;9223372036854775807;', 2, 9223372036854775806)]
+                  probe = work / 'median.id'
+                  probe.write_text(helpers + '\n' + '\n'.join(f'print(medianstr("{samples}", {count}))' for samples, count, _ in cases) + '\n')
+                  median = work / 'median'
+                  run([str(compiler), 'compile', str(probe), '--backend', 'native', '--no-cache', '-o', str(median)])
+                  wanted = ''.join(str(value) + '\n' for _, _, value in cases).encode()
+                  require(run([str(median)]).stdout == wanted, 'compiled median disagrees with exact controls')
+                  timer = work / 'timing'
+                  run([str(compiler), 'compile', str(source), '--backend', 'native', '--no-cache', '-o', str(timer)])
+                  good = shutil.which('true')
+                  bad = shutil.which('false')
+                  require(good and bad, 'process controls unavailable')
+                  args = [str(timer), good, good, '21', '3', '0', '', str(compiler), 'native-no-cache', revision, '200']
+                  expected = {'status': 'ok', 'verdict': 'inconclusive', 'analysis': 'descriptive', 'significant': 'unverified', 'compiler': str(compiler), 'compiler_sha256': before, 'build_config': 'native-no-cache', 'source_rev': revision, 'rounds': '21', 'warmup': '3', 'expected_exit': '0', 'tolerance_basis_points': '200', 'candidate': good, 'comparator': good, 'candidate_size': Path(good).stat().st_size, 'comparator_size': Path(good).stat().st_size}
+                  result = run(args)
+                  print(result.stdout.decode(), flush=True)
+                  check(result.stdout, expected, 21)
+                  for replacement in ('4299405008', '0' * 64):
+                      damaged = result.stdout.replace(before.encode(), replacement.encode())
+                      require(damaged != result.stdout, 'digest mutation did not alter evidence')
+                      try:
+                          check(damaged, expected, 21)
+                      except RuntimeError:
+                          pass
+                      else:
+                          raise RuntimeError('damaged provenance was accepted')
+                  wrong = list(args)
+                  wrong[1] = bad
+                  rejected = run(wrong, success=False)
+                  require(rejected.returncode == 1 and b'status: mismatch' in rejected.stdout, 'wrong exit was not rejected')
+                  echo = shutil.which('echo')
+                  require(echo, 'stdout control unavailable')
+                  written = list(args)
+                  written[1] = written[2] = echo
+                  written[3] = '3'
+                  written[4] = '0'
+                  written[6] = '0a'
+                  checked = dict(expected, candidate=echo, comparator=echo, candidate_size=Path(echo).stat().st_size, comparator_size=Path(echo).stat().st_size, rounds='3', warmup='0')
+                  check(run(written).stdout, checked, 3)
+                  written[6] = '00'
+                  rejected = run(written, success=False)
+                  require(rejected.returncode == 1 and b'status: mismatch' in rejected.stdout and b'phase: timed' in rejected.stdout, 'same-length wrong timed stdout was not rejected')
+                  require(digest(compiler) == before, 'compiler changed during observation')
+                  print(json.dumps({'outcome': 'pass', 'scope': 'native timer arithmetic, provenance and failure controls; not performance qualification', 'median_controls': len(cases), 'timed_invocations': 48, 'wrong_exit': 'rejected', 'wrong_timed_stdout': 'rejected', 'provenance_mutations': 2, 'compiler_sha256': before, 'timer_sha256': digest(timer), 'source_sha256': digest(source), 'revision': revision}))
+          
+          
+          if __name__ == '__main__':
+              exercise()
           PY
 
       - name: Materialize pinned idol-native root
-        # The MCP gate pairs against an exact, clean idol-native worktree at
-        # the manifest-pinned revision (tools/node/dev/mcp.manifest.json),
-        # rooted at ${{ github.workspace }}/idol-native (IDOL_NATIVE_ROOT).
-        # clpi/idol-native is private: until a deploy key is provisioned as
-        # the IDOL_NATIVE_DEPLOY_KEY secret this step is a no-op and pairing
-        # fails closed with "root is missing". All paths are quoted: the
-        # runner work path contains a space (/Volumes/d 1/...).
         env:
           IDOL_NATIVE_DEPLOY_KEY: ${{ secrets.IDOL_NATIVE_DEPLOY_KEY }}
         run: |
@@ -209,13 +249,6 @@ jobs:
       - name: Unit and compile-fail tests
         run: zig build test
         env:
-          # Absolute path to the pinned idol-native worktree the MCP gate
-          # pairs against (see tools/node/dev/mcp.manifest.json), resolved
-          # from GITHUB_WORKSPACE at runtime. mcp-pair fails closed on
-          # relative paths. NOTE: the idol-native checkout must be
-          # materialized at this path at the manifest-pinned revision;
-          # clpi/idol-native is private and no credential is provisioned
-          # yet, so the gate will report "root is missing" until it is.
           IDOL_NATIVE_ROOT: ${{ github.workspace }}/idol-native
 
       - name: G-061 metaprogramming smokes
@@ -251,10 +284,6 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.17.0-dev.1567+f0354179a
-          # setup-zig's built-in cache save shells out to tar with the
-          # workspace path unquoted, which breaks on this runner's
-          # space-containing work path (/Volumes/d 1/...). Cache via
-          # actions/cache instead, which passes paths as argv.
           use-cache: false
 
       - name: Build frozen Wart oracle
@@ -280,7 +309,7 @@ jobs:
           echo "WART_ORACLE_PROVENANCE=$wart_provenance" >> "$GITHUB_ENV"
 
       - name: WASM focused evidence against frozen oracles
-        run: $IDOL_ZIG build wasm-test
+        run: '"$IDOL_ZIG" build wasm-test'
 
       - name: Upload toolchain record
         uses: actions/upload-artifact@v4

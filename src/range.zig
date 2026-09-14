@@ -281,6 +281,23 @@ fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?u8 {
                     if (y == null) break :blk x;
                     break :blk @min(x.?, y.?);
                 },
+                // `L - x` with L a non-negative int literal, width(x) = w,
+                // and 2^w - 1 <= L: the mathematical result is in
+                // [L - (2^w - 1), L] ⊆ [0, L] ⊆ [0, 2^63), so wrapping cannot
+                // change it -- publish the literal's width. `x - L` stays
+                // declined (can go negative); negative L declines. Every
+                // widthOfExprIn answer is <= 63 or null (the clamp below), so
+                // the shift cannot overflow.
+                .sub => {
+                    const L = ast.intLiteralValue(b.lhs) orelse break :blk null;
+                    if (L < 0) break :blk null;
+                    const w = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
+                    if (w > 63) break :blk null;
+                    const pow2w: u64 = @as(u64, 1) << @intCast(w);
+                    // 2^w - 1 <= L  <=>  2^w <= L + 1; L + 1 <= 2^63 here.
+                    if (pow2w > @as(u64, @intCast(L)) + 1) break :blk null;
+                    break :blk nonNegWidthOfLit(L) orelse break :blk null;
+                },
                 .bor, .bxor => break :blk nonNegJoin(widthOfExprIn(lookup, b.lhs, fuel), widthOfExprIn(lookup, b.rhs, fuel)),
                 // LOGICAL shift right (`lsr`). A shift of AT LEAST ONE clears
                 // the top bit whatever it held, which is the only case where
