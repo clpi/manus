@@ -7,7 +7,7 @@
 
 | # | directive |
 |---|---|
-| 1 | Generated 2026-09-13T19:29:26 by `bench/run.sh` (route production, 21 interleaved rounds, 3 warmup, median is primary). |
+| 1 | Generated 2026-09-13T23:53:46 by `bench/run.sh` (route production, 21 interleaved rounds, 3 warmup, median is primary). |
 
 | section |
 |---|---|
@@ -36,25 +36,135 @@
 
 | section |
 |---|---|
-| brm3 |
+| popc |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
-| idol | 0.001533 | 0.001574 | 0.000264 | 0.001307 | 0.002246 | 0.002241 | 2 |
-| clang | 0.001513 | 0.001648 | 0.000348 | 0.001336 | 0.002423 | 0.002380 | 0 |
-| gcc | 0.001457 | 0.001618 | 0.000323 | 0.001343 | 0.002371 | 0.002300 | 0 |
+| idol | 0.004386 | 0.004486 | 0.000401 | 0.004168 | 0.006019 | 0.004812 | 1 |
+| clang | 0.004851 | 0.005622 | 0.003404 | 0.004460 | 0.020441 | 0.005314 | 1 |
+| gcc | 0.004872 | 0.005374 | 0.001968 | 0.004465 | 0.013811 | 0.005930 | 1 |
 
 | # | directive |
 |---|---|
-| 1 | Idol vs best rival (gcc): inconclusive, margin -5.20%, p=0.6235 (not significant; win/loss requires p<0.05). |
+| 1 | Idol vs best rival (clang): inconclusive, margin +9.58%, p=0.1287 (not significant; win/loss requires p<0.05). |
 
 | # | directive |
 |---|---|
-| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.023s (5/5 ok); clang 0.038s (5/5 ok); gcc 0.041s (5/5 ok). |
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.033s (5/5 ok); clang 0.041s (5/5 ok); gcc 0.045s (5/5 ok). |
 
 | # | directive |
 |---|---|
-| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 592, gcc 592. |
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 1136, gcc 1136. |
+
+| section |
+|---|---|
+| divpow2 |
+
+| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
+|---|---|---|---|---|---|---|---|
+| idol | 0.039844 | 0.039977 | 0.000563 | 0.039124 | 0.041313 | 0.041147 | 0 |
+| clang | 0.016831 | 0.016855 | 0.000187 | 0.016465 | 0.017393 | 0.017100 | 1 |
+| gcc | 0.016881 | 0.016855 | 0.000187 | 0.016382 | 0.017147 | 0.017144 | 0 |
+
+| # | directive |
+|---|---|
+| 1 | Idol vs best rival (clang): loss, margin -136.73%, p=0.0000 (significant; win/loss requires p<0.05). |
+
+| # | directive |
+|---|---|
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.030s (5/5 ok); clang 0.038s (5/5 ok); gcc 0.041s (5/5 ok). |
+
+| # | directive |
+|---|---|
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16848, clang 544, gcc 544. |
+
+| section |
+|---|---|
+| mixop |
+
+| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
+|---|---|---|---|---|---|---|---|
+| idol | 0.006500 | 0.006557 | 0.000203 | 0.006340 | 0.007214 | 0.006921 | 1 |
+| clang | 0.004310 | 0.004358 | 0.000208 | 0.004053 | 0.004941 | 0.004646 | 0 |
+| gcc | 0.004271 | 0.004295 | 0.000162 | 0.004007 | 0.004529 | 0.004494 | 0 |
+
+| # | directive |
+|---|---|
+| 1 | Idol vs best rival (gcc): loss, margin -52.20%, p=0.0000 (significant; win/loss requires p<0.05). |
+
+| # | directive |
+|---|---|
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.032s (5/5 ok); clang 0.042s (5/5 ok); gcc 0.048s (5/5 ok). |
+
+| # | directive |
+|---|---|
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 688, gcc 688. |
+
+| section |
+|---|---|
+| cltz |
+
+| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
+|---|---|---|---|---|---|---|---|
+| idol | 0.048022 | 0.048077 | 0.000423 | 0.047517 | 0.049230 | 0.048661 | 0 |
+| clang | 0.029327 | 0.029486 | 0.000443 | 0.028999 | 0.030673 | 0.030257 | 0 |
+| gcc | 0.029367 | 0.029490 | 0.000430 | 0.028990 | 0.030921 | 0.029998 | 1 |
+
+| # | directive |
+|---|---|
+| 1 | Idol vs best rival (clang): loss, margin -63.75%, p=0.0000 (significant; win/loss requires p<0.05). |
+
+| # | directive |
+|---|---|
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.032s (5/5 ok); clang 0.039s (5/5 ok); gcc 0.044s (5/5 ok). |
+
+| # | directive |
+|---|---|
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 608, gcc 608. |
+
+| section |
+|---|---|
+| bitr |
+
+| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
+|---|---|---|---|---|---|---|---|
+| idol | 0.002938 | 0.003042 | 0.000292 | 0.002878 | 0.004229 | 0.003308 | 1 |
+| clang | 0.002168 | 0.002210 | 0.000153 | 0.002122 | 0.002833 | 0.002342 | 1 |
+| gcc | 0.002169 | 0.002212 | 0.000106 | 0.002110 | 0.002563 | 0.002338 | 1 |
+
+| # | directive |
+|---|---|
+| 1 | Idol vs best rival (clang): loss, margin -35.56%, p=0.0000 (significant; win/loss requires p<0.05). |
+
+| # | directive |
+|---|---|
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.033s (5/5 ok); clang 0.041s (5/5 ok); gcc 0.045s (5/5 ok). |
+
+| # | directive |
+|---|---|
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 1296, gcc 1296. |
+
+| section |
+|---|---|
+| brm2 |
+
+| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
+|---|---|---|---|---|---|---|---|
+| idol | 0.005083 | 0.005153 | 0.000211 | 0.004923 | 0.005598 | 0.005555 | 0 |
+| clang | 0.004644 | 0.004695 | 0.000145 | 0.004551 | 0.005084 | 0.004987 | 0 |
+| gcc | 0.004712 | 0.004723 | 0.000134 | 0.004500 | 0.004955 | 0.004894 | 0 |
+
+| # | directive |
+|---|---|
+| 1 | Idol vs best rival (clang): loss, margin -9.44%, p=0.0000 (significant; win/loss requires p<0.05). |
+
+| # | directive |
+|---|---|
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.031s (5/5 ok); clang 0.036s (5/5 ok); gcc 0.041s (5/5 ok). |
+
+| # | directive |
+|---|---|
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 576, gcc 576. |
 
 | section |
 |---|---|
@@ -68,11 +178,11 @@
 
 | case | runs | first seen | last verdict | last margin% | worst margin% | best margin% |
 |---|---|---|---|---|---|---|
-| bitr | 2 | 2026-09-13T07:47:26 | loss | -33.93% | -33.93% | -29.05% |
+| bitr | 3 | 2026-09-13T07:47:26 | loss | -35.56% | -35.56% | -29.05% |
 | brm1 | 1 | 2026-09-13T07:47:26 | tie | -3.22% | -3.22% | -3.22% |
-| brm2 | 2 | 2026-09-13T07:47:26 | loss | -158.74% | -217.03% | -158.74% |
+| brm2 | 3 | 2026-09-13T07:47:26 | loss | -9.44% | -217.03% | -9.44% |
 | brm3 | 2 | 2026-09-13T07:47:26 | inconclusive | -5.20% | -130.65% | -5.20% |
-| cltz | 1 | 2026-09-13T08:16:29 | loss | -65.18% | -65.18% | -65.18% |
-| divpow2 | 2 | 2026-09-13T07:47:26 | loss | -140.18% | -140.18% | -137.47% |
-| mixop | 2 | 2026-09-13T07:47:26 | loss | -67.83% | -67.83% | -63.01% |
-| popc | 2 | 2026-09-13T07:47:26 | loss | -212.08% | -212.08% | -199.36% |
+| cltz | 2 | 2026-09-13T08:16:29 | loss | -63.75% | -65.18% | -63.75% |
+| divpow2 | 3 | 2026-09-13T07:47:26 | loss | -136.73% | -140.18% | -136.73% |
+| mixop | 3 | 2026-09-13T07:47:26 | loss | -52.20% | -67.83% | -52.20% |
+| popc | 3 | 2026-09-13T07:47:26 | inconclusive | +9.58% | -212.08% | +9.58% |
