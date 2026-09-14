@@ -10739,6 +10739,12 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 // `execap(prog, args, input)` captures process stdout as text.
                 if (std.mem.eql(u8, n.ident, "execap") and c.args.len == 3)
                     break :blk true;
+                // `sha256file(path)` answers the lowercase hex digest as text.
+                // Without this arm the binding fell through to `.any`, the
+                // slot never entered `str_slots`, and interpolation printed
+                // the digest pointer as an integer (observed `4299405008`).
+                if (std.mem.eql(u8, n.ident, "sha256file") and c.args.len == 1)
+                    break :blk true;
                 if (functionResultIs(ctx, n.ident, .str)) break :blk true;
                 // ANY-RETURNING IDENTITY ON A STRING. `box: any = (x: any) x`
                 // returns the descriptor of its argument unchanged; the runtime

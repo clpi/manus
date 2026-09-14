@@ -199,15 +199,67 @@ jobs:
                   result = run(args)
                   print(result.stdout.decode(), flush=True)
                   check(result.stdout, expected, 21)
-                  for replacement in ('4299405008', '0' * 64):
-                      damaged = result.stdout.replace(before.encode(), replacement.encode())
-                      require(damaged != result.stdout, 'digest mutation did not alter evidence')
+                  damaged_count = 0
+                  def must_reject(body, label):
+                      nonlocal damaged_count
                       try:
-                          check(damaged, expected, 21)
+                          check(body, expected, 21)
                       except RuntimeError:
-                          pass
+                          damaged_count += 1
                       else:
-                          raise RuntimeError('damaged provenance was accepted')
+                          raise RuntimeError('damaged provenance was accepted: ' + label)
+                  def mutate_field(body, key, bad):
+                      out = []
+                      for line in body.decode().splitlines():
+                          k, sep, v = line.partition(': ')
+                          if k == key:
+                              v = bad
+                          out.append(k + sep + v)
+                      return ('\n'.join(out) + '\n').encode()
+                  for replacement, label in (
+                      ('4299405008', 'pointer-shaped digest'),
+                      ('0' * 64, 'zero digest'),
+                      (before[:32], 'truncated digest'),
+                      (before.upper(), 'uppercase digest'),
+                      ('f' * 64, 'wrong 64-hex digest'),
+                  ):
+                      damaged = result.stdout.replace(before.encode(), replacement.encode())
+                      require(damaged != result.stdout, 'digest mutation did not alter evidence: ' + label)
+                      must_reject(damaged, label)
+                  for key, badval in (
+                      ('source_rev', '0' * 40),
+                      ('compiler', '/nonexistent/idol'),
+                      ('build_config', 'native-cache'),
+                      ('rounds', '20'),
+                      ('warmup', '2'),
+                      ('expected_exit', '1'),
+                      ('tolerance_basis_points', '100'),
+                      ('candidate', '/nonexistent/true'),
+                      ('comparator', '/nonexistent/true'),
+                      ('candidate_size', '999999'),
+                      ('comparator_size', '999999'),
+                      ('status', 'mismatch'),
+                      ('verdict', 'win'),
+                      ('analysis', 'inferential'),
+                      ('significant', 'yes'),
+                  ):
+                      must_reject(mutate_field(result.stdout, key, badval), 'wrong ' + key)
+                  require(damaged_count == 20, 'damaged-report battery incomplete: %d' % damaged_count)
+                  probe_bin = work / 'idol-probe'
+                  shutil.copy2(compiler, probe_bin)
+                  probe_before = digest(probe_bin)
+                  with open(probe_bin, 'r+b') as f:
+                      f.seek(1024)
+                      chunk = f.read(16)
+                      f.seek(1024)
+                      f.write(bytes(b ^ 0xff for b in chunk))
+                  require(digest(probe_bin) != probe_before, 'mutation did not change digest')
+                  try:
+                      require(digest(probe_bin) == probe_before, 'compiler changed during observation')
+                  except RuntimeError:
+                      pass
+                  else:
+                      raise RuntimeError('mutated executable was accepted')
                   wrong = list(args)
                   wrong[1] = bad
                   rejected = run(wrong, success=False)
