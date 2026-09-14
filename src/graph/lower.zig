@@ -10184,35 +10184,34 @@ fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
 
     const acc_slot = ctx.locals.get(acc_name) orelse return false;
     const iv_slot = ctx.locals.get(iv) orelse return false;
+    const bound_slot = ctx.locals.get(bound_name) orelse return false;
     if (slotIsNonInteger(ctx, acc_slot)) return false;
     if (slotIsNonInteger(ctx, iv_slot)) return false;
+    if (slotIsNonInteger(ctx, bound_slot)) return false;
     if (ctx.narrow_slots.contains(acc_slot)) return false;
     if (ctx.narrow_slots.contains(iv_slot)) return false;
+    if (ctx.narrow_slots.contains(bound_slot)) return false;
     if (acc_slot == iv_slot) return false;
 
-    // cond = (0 < bound)
+    // bound is in {0,1} (the width proof above), so (0 < bound) == bound and
+    // the conditional add is the product: acc += const*bound. The mul+add
+    // pair is adjacent with the product's single reader the add, which is
+    // exactly the backend's madd fusion shape (fuse_madd): one `madd`
+    // replaces the old compare+branch+csel sequence. iv = (0 < bound) is the
+    // exact post-loop value, and equals bound on {0,1}. const*bound is exact
+    // (0 or const), so no new overflow beyond the add the branch took.
+    //
+    // The loop is fully replaced: its post-state (acc, iv) is stored above,
+    // and the trip test would be false on entry, so lowering it would only
+    // emit dead entry scaffolding per outer iteration plus a dead body.
+    // Swallow the `while` so the dispatch loop never lowers the vacuous husk.
     const bound_val = try lowerExpr(ctx, bound_expr);
-    const cond_tmp = ctx.freshTemp();
-    try ctx.emit(.{ .op = .binop, .result = cond_tmp, .binop = .lt, .lhs = .{ .i64 = 0 }, .rhs = bound_val, .ty = .i64 });
-
-    // if cond { acc = acc + const } — the ordinary one-sided branch shape.
-    const fail_idx: u32 = @intCast(ctx.instrs.items.len);
-    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = cond_tmp }, .branch_target = 0, .branch_condition = .when_false });
+    const prod_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = prod_tmp, .binop = .mul, .lhs = bound_val, .rhs = .{ .i64 = acc_const }, .ty = .i64 });
     const sum_tmp = ctx.freshTemp();
-    try ctx.emit(.{ .op = .binop, .result = sum_tmp, .binop = .add, .lhs = .{ .local = acc_slot }, .rhs = .{ .i64 = acc_const }, .ty = .i64 });
+    try ctx.emit(.{ .op = .binop, .result = sum_tmp, .binop = .add, .lhs = .{ .local = acc_slot }, .rhs = .{ .temp = prod_tmp }, .ty = .i64 });
     try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum_tmp }, .ty = .any });
-    const join_br_idx: u32 = @intCast(ctx.instrs.items.len);
-    try ctx.emit(.{ .op = .br, .branch_target = 0 });
-    const end_idx: u32 = @intCast(ctx.instrs.items.len);
-    ctx.instrs.items[fail_idx].branch_target = end_idx;
-    ctx.instrs.items[join_br_idx].branch_target = end_idx;
-
-    // iv = cond: the exact post-loop value. The loop is fully replaced: its
-    // post-state (acc, iv) is stored above, and the trip test would be false
-    // on entry, so lowering it would only emit dead entry scaffolding per
-    // outer iteration plus a dead body. Swallow the `while` so the dispatch
-    // loop never lowers the vacuous husk.
-    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = .{ .temp = cond_tmp }, .ty = .any });
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_val, .ty = .any });
     try ctx.loopselect_swallowed.put(ctx.alloc, &stmts[at], {});
     return true;
 }
