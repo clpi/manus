@@ -4467,6 +4467,28 @@ fn recordCoversTableFields(record: dnir.RecordDesc, fields: []const types.FieldT
     return true;
 }
 
+/// One frame of the enclosing-block stack: the block and the index of the
+/// statement currently being lowered within it. The counted-loop fold
+/// consults the stack to prove an induction variable is dead after the
+/// folded loop (no read can observe the write-back), which lets it drop the
+/// write-back and its cold guard. Frames are pushed by `lowerBlock`,
+/// `lowerBlockReturns`, and the module root loop, and popped by defer, so
+/// every statement lowered through those paths is covered.
+const BlockFrame = struct {
+    block: *const ast.Block,
+    idx: usize,
+};
+
+/// The liveness verdict for a fired nested counted-loop fold: which
+/// induction-variable write-backs are dead and may be dropped.
+const NestedFoldLiveness = struct {
+    /// The outer induction variable is never read after the folded loop.
+    iv_dead: bool,
+    /// The inner induction variable is never read after the folded loop, so
+    /// both its write-back and the cold guard around it are dead.
+    inner_dead: bool,
+};
+
 pub const LowerCtx = struct {
     alloc: std.mem.Allocator,
     diagnostic: *Diagnostic,
@@ -4511,6 +4533,10 @@ pub const LowerCtx = struct {
     /// needs it because its safety comes from a scan of THE BODY, and an
     /// operand is bound by the CALLER, where the body cannot see it.
     param_slots: u32 = 0,
+    /// Enclosing-block stack for liveness-gated write-back elimination; see
+    /// `BlockFrame`. Pushed by `lowerBlock`, `lowerBlockReturns`, and the
+    /// module root loop.
+    enclosing: std.ArrayListUnmanaged(BlockFrame) = .empty,
     /// Positional tables whose every element is text — `{ "M", "CM", … }` —
     /// and which the rest of the body only READS. `t(k)` on one of these is a
     /// `str` at every index, constant or not.
@@ -4737,6 +4763,7 @@ pub const LowerCtx = struct {
         self.ptr_slots.deinit(self.alloc);
         self.directory.deinit(self.alloc);
         self.byteseq_slots.deinit(self.alloc);
+        self.enclosing.deinit(self.alloc);
         var pr = self.param_record_types.iterator();
         while (pr.next()) |entry| self.alloc.free(entry.key_ptr.*);
         self.param_record_types.deinit(self.alloc);
@@ -5353,6 +5380,8 @@ fn root(
     };
     defer ctx.deinit();
     for (mod.body.stmts, 0..) |*stmt, i| {
+        try pushEnclosingFrame(&ctx, &mod.body, i);
+        defer popEnclosingFrame(&ctx);
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
@@ -5901,6 +5930,8 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     ctx.block_answering = allow_return;
     defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
+        try pushEnclosingFrame(ctx, block, i);
+        defer popEnclosingFrame(ctx);
         // A multi-statement idiom prologue (popcount) swallowed this statement;
         // its semantics were discharged up front.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
@@ -6563,19 +6594,32 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 ctx.counted_plan = null;
                 if (counted) |plan| if (plan.stmt == stmt) {
                     if (try lowerSelfMapCountedWhile(ctx, ws, plan)) {
-                        try finishWhileLowering(ctx, null, promo[0..promo_len], null);
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &. {});
                         break :ordinary;
                     }
                     if (try lowerDirectCountedWhile(ctx, ws, plan)) {
-                        try finishWhileLowering(ctx, null, promo[0..promo_len], null);
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &. {});
                         break :ordinary;
                     }
-                    if (try lowerNestedDirectCountedWhile(ctx, ws, plan)) {
-                        try finishWhileLowering(ctx, null, promo[0..promo_len], null);
+                    if (try lowerNestedDirectCountedWhile(ctx, ws, plan)) |live| {
+                        // The fold proved these induction variables dead; their
+                        // promotion write-backs (if any) are dead with them.
+                        const nd = plan.nested_direct.?;
+                        var dead_names: [2][]const u8 = undefined;
+                        var dead_len: usize = 0;
+                        if (live.iv_dead) {
+                            dead_names[dead_len] = plan.iv;
+                            dead_len += 1;
+                        }
+                        if (live.inner_dead) {
+                            dead_names[dead_len] = nd.inner_iv;
+                            dead_len += 1;
+                        }
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, dead_names[0..dead_len]);
                         break :ordinary;
                     }
                     if (try lowerCountedWhile(ctx, ws, plan)) |cr| {
-                        try finishWhileLowering(ctx, cr.latch_fail, promo[0..promo_len], cr.wb_idx);
+                        try finishWhileLowering(ctx, cr.latch_fail, promo[0..promo_len], cr.wb_idx, &.{});
                         break :ordinary;
                     }
                 };
@@ -6609,7 +6653,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // Explicit `return` inside the body still lowers via the `.ret` arm.
             _ = try lowerBlockReturns(ctx, &ws.body, false);
             try ctx.emit(.{ .op = .br, .branch_target = head_idx });
-                try finishWhileLowering(ctx, fail_idx, promo[0..promo_len], null);
+                try finishWhileLowering(ctx, fail_idx, promo[0..promo_len], null, &.{});
             }
         },
         .num_for => |nf| try lowerNumFor(ctx, nf),
@@ -6676,6 +6720,8 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // fresh declarations. Statements lower in sequence; the tail
             // expression, if any, is the enclosing statement's value.
             for (db.body.stmts, 0..) |*inner, i| {
+                try pushEnclosingFrame(ctx, &db.body, i);
+                defer popEnclosingFrame(ctx);
                 tryArmCountedLoop(ctx, db.body.stmts, i);
                 try lowerStmt(ctx, inner, false);
             }
@@ -7421,6 +7467,8 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
     try noteBlockDeclarations(ctx, block, &declarations);
     defer restoreBlockDeclarations(ctx, declarations.items);
     for (block.stmts, 0..) |*stmt, i| {
+        try pushEnclosingFrame(ctx, block, i);
+        defer popEnclosingFrame(ctx);
         // A multi-statement idiom prologue (popcount) swallowed this statement;
         // its semantics were discharged up front.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
@@ -8956,7 +9004,7 @@ fn countedDominatingStoreRhs(stmts: []const ast.Stmt, at: usize, name: []const u
 /// bindings back to the module. The ordinary loop and the counted countdown
 /// both land here, so the promotion write-back happens exactly once, at the
 /// end, on every path.
-fn finishWhileLowering(ctx: *LowerCtx, fail_idx: ?usize, promo: []const Promotion, wb_idx: ?usize) Error!void {
+fn finishWhileLowering(ctx: *LowerCtx, fail_idx: ?usize, promo: []const Promotion, wb_idx: ?usize, dead_names: []const []const u8) Error!void {
     const end_idx: u32 = @intCast(ctx.instrs.items.len);
     // A counted loop's induction-variable write-back precedes the shared exit;
     // the failing latch must land ON it, not past it.
@@ -8977,12 +9025,22 @@ fn finishWhileLowering(ctx: *LowerCtx, fail_idx: ?usize, promo: []const Promotio
         // reading exactly what it read before this pass existed.
         if (ctx.const_ints.fetchRemove(p.name)) |kv| ctx.alloc.free(kv.key);
         if (p.written) {
-            try ctx.emit(.{
-                .op = .store_global,
-                .field = p.name,
-                .lhs = .{ .local = p.slot },
-                .ty = .i64,
-            });
+            var dead = false;
+            for (dead_names) |dn| if (std.mem.eql(u8, dn, p.name)) {
+                dead = true;
+                break;
+            };
+            // A dead induction variable's promotion write-back is dead with it:
+            // the liveness proof showed no read after the loop observes the
+            // name, so the global word it would refresh is never read either.
+            if (!dead) {
+                try ctx.emit(.{
+                    .op = .store_global,
+                    .field = p.name,
+                    .lhs = .{ .local = p.slot },
+                    .ty = .i64,
+                });
+            }
         }
     }
 }
@@ -9109,62 +9167,136 @@ fn lowerDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error
 /// emitted, false to fall back to the countdown or the ordinary loop. Only
 /// the emission runs here; the proof settled at arm time and is re-verified
 /// below by structural identity only.
-fn lowerNestedDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
-    const nd = plan.nested_direct orelse return false;
+/// Push the enclosing-block frame for statement `i` of `block`. Pair with
+/// `popEnclosingFrame` via defer so `continue` and errors still pop.
+fn pushEnclosingFrame(ctx: *LowerCtx, block: *const ast.Block, i: usize) Error!void {
+    try ctx.enclosing.append(ctx.alloc, .{ .block = block, .idx = i });
+}
+
+fn popEnclosingFrame(ctx: *LowerCtx) void {
+    _ = ctx.enclosing.pop();
+}
+
+/// Does any statement in `stmts` mention `name`, excluding the subtree of
+/// `excl` (the folded loop itself)? A mention is a conservative read: the
+/// scan cannot tell whether the mention observes the folded write-back, so
+/// any mention keeps the write-back.
+fn blockStmtsMentionIdent(stmts: []const ast.Stmt, name: []const u8, excl: ?*const ast.Stmt) bool {
+    for (stmts) |*s| {
+        if (excl) |e| if (s == e) continue;
+        if (stmtMentionsIdent(s, name)) return true;
+    }
+    return false;
+}
+
+/// Prove the folded loop's write-back to `name` is dead: no read after the
+/// fold can observe it. Walks the enclosing-block stack innermost-out. For
+/// every frame the statements after the current position are scanned, and
+/// the statements before it are scanned too — conservatively, because on a
+/// back edge the prefix re-executes, and a prefix read with no intervening
+/// write would observe the write-back. When the current statement is an
+/// enclosing loop, its condition and full body are scanned as well: the back
+/// edge can re-enter a sibling branch (e.g. an `else`) that the linear
+/// prefix/suffix scans do not cover. Each block's tail expression is
+/// scanned too. Any mention keeps the write-back; silence across every
+/// frame proves death. The scan is purely conservative — it may keep a dead
+/// write-back, but it never drops a live one.
+fn nameDeadAfterFold(ctx: *LowerCtx, name: []const u8, excl: *const ast.Stmt) bool {
+    const frames = ctx.enclosing.items;
+    var fi = frames.len;
+    while (fi > 0) {
+        fi -= 1;
+        const fr = frames[fi];
+        if (fr.idx + 1 < fr.block.stmts.len and
+            blockStmtsMentionIdent(fr.block.stmts[fr.idx + 1 ..], name, excl)) return false;
+        if (fr.idx > 0 and
+            blockStmtsMentionIdent(fr.block.stmts[0..fr.idx], name, excl)) return false;
+        if (fr.block.tail_expr) |te| {
+            if (exprMentionsIdent(te, name)) return false;
+        }
+        const s = &fr.block.stmts[fr.idx];
+        if (s == excl) continue;
+        switch (s.*) {
+            .while_loop => |w| {
+                if (exprMentionsIdent(w.cond, name)) return false;
+                if (blockStmtsMentionIdent(w.body.stmts, name, excl)) return false;
+                if (w.body.tail_expr) |te| if (exprMentionsIdent(te, name)) return false;
+            },
+            .repeat_loop => |r| {
+                if (exprMentionsIdent(r.cond, name)) return false;
+                if (blockStmtsMentionIdent(r.body.stmts, name, excl)) return false;
+                if (r.body.tail_expr) |te| if (exprMentionsIdent(te, name)) return false;
+            },
+            .num_for => |f| {
+                if (blockStmtsMentionIdent(f.body.stmts, name, excl)) return false;
+                if (f.body.tail_expr) |te| if (exprMentionsIdent(te, name)) return false;
+            },
+            .gen_for => |f| {
+                if (blockStmtsMentionIdent(f.body.stmts, name, excl)) return false;
+                if (f.body.tail_expr) |te| if (exprMentionsIdent(te, name)) return false;
+            },
+            else => {},
+        }
+    }
+    return true;
+}
+
+fn lowerNestedDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!?NestedFoldLiveness {
+    const nd = plan.nested_direct orelse return null;
     const b = switch (ws.cond.*) {
         .binop => |x| x,
-        else => return false,
+        else => return null,
     };
-    if (b.op != .lt) return false;
-    const iv = identOf(b.lhs) orelse return false;
-    if (!std.mem.eql(u8, iv, plan.iv)) return false;
+    if (b.op != .lt) return null;
+    const iv = identOf(b.lhs) orelse return null;
+    if (!std.mem.eql(u8, iv, plan.iv)) return null;
     if (plan.bound_lit) |n| {
-        if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return false;
+        if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return null;
     } else if (plan.bound_name) |bn| {
-        const rhs_name = identOf(b.rhs) orelse return false;
-        if (!std.mem.eql(u8, rhs_name, bn)) return false;
-    } else return false;
+        const rhs_name = identOf(b.rhs) orelse return null;
+        if (!std.mem.eql(u8, rhs_name, bn)) return null;
+    } else return null;
     const body = ws.body.stmts;
-    if (body.len != 3 or ws.body.tail_expr != null) return false;
-    if (!stepIsIncrementOfOne(ctx.graph, &body[2], plan.iv)) return false;
+    if (body.len != 3 or ws.body.tail_expr != null) return null;
+    if (!stepIsIncrementOfOne(ctx.graph, &body[2], plan.iv)) return null;
     const s1 = &body[1];
-    if (nd.inner_stmt != @as(*const ast.Stmt, s1)) return false;
+    if (nd.inner_stmt != @as(*const ast.Stmt, s1)) return null;
     const s_while = switch (s1.*) {
         .while_loop => |w| w,
-        else => return false,
+        else => return null,
     };
     const b2 = switch (s_while.cond.*) {
         .binop => |x| x,
-        else => return false,
+        else => return null,
     };
-    if (b2.op != .lt) return false;
-    const j = identOf(b2.lhs) orelse return false;
-    if (!std.mem.eql(u8, j, nd.inner_iv)) return false;
+    if (b2.op != .lt) return null;
+    const j = identOf(b2.lhs) orelse return null;
+    if (!std.mem.eql(u8, j, nd.inner_iv)) return null;
     if (nd.inner_bound_lit) |n2| {
-        if (ctx.graph.exactI64OfExpr(b2.rhs) != @as(?i64, n2)) return false;
+        if (ctx.graph.exactI64OfExpr(b2.rhs) != @as(?i64, n2)) return null;
     } else if (nd.inner_bound_name) |bn2| {
-        const rhs2 = identOf(b2.rhs) orelse return false;
-        if (!std.mem.eql(u8, rhs2, bn2)) return false;
-    } else return false;
-    if (literalBindingOf(ctx.graph, &body[0], nd.inner_iv) != @as(?i64, 0)) return false;
+        const rhs2 = identOf(b2.rhs) orelse return null;
+        if (!std.mem.eql(u8, rhs2, bn2)) return null;
+    } else return null;
+    if (literalBindingOf(ctx.graph, &body[0], nd.inner_iv) != @as(?i64, 0)) return null;
     // Re-derive the accumulator structurally (slot markings are not intact at
     // emission); it must be the armed one.
     const ib = s_while.body.stmts;
-    if (ib.len != 2 or s_while.body.tail_expr != null) return false;
+    if (ib.len != 2 or s_while.body.tail_expr != null) return null;
     var acc: ?[]const u8 = null;
     if (stepIsIncrementOfOne(ctx.graph, &ib[0], nd.inner_iv)) {
         acc = accNameOfIncrement(&ib[1], nd.inner_iv);
     } else if (stepIsIncrementOfOne(ctx.graph, &ib[1], nd.inner_iv)) {
         acc = accNameOfIncrement(&ib[0], nd.inner_iv);
-    } else return false;
-    const acc_name = acc orelse return false;
-    if (!std.mem.eql(u8, acc_name, nd.acc)) return false;
-    if (std.mem.eql(u8, acc_name, iv)) return false;
-    if (std.mem.eql(u8, acc_name, j)) return false;
-    if (plan.bound_name) |bn| if (std.mem.eql(u8, acc_name, bn)) return false;
-    if (nd.inner_bound_name) |bn2| if (std.mem.eql(u8, acc_name, bn2)) return false;
-    const iv_slot = ctx.locals.get(plan.iv) orelse return false;
-    const acc_slot = ctx.locals.get(acc_name) orelse return false;
+    } else return null;
+    const acc_name = acc orelse return null;
+    if (!std.mem.eql(u8, acc_name, nd.acc)) return null;
+    if (std.mem.eql(u8, acc_name, iv)) return null;
+    if (std.mem.eql(u8, acc_name, j)) return null;
+    if (plan.bound_name) |bn| if (std.mem.eql(u8, acc_name, bn)) return null;
+    if (nd.inner_bound_name) |bn2| if (std.mem.eql(u8, acc_name, bn2)) return null;
+    const iv_slot = ctx.locals.get(plan.iv) orelse return null;
+    const acc_slot = ctx.locals.get(acc_name) orelse return null;
     // The inner iv's slot: the outer loop's promotion shadows it when it is
     // a written `.i64` module global. Otherwise the name is first bound by
     // the inner `J = 0` the shape match verified -- which this emission
@@ -9172,7 +9304,7 @@ fn lowerNestedDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan)
     // created. A module global that promotion did not shadow declines: a
     // fresh local would diverge from the global later reads use.
     const j_slot: u32 = if (ctx.locals.get(nd.inner_iv)) |s| s else blk: {
-        if (ctx.module_globals.types.get(nd.inner_iv) != null) return false;
+        if (ctx.module_globals.types.get(nd.inner_iv) != null) return null;
         const s = ctx.freshTemp();
         try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, nd.inner_iv), s);
         break :blk s;
@@ -9187,16 +9319,27 @@ fn lowerNestedDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan)
     const sum = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = .{ .local = acc_slot }, .rhs = .{ .temp = prod }, .ty = .i64 });
     try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
-    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
-    // Cold guard for the inner write-back: the source runs the inner `J = 0`
-    // init only when the outer loop trips at least once.
-    const guard_t = ctx.freshTemp();
-    try ctx.emit(.{ .op = .binop, .result = guard_t, .binop = .neq, .lhs = bound_v, .rhs = .{ .i64 = 0 }, .ty = .i64 });
-    const guard_fail = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = guard_t }, .branch_target = 0, .branch_condition = .when_false });
-    try ctx.emit(.{ .op = .store_local, .result = j_slot, .lhs = inner_bound_v, .ty = .i64 });
-    ctx.instrs.items[guard_fail].branch_target = @intCast(ctx.instrs.items.len);
-    return true;
+    // Liveness-gated write-back elimination: when an induction variable is
+    // never read after the folded loop, its write-back is dead. The proof
+    // walks the enclosing-block stack (`nameDeadAfterFold`); any doubt keeps
+    // the write-back, so a wrong proof can only cost the optimization, never
+    // correctness.
+    const iv_dead = nameDeadAfterFold(ctx, plan.iv, plan.stmt);
+    const inner_dead = nameDeadAfterFold(ctx, nd.inner_iv, plan.stmt);
+    if (!iv_dead) {
+        try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
+    }
+    if (!inner_dead) {
+        // Cold guard for the inner write-back: the source runs the inner `J = 0`
+        // init only when the outer loop trips at least once.
+        const guard_t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = guard_t, .binop = .neq, .lhs = bound_v, .rhs = .{ .i64 = 0 }, .ty = .i64 });
+        const guard_fail = ctx.instrs.items.len;
+        try ctx.emit(.{ .op = .br, .lhs = .{ .temp = guard_t }, .branch_target = 0, .branch_condition = .when_false });
+        try ctx.emit(.{ .op = .store_local, .result = j_slot, .lhs = inner_bound_v, .ty = .i64 });
+        ctx.instrs.items[guard_fail].branch_target = @intCast(ctx.instrs.items.len);
+    }
+    return .{ .iv_dead = iv_dead, .inner_dead = inner_dead };
 }
 
 /// If `st` is `name = name + 1` (or `1 + name`) with no mention of `forbidden`,

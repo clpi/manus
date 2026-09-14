@@ -3939,6 +3939,12 @@ const Arm64Compiler = struct {
                 // when T's only reader is that add (FTCFTW debt (2)).
                 const fuse_madd = !fuse_branch and !fuse_named and ins.op == .binop and bi + 1 < b.instrs.len and
                     self.mulAddFusible(ins, b.instrs[bi + 1], flat_idx);
+                // Peephole: fold `div(X, 2^k) -> T ; band(T, 2^w - 1) -> D`
+                // into `ubfx D, X, #k, #w` when T's only reader is that
+                // `and` and the dividend is proved non-negative (the exact
+                // identity `lsr`+`and` computes; see `ubfxFusible`).
+                const fuse_ubfx = !fuse_branch and !fuse_named and !fuse_madd and ins.op == .binop and bi + 1 < b.instrs.len and
+                    self.ubfxFusible(ins, b.instrs[bi + 1], flat_idx);
                 // §12 TAIL: `call_direct -> T ; ret T` is a JUMP, not a frame.
                 // The pair is folded into `restore the frame; b <callee>` — see
                 // `tailCallFusible` for every ground on which it is declined.
@@ -3995,6 +4001,9 @@ const Arm64Compiler = struct {
                     extra_consumed = 2;
                 } else if (fuse_madd) {
                     try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1]);
+                    extra_consumed = 1;
+                } else if (fuse_ubfx) {
+                    try self.emitFusedUbfx(&temps, &pinned, ins, b.instrs[bi + 1]);
                     extra_consumed = 1;
                 } else if (fuse_tail) {
                     try self.emitTailCallDirect(&temps, &pinned, ins, flat_idx);
@@ -11610,6 +11619,105 @@ const Arm64Compiler = struct {
         // add, and the conservative answer is to materialize the product.
         const last = self.value_free_at.get(t) orelse return false;
         return last == flat_idx + 1;
+    }
+
+    /// Peephole: `t = div(X, 2^k)` (dividend proved non-negative, so the
+    /// backend realizes it as `lsr`) followed by `d = band(t, 2^w - 1)` is
+    /// one `ubfx d, X, #k, #w`. The identity is exact for every 64-bit X:
+    /// `ubfx` computes `(X >> k) & ((1<<w)-1)` by definition, which is what
+    /// the `lsr`+`and` pair computes. The preconditions are not tolerances:
+    ///
+    /// - `ins` is the truncating `.div` (not `.idiv`/`.mod`), with a constant
+    ///   power-of-two divisor, and the dividend proved non-negative
+    ///   (`ins.dividend.proved()`) — the same proof the `lsr` realization
+    ///   itself demands, since trunc division of a negative by 2^k is not a
+    ///   logical shift;
+    /// - the mask is a low run `2^w - 1` (`lowMaskWidth`), so the `and` is
+    ///   the logical-immediate form;
+    /// - `k + w <= 64`, the UBFM field constraint;
+    /// - the shift's type is full-width (`narrowFit(ins.ty) == null`): a
+    ///   narrowed intermediate would truncate bits the mask keeps, and the
+    ///   fusion must not move that truncation;
+    /// - the shift's temp has exactly one reader (this `and`), the same
+    ///   last-use gate as the `madd` fusion.
+    ///
+    /// The `and`'s own refit is preserved unchanged: the fused instruction
+    /// produces bit-for-bit what the `and` produced, so it owes the same
+    /// narrowing.
+    fn ubfxFusible(self: *const Arm64Compiler, ins: dnir.Instr, nx: dnir.Instr, flat_idx: u32) bool {
+        if (ins.op != .binop or ins.binop != .div) return false;
+        if (ins.ty == .f64 or self.cur_func_float) return false;
+        if (narrowFit(ins.ty) != null) return false;
+        if (!ins.dividend.proved()) return false;
+        if (ins.application != null or ins.relation != null or ins.value != null) return false;
+        const t = ins.result orelse return false;
+        const ck = switch (ins.rhs) {
+            .i64 => |v| v,
+            else => return false,
+        };
+        const k = powerOfTwoShift(ck) orelse return false;
+        if (nx.op != .binop or nx.binop != .band) return false;
+        if (nx.ty == .f64) return false;
+        if (nx.application != null or nx.relation != null or nx.value != null) return false;
+        if (nx.result == null) return false;
+        const t_is_lhs = nx.lhs == .temp and nx.lhs.temp == t;
+        const t_is_rhs = nx.rhs == .temp and nx.rhs.temp == t;
+        if (t_is_lhs == t_is_rhs) return false;
+        const mask_val = if (t_is_lhs) nx.rhs else nx.lhs;
+        const cm = switch (mask_val) {
+            .i64 => |v| v,
+            else => return false,
+        };
+        const w = lowMaskWidth(cm) orelse return false;
+        if (@as(u32, k) + @as(u32, w) > 64) return false;
+        if (self.valueIsFp(ins.lhs) or self.valueIsFp(nx.lhs) or self.valueIsFp(nx.rhs)) return false;
+        const last = self.value_free_at.get(t) orelse return false;
+        return last == flat_idx + 1;
+    }
+
+    /// Emit the fused `ubfx` for a `ubfxFusible` pair. The shift temp is never
+    /// materialized; the destination owns the `and`'s result temp.
+    fn emitFusedUbfx(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+        nx: dnir.Instr,
+    ) Error!void {
+        const ck = switch (ins.rhs) {
+            .i64 => |v| v,
+            else => return self.refuse(@src()),
+        };
+        const k = powerOfTwoShift(ck) orelse return self.refuse(@src());
+        const t = ins.result orelse return self.refuse(@src());
+        const t_is_lhs = nx.lhs == .temp and nx.lhs.temp == t;
+        const mask_val = if (t_is_lhs) nx.rhs else nx.lhs;
+        const cm = switch (mask_val) {
+            .i64 => |v| v,
+            else => return self.refuse(@src()),
+        };
+        const w = lowMaskWidth(cm) orelse return self.refuse(@src());
+        const x = try self.evalDnirValue(temps, ins.lhs);
+        const dst = try self.allocReg();
+        try self.ensureRegLive(x);
+        // UBFX #lsb,#width is UBFM with immr=lsb, imms=lsb+width-1 (not
+        // width-1: imms<immr would decode as UBFIZ, a different operation).
+        try self.emitFmt(
+            0xd3400000 | (@as(u32, k) << 16) | ((@as(u32, k) + @as(u32, w) - 1) << 10) | (@as(u32, x) << 5) | @as(u32, dst),
+            "ubfx x{d}, x{d}, #{d}, #{d}",
+            .{ dst, x, k, w },
+        );
+        // The `and`'s refit, unchanged: a low-run mask no wider than the
+        // declared width leaves every bit above it clear, so the 64-bit form
+        // is already the refitted value — the same argument `.band` makes.
+        const fitted = wForm32(nx.ty, .band) and w <= 32;
+        if (!fitted) _ = try self.emitNarrowFit(dst, dst, nx.ty);
+        if (!Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
+        const d = nx.result orelse return self.refuse(@src());
+        try temps.put(self.alloc, d, dst);
+        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
+            self.gp_reg_owner[dst] = d;
+        }
     }
 
     /// Emit the fused `madd` for a `mulAddFusible` pair and record the sum's
