@@ -7,7 +7,7 @@
 
 | # | directive |
 |---|---|
-| 1 | Generated 2026-09-14T04:32:51 by `bench/run.sh` (route production, 21 interleaved rounds, 3 warmup, median is primary). |
+| 1 | Generated 2026-09-14T17:54:19 by `bench/run.sh` (route production, 21 interleaved rounds, 3 warmup, median is primary). |
 
 | section |
 |---|---|
@@ -36,24 +36,87 @@
 
 | section |
 |---|---|
-| divpow2 |
+| mixop |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
-| idol | 0.018239 | 0.018319 | 0.000589 | 0.017403 | 0.019537 | 0.019366 | 0 |
-| clang | 0.018270 | 0.018138 | 0.000429 | 0.017425 | 0.019255 | 0.018568 | 0 |
+| idol | 0.006869 | 0.007022 | 0.000497 | 0.006491 | 0.008581 | 0.007723 | 0 |
+| clang | 0.004738 | 0.004773 | 0.000201 | 0.004323 | 0.005224 | 0.005027 | 0 |
 
 | # | directive |
 |---|---|
-| 1 | Idol vs best rival (clang): inconclusive, margin +0.17%, p=0.2549 (not significant; win/loss requires p<0.05). |
+| 1 | Idol vs best rival (clang): loss, margin -44.99%, p=0.0000 (significant; win/loss requires p<0.05). |
 
 | # | directive |
 |---|---|
-| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.039s (5/5 ok); clang 0.046s (5/5 ok). |
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.043s (5/5 ok); clang 0.055s (5/5 ok). |
 
 | # | directive |
 |---|---|
-| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16848, clang 544, gcc 544. |
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 688, gcc 688. |
+
+| section |
+|---|---|
+| bitr |
+
+| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
+|---|---|---|---|---|---|---|---|
+| idol | 0.006439 | 0.006892 | 0.002569 | 0.004265 | 0.017015 | 0.008352 | 1 |
+| clang | 0.005577 | 0.006030 | 0.002085 | 0.003317 | 0.013471 | 0.007934 | 1 |
+
+| # | directive |
+|---|---|
+| 1 | Idol vs best rival (clang): inconclusive, margin -15.47%, p=0.2329 (not significant; win/loss requires p<0.05). |
+
+| # | directive |
+|---|---|
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.053s (5/5 ok); clang 0.066s (5/5 ok). |
+
+| # | directive |
+|---|---|
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 1296, gcc 1296. |
+
+| section |
+|---|---|
+| cltz |
+
+| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
+|---|---|---|---|---|---|---|---|
+| idol | 0.068068 | 0.074189 | 0.016575 | 0.053571 | 0.106393 | 0.104452 | 0 |
+| clang | 0.044484 | 0.049523 | 0.019834 | 0.031851 | 0.122780 | 0.072427 | 1 |
+
+| # | directive |
+|---|---|
+| 1 | Idol vs best rival (clang): loss, margin -53.02%, p=0.0000 (significant; win/loss requires p<0.05). |
+
+| # | directive |
+|---|---|
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.042s (5/5 ok); clang 0.051s (5/5 ok). |
+
+| # | directive |
+|---|---|
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 608, gcc 608. |
+
+| section |
+|---|---|
+| brm2 |
+
+| compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
+|---|---|---|---|---|---|---|---|
+| idol | 0.005178 | 0.005250 | 0.000270 | 0.004777 | 0.006018 | 0.005568 | 0 |
+| clang | 0.005086 | 0.005179 | 0.000529 | 0.004584 | 0.006928 | 0.005972 | 2 |
+
+| # | directive |
+|---|---|
+| 1 | Idol vs best rival (clang): inconclusive, margin -1.81%, p=0.5817 (not significant; win/loss requires p<0.05). |
+
+| # | directive |
+|---|---|
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.038s (5/5 ok); clang 0.048s (5/5 ok). |
+
+| # | directive |
+|---|---|
+| 1 | Artifact size (bytes; idol = linked executable, production route emits no separate object): idol 16840, clang 576, gcc 576. |
 
 | section |
 |---|---|
@@ -67,11 +130,11 @@
 
 | case | runs | first seen | last verdict | last margin% | worst margin% | best margin% |
 |---|---|---|---|---|---|---|
-| bitr | 3 | 2026-09-13T07:47:26 | loss | -35.56% | -35.56% | -29.05% |
+| bitr | 4 | 2026-09-13T07:47:26 | inconclusive | -15.47% | -35.56% | -15.47% |
 | brm1 | 1 | 2026-09-13T07:47:26 | tie | -3.22% | -3.22% | -3.22% |
-| brm2 | 3 | 2026-09-13T07:47:26 | loss | -9.44% | -217.03% | -9.44% |
+| brm2 | 4 | 2026-09-13T07:47:26 | inconclusive | -1.81% | -217.03% | -1.81% |
 | brm3 | 2 | 2026-09-13T07:47:26 | inconclusive | -5.20% | -130.65% | -5.20% |
-| cltz | 2 | 2026-09-13T08:16:29 | loss | -63.75% | -65.18% | -63.75% |
+| cltz | 3 | 2026-09-13T08:16:29 | loss | -53.02% | -65.18% | -53.02% |
 | divpow2 | 6 | 2026-09-13T07:47:26 | inconclusive | +0.17% | -140.18% | +0.46% |
-| mixop | 3 | 2026-09-13T07:47:26 | loss | -52.20% | -67.83% | -52.20% |
+| mixop | 4 | 2026-09-13T07:47:26 | loss | -44.99% | -67.83% | -44.99% |
 | popc | 3 | 2026-09-13T07:47:26 | inconclusive | +9.58% | -212.08% | +9.58% |
