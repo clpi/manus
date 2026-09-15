@@ -396,8 +396,8 @@ fn constantValue(p: Poly) ?u64 {
     return null;
 }
 
-/// Constant-only division, evaluated with the backend's own constant-folder
-/// semantics (`foldConstBinop` in native.zig): truncating division, declining
+/// Constant-only division, evaluated with the settled language law
+/// (floored integer division, law.numeric.floor): floored division, declining
 /// (null) on division by zero and on minInt / -1. The decline keeps a body
 /// that would trap out of the closed form, so the loop keeps its original
 /// behavior (O4); a division that evaluates is trap-free by construction.
@@ -409,7 +409,7 @@ fn divConstFold(lhs: Poly, rhs: Poly) ?Poly {
     const l: i64 = @bitCast(lc);
     const r: i64 = @bitCast(rc);
     if (r == 0 or (r == -1 and l == std.math.minInt(i64))) return null;
-    return Poly.constant(@bitCast(@divTrunc(l, r)));
+    return Poly.constant(@bitCast(@divFloor(l, r)));
 }
 
 // ── O5/O8: the guard ─────────────────────────────────────────────────────────
