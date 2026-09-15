@@ -33,6 +33,7 @@ Measurement-integrity contract (the point of this file):
     idol, clang, gcc, ...) so thermal drift and background load affect every
     compiler's attempts equally.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -138,6 +139,17 @@ def median(xs):
     s = sorted(xs)
     return s[len(s) // 2]
 
+def sha256_of(path):
+    """Hex SHA-256 of the file's exact bytes; None when unreadable."""
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
 
 def main():
     if len(sys.argv) not in (8, 10):
@@ -201,9 +213,21 @@ def main():
             entry["median_s"] = None
         results[cc] = entry
 
+    # Producer binding: hash the exact idol compiler binary whose attempts
+    # are measured here, so the compile-time record names its subject.
+    producer_bin = idol_bin if route == "production" else native
+    producer = {"idol_compiler": producer_bin,
+                "sha256": sha256_of(producer_bin),
+                "route": route}
+    if producer["sha256"] is None:
+        print("ctime: FATAL: cannot hash producer binary " + str(producer_bin),
+              file=sys.stderr)
+        return 2
+
     with open(out_json, "w") as fh:
         json.dump({"compilers": results,
-                   "attempts_per_compiler": ATTEMPTS}, fh, indent=2)
+                   "attempts_per_compiler": ATTEMPTS,
+                   "producer": producer}, fh, indent=2)
     return 0
 
 
