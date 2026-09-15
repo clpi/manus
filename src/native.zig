@@ -7102,12 +7102,19 @@ const Arm64Compiler = struct {
                         // width bounds the true value below 2^63, so the
                         // register holds the value itself, sign bit clear.
                         try self.emitLsrImm(dst, lhs, sh);
+                    } else if (sh == 1) {
+                        // Trunc(x/2) = (x + (x<0 ? 1 : 0)) asr 1, and x lsr 63
+                        // is the 0/1 sign bit: the lsr+add fuse into one
+                        // shifted add. Same shape as clang 21.
+                        try self.emitAddLsrReg(dst, lhs, lhs, 63);
+                        try self.emitAsrImm(dst, dst, 1);
                     } else {
-                        // Z3-verified trunc div by 2^a: bias+asr.
-                        // Proofs: research/wsuperopt/proofs/div_pow2_*.
+                        // Trunc(x/2^a) = (x + (x<0 ? 2^a-1 : 0)) asr a.
+                        // t = x asr 63 is 0 or -1, so t lsr (64-a) is 0 or
+                        // 2^a-1: the old lsr+add pair fuses into one add.
+                        // x+bias cannot overflow: for x<0, x+2^a-1 < 2^a-1.
                         try self.emitAsrImm(dst, lhs, 63);
-                        try self.emitLsrImm(dst, dst, @intCast(64 - @as(u7, sh)));
-                        try self.emitAddReg(dst, lhs, dst);
+                        try self.emitAddLsrReg(dst, lhs, dst, @intCast(64 - @as(u7, sh)));
                         try self.emitAsrImm(dst, dst, sh);
                     }
                 } else unreachable; // constBinopRealization gates
@@ -10297,6 +10304,14 @@ const Arm64Compiler = struct {
         try self.ensureRegLive(lhs);
         try self.ensureRegLive(rhs);
         try self.emitFmt(0x8b000000 | (@as(u32, sh) << 10) | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "add x{d}, x{d}, x{d}, lsl #{d}", .{ dst, lhs, rhs, sh });
+    }
+    /// `add xd, xn, xm, lsr #sh` -- the lsr twin of `emitAddLslReg`, for the
+    /// signed-divide-by-pow2 bias fusion. Encoding verified byte-identical
+    /// against clang 21 `add x8, x0, x0, lsr #63` (0x8b40fc08).
+    fn emitAddLsrReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, sh: u6) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.ensureRegLive(rhs);
+        try self.emitFmt(0x8b000000 | (@as(u32, 1) << 22) | (@as(u32, sh) << 10) | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "add x{d}, x{d}, x{d}, lsr #{d}", .{ dst, lhs, rhs, sh });
     }
 
     /// `sub xd, xn, xm, lsl #sh` — Z3-verified for x * -7.
