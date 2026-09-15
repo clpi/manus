@@ -16998,12 +16998,57 @@ fn divisorSign(
 /// sema for the same reason as `divisorSign`'s: `gate/layering.sh` refuses
 /// the edge, and a backend re-deriving meaning at emission time is how two
 /// places come to decide the same thing and disagree.
+///
+/// IDOL_DIVIDEND_NONNEG_OFF=1 -- THE SEVERING CONTROL for the dividend
+/// fact. Set it and no dividend is ever reported non-negative, so every
+/// x / 2^a emits the bias-corrected sequence exactly as this compiler did
+/// before the dividend fact existed. The producer still publishes its
+/// column; only the lowering's question is severed, which is what makes
+/// the control a valid consumer-off test: the producer alone changes
+/// nothing observable.
+fn dividendNonnegOff() bool {
+    return std.c.getenv("IDOL_DIVIDEND_NONNEG_OFF") != null;
+}
+
+/// IDOL_RANGE_WITNESS=1 -- dump the dividend witness for every proved dividend.
+/// Each line names the producer rule and its premises, so every firing of the
+/// unsigned-division realization carries a queryable account of why the
+/// dividend was believed non-negative.
+fn rangeWitnessDump() bool {
+    return std.c.getenv("IDOL_RANGE_WITNESS") != null;
+}
+
+/// Print the witness for a proved dividend. `subject` is set for the
+/// `.binding` face (premise: the published RangeFact); otherwise `relation`
+/// and `lhs` identify the derived expression whose witness is queried.
+fn dumpDividendWitness(ctx: *LowerCtx, subject: ?semantic_graph.id, relation: ?semantic_graph.id, lhs: *const ast.Expr) void {
+    if (subject) |sub| {
+        const node = ctx.graph.get(sub) orelse return;
+        const name = node.name orelse "?";
+        const w = ctx.graph.nonNegativeWidth(sub) orelse return;
+        std.debug.print("range-witness binding '{s}' width={d} rule=bound\n", .{ name, w });
+        return;
+    }
+    const rel = relation orelse return;
+    const wit = ctx.graph.rangeWitnessOfExpr(ctx.alloc, rel, lhs) catch return orelse return;
+    std.debug.print("range-witness expr width={d} rule={s} premises=", .{ wit.width, @tagName(wit.rule) });
+    for (wit.premises, 0..) |prem, i| {
+        if (i > 0) std.debug.print(",", .{});
+        switch (prem) {
+            .bound => |b| std.debug.print("bound:{s}(w{d})", .{ b.name, b.width }),
+            .literal => |v| std.debug.print("lit:{d}", .{v}),
+            .sub => |sw| std.debug.print("sub(w{d},{s})", .{ sw.width, @tagName(sw.rule) }),
+        }
+    }
+    std.debug.print("\n", .{});
+}
 fn dividendSign(
     ctx: *LowerCtx,
     f64_op: bool,
     tag: dnir.BinOpTag,
     lhs: *const ast.Expr,
 ) dnir.DivisorSign {
+    if (dividendNonnegOff()) return .unknown;
     if (f64_op) return .unknown;
     if (tag != .div) return .unknown;
     const relation = ctx.function orelse return dividendSignModule(ctx, lhs);
@@ -17013,9 +17058,11 @@ fn dividendSign(
     if (lhs.* == .name) {
         const subject = ctx.graph.bindingNamedIn(relation, lhs.name.ident) orelse return .unknown;
         if (ctx.graph.nonNegativeWidth(subject) == null) return .unknown;
+        if (rangeWitnessDump()) dumpDividendWitness(ctx, subject, null, lhs);
         return .{ .binding = subject };
     }
     const width = ctx.graph.nonNegativeWidthOfExpr(relation, lhs) orelse return .unknown;
+    if (rangeWitnessDump()) dumpDividendWitness(ctx, null, relation, lhs);
     return .{ .derived = width };
 }
 
@@ -17023,6 +17070,12 @@ fn dividendSign(
 /// through `nonNegativeWidthOfExprModule`. The relation path above is unchanged.
 fn dividendSignModule(ctx: *LowerCtx, lhs: *const ast.Expr) dnir.DivisorSign {
     const width = ctx.graph.nonNegativeWidthOfExprModule(lhs) orelse return .unknown;
+    if (rangeWitnessDump()) {
+        // Module scope has no relation; the witness is queried against the
+        // module root's column.
+        const mod_root = ctx.graph.module_root orelse return .{ .derived = width };
+        dumpDividendWitness(ctx, null, mod_root, lhs);
+    }
     return .{ .derived = width };
 }
 

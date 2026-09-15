@@ -235,17 +235,121 @@ const derivation_fuel: u8 = 3;
 /// that allocates nothing stays a query face that allocates nothing.
 const derivation_params_max: usize = 8;
 
+/// THE PRODUCER RULE — which transfer proved a non-negative width. Every
+/// variant names one arm of `widthOfExprIn` below. The witness query
+/// (`ruleOfExpr`) returns this alongside the width; it is the same derivation,
+/// not a second authority, so a rule the producer did not use cannot be named.
+pub const RangeRule = enum {
+    /// A non-negative integer literal.
+    literal,
+    /// `true` / `false`: the value is 0 or 1.
+    boolean,
+    /// A bound name whose published width the lookup answered.
+    bound,
+    /// Bounded addition: widths join, plus one.
+    add,
+    /// Bounded multiplication: widths sum.
+    mul,
+    /// Floored remainder: bounded by a proved non-negative divisor.
+    mod,
+    /// Division: dividend non-negative, divisor positive.
+    div,
+    /// Bitwise and: either operand clears the sign bit.
+    band,
+    /// `L - x`: literal L covers the bound on x.
+    sub_lit,
+    /// Bitwise or/xor: both operands non-negative.
+    bor_bxor,
+    /// Logical right shift.
+    rshift,
+    /// Left shift with the result width kept within 63.
+    lshift,
+    /// A comparison: the answer is 0 or 1.
+    compare,
+    /// A relation application bounded by its retained derivation.
+    application,
+};
+
+/// A width together with the rule that proved it. `widthOfExprIn` answers
+/// this; `widthOfExpr` projects the width for the consumers that predate the
+/// witness.
+const WidthRule = struct { width: u8, rule: RangeRule };
+
 /// THE QUERY FACE — the width bounding `e`, or null when it cannot be bounded
 /// below 2^63. Produces nothing and stores nothing.
 pub fn widthOfExpr(lookup: Lookup, e: *const ast.Expr) ?u8 {
-    return widthOfExprIn(lookup, e, derivation_fuel);
+    const wr = widthOfExprIn(lookup, e, derivation_fuel) orelse return null;
+    return wr.width;
 }
 
-fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?u8 {
-    const w: ?u8 = switch (e.*) {
-        .int_lit => |i| nonNegWidthOfLit(i.val),
-        .true_lit, .false_lit => 1,
-        .name => |n| lookup.of(lookup.ctx, n.ident),
+/// THE WITNESS FACE — the producer rule that bounds `e`, or null when
+/// `widthOfExpr` answers null. Same derivation, same fuel, same answer; only
+/// the rule is additionally named.
+pub fn ruleOfExpr(lookup: Lookup, e: *const ast.Expr) ?RangeRule {
+    const wr = widthOfExprIn(lookup, e, derivation_fuel) orelse return null;
+    return wr.rule;
+}
+
+/// ONE PREMISE of a range witness: a fact the proving rule depended on.
+pub const WitnessPremise = union(enum) {
+    /// A bound name's published width — the RangeFact the rule read.
+    bound: struct { name: []const u8, width: u8 },
+    /// A literal the rule measured.
+    literal: i64,
+    /// An operand's own width and rule, one level down.
+    sub: struct { width: u8, rule: RangeRule },
+};
+
+/// THE WITNESS — why `e` is believed non-negative: the producer rule that
+/// proved it, the width it proved, and the premises it depended on. Built by
+/// `witnessOfExpr` from the same `widthOfExprIn` derivation that answers the
+/// width, so the rule named is the rule used.
+pub const RangeWitness = struct {
+    rule: RangeRule,
+    width: u8,
+    premises: []const WitnessPremise,
+};
+
+/// THE WITNESS QUERY — the rule, width, and immediate premises for `e`, or
+/// null when `widthOfExpr` answers null. The premises are one level: operand
+/// widths/rules for composite rules, the published fact for a bound name, the
+/// value for a literal.
+pub fn witnessOfExpr(
+    alloc: std.mem.Allocator,
+    lookup: Lookup,
+    e: *const ast.Expr,
+) !?RangeWitness {
+    const wr = widthOfExprIn(lookup, e, derivation_fuel) orelse return null;
+    var premises = std.ArrayListUnmanaged(WitnessPremise).empty;
+    errdefer premises.deinit(alloc);
+    switch (e.*) {
+        .int_lit => |i| try premises.append(alloc, .{ .literal = i.val }),
+        .name => |n| {
+            const w = lookup.of(lookup.ctx, n.ident) orelse return null;
+            try premises.append(alloc, .{ .bound = .{ .name = n.ident, .width = w } });
+        },
+        .binop => |b| {
+            if (widthOfExprIn(lookup, b.lhs, derivation_fuel)) |lw|
+                try premises.append(alloc, .{ .sub = .{ .width = lw.width, .rule = lw.rule } });
+            if (widthOfExprIn(lookup, b.rhs, derivation_fuel)) |rw|
+                try premises.append(alloc, .{ .sub = .{ .width = rw.width, .rule = rw.rule } });
+        },
+        else => {},
+    }
+    return RangeWitness{
+        .rule = wr.rule,
+        .width = wr.width,
+        .premises = try premises.toOwnedSlice(alloc),
+    };
+}
+
+
+
+fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?WidthRule {
+    const w: ?WidthRule = switch (e.*) {
+        .int_lit => |i| if (nonNegWidthOfLit(i.val)) |wd| WidthRule{ .width = wd, .rule = .literal } else null,
+        .true_lit, .false_lit => WidthRule{ .width = 1, .rule = .boolean },
+        .name => |n| if (lookup.of(lookup.ctx, n.ident)) |wd| WidthRule{ .width = wd, .rule = .bound } else null,
         // NO UNARY IS ADMITTED. `-x` and `~x` both MAKE a sign bit, and `not x`
         // is only 0/1 if its lowering says so — a fact this pass would be
         // guessing at rather than reading.
@@ -253,21 +357,29 @@ fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?u8 {
         .binop => |b| blk: {
             switch (b.op) {
                 // Bounded growth, checked below against 63.
-                .add => break :blk if (nonNegJoin(widthOfExprIn(lookup, b.lhs, fuel), widthOfExprIn(lookup, b.rhs, fuel))) |m| m + 1 else null,
-                .mul => {
+                .add => {
+                    const lw = widthOfExprIn(lookup, b.lhs, fuel) orelse break :blk null;
+                    const rw = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
+                    const m = nonNegJoin(lw.width, rw.width) orelse break :blk null;
+                    break :blk WidthRule{ .width = m + 1, .rule = .add };
+                },
+.mul => {
                     const x = widthOfExprIn(lookup, b.lhs, fuel) orelse break :blk null;
                     const y = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
-                    break :blk @as(u8, x) + @as(u8, y);
+                    break :blk WidthRule{ .width = x.width + y.width, .rule = .mul };
                 },
                 // The floored remainder takes the sign of the DIVISOR and is
                 // bounded by it. The dividend is not consulted and does not
                 // need to be — this is the only rule here that reads one
                 // operand, and it is why the analysis reaches anything at all.
-                .mod => break :blk widthOfExprIn(lookup, b.rhs, fuel),
+                .mod => {
+                    const rw = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
+                    break :blk WidthRule{ .width = rw.width, .rule = .mod };
+                },
                 // `a // b` and `a / b` with `a` in [0,2^w) and `b` positive
                 // land in [0,2^w). `b` positive is `b` non-negative plus the
                 // divisor guard, which has already refused zero on this path.
-                .idiv, .div => {
+.idiv, .div => {
                     const x = widthOfExprIn(lookup, b.lhs, fuel) orelse break :blk null;
                     // A positive LITERAL divisor shrinks the bound: with
                     // k = floor(log2 b), trunc(a/b) <= a/b < 2^w / b <=
@@ -276,20 +388,19 @@ fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?u8 {
                         if (lit >= 1) {
                             const u: u64 = @intCast(lit);
                             const k: u8 = @intCast(63 - @clz(u));
-                            break :blk if (k >= x) 0 else x - k;
+                            break :blk WidthRule{ .width = if (k >= x.width) 0 else x.width - k, .rule = .div };
                         }
                     }
                     _ = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
-                    break :blk x;
+                    break :blk WidthRule{ .width = x.width, .rule = .div };
                 },
                 // A clear sign bit in EITHER operand clears it in the result,
                 // and the narrower bound is the one that survives.
-                .band => {
+.band => {
                     const x = widthOfExprIn(lookup, b.lhs, fuel);
                     const y = widthOfExprIn(lookup, b.rhs, fuel);
-                    if (x == null) break :blk y;
-                    if (y == null) break :blk x;
-                    break :blk @min(x.?, y.?);
+                    const wd = if (x) |xx| (if (y) |yy| @min(xx.width, yy.width) else xx.width) else (y orelse break :blk null).width;
+                    break :blk WidthRule{ .width = wd, .rule = .band };
                 },
                 // `L - x` with L a non-negative int literal, width(x) = w,
                 // and 2^w - 1 <= L: the mathematical result is in
@@ -298,26 +409,35 @@ fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?u8 {
                 // declined (can go negative); negative L declines. Every
                 // widthOfExprIn answer is <= 63 or null (the clamp below), so
                 // the shift cannot overflow.
-                .sub => {
+.sub => {
                     const L = ast.intLiteralValue(b.lhs) orelse break :blk null;
                     if (L < 0) break :blk null;
                     const w = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
-                    if (w > 63) break :blk null;
-                    const pow2w: u64 = @as(u64, 1) << @intCast(w);
+                    if (w.width > 63) break :blk null;
+                    const pow2w: u64 = @as(u64, 1) << @intCast(w.width);
                     // 2^w - 1 <= L  <=>  2^w <= L + 1; L + 1 <= 2^63 here.
                     if (pow2w > @as(u64, @intCast(L)) + 1) break :blk null;
-                    break :blk nonNegWidthOfLit(L) orelse break :blk null;
+                    const lw = nonNegWidthOfLit(L) orelse break :blk null;
+                    break :blk WidthRule{ .width = lw, .rule = .sub_lit };
                 },
-                .bor, .bxor => break :blk nonNegJoin(widthOfExprIn(lookup, b.lhs, fuel), widthOfExprIn(lookup, b.rhs, fuel)),
+                .bor, .bxor => {
+                    const lw = widthOfExprIn(lookup, b.lhs, fuel) orelse break :blk null;
+                    const rw = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
+                    const m = nonNegJoin(lw.width, rw.width) orelse break :blk null;
+                    break :blk WidthRule{ .width = m, .rule = .bor_bxor };
+                },
                 // LOGICAL shift right (`lsr`). A shift of AT LEAST ONE clears
                 // the top bit whatever it held, which is the only case where
                 // this rule proves anything the operand did not already have —
                 // and `x >> 0` is the IDENTITY, so a negative operand stays
                 // negative through it. Written without that case split first,
                 // and the case split is the whole soundness of the arm.
-                .rshift => {
+.rshift => {
                     const x = widthOfExprIn(lookup, b.lhs, fuel);
-                    const k = ast.intLiteralValue(b.rhs) orelse break :blk x;
+                    const k = ast.intLiteralValue(b.rhs) orelse {
+                        const xx = x orelse break :blk null;
+                        break :blk WidthRule{ .width = xx.width, .rule = .rshift };
+                    };
                     if (k < 0 or k > 63) break :blk null;
                     const shift: u8 = @intCast(k);
                     // A known `[0,2^w)` value loses `k` width bits. An
@@ -327,17 +447,17 @@ fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?u8 {
                     // subtracted `k` AGAIN; for `x >> 1` it published width 62
                     // instead of 63, which let a following `+ 1` falsely prove
                     // a divisor non-negative at the INT64_MIN boundary.
-                    const source_width: u8 = x orelse if (shift >= 1) 64 else break :blk null;
-                    break :blk if (shift >= source_width) 0 else source_width - shift;
+const source_width: u8 = if (x) |xx| xx.width else if (shift >= 1) 64 else break :blk null;
+                    break :blk WidthRule{ .width = if (shift >= source_width) 0 else source_width - shift, .rule = .rshift };
                 },
-                .lshift => {
+.lshift => {
                     const x = widthOfExprIn(lookup, b.lhs, fuel) orelse break :blk null;
                     const k = ast.intLiteralValue(b.rhs) orelse break :blk null;
                     if (k < 0 or k > 63) break :blk null;
-                    break :blk x + @as(u8, @intCast(k));
+                    break :blk WidthRule{ .width = x.width + @as(u8, @intCast(k)), .rule = .lshift };
                 },
                 // A comparison answers 0 or 1.
-                .eq, .neq, .lt, .gt, .leq, .geq => break :blk 1,
+                .eq, .neq, .lt, .gt, .leq, .geq => break :blk WidthRule{ .width = 1, .rule = .compare },
                 else => break :blk null,
             }
         },
@@ -362,9 +482,9 @@ fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?u8 {
         .method_call => |m| applicationWidth(lookup, m.method, m.obj, m.args, fuel),
         else => null,
     };
-    const width = w orelse return null;
-    if (width > 63) return null;
-    return width;
+    const wr = w orelse return null;
+    if (wr.width > 63) return null;
+    return wr;
 }
 
 /// The width of one application's result, through the callee's retained
@@ -376,7 +496,7 @@ fn applicationWidth(
     subject: ?*const ast.Expr,
     args: []const *ast.Expr,
     fuel: u8,
-) ?u8 {
+) ?WidthRule {
     // OUT OF FUEL. `derivationOf` reads one body and cannot see that `f` calls
     // `g` calls `f`, so termination is this line's and not the check's.
     if (fuel == 0) return null;
@@ -397,17 +517,18 @@ fn applicationWidth(
     var env = CallEnv{ .params = derivation.params, .outer = lookup, .widths = @splat(null) };
     var at: usize = 0;
     if (subject) |s| {
-        env.widths[0] = widthOfExprIn(lookup, s, fuel - 1);
+        env.widths[0] = if (widthOfExprIn(lookup, s, fuel - 1)) |wr| wr.width else null;
         at = 1;
     }
     // THE ARGUMENTS ARE MEASURED IN THE CALLER'S LOOKUP and the body in the
     // callee's: an argument names the caller's bindings and the derivation
     // names only its own parameters.
     for (args) |arg| {
-        env.widths[at] = widthOfExprIn(lookup, arg, fuel - 1);
+        env.widths[at] = if (widthOfExprIn(lookup, arg, fuel - 1)) |wr| wr.width else null;
         at += 1;
     }
-    return widthOfExprIn(env.lookup(), derivation.expr, fuel - 1);
+    const inner = widthOfExprIn(env.lookup(), derivation.expr, fuel - 1) orelse return null;
+    return WidthRule{ .width = inner.width, .rule = .application };
 }
 
 /// ONE DERIVATION'S VIEW while it is being evaluated: its own parameters bound

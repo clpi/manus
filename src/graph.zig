@@ -4979,6 +4979,20 @@ pub const SemanticGraph = struct {
         return value_range.widthOfExpr(reach.lookup(), expr);
     }
 
+    /// THE WITNESS QUERY — the producer rule, width, and premises for `expr`
+    /// in `relation`'s view, or null when `nonNegativeWidthOfExpr` answers
+    /// null. Same lookup, same derivation; only the rule is additionally named.
+    pub fn rangeWitnessOfExpr(
+        self: *const SemanticGraph,
+        alloc: std.mem.Allocator,
+        relation: id,
+        expr: *const Expr,
+    ) !?@import("range.zig").RangeWitness {
+        const value_range = @import("range.zig");
+        var reach = RangeReach{ .graph = self, .relation = relation };
+        return value_range.witnessOfExpr(alloc, reach.lookup(), expr);
+    }
+
     /// One relation's view of `ranges`, as the name lookup `range.widthOfExpr`
     /// takes. It reads the published column and holds nothing.
     const RangeReach = struct {
