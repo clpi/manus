@@ -1,0 +1,19 @@
+function f()
+  d = 1
+  if (0-5)/2 != -3 then d = 0 end
+  if (0-7)/3 != -3 then d = 0 end
+  if 5/(0-2) != -3 then d = 0 end
+  if (0-7)/2 != -4 then d = 0 end
+  if (0-5)/(0-2) != 2 then d = 0 end
+  if (0-7)%2 != 1 then d = 0 end
+  if 7%(0-2) != -1 then d = 0 end
+  s = 0
+  i = 0
+  while i < 10
+    s = s + (i - 5) / 2
+    i = i + 1
+  if s != -5 then d = 0 end
+  t1 = 100/d
+  return t1
+end
+f()
