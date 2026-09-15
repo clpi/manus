@@ -4423,7 +4423,9 @@ const Arm64Compiler = struct {
             .add, .sub => {},
             else => return null,
         }
-        if (constBinopRealization(ins) == null) return null;
+        // .add/.sub emit a single read-before-write instruction on every
+        // path (reg-reg add/sub plus an optional single narrowing), so the
+        // home may alias an operand: the old home value dies with the store.
         const result = ins.result orelse return null;
         if (next.lhs != .temp or next.lhs.temp != result) return null;
         const slot = next.result orelse return null;
