@@ -9787,6 +9787,12 @@ fn trySkipInt64MaxMask(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, is_ta
 /// non-negative. When any condition fails this emits nothing and returns
 /// false; the statements lower through the normal path unchanged.
 ///
+/// Each halving step is accepted in two spellings: signed `x / 2^k` or
+/// logical `x >> k`. The shift spelling is sound under the same entry
+/// precondition: every SWAR step output is a vector of non-negative
+/// bit-counts, so each step's input is non-negative and the two spellings
+/// coincide on every reachable value.
+///
 /// On success the six SWAR statements are discharged up front: the popcount
 /// is emitted and stored to `x`, and the six statements are recorded in
 /// `popcount_swallowed` so the block loop skips them. The trailing
@@ -9905,11 +9911,11 @@ fn popcountStepMatches(graph: *const semantic_graph.SemanticGraph, e: *const ast
         // x = (x + (x / 16)) & 0x0F0F0F0F0F0F0F0F
         2 => b.op == .band and isMask(graph, b.rhs, 0x0F0F0F0F0F0F0F0F) and isShiftAdd(b.lhs, x, 16),
         // x = x + (x / 256)
-        3 => b.op == .add and isIdent(b.lhs, x) and isDivBy(b.rhs, x, 256),
+        3 => b.op == .add and isIdent(b.lhs, x) and isHalving(b.rhs, x, 256),
         // x = x + (x / 65536)
-        4 => b.op == .add and isIdent(b.lhs, x) and isDivBy(b.rhs, x, 65536),
+        4 => b.op == .add and isIdent(b.lhs, x) and isHalving(b.rhs, x, 65536),
         // x = x + (x / 4294967296)
-        5 => b.op == .add and isIdent(b.lhs, x) and isDivBy(b.rhs, x, 4294967296),
+        5 => b.op == .add and isIdent(b.lhs, x) and isHalving(b.rhs, x, 4294967296),
         else => false,
     };
 }
@@ -9932,6 +9938,36 @@ fn isDivBy(e: *const ast.Expr, x: []const u8, k: i64) bool {
     return d == k;
 }
 
+/// `e` is `x >> s` with s = log2(k): the logical-shift spelling of the
+/// SWAR halving step for divisor k. Sound under the idiom's entry
+/// precondition (documented above): each step's input is non-negative, so
+/// the logical shift coincides with the truncating division.
+fn isShrBy(e: *const ast.Expr, x: []const u8, k: i64) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .rshift) return false;
+    if (!isIdent(b.lhs, x)) return false;
+    const sh = ast.intLiteralValue(b.rhs) orelse return false;
+    const want: i64 = switch (k) {
+        2 => 1,
+        4 => 2,
+        16 => 4,
+        256 => 8,
+        65536 => 16,
+        4294967296 => 32,
+        else => return false,
+    };
+    return sh == want;
+}
+
+/// `e` is the SWAR halving step in either spelling: signed `x / 2^k` or
+/// logical `x >> k`.
+fn isHalving(e: *const ast.Expr, x: []const u8, k: i64) bool {
+    return isDivBy(e, x, k) or isShrBy(e, x, k);
+}
+
 /// `e` has exact i64 value `mask`.
 fn isMask(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, mask: i64) bool {
     return graph.exactI64OfExpr(e) == mask;
@@ -9944,8 +9980,8 @@ fn isMaskedDiv(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, x
         else => return false,
     };
     if (b.op != .band) return false;
-    if (isDivBy(b.lhs, x, k) and isMask(graph, b.rhs, mask)) return true;
-    if (isDivBy(b.rhs, x, k) and isMask(graph, b.lhs, mask)) return true;
+    if (isHalving(b.lhs, x, k) and isMask(graph, b.rhs, mask)) return true;
+    if (isHalving(b.rhs, x, k) and isMask(graph, b.lhs, mask)) return true;
     return false;
 }
 
@@ -9968,8 +10004,8 @@ fn isShiftAdd(e: *const ast.Expr, x: []const u8, k: i64) bool {
         else => return false,
     };
     if (b.op != .add) return false;
-    if (isIdent(b.lhs, x) and isDivBy(b.rhs, x, k)) return true;
-    if (isIdent(b.rhs, x) and isDivBy(b.lhs, x, k)) return true;
+    if (isIdent(b.lhs, x) and isHalving(b.rhs, x, k)) return true;
+    if (isIdent(b.rhs, x) and isHalving(b.lhs, x, k)) return true;
     return false;
 }
 
