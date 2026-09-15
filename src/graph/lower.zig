@@ -7021,6 +7021,27 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                         try finishWhileLowering(ctx, null, promo[0..promo_len], null, dead_names[0..dead_len]);
                         break :ordinary;
                     }
+                    if (try lowerNestedTriangularCountedWhile(ctx, ws, plan)) |live| {
+                        // The fold proved these induction variables dead; their
+                        // promotion write-backs (if any) are dead with them.
+                        const nt = plan.nested_triangular.?;
+                        var dead_names: [3][]const u8 = undefined;
+                        var dead_len: usize = 0;
+                        if (live.iv_dead) {
+                            dead_names[dead_len] = plan.iv;
+                            dead_len += 1;
+                        }
+                        if (live.inner_iv_dead) {
+                            dead_names[dead_len] = nt.inner_iv;
+                            dead_len += 1;
+                        }
+                        if (live.inner_acc_dead) {
+                            dead_names[dead_len] = nt.inner_acc;
+                            dead_len += 1;
+                        }
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, dead_names[0..dead_len]);
+                        break :ordinary;
+                    }
                     if (try lowerCountedWhile(ctx, ws, plan)) |cr| {
                         try finishWhileLowering(ctx, cr.latch_fail, promo[0..promo_len], cr.wb_idx, &.{});
                         break :ordinary;
@@ -9056,6 +9077,12 @@ const CountedPlan = struct {
     /// because promotion installs fresh unmarked slots before emission, so
     /// the markings are intact now.
     nested_direct: ?NestedDirect = null,
+    /// Nested triangular closed form, settled at arm time: the outer
+    /// body's inner `while J < M` folds per outer iteration to
+    /// `T = K*tri(M)` and the outer accumulation to
+    /// `acc = acc + C*tri(M)*tri(N)`. Armed only when `direct_acc` and
+    /// `nested_direct` both declined. Null otherwise.
+    nested_triangular: ?NestedTriangular = null,
     /// Self-map deletion, settled at arm time: the body is straight-line pure
     /// integer dataflow that reproduces the loop-entry state (proven by exact
     /// evaluation), so the loop is dead and the induction variable is bound
@@ -9242,6 +9269,215 @@ fn nestedDirectParts(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, ws: any
     };
 }
 
+
+/// The nested triangular form's armed parts, settled at arm time: the outer
+/// counted loop's body is exactly
+///
+///     T = 0
+///     J = 0
+///     while J < M            (M a literal >= 0)
+///         T = T + J * K      (K = iv, or c*iv / iv*c with c a literal or
+///         J = J + 1           an outer-loop-invariant name)
+///     acc = acc + T
+///     iv = iv + 1
+///
+/// with the outer bound N a literal >= 0. Per outer iteration the inner loop
+/// folds to T = K * tri(M); substituting K = c*iv and summing the outer
+/// iterations gives acc = acc + c * tri(M) * tri(N) with no loop at all.
+/// tri(k) = k*(k-1)/2 is evaluated with wrapping arithmetic as (k/2)*(k-1)
+/// for even k and k*((k-1)/2) for odd k; both divisions are exact, so the
+/// wrapped result is the exact triangular number mod 2^64, matching the
+/// iterated wrapping sum. Null when the shape does not match.
+const NestedTriangular = struct {
+    /// Identity with the inner `while` statement, so the plan is never
+    /// consumed by a different loop.
+    inner_stmt: *const ast.Stmt,
+    /// The inner loop's induction variable (`J = 0` precedes it in the body).
+    inner_iv: []const u8,
+    /// The inner loop's accumulator (reset to 0 each outer iteration).
+    inner_acc: []const u8,
+    /// Inner bound literal M (>= 0, proven by the exact-i64 fact).
+    inner_bound_lit: i64,
+    /// The outer accumulator (`acc = acc + T`).
+    outer_acc: []const u8,
+    /// K = k_lit * iv (1 when K is the bare iv). Null when k_name applies.
+    k_lit: ?i64,
+    /// K = k_name * iv with k_name outer-loop-invariant. Null when k_lit.
+    k_name: ?[]const u8,
+    /// tri(M) mod 2^64, exact.
+    tri_m: i64,
+    /// tri(N) mod 2^64, exact.
+    tri_n: i64,
+};
+
+/// tri(n) = n*(n-1)/2 mod 2^64, exact for every n >= 0. n*(n-1) is always
+/// even; halving the even factor first keeps the division exact, so the
+/// wrapping product is the exact triangular number mod 2^64.
+fn triNum(n: i64) i64 {
+    if (@rem(n, 2) == 0) return @divExact(n, 2) *% (n - 1);
+    return n *% @divExact(n - 1, 2);
+}
+
+/// The K factor of a `T = T + J * K` addend.
+const TriangularK = struct {
+    /// K = lit * iv (1 when K is the bare iv). Null when name applies.
+    lit: ?i64,
+    /// K = name * iv. Null when lit applies.
+    name: ?[]const u8,
+};
+
+/// The K factor of the `J * K` addend: K is the bare outer iv, or c*iv /
+/// iv*c with c a literal or a name. Anything else (K mentioning J, K = iv*iv,
+/// a non-mul, a call) returns null. The caller proves a name c invariant.
+/// Only `.assign` statements are accepted for the inits and the accumulation:
+/// a `.local_decl` would scope the name to the loop body, and the emission's
+/// write-backs must target the same binding the body wrote.
+fn triangularKOf(
+    ctx: *LowerCtx,
+    addend: *const ast.Expr,
+    j_name: []const u8,
+    iv: []const u8,
+) ?TriangularK {
+    const mu = switch (addend.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (mu.op != .mul) return null;
+    const mu_lhs_j = if (identOf(mu.lhs)) |ln| std.mem.eql(u8, ln, j_name) else false;
+    const mu_rhs_j = if (identOf(mu.rhs)) |rn| std.mem.eql(u8, rn, j_name) else false;
+    if (mu_lhs_j == mu_rhs_j) return null;
+    const kexpr = if (mu_lhs_j) mu.rhs else mu.lhs;
+    if (identOf(kexpr)) |kn| {
+        if (!std.mem.eql(u8, kn, iv)) return null;
+        return .{ .lit = 1, .name = null };
+    }
+    const km = switch (kexpr.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (km.op != .mul) return null;
+    const km_lhs_iv = if (identOf(km.lhs)) |ln| std.mem.eql(u8, ln, iv) else false;
+    const km_rhs_iv = if (identOf(km.rhs)) |rn| std.mem.eql(u8, rn, iv) else false;
+    if (km_lhs_iv == km_rhs_iv) return null;
+    const cexpr = if (km_lhs_iv) km.rhs else km.lhs;
+    if (ctx.graph.exactI64OfExpr(cexpr)) |cl| return .{ .lit = cl, .name = null };
+    const cn = identOf(cexpr) orelse return null;
+    return .{ .lit = null, .name = cn };
+}
+
+/// The target name and value of the single assignment `name = value`.
+/// Anything else (multi-target, destructuring, declarations) returns null.
+fn assignTargetAndValue(st: *const ast.Stmt) ?struct {
+    name: []const u8,
+    value: *const ast.Expr,
+} {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    return .{ .name = identOf(a.targets[0]) orelse return null, .value = a.values[0] };
+}
+
+/// Arm-time recognition of the nested triangular form. `ws` is the outer
+/// `while` whose plan is being armed and `bound_lit` its literal bound (null
+/// declines: the trip count must be a compile-time constant for the closed
+/// form). The body's last statement steps the outer iv; the caller verified
+/// that before this runs. Every aliasing doubt declines: T, J, acc and iv
+/// pairwise distinct; K's factor c distinct from all four (the body's writes
+/// are exactly T=0, J=0, acc=acc+T and the iv step, and the inner body writes
+/// only T and J, so distinctness is the whole invariance proof); the inner
+/// accumulation mentions neither acc nor any call.
+fn nestedTriangularParts(
+    ctx: *LowerCtx,
+    ws: anytype,
+    iv: []const u8,
+    bound_lit: ?i64,
+) ?NestedTriangular {
+    const n_outer = bound_lit orelse return null;
+    const body = ws.body.stmts;
+    if (body.len != 5 or ws.body.tail_expr != null) return null;
+    const t_init = assignTargetAndValue(&body[0]) orelse return null;
+    const t_name = t_init.name;
+    if (ctx.graph.exactI64OfExpr(t_init.value) != @as(?i64, 0)) return null;
+    const j_init = assignTargetAndValue(&body[1]) orelse return null;
+    const j_name = j_init.name;
+    if (ctx.graph.exactI64OfExpr(j_init.value) != @as(?i64, 0)) return null;
+    if (std.mem.eql(u8, t_name, iv) or std.mem.eql(u8, j_name, iv)) return null;
+    if (std.mem.eql(u8, t_name, j_name)) return null;
+    const s_while = switch (body[2]) {
+        .while_loop => |w| w,
+        else => return null,
+    };
+    const b2 = switch (s_while.cond.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b2.op != .lt) return null;
+    const j2 = identOf(b2.lhs) orelse return null;
+    if (!std.mem.eql(u8, j2, j_name)) return null;
+    const m = ctx.graph.exactI64OfExpr(b2.rhs) orelse return null;
+    if (m < 0) return null;
+    const acc_st = assignTargetAndValue(&body[3]) orelse return null;
+    const acc_name = acc_st.name;
+    if (std.mem.eql(u8, acc_name, iv) or std.mem.eql(u8, acc_name, j_name) or
+        std.mem.eql(u8, acc_name, t_name)) return null;
+    const acc_bo = switch (acc_st.value.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (acc_bo.op != .add) return null;
+    const acc_lhs_acc = if (identOf(acc_bo.lhs)) |ln| std.mem.eql(u8, ln, acc_name) else false;
+    const acc_rhs_acc = if (identOf(acc_bo.rhs)) |rn| std.mem.eql(u8, rn, acc_name) else false;
+    if (acc_lhs_acc == acc_rhs_acc) return null;
+    const acc_other = if (acc_lhs_acc) acc_bo.rhs else acc_bo.lhs;
+    const acc_other_name = identOf(acc_other) orelse return null;
+    if (!std.mem.eql(u8, acc_other_name, t_name)) return null;
+    if (exprHasCall(acc_st.value)) return null;
+    const ib = s_while.body.stmts;
+    if (ib.len != 2 or s_while.body.tail_expr != null) return null;
+    var tacc: ?*const ast.Stmt = null;
+    if (stepIsIncrementOfOne(ctx.graph, &ib[0], j_name)) {
+        tacc = &ib[1];
+    } else if (stepIsIncrementOfOne(ctx.graph, &ib[1], j_name)) {
+        tacc = &ib[0];
+    } else return null;
+    const ta_st = assignTargetAndValue(tacc.?) orelse return null;
+    if (!std.mem.eql(u8, ta_st.name, t_name)) return null;
+    if (ast.exprMentionsIdent(ta_st.value, acc_name)) return null;
+    if (exprHasCall(ta_st.value)) return null;
+    const ta_bo = switch (ta_st.value.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (ta_bo.op != .add) return null;
+    const ta_lhs_t = if (identOf(ta_bo.lhs)) |ln| std.mem.eql(u8, ln, t_name) else false;
+    const ta_rhs_t = if (identOf(ta_bo.rhs)) |rn| std.mem.eql(u8, rn, t_name) else false;
+    if (ta_lhs_t == ta_rhs_t) return null;
+    const addend = if (ta_lhs_t) ta_bo.rhs else ta_bo.lhs;
+    const k = triangularKOf(ctx, addend, j_name, iv) orelse return null;
+    if (k.name) |cn| {
+        if (std.mem.eql(u8, cn, iv) or std.mem.eql(u8, cn, j_name) or
+            std.mem.eql(u8, cn, t_name) or std.mem.eql(u8, cn, acc_name)) return null;
+    }
+    if (!nestedPlainInt(ctx, iv)) return null;
+    if (!nestedPlainInt(ctx, acc_name)) return null;
+    if (!nestedPlainInt(ctx, j_name)) return null;
+    if (!nestedPlainInt(ctx, t_name)) return null;
+    if (k.name) |cn| if (!nestedPlainInt(ctx, cn)) return null;
+    return .{
+        .inner_stmt = &body[2],
+        .inner_iv = j_name,
+        .inner_acc = t_name,
+        .inner_bound_lit = m,
+        .outer_acc = acc_name,
+        .k_lit = k.lit,
+        .k_name = k.name,
+        .tri_m = triNum(m),
+        .tri_n = triNum(n_outer),
+    };
+}
+
 /// Block-level recognition: `stmts[at]` is `iv = 0` followed by
 /// `while iv < bound` with a provably non-negative bound and a trailing
 /// `iv = iv + 1` step. Arms `ctx.counted_plan`; emits nothing. Any doubt
@@ -9278,6 +9514,9 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     plan.direct_acc = directAccIfPlainInt(ctx, ws, iv, plan.bound_name);
     if (plan.direct_acc == null) {
         plan.nested_direct = nestedDirectParts(ctx, stmts, at, ws, iv, plan.bound_name);
+    }
+    if (plan.direct_acc == null and plan.nested_direct == null) {
+        plan.nested_triangular = nestedTriangularParts(ctx, ws, iv, plan.bound_lit);
     }
     if (plan.bound_lit) |bl| {
         if (selfMapLoopProven(ctx, stmts, at, ws, iv, bl, &plan)) plan.self_map = true;
@@ -10276,6 +10515,162 @@ fn lowerNestedDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan)
         ctx.instrs.items[guard_fail].branch_target = @intCast(ctx.instrs.items.len);
     }
     return .{ .iv_dead = iv_dead, .inner_dead = inner_dead };
+}
+
+
+const NestedTriangularLiveness = struct {
+    /// The outer induction variable is never read after the folded loop.
+    iv_dead: bool,
+    /// The inner induction variable is never read after the folded loop.
+    inner_iv_dead: bool,
+    /// The inner accumulator is never read after the folded loop.
+    inner_acc_dead: bool,
+};
+
+/// Emission for the nested triangular form (armed by `nestedTriangularParts`).
+/// Re-verifies the armed parts against the current AST, then replaces the
+/// whole nest with `acc = acc + C*tri(M)*tri(N)` (one add when C is a
+/// literal, one mul and one add when C is an invariant name) plus write-backs
+/// of the surviving induction variables: `iv = N` when live, `J = M` when
+/// live, `T = C*(N-1)*tri(M)` when live (the inner accumulator's value after
+/// the final outer iteration). When N = 0 the nest never executes and nothing
+/// is emitted. Returns the fold liveness for the caller, or null to decline
+/// when the armed proof no longer holds.
+fn lowerNestedTriangularCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!?NestedTriangularLiveness {
+    const nt = plan.nested_triangular orelse return null;
+    const body = ws.body.stmts;
+    if (body.len != 5 or ws.body.tail_expr != null) return null;
+    if (nt.inner_stmt != @as(*const ast.Stmt, &body[2])) return null;
+    if (!stepIsIncrementOfOne(ctx.graph, &body[4], plan.iv)) return null;
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op != .lt) return null;
+    const bl = identOf(b.lhs) orelse return null;
+    if (!std.mem.eql(u8, bl, plan.iv)) return null;
+    const n_outer = plan.bound_lit orelse return null;
+    const t_init = assignTargetAndValue(&body[0]) orelse return null;
+    if (!std.mem.eql(u8, t_init.name, nt.inner_acc)) return null;
+    if (ctx.graph.exactI64OfExpr(t_init.value) != @as(?i64, 0)) return null;
+    const j_init = assignTargetAndValue(&body[1]) orelse return null;
+    if (!std.mem.eql(u8, j_init.name, nt.inner_iv)) return null;
+    if (ctx.graph.exactI64OfExpr(j_init.value) != @as(?i64, 0)) return null;
+    const s_while = switch (body[2]) {
+        .while_loop => |w| w,
+        else => return null,
+    };
+    const b2 = switch (s_while.cond.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b2.op != .lt) return null;
+    const j2 = identOf(b2.lhs) orelse return null;
+    if (!std.mem.eql(u8, j2, nt.inner_iv)) return null;
+    if (ctx.graph.exactI64OfExpr(b2.rhs) != @as(?i64, nt.inner_bound_lit)) return null;
+    const acc_st = assignTargetAndValue(&body[3]) orelse return null;
+    if (!std.mem.eql(u8, acc_st.name, nt.outer_acc)) return null;
+    const acc_bo = switch (acc_st.value.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (acc_bo.op != .add) return null;
+    const acc_sides_ok = blk: {
+        const l = identOf(acc_bo.lhs);
+        const r = identOf(acc_bo.rhs);
+        break :blk l != null and r != null and
+            ((std.mem.eql(u8, l.?, nt.outer_acc) and std.mem.eql(u8, r.?, nt.inner_acc)) or
+            (std.mem.eql(u8, r.?, nt.outer_acc) and std.mem.eql(u8, l.?, nt.inner_acc)));
+    };
+    if (!acc_sides_ok) return null;
+    const ib = s_while.body.stmts;
+    if (ib.len != 2 or s_while.body.tail_expr != null) return null;
+    var tacc: ?*const ast.Stmt = null;
+    if (stepIsIncrementOfOne(ctx.graph, &ib[0], nt.inner_iv)) {
+        tacc = &ib[1];
+    } else if (stepIsIncrementOfOne(ctx.graph, &ib[1], nt.inner_iv)) {
+        tacc = &ib[0];
+    } else return null;
+    const ta_st = assignTargetAndValue(tacc.?) orelse return null;
+    if (!std.mem.eql(u8, ta_st.name, nt.inner_acc)) return null;
+    const ta_bo = switch (ta_st.value.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (ta_bo.op != .add) return null;
+    const ta_lhs_t = if (identOf(ta_bo.lhs)) |ln| std.mem.eql(u8, ln, nt.inner_acc) else false;
+    const ta_rhs_t = if (identOf(ta_bo.rhs)) |rn| std.mem.eql(u8, rn, nt.inner_acc) else false;
+    if (ta_lhs_t == ta_rhs_t) return null;
+    const addend = if (ta_lhs_t) ta_bo.rhs else ta_bo.lhs;
+    const k = triangularKOf(ctx, addend, nt.inner_iv, plan.iv) orelse return null;
+    if (nt.k_lit) |kl| {
+        if (k.lit != kl) return null;
+    } else {
+        const kn = nt.k_name orelse return null;
+        const k2n = k.name orelse return null;
+        if (!std.mem.eql(u8, kn, k2n)) return null;
+    }
+    // The proof holds. Emit the closed form.
+    // Push an empty break list so finishWhileLowering's pop balances.
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    const acc_slot = ctx.locals.get(nt.outer_acc) orelse return null;
+    const iv_slot = ctx.locals.get(plan.iv) orelse return null;
+    const tri_mn = nt.tri_m *% nt.tri_n;
+    if (n_outer > 0) {
+        if (nt.k_lit) |kl| {
+            const total = kl *% tri_mn;
+            const sum = ctx.freshTemp();
+            try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = .{ .local = acc_slot }, .rhs = .{ .i64 = total }, .ty = .i64 });
+            try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
+        } else {
+            const cn = nt.k_name orelse return null;
+            const c_slot = ctx.locals.get(cn) orelse return null;
+            const t1 = ctx.freshTemp();
+            try ctx.emit(.{ .op = .binop, .result = t1, .binop = .mul, .lhs = .{ .local = c_slot }, .rhs = .{ .i64 = tri_mn }, .ty = .i64 });
+            const sum = ctx.freshTemp();
+            try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = .{ .local = acc_slot }, .rhs = .{ .temp = t1 }, .ty = .i64 });
+            try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
+        }
+    }
+    const iv_dead = nameDeadAfterFold(ctx, plan.iv, plan.stmt);
+    const inner_iv_dead = nameDeadAfterFold(ctx, nt.inner_iv, plan.stmt);
+    const inner_acc_dead = nameDeadAfterFold(ctx, nt.inner_acc, plan.stmt);
+    if (n_outer > 0 and !iv_dead) {
+        try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = .{ .i64 = n_outer }, .ty = .i64 });
+    }
+    // The inner induction variable and accumulator need slots only for a live
+    // write-back; mirror the nested-direct get-or-materialize so an
+    // unshadowed module global declines instead of diverging.
+    if (n_outer > 0 and !inner_iv_dead) {
+        const j_slot: u32 = if (ctx.locals.get(nt.inner_iv)) |s| s else blk: {
+            if (ctx.module_globals.types.get(nt.inner_iv) != null) return null;
+            const s = ctx.freshTemp();
+            try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, nt.inner_iv), s);
+            break :blk s;
+        };
+        try ctx.emit(.{ .op = .store_local, .result = j_slot, .lhs = .{ .i64 = nt.inner_bound_lit }, .ty = .i64 });
+    }
+    if (n_outer > 0 and !inner_acc_dead) {
+        const t_slot: u32 = if (ctx.locals.get(nt.inner_acc)) |s| s else blk: {
+            if (ctx.module_globals.types.get(nt.inner_acc) != null) return null;
+            const s = ctx.freshTemp();
+            try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, nt.inner_acc), s);
+            break :blk s;
+        };
+        if (nt.k_lit) |kl| {
+            const tv = kl *% (n_outer - 1) *% nt.tri_m;
+            try ctx.emit(.{ .op = .store_local, .result = t_slot, .lhs = .{ .i64 = tv }, .ty = .i64 });
+        } else {
+            const cn = nt.k_name orelse return null;
+            const c_slot = ctx.locals.get(cn) orelse return null;
+            const t1 = ctx.freshTemp();
+            try ctx.emit(.{ .op = .binop, .result = t1, .binop = .mul, .lhs = .{ .local = c_slot }, .rhs = .{ .i64 = n_outer - 1 }, .ty = .i64 });
+            const t2 = ctx.freshTemp();
+            try ctx.emit(.{ .op = .binop, .result = t2, .binop = .mul, .lhs = .{ .temp = t1 }, .rhs = .{ .i64 = nt.tri_m }, .ty = .i64 });
+            try ctx.emit(.{ .op = .store_local, .result = t_slot, .lhs = .{ .temp = t2 }, .ty = .i64 });
+        }
+    }
+    return .{ .iv_dead = iv_dead, .inner_iv_dead = inner_iv_dead, .inner_acc_dead = inner_acc_dead };
 }
 
 /// If `st` is `name = name + 1` (or `1 + name`) with no mention of `forbidden`,
