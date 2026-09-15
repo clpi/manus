@@ -4221,7 +4221,12 @@ test "the direct backend carries the requested emit kind into its target" {
 fn wantsMachineLowering(backend_mode: []const u8, target: []const u8) bool {
     const parsed = backend_identity.Backend.parse(backend_mode) orelse return false;
     if (!parsed.prefersMachineCode()) return false;
-    if (builtin.cpu.arch != .aarch64 or builtin.os.tag != .macos) return false;
+    // The direct backend runs on macOS/aarch64 (Mach-O objects) and on
+    // Linux/aarch64 (static ELF executables). Anywhere else the machine
+    // target is refused as DNB004, exactly as before.
+    if (builtin.cpu.arch != .aarch64) return false;
+    const supported_host = builtin.os.tag == .macos or builtin.os.tag == .linux;
+    if (!supported_host) return false;
     return std.mem.eql(u8, target, "native") or native_backend.isNativeMachineTarget(target);
 }
 
@@ -7026,6 +7031,24 @@ fn do_compile(
                     if (artifact_result) |artifact_value| {
                         var artifact = artifact_value;
                         defer artifact.deinit(alloc);
+                        if (builtin.os.tag == .linux and builtin.cpu.arch == .aarch64) {
+                            const cwd = Io.Dir.cwd();
+                            try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = artifact.bytes });
+                            try Io.Dir.setFilePermissions(cwd, io, out_path, Io.File.Permissions.fromMode(0o755), .{});
+                            if (phase_timer) |*t| trace_phase(io, t, "native link", out_path);
+                            if (term.build_report != .plain and !test_mode) {
+                                const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+                                term.buildPhaseDone("compile", total_ms, out_path);
+                            }
+                            if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+                            // The direct backend completes and exits HERE,
+                            // never reaching the shared tail, so the cache
+                            // store lives on this path too — mirroring the
+                            // Mach-O arm below.
+                            if (cache_path) |cp| buildCacheStore(io, cp, out_path, alloc);
+                            if (run_after) try executeArtifact(alloc, io, out_path, false);
+                            return;
+                        }
                         // REALIZATION CLOSES OVER WHAT RESOLUTION REACHED, and
                         // the units that closure needs join the units this
                         // artifact needs. Empty for a single-partition program,
