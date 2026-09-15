@@ -1,3 +1,27 @@
+# SUPERSEDED — DO NOT CITE AS CURRENT
+
+> **This report is historical evidence only. No verdict in it may be cited as a measurement of current compiler bytes.**
+>
+> Generated 2026-09-14T17:54:19 by `bench/run.sh` (route production, commit `4fa1570a`, 21 interleaved rounds, 3 warmup).
+> It **predates the repaired verifier procedure** now in the tree. Stale elements retained below for the record:
+>
+> - the OLD parity acceptance criterion (`[parity-criterion]`, requiring `abs(median runtime delta) <= 2%` AND `Welch p >= 0.05`);
+> - the "otherwise the verdict is tie" rule (retired; the repaired procedure returns `inconclusive`, never `tie`);
+> - win/loss decided by Welch p-value instead of the declared median-based bootstrap-CI estimand;
+> - artifact-size rows that do not separate executable/object boundaries the way the repaired procedure requires.
+>
+> The producer (verifier, harness, report generator) has since been repaired, but **this report was not regenerated**:
+> raw per-round samples were not retained (history rows keep verdict summaries only), so the repaired bootstrap-CI
+> verdicts cannot be recomputed from retained data. A full benchmark re-run is required.
+>
+> Proper regeneration: from a clean checkout of the current head, build the compiler (`zig build`), then run
+> `./bench/run.sh --route production` (21 interleaved rounds per program, 3 warmup) on a machine whose observed
+> 1-minute load stays below the gate threshold for the whole run, with no `BENCH_LOAD` override. That run rewrites
+> this file itself through the repaired verifier (win/loss iff the 95% bootstrap percentile CI, B=2000 fixed seed,
+> excludes 0; `equivalent` iff the 90% CI lies wholly inside [-2%,+2%]; otherwise `inconclusive`).
+
+---
+
 | field | value |
 |---|---|
 | title | Benchmark results |
