@@ -397,7 +397,7 @@ fn constantValue(p: Poly) ?u64 {
 }
 
 /// Constant-only division, evaluated with the settled language law
-/// (floored integer division, law.numeric.floor): floored division, declining
+/// (floored integer division): floored division, declining
 /// (null) on division by zero and on minInt / -1. The decline keeps a body
 /// that would trap out of the closed form, so the loop keeps its original
 /// behavior (O4); a division that evaluates is trap-free by construction.

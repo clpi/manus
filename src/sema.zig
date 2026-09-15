@@ -6071,12 +6071,9 @@ pub const Sema = struct {
 
         return switch (op) {
             .div => blk: {
-                // `/` is FLOORED integer division on integer operands
-                // (P0-1: Lua chain + law.numeric.floor fix % floored, so /
-                // is floored for coherence; fold, native, wasm, and the C
-                // backend all realize it), real division on float ones.
-                // Typing it f64 unconditionally disagreed with the
-                // computed i64 value (P0-2).
+                // `/` is FLOORED integer division on integer operands,
+                // real division on float ones. Typing it f64 unconditionally
+                // disagreed with the computed i64 value (P0-2).
                 if (lt.is_numeric() and rt.is_numeric()) {
                     if (lt.is_float() or rt.is_float()) break :blk .f64;
                     break :blk lt; // both integers: use left type

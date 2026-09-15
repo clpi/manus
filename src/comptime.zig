@@ -2694,11 +2694,8 @@ fn evalNumeric(op: ast.BinOp, left: Value, right: Value, native_integers: bool) 
             .add => .{ .int = l +% r },
             .sub => .{ .int = l -% r },
             .mul => .{ .int = l *% r },
-            // INT DIVISION IS FLOORED, FOR EVERY CONSUMER. P0-1 settles the
-            // value law: percent is floored by the Lua chain and
-            // law.numeric.floor, so the only coherent slash is floored too
-            // (x == (x / y) * y + (x % y) holds). P0-2 settles the
-            // descriptor: the gate above no longer conditions `.div` on
+            // INT DIVISION IS FLOORED, FOR EVERY CONSUMER.
+            // P0-2: the gate above no longer conditions `.div` on
             // `native_integers`, so every consumer of this evaluator gets
             // the floored integer answer, never the float path.
 

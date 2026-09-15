@@ -1104,7 +1104,7 @@ pub fn emitSource(
         \\  return value;
         \\}
         \\/* Division semantics. Idol `/` truncates toward zero (ARM64 sdiv),
-        \\ * `//` floors toward negative infinity (law.numeric.floor), and `%`
+        \\ * `//` floors toward negative infinity, and `%`
         \\ * is the floored remainder (sign of the divisor). The zero-divisor
         \\ * guard is emitted ahead of every division by lowering and renders
         \\ * as abort() here, so y != 0 on every path that reaches these

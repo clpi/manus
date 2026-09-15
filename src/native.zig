@@ -6761,7 +6761,7 @@ const Arm64Compiler = struct {
     /// Write `S(n) = floor(Meff*n / 2^(64+s))` — what `smulh`, the optional
     /// `add`, and one `asr` compute. Granlund-Montgomery / Warren choose
     /// `(Meff, s)` so the TRUNCATING quotient is `S(n) + [S(n) < 0]`. Idol's
-    /// law is FLOORED (`law.numeric.floor`, `docs/rulings.md`), so the naive
+    /// law is FLOORED, so the naive
     /// port of that sequence is a silent wrong answer for negative dividends,
     /// which is why the literature's shape is not what this emits.
     ///
@@ -7354,7 +7354,7 @@ const Arm64Compiler = struct {
     }
 
     /// FLOOR DIVISION AND FLOORED REMAINDER over a RUNTIME divisor
-    /// (`law.numeric.floor`, `docs/rulings.md`). `sdiv` truncates toward zero
+    /// `sdiv` truncates toward zero
     /// and `msub`'s remainder takes the sign of the DIVIDEND; the law rounds
     /// toward negative infinity and the remainder takes the sign of the
     /// DIVISOR. Those agree exactly when the operand signs agree, so the
@@ -21082,7 +21082,7 @@ test "carried locals past the home budget still go to the frame" {
 /// THE CORRECTNESS OBLIGATION OF THE CONSTANT-DIVISOR SEQUENCE, DISCHARGED
 /// AGAINST THE LAW ITSELF.
 ///
-/// `@divFloor` and `@mod` are Zig's names for what `law.numeric.floor` says
+/// `@divFloor` and `@mod` are Zig's names for what
 /// `//` and `%` mean, so they are the ORACLE here — not a table of expected
 /// numbers a reader would have to trust, and not the emitter's own opinion.
 /// `flooredMagicAnswer` models the emitted instruction sequence in the same

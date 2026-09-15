@@ -4,12 +4,10 @@ fun table_new(size: i64)
     return { ptr = ptr, size = size }
 end
 
---- @inline
 fun table_get(t, idx: i64): i64
     return __emit("((int64_t*)t.as.tval)[idx]")
 end
 
---- @inline
 fun table_set(t, idx: i64, func_idx: i64)
     __emit("((int64_t*)t.as.tval)[idx] = func_idx")
 end
@@ -23,7 +21,6 @@ fun table_grow(t, n: i64): i64
     return old_size
 end
 
---- @inline
 fun table_t:len(): i64
     return t.size
 end

@@ -17,16 +17,13 @@ encode: str = (v: any)
 
 encode_value = (v: any, buf: any)
   if v == nil
-    -- null
     buf(buf:len() + 1) = 246:char()
     return
   t = type(v)
   if t == "boolean"
     if v
-      -- true
       buf(buf:len() + 1) = 245:char()
     else
-      -- false
       buf(buf:len() + 1) = 244:char()
     return
   if t == "number"
@@ -82,7 +79,6 @@ encode_uint = (major: i64, value: i64, buf: any)
     buf(buf:len() + 1) = lo % 256:char()
 
 encode_float64 = (value: f64, buf: any)
-  -- float64
   buf(buf:len() + 1) = 251:char()
   if value != value
     buf(buf:len() + 1) = 127:char()

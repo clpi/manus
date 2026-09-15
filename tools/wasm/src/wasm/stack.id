@@ -4,24 +4,20 @@ fun stack_new(capacity: i64)
     return { ptr = ptr, sp = 0, cap = capacity }
 end
 
---- @inline
 fun stack_push(s, val: i64)
     __emit("((int64_t*)s.as.tval)[s_sp] = val")
     s.sp = s.sp + 1
 end
 
---- @inline
 fun stack_pop(s): i64
     s.sp = s.sp - 1
     return __emit("((int64_t*)s.as.tval)[s_sp]")
 end
 
---- @inline
 fun stack_peek(s): i64
     return __emit("((int64_t*)s.as.tval)[s_sp - 1]")
 end
 
---- @inline
 fun stack_peek_at(s, offset: i64): i64
     return __emit("((int64_t*)s.as.tval)[s_sp - 1 - offset]")
 end
@@ -31,7 +27,6 @@ fun ctrl_new(capacity: i64)
     return { ptr = ptr, depth = 0, cap = capacity }
 end
 
---- @inline
 fun ctrl_push(cs, pc: i64, arity: i64, stack_h: i64)
     base: i64 = cs.depth * 3
     __emit("((int64_t*)cs.as.tval)[base] = pc")
@@ -40,7 +35,6 @@ fun ctrl_push(cs, pc: i64, arity: i64, stack_h: i64)
     cs.depth = cs.depth + 1
 end
 
---- @inline
 fun ctrl_pop(cs)
     cs.depth = cs.depth - 1
     base: i64 = cs.depth * 3
@@ -50,7 +44,6 @@ fun ctrl_pop(cs)
     return pc, arity, stack_h
 end
 
---- @inline
 fun ctrl_peek(cs)
     base: i64 = (cs.depth - 1) * 3
     return __emit("((int64_t*)cs.as.tval)[base]"),

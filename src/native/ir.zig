@@ -103,7 +103,7 @@ pub const BinOpTag = enum {
     /// float ones. Shares the floored law with idiv so (slash, percent) cohere;
     /// see idiv for the law.
     div,
-    /// `//` — FLOOR division (`law.numeric.floor`). It is a SEPARATE tag from
+    /// `//` — FLOOR division. It is a SEPARATE tag from
     /// `div` because Idol's `//` and `/` are separate relations with separate
     /// answers, and this enum used to say otherwise: `dnir_lower` mapped
     /// `.div, .idiv => .div`, so a sixteen-member HOST enum decided that Idol
@@ -111,8 +111,8 @@ pub const BinOpTag = enum {
     /// becoming semantic identity" — and it was not a rounding error:
     /// `(0-7) // 10` answered 0 where the law answers -1.
     idiv,
-    /// `%` — FLOORED remainder, taking the sign of the DIVISOR
-    /// (`law.numeric.floor`). Not `sdiv`+`msub`'s truncated remainder, which is
+    /// `%` — FLOORED remainder, taking the sign of the DIVISOR.
+    /// Not `sdiv`+`msub`'s truncated remainder, which is
     /// what the chip happens to compute.
     mod,
     eq,
