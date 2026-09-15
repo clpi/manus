@@ -8212,7 +8212,7 @@ fn summaryConstInt(ctx: *LowerCtx, e: *const ast.Expr) ?i64 {
     defer folded.deinit(ctx.alloc);
     collectFoldedCallApplications(ctx, e, &folded);
     for (folded.items) |app_id| {
-        ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+        recordSummaryFolded(ctx, app_id);
     }
     return k;
 }
@@ -14938,6 +14938,19 @@ fn collectFoldedCallApplications(
     }
 }
 
+/// Record a summary-folded application exactly once. summaryConstInt
+/// folds eagerly while probing a condition constConditionTruth may not
+/// decide; when it bails, normal lowering re-folds the same call and records
+/// it again. The validator requires exactly-once, so the second recording is
+/// a no-op. Dedupe is per function list, so a genuine cross-function
+/// double-record still fails validation.
+fn recordSummaryFolded(ctx: *LowerCtx, app_id: semantic_graph.id) void {
+    for (ctx.summary_folded.items) |existing| {
+        if (existing == app_id) return;
+    }
+    ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+}
+
 /// Try to fold a binop where operands contain summary-foldable calls.
 /// Folds each operand via the summary (if it's a call) or via foldValueExpr,
 /// then computes the binop on the constants. Returns null if any operand
@@ -14984,8 +14997,16 @@ fn tryFoldBinopWithSummary(
         .add => lhs +% rhs,
         .sub => lhs -% rhs,
         .mul => lhs *% rhs,
-        .div => if (rhs != 0) @divTrunc(lhs, rhs) else null,
-        .mod => if (rhs != 0) @mod(lhs, rhs) else null,
+        // Division is FLOORED, the settled law; minInt / -1 and division
+        // by zero refuse exactly like comptime.zig and foldConstBinop.
+        .div => if (rhs == 0 or (rhs == -1 and lhs == std.math.minInt(i64)))
+            null
+        else
+            @divFloor(lhs, rhs),
+        .mod => if (rhs == 0 or (rhs == -1 and lhs == std.math.minInt(i64)))
+            null
+        else
+            @mod(lhs, rhs),
         .eq => if (lhs == rhs) @as(i64, 1) else @as(i64, 0),
         .neq => if (lhs != rhs) @as(i64, 1) else @as(i64, 0),
         .lt => if (lhs < rhs) @as(i64, 1) else @as(i64, 0),
@@ -15036,7 +15057,7 @@ fn lowerExprCons(
                 var folded: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
                 collectFoldedCallApplications(ctx, expr, &folded);
                 for (folded.items) |app_id| {
-                    ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+                    recordSummaryFolded(ctx, app_id);
                 }
                 folded.deinit(ctx.alloc);
                 return .{ .i64 = k };
@@ -15052,7 +15073,7 @@ fn lowerExprCons(
                     var folded: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
                     collectFoldedCallApplications(ctx, expr, &folded);
                     for (folded.items) |app_id| {
-                        ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+                        recordSummaryFolded(ctx, app_id);
                     }
                     folded.deinit(ctx.alloc);
                     return .{ .i64 = k };
@@ -15063,7 +15084,7 @@ fn lowerExprCons(
                     var folded: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
                     collectFoldedCallApplications(ctx, expr, &folded);
                     for (folded.items) |app_id| {
-                        ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+                        recordSummaryFolded(ctx, app_id);
                     }
                     folded.deinit(ctx.alloc);
                     return .{ .i64 = k };
