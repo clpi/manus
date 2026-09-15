@@ -1443,6 +1443,11 @@ const Arm64Compiler = struct {
     /// `gp_reg_owner` skips `r < 9`, so `temps` is that value's only location
     /// record and the only fact that answers whether a frame slot is still read.
     eval_temps: ?*const std.AutoHashMapUnmanaged(u32, u5) = null,
+    /// Flat index of the DNIR instruction currently being emitted. Rebound at
+    /// every compileDnirInstr entry (nested collapsed-window calls pass at
+    /// through) so releaseReg reads the right index in all emission paths.
+    /// releaseReg reads it to protect a live temp's x0..x7 register.
+    cur_emit_idx: u32 = 0,
     cur_func_has_call: bool = false,
     /// Last instruction that reads each DNIR value/slot id. The map is shared
     /// by both register files; physical file selection is a separate fact.
@@ -4419,6 +4424,10 @@ const Arm64Compiler = struct {
         preferred_result: ?u5,
         at: u32,
     ) Error!void {
+        // Nested compileDnirInstr calls (collapsed windows) pass at through;
+        // rebinding here keeps cur_emit_idx correct for releaseReg in all of
+        // them, not just the top-level emission loop.
+        self.cur_emit_idx = at;
         if ((ins.op == .load_index or ins.op == .store_index) and try self.cell(ins)) {
             const base = try self.evalDnirValue(temps, ins.lhs);
             if (ins.op == .load_index) {
@@ -8834,6 +8843,62 @@ const Arm64Compiler = struct {
     /// `temps` name in that band whose owner does not match and falling through
     /// to the frame home. Skipping on the name there would leak the slot of
     /// ordinary released scratch, which is the leak the paragraph above repairs.
+    /// One walk answering "does a temp naming reg still need it after index at".
+    /// Both the staged-argument guard and releaseReg's low-register guard ask
+    /// this; the walk is shared so the two cannot drift into different
+    /// readings of temp liveness. unknown_live is the policy for a temp with
+    /// no value_free_at entry (never seen as an operand): releaseReg treats it
+    /// as dead (a value never used is dead); staged call marshaling treats it
+    /// as live (defensive at calls, where a mistake corrupts the callee's
+    /// arguments).
+    fn tempNamesLiveReg(
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        value_free_at: *const std.AutoHashMapUnmanaged(u32, u32),
+        reg: u5,
+        at: u32,
+        unknown_live: bool,
+    ) bool {
+        var it = temps.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.* != reg) continue;
+            const last = value_free_at.get(entry.key_ptr.*) orelse
+                (if (unknown_live) std.math.maxInt(u32) else @as(u32, 0));
+            if (last > at) return true;
+        }
+        return false;
+    }
+
+    fn lowRegHoldsLiveTemp(self: *const Arm64Compiler, reg: u5) bool {
+        const tm = self.eval_temps orelse return false;
+        return tempNamesLiveReg(tm, &self.value_free_at, reg, self.cur_emit_idx, false);
+    }
+
+test "native backend: tempNamesLiveReg protects a low-register temp with a future use" {
+    // The t35 shape: temp 35 names x4, last used at instruction 55.
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(std.testing.allocator);
+    var free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer free_at.deinit(std.testing.allocator);
+    try temps.put(std.testing.allocator, 35, 4);
+    try free_at.put(std.testing.allocator, 35, 55);
+
+    // At instruction 50 the temp is live under both policies.
+    try std.testing.expect(Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 4, 50, false));
+    try std.testing.expect(Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 4, 50, true));
+    // At its last use the temp is dead: the register may be reused.
+    try std.testing.expect(!Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 4, 55, false));
+    // A register no temp names is never protected.
+    try std.testing.expect(!Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 5, 50, false));
+    try std.testing.expect(!Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 5, 50, true));
+
+    // A temp with no value_free_at entry (never seen as an operand): the
+    // releaseReg policy treats it as dead so the register does not leak;
+    // the staged call-marshaling policy treats it as live, defensively.
+    try temps.put(std.testing.allocator, 99, 6);
+    try std.testing.expect(!Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 6, 50, false));
+    try std.testing.expect(Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 6, 50, true));
+}
+
     fn releaseReg(self: *Arm64Compiler, reg: u5) void {
         if (reg >= 29) return;
         if (reg == platform_reserved_reg) return;
@@ -8870,6 +8935,15 @@ const Arm64Compiler = struct {
         // by a map each caller has to remember to consult.
         if (self.evalPinNames(reg)) return;
         if (self.gp_reg_owner[reg] != null) return;
+        // Below x9 no gp_reg_owner record exists, so the owner test above
+        // cannot tell a live temp's register from scratch: allocRegExcluding
+        // hands x0..x7 out under pressure and an emitter's unconditional
+        // releaseReg(lhs/rhs) then cleared used_regs while the temp was
+        // still live, so a later allocReg reused the register and a later
+        // read through the stale temps name saw the new value. Ask the temps
+        // map instead: a temp still live at the current instruction keeps
+        // its register. Same reading stagedRegHoldsLiveValue uses.
+        if (reg < 9 and self.lowRegHoldsLiveTemp(reg)) return;
         self.used_regs[reg] = false;
         if (reg < 9 and self.evalTempNames(reg)) return;
         if (self.spilled_regs.fetchRemove(reg)) |entry| {
@@ -8931,13 +9005,7 @@ const Arm64Compiler = struct {
         reg: u5,
         at: u32,
     ) bool {
-        var it = temps.iterator();
-        while (it.next()) |entry| {
-            if (entry.value_ptr.* != reg) continue;
-            const last = self.value_free_at.get(entry.key_ptr.*) orelse std.math.maxInt(u32);
-            if (last > at) return true;
-        }
-        return false;
+        return tempNamesLiveReg(temps, &self.value_free_at, reg, at, true);
     }
 
     /// The same question `pending_arg_regs` answers for x0..x7, asked for the
