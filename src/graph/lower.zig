@@ -9324,10 +9324,23 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     ctx.counted_plan = plan;
 }
 
-/// Three-valued environment for the fixed-point proof: null is unknown.
+/// Abstract value for the fixed-point proof: an exact known constant, the
+/// loop-entry value of one of the environment's own names (`entry` holds that
+/// name's index — whatever the value was on entry, tracked exactly through
+/// identity operations only), or fully unknown.
+const FixExitVal = union(enum) {
+    known: i64,
+    entry: u32,
+    unknown,
+};
+
+/// Environment for the fixed-point proof. An `entry(i)` tag is created only
+/// in slot `i` itself and identity propagation never moves a tag between
+/// slots, so `value[j] == .entry(j)` proves name `j` unchanged through the
+/// evaluated body.
 const FixExitEnv = struct {
     names: [self_map_max_names][]const u8 = undefined,
-    value: [self_map_max_names]?i64 = undefined,
+    value: [self_map_max_names]FixExitVal = undefined,
     len: usize = 0,
 
     fn indexOf(self: *const FixExitEnv, name: []const u8) ?usize {
@@ -9342,12 +9355,15 @@ const FixExitEnv = struct {
 /// loop whose body is straight-line pure integer dataflow (`assign` only, one
 /// plain-ident target each) with exactly one write to the induction variable
 /// (the terminal step), and proves that some loop-carried state `target`
-/// reaches an absorbing fixed point `value` in {0, 1}: exact wrapping
-/// evaluation of the body from the abstract state `target == value` (other
-/// carried names unknown, loop-invariant names resolved, traps refusing)
-/// reproduces `target == value`. Every other name the body assigns must be
-/// dead after the loop (nameDeadAfterFold's conservative both-directions
-/// scan); the induction variable is made exact by the emission's write-back.
+/// reaches an absorbing fixed point `value` in {0, 1}: exact abstract
+/// evaluation of the body from the state `target == value` (other carried
+/// names tracked as their entry values through the exact identity
+/// simplifications x+0=x, x*1=x, x*0=0; loop-invariant names resolved; traps
+/// refusing) reproduces `target == value`. Every other name the body assigns
+/// must be dead after the loop (nameDeadAfterFold's conservative
+/// both-directions scan) or proven unchanged through the fixed state (its
+/// final abstract value is its own entry value); the induction variable is
+/// made exact by the emission's write-back.
 /// Fails closed on any effect, branch, unsupported expression, multiple
 /// induction writes, trap, or live state.
 fn fixExitProven(
@@ -9400,15 +9416,32 @@ fn fixExitProven(
     }
     for (seen[0..seen_len]) |target| {
         for ([_]i64{ 0, 1 }) |v| {
-            if (!fixExitHolds(ctx, stmts, at, body, iv, target, v)) continue;
+            const fenv = fixExitEvalBody(ctx, stmts, at, body, iv, target, v) orelse continue;
+            const tidx = fenv.indexOf(target) orelse continue;
+            const target_holds = switch (fenv.value[tidx]) {
+                .known => |tv| tv == v,
+                else => false,
+            };
+            if (!target_holds) continue;
             // Liveness: every other body-assigned name must be dead after the
-            // loop; the early exit leaves it at its break-time value instead
-            // of its after-all-iterations value. The target is exact (value)
-            // and the induction variable is written back by the emission.
+            // loop, or proven unchanged through the fixed state: its final
+            // abstract value is its own entry value, so the early exit leaves
+            // it exactly where the full loop would. The target is exact
+            // (value) and the induction variable is written back by the
+            // emission.
             var ok = true;
             for (seen[0..seen_len]) |other| {
                 if (std.mem.eql(u8, other, target)) continue;
-                if (!nameDeadAfterFold(ctx, other, st)) {
+                if (nameDeadAfterFold(ctx, other, st)) continue;
+                const oidx = fenv.indexOf(other) orelse {
+                    ok = false;
+                    break;
+                };
+                const unchanged = switch (fenv.value[oidx]) {
+                    .entry => |e| e == oidx,
+                    else => false,
+                };
+                if (!unchanged) {
                     ok = false;
                     break;
                 }
@@ -9419,18 +9452,19 @@ fn fixExitProven(
     return null;
 }
 
-/// Exact three-valued evaluation of the body from the abstract fixed-point
-/// state `target == value`. Names resolve to: the fixed-point value for the
-/// target, unknown for the induction variable and for carried names read
-/// before their assignment, loop-invariant constants for names the body never
-/// assigns (via the dominating store), and sequential values for names
-/// assigned earlier in the body. Any unknown input, unsupported shape, or
-/// trap (division by zero, INT64_MIN / -1) fails the proof. Success with the
-/// target reproducing `value` proves the state absorbing: by induction over
-/// the body, every assigned name's abstract value equals its runtime value
-/// whenever the body is entered with `target == value`, so the runtime body
-/// maps the fixed-point state to itself exactly.
-fn fixExitHolds(
+/// Abstract evaluation of the body from the fixed-point state
+/// `target == value`. Names resolve to: the fixed-point value for the target,
+/// unknown for the induction variable, entry-value tags for carried names,
+/// loop-invariant constants for names the body never assigns (via the
+/// dominating store), and sequential abstract values for names assigned
+/// earlier in the body. Any unsupported shape or trap (division by zero,
+/// INT64_MIN / -1, division by an unknown divisor) fails the proof (null).
+/// When the target's final abstract value is exactly `value`, the state is
+/// absorbing: by induction over the body, every assigned name's abstract
+/// value soundly describes its runtime value whenever the body is entered
+/// with `target == value`, so the runtime body maps the fixed-point state to
+/// itself exactly.
+fn fixExitEvalBody(
     ctx: *LowerCtx,
     stmts: []const ast.Stmt,
     at: usize,
@@ -9438,58 +9472,59 @@ fn fixExitHolds(
     iv: []const u8,
     target: []const u8,
     value: i64,
-) bool {
+) ?FixExitEnv {
     var fenv = FixExitEnv{};
     for (body) |*s| {
         const a = switch (s.*) {
             .assign => |x| x,
-            else => return false,
+            else => return null,
         };
-        if (!fixExitCollectExpr(ctx, a.targets[0], &fenv)) return false;
-        if (!fixExitCollectExpr(ctx, a.values[0], &fenv)) return false;
+        if (!fixExitCollectExpr(ctx, a.targets[0], &fenv)) return null;
+        if (!fixExitCollectExpr(ctx, a.values[0], &fenv)) return null;
     }
-    // Carried names (other than the target) are unknown at entry; only the
-    // target is pinned to the fixed-point value.
+    // Carried names (other than the target) are their entry values at entry;
+    // only the target is pinned to the fixed-point value.
     var carried: [self_map_max_names]bool = undefined;
     for (&carried) |*c| c.* = false;
     for (body) |*s| {
         const a = switch (s.*) {
             .assign => |x| x,
-            else => return false,
+            else => return null,
         };
-        const t = identOf(a.targets[0]) orelse return false;
-        const idx = fenv.indexOf(t) orelse return false;
+        const t = identOf(a.targets[0]) orelse return null;
+        const idx = fenv.indexOf(t) orelse return null;
         carried[idx] = true;
     }
     for (0..fenv.len) |i| {
         const nm = fenv.names[i];
         if (std.mem.eql(u8, nm, target)) {
-            fenv.value[i] = value;
+            fenv.value[i] = .{ .known = value };
         } else if (std.mem.eql(u8, nm, iv)) {
-            fenv.value[i] = null;
+            fenv.value[i] = .unknown;
         } else if (carried[i]) {
-            fenv.value[i] = null;
+            fenv.value[i] = .{ .entry = @intCast(i) };
         } else if (countedDominatingStoreRhs(stmts, at, nm)) |re| {
-            fenv.value[i] = ctx.graph.exactI64OfExpr(re);
+            fenv.value[i] = if (ctx.graph.exactI64OfExpr(re)) |c|
+                FixExitVal{ .known = c }
+            else
+                .unknown;
         } else {
-            fenv.value[i] = null;
+            fenv.value[i] = .unknown;
         }
     }
     for (body) |*s| {
         const a = switch (s.*) {
             .assign => |x| x,
-            else => return false,
+            else => return null,
         };
         var failed = false;
         const v = fixExitEvalExpr(ctx, a.values[0], &fenv, &failed);
-        if (failed) return false;
-        const t = identOf(a.targets[0]) orelse return false;
-        const idx = fenv.indexOf(t) orelse return false;
+        if (failed) return null;
+        const t = identOf(a.targets[0]) orelse return null;
+        const idx = fenv.indexOf(t) orelse return null;
         fenv.value[idx] = v;
     }
-    const tidx = fenv.indexOf(target) orelse return false;
-    const tv = fenv.value[tidx] orelse return false;
-    return tv == value;
+    return fenv;
 }
 
 /// Name/shape collection for the fixed-point proof. Accepts integer literals,
@@ -9503,7 +9538,7 @@ fn fixExitCollectExpr(ctx: *LowerCtx, e: *const ast.Expr, fenv: *FixExitEnv) boo
             if (fenv.indexOf(nm.ident) != null) return true;
             if (fenv.len >= self_map_max_names) return false;
             fenv.names[fenv.len] = nm.ident;
-            fenv.value[fenv.len] = null;
+            fenv.value[fenv.len] = .unknown;
             fenv.len += 1;
             return true;
         },
@@ -9519,69 +9554,132 @@ fn fixExitCollectExpr(ctx: *LowerCtx, e: *const ast.Expr, fenv: *FixExitEnv) boo
     }
 }
 
-/// Exact three-valued expression evaluation for the fixed-point proof.
-/// Wrapping add/sub/mul, truncating division; division by zero and INT64_MIN
-/// / -1 are traps and fail the proof (null), exactly like the emitted code's
+/// Identity simplifications for the fixed-point proof, all exact under
+/// wrapping integer semantics: x+0=x, x*1=x, x*0=0 (and mirrors). Anything not
+/// an identity and not fully known degrades to unknown; entry tags only ever
+/// survive identity operations, never mixed arithmetic.
+fn fixExitAdd(l: FixExitVal, r: FixExitVal) FixExitVal {
+    switch (l) {
+        .known => |lv| switch (r) {
+            .known => |rv| return .{ .known = lv +% rv },
+            else => return if (lv == 0) r else .unknown,
+        },
+        else => switch (r) {
+            .known => |rv| return if (rv == 0) l else .unknown,
+            else => return .unknown,
+        },
+    }
+}
+
+fn fixExitSub(l: FixExitVal, r: FixExitVal) FixExitVal {
+    switch (l) {
+        .known => |lv| switch (r) {
+            .known => |rv| return .{ .known = lv -% rv },
+            else => return .unknown,
+        },
+        else => switch (r) {
+            .known => |rv| return if (rv == 0) l else .unknown,
+            else => return .unknown,
+        },
+    }
+}
+
+fn fixExitMul(l: FixExitVal, r: FixExitVal) FixExitVal {
+    switch (l) {
+        .known => |lv| switch (r) {
+            .known => |rv| return .{ .known = lv *% rv },
+            else => {
+                if (lv == 0) return .{ .known = 0 };
+                if (lv == 1) return r;
+                return .unknown;
+            },
+        },
+        else => switch (r) {
+            .known => |rv| {
+                if (rv == 0) return .{ .known = 0 };
+                if (rv == 1) return l;
+                return .unknown;
+            },
+            else => return .unknown,
+        },
+    }
+}
+
+/// Exact abstract expression evaluation for the fixed-point proof.
+/// Wrapping add/sub/mul, truncating division. Identity simplifications let an
+/// entry value survive provably-no-op arithmetic; anything else unproven
+/// degrades to unknown. Only definite proof failures set `failed`:
+/// unsupported shapes, division by zero, INT64_MIN / -1, or a division whose
+/// divisor is unknown (it might be zero when the fixed point holds, and
+/// trap-freedom cannot be established) — exactly like the emitted code's
 /// runtime trap check.
-/// Exact three-valued expression evaluation for the fixed-point proof.
-/// Wrapping add/sub/mul, truncating division. Unknown inputs propagate as
-/// null (the assigned name keeps an unknown abstract value); only definite
-/// proof failures set `failed`: unsupported shapes, division by zero,
-/// INT64_MIN / -1, or a division whose divisor is unknown (it might be zero
-/// when the fixed point holds, and trap-freedom cannot be established).
 fn fixExitEvalExpr(
     ctx: *LowerCtx,
     e: *const ast.Expr,
     fenv: *const FixExitEnv,
     failed: *bool,
-) ?i64 {
+) FixExitVal {
     switch (e.*) {
-        .int_lit => |l| return l.val,
+        .int_lit => |l| return .{ .known = l.val },
         .name => |nm| {
             const idx = fenv.indexOf(nm.ident) orelse {
                 failed.* = true;
-                return null;
+                return .unknown;
             };
             return fenv.value[idx];
         },
         .binop => |b| {
+            const l = fixExitEvalExpr(ctx, b.lhs, fenv, failed);
+            const r = fixExitEvalExpr(ctx, b.rhs, fenv, failed);
+            if (failed.*) return .unknown;
             switch (b.op) {
-                .add, .sub, .mul => {
-                    const l = fixExitEvalExpr(ctx, b.lhs, fenv, failed);
-                    const r = fixExitEvalExpr(ctx, b.rhs, fenv, failed);
-                    if (failed.*) return null;
-                    const lv = l orelse return null;
-                    const rv = r orelse return null;
-                    return selfMapFoldBinop(b.op, lv, rv);
-                },
+                .add => return fixExitAdd(l, r),
+                .sub => return fixExitSub(l, r),
+                .mul => return fixExitMul(l, r),
                 .div => {
-                    const l = fixExitEvalExpr(ctx, b.lhs, fenv, failed);
-                    const r = fixExitEvalExpr(ctx, b.rhs, fenv, failed);
-                    if (failed.*) return null;
-                    const rv = r orelse {
-                        failed.* = true;
-                        return null;
+                    const rv = switch (r) {
+                        .known => |v| v,
+                        else => {
+                            failed.* = true;
+                            return .unknown;
+                        },
                     };
                     if (rv == 0) {
                         failed.* = true;
-                        return null;
+                        return .unknown;
                     }
-                    if (rv == -1 and (l == null or l.? == std.math.minInt(i64))) {
-                        failed.* = true;
-                        return null;
+                    switch (l) {
+                        .known => |lv| {
+                            if (rv == -1 and lv == std.math.minInt(i64)) {
+                                failed.* = true;
+                                return .unknown;
+                            }
+                            return .{ .known = selfMapFoldBinop(b.op, lv, rv) orelse {
+                                failed.* = true;
+                                return .unknown;
+                            } };
+                        },
+                        else => {
+                            // x/1 is exact for every x and cannot trap; x/-1
+                            // might trap (INT64_MIN) when x is not known.
+                            if (rv == 1) return l;
+                            if (rv == -1) {
+                                failed.* = true;
+                                return .unknown;
+                            }
+                            return .unknown;
+                        },
                     }
-                    const lv = l orelse return null;
-                    return selfMapFoldBinop(b.op, lv, rv);
                 },
                 else => {
                     failed.* = true;
-                    return null;
+                    return .unknown;
                 },
             }
         },
         else => {
             failed.* = true;
-            return null;
+            return .unknown;
         },
     }
 }
