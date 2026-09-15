@@ -588,6 +588,101 @@ pub fn intLiteralValue(expr: *const Expr) ?i64 {
     };
 }
 
+/// Does an expression subtree name `ident` anywhere? Used to decide whether a
+/// relation-edge projection level (`family(level) = (…)`, mangled `family__level`)
+/// is a runtime subject parameter or a compile-time-only qualifier.
+///
+///   `len(path) = (min)` body reads `path` → the level is a runtime subject slot;
+///     it is applied `len(value)(min)` / `value:len(min)` (level passed as an arg).
+///   `subject(tail) = (code)` body never reads `tail` → the level is a pure
+///     compile-time marker baked into the mangled callee `subject__tail`; the call
+///     `subject(tail)(code)` lowers to `subject__tail(code)` with the level absent
+///     from the operand list, so allocating a level slot would misplace `code`.
+pub fn exprMentionsIdent(expr: *const Expr, ident: []const u8) bool {
+    return switch (expr.*) {
+        .name => |n| std.mem.eql(u8, n.ident, ident),
+        .index => |x| exprMentionsIdent(x.obj, ident) or exprMentionsIdent(x.key, ident),
+        .field => |x| exprMentionsIdent(x.obj, ident),
+        .call => |c| blk: {
+            if (exprMentionsIdent(c.func, ident)) break :blk true;
+            for (c.args) |a| if (exprMentionsIdent(a, ident)) break :blk true;
+            break :blk false;
+        },
+        .method_call => |m| blk: {
+            if (exprMentionsIdent(m.obj, ident)) break :blk true;
+            for (m.args) |a| if (exprMentionsIdent(a, ident)) break :blk true;
+            break :blk false;
+        },
+        .binop => |b| exprMentionsIdent(b.lhs, ident) or exprMentionsIdent(b.rhs, ident),
+        .unop => |u| exprMentionsIdent(u.operand, ident),
+        .if_expr => |ie| exprMentionsIdent(ie.cond, ident) or
+            exprMentionsIdent(ie.then_expr, ident) or exprMentionsIdent(ie.else_expr, ident),
+        .try_expr => |x| exprMentionsIdent(x.operand, ident),
+        .unwrap_expr => |x| exprMentionsIdent(x.operand, ident),
+        .await_expr => |x| exprMentionsIdent(x.operand, ident),
+        .contains_expr => |x| exprMentionsIdent(x.lhs, ident) or exprMentionsIdent(x.rhs, ident),
+        .sequence => |s| blk: {
+            for (s.exprs) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        .range => |r| exprMentionsIdent(r.start, ident) or exprMentionsIdent(r.end, ident) or
+            (if (r.step) |st| exprMentionsIdent(st, ident) else false),
+        else => false,
+    };
+}
+
+pub fn blockMentionsIdent(block: *const Block, ident: []const u8) bool {
+    for (block.stmts) |*s| if (stmtMentionsIdent(s, ident)) return true;
+    if (block.tail_expr) |t| return exprMentionsIdent(t, ident);
+    return false;
+}
+
+pub fn stmtMentionsIdent(stmt: *const Stmt, ident: []const u8) bool {
+    return switch (stmt.*) {
+        .local_decl => |d| blk: {
+            for (d.inits) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        .const_decl => |d| exprMentionsIdent(d.val, ident),
+        .global_decl => |d| blk: {
+            for (d.inits) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        .assign => |a| blk: {
+            for (a.targets) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            for (a.values) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        .call_stmt => |c| exprMentionsIdent(c.expr, ident),
+        .expr_stmt => |c| exprMentionsIdent(c.expr, ident),
+        .do_block => |d| blockMentionsIdent(&d.body, ident),
+        .while_loop => |w| exprMentionsIdent(w.cond, ident) or blockMentionsIdent(&w.body, ident),
+        .repeat_loop => |r| blockMentionsIdent(&r.body, ident) or exprMentionsIdent(r.cond, ident),
+        .if_stmt => |f| blk: {
+            if (f.binding) |b| if (exprMentionsIdent(b.expr, ident)) break :blk true;
+            if (exprMentionsIdent(f.cond, ident)) break :blk true;
+            if (blockMentionsIdent(&f.then, ident)) break :blk true;
+            for (f.elseifs) |ei| {
+                if (exprMentionsIdent(ei.cond, ident)) break :blk true;
+                if (blockMentionsIdent(&ei.body, ident)) break :blk true;
+            }
+            if (f.else_body) |eb| if (blockMentionsIdent(&eb, ident)) break :blk true;
+            break :blk false;
+        },
+        .num_for => |n| exprMentionsIdent(n.start, ident) or exprMentionsIdent(n.stop, ident) or
+            (if (n.step) |st| exprMentionsIdent(st, ident) else false) or blockMentionsIdent(&n.body, ident),
+        .gen_for => |g| blk: {
+            for (g.iters) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk blockMentionsIdent(&g.body, ident);
+        },
+        .ret => |r| blk: {
+            for (r.vals) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
 test "ast: negating a literal answers or declines — it never aborts" {
     const test_loc = Loc{ .file = "ast.zig", .line = 1, .col = 1 };
 
