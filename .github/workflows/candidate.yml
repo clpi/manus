@@ -16,9 +16,14 @@ on:
 permissions:
   contents: read
 
+# Concurrency fence: a newly queued candidate run for the same PR cancels
+# previously PENDING runs for that PR; a RUNNING run is allowed to finish
+# (cancel-in-progress defaults to false). Keyed by PR number only: the old
+# key included head.sha, which gave every synchronize its own group and
+# defeated cancellation entirely, and cancel-in-progress killed productive
+# running checks.
 concurrency:
-  group: candidate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
-  cancel-in-progress: true
+  group: candidate-pr-${{ github.event.pull_request.number }}
 
 jobs:
   candidate:

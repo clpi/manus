@@ -6,6 +6,12 @@ on:
       - main
   pull_request:
 
+# Concurrency fence: a newly queued docs run cancels previously PENDING
+# runs for the same workflow+ref; a RUNNING build/deploy is allowed to
+# finish (cancel-in-progress defaults to false).
+concurrency:
+  group: docs-${{ github.ref }}
+
 jobs:
   build:
     runs-on: [self-hosted, macOS, ARM64, mac-mini, idol]

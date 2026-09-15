@@ -7,6 +7,16 @@ on:
   pull_request:
     branches: [main]
 
+# Concurrency fence: for ordinary refs, a newly queued run cancels
+# previously PENDING runs for the same workflow+ref, while a RUNNING run
+# is allowed to finish (cancel-in-progress defaults to false). Tag pushes
+# (v*) are release evidence: they get a unique per-run group, so they are
+# never auto-cancelled and never cancel anything else. No workflow_dispatch
+# trigger exists today; if one is added it must be classified explicitly
+# before joining this fence.
+concurrency:
+  group: ${{ github.ref_type == 'tag' && format('ci-release-never-cancel-{0}', github.run_id) || format('ci-{0}', github.ref) }}
+
 env:
   # Bootstrap pin. build.zig.zon remains the package-level compatibility floor.
   # The pin tracks the toolchain the tree is actually developed and verified
