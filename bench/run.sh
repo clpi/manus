@@ -97,6 +97,21 @@ case "$ROUTE" in
 esac
 echo "bench: route=$ROUTE"
 
+# --- 0a. Hang watchdog for the restricted-route producer ---
+# The restricted route pipes program source through nativebench, which has a
+# known defect: it hangs on ANY stdin (pre-existing .id-runtime stdin:read()
+# hang, same class as the lib/linker/link.id hang). pipefail catches failed
+# producers but NOT hung ones, so one hung producer would silently hang the
+# whole campaign forever. The producer therefore runs under `timeout`; a hang
+# (timeout rc 124 on GNU, 142 on the mini's POSIX shim) fails the campaign
+# LOUDLY (exit 7), never silently.
+# Override: BENCH_PRODUCER_TIMEOUT (seconds, default 300).
+PRODUCER_TIMEOUT="${BENCH_PRODUCER_TIMEOUT:-300}"
+if ! command -v timeout >/dev/null 2>&1; then
+  echo "bench: FATAL: 'timeout' not found; the restricted-route hang watchdog cannot run." >&2
+  exit 4
+fi
+
 # --- 0. Load observation and qualification gate ---
 # QUALIFIED=1 requires: load readable AND numeric, threshold numeric, load
 # below threshold at start, and re-sampled (still readable and below) before
@@ -229,11 +244,35 @@ ORACLE="idol"
 for c in clang gcc; do case " $COMPILERS " in *" $c "*) ORACLE="$c"; break;; esac; done
 echo "bench: correctness oracle: $ORACLE"
 
-# With set -o pipefail, a failed producer behind the pipe fails the build:
-# a successful decoder can no longer conceal a failed producer.
+# The restricted-route producer runs under the hang watchdog: producer and
+# decoder are separate steps with explicit checks, so a failed (or hung)
+# producer can never be concealed by a successful decode. A hang (rc 124/142,
+# the timeout-shim kill codes) aborts the campaign LOUDLY (exit 7) instead of
+# hanging it silently.
 idol_build() { # $1=prog -> $WORK/$1.idol (executable)
   if [ "$ROUTE" = "restricted" ]; then
-    "$NATIVE" < "$BENCH/programs/$1.id" | xxd -r -p > "$WORK/$1.o"
+    # Hang watchdog: nativebench hangs on any stdin (known .id-runtime
+    # defect); pipefail cannot catch a hang, so the producer runs under
+    # timeout and a hang (rc 124/142) aborts the campaign LOUDLY (exit 7).
+    set +e
+    timeout "$PRODUCER_TIMEOUT" "$NATIVE" < "$BENCH/programs/$1.id" > "$WORK/$1.hex"
+    rc=$?
+    set -e
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 142 ]; then
+      echo "bench: FATAL: restricted-route producer HUNG for $1 (nativebench stdin hang; killed by watchdog after ${PRODUCER_TIMEOUT}s, rc=$rc). Campaign aborted loudly." >&2
+      exit 7
+    elif [ "$rc" -ne 0 ]; then
+      echo "bench: FATAL: restricted-route producer failed for $1 (rc=$rc)." >&2
+      exit 7
+    fi
+    # The mini's `timeout` shim can return 0 when the command cannot even be
+    # exec'd; an empty producer output is never a successful build.
+    if [ ! -s "$WORK/$1.hex" ]; then
+      echo "bench: FATAL: restricted-route producer emitted no bytes for $1 (rc=$rc)." >&2
+      exit 7
+    fi
+    xxd -r -p "$WORK/$1.hex" > "$WORK/$1.o" \
+      || { echo "bench: FATAL: hex decode failed for $1." >&2; exit 7; }
     ld -arch arm64 -e _idolmain -platform_version macos 14.0 14.0 \
        -syslibroot "$SDK" "$WORK/$1.o" -lSystem -o "$WORK/$1.idol"
   else
