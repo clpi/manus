@@ -4211,6 +4211,17 @@ const Arm64Compiler = struct {
             else => {},
         };
         const dest = destination orelse return null;
+        // The destination must not alias the binop's own operands. The
+        // sh>1 unproved signed div-pow2 sequence clobbers lhs on its first
+        // instruction (asr dst,lhs,#63) and answers 0 for every input when
+        // dst==lhs. Declining is safe: the ordinary allocation holds lhs
+        // first, so the fallback destination cannot equal lhs.
+        if (self.mappedGpValueReg(temps, ins.lhs)) |source| {
+            if (source == dest) return null;
+        }
+        if (self.mappedGpValueReg(temps, ins.rhs)) |source| {
+            if (source == dest) return null;
+        }
         for (next.vals, 0..) |value, i| {
             if (i == dest) continue;
             switch (value) {
