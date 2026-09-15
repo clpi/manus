@@ -8484,8 +8484,17 @@ fn exprIsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             else => false,
         },
         .name => |n| blk: {
+            // P0-A: the graph descriptor is consulted, not obeyed blindly.
+            // Sema types `x: f32` as .f32, but the runtime never narrows
+            // f32 to binary32 -- the slot census (f64_slots) is the
+            // physical fact. The old `descriptor == .f64` short-circuit
+            // answered "not float" for f32 names, so `x + y` took the
+            // integer binop path and added double bit patterns as
+            // integers: a silent wrong answer. A .f64 descriptor still
+            // answers true immediately; anything else falls through to
+            // the slot census.
             switch (graphNameDescriptor(ctx, expr)) {
-                .known => |descriptor| break :blk descriptor == .f64,
+                .known => |descriptor| if (descriptor == .f64) break :blk true,
                 .unknown, .unvisited => {},
             }
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
@@ -19398,9 +19407,25 @@ fn exprIsF64Value(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             break :blk ctx.f64_slots.contains(slot);
         },
         .call => exprReturnsF64(ctx, expr),
+        // P0-A: an f64-typed ARITHMETIC expression is an f64 value. The
+        // numeric tower lifts the whole binop when either operand is f64;
+        // comparisons, idiv, bitwise, concat, and/or keep their own types
+        // and stay out of the f64 arm. Without this, print(x + y) fell
+        // through to .i64 and the backend printed FP register bits as a
+        // decimal integer at exit 0: a silent wrong answer.
+        // Mirrors exprIsF64's arithmetic set exactly (add, sub, mul, div,
+        // mod): the selector must claim the same expressions the binop
+        // typer floats, or producer and consumer disagree on the value's
+        // file. pow/unop never reach here (binop-not-lowered /
+        // unop-not-lowered refuse first) and stay out of the arm.
+        .binop => |b| switch (b.op) {
+            .add, .sub, .mul, .div, .mod => exprIsF64Value(ctx, b.lhs) or exprIsF64Value(ctx, b.rhs),
+            else => false,
+        },
         else => false,
     };
 }
+
 
 fn lowerF64KernelCall(ctx: *LowerCtx, callee: []const u8, args: []const *ast.Expr) Error!dnir.Value {
     var slot: u32 = 0;
