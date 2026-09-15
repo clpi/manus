@@ -6591,6 +6591,10 @@ fn applyLinearIVSR(
     body_start: u32,
     body_end: u32,
 ) Error!bool {
+    // Belt-and-braces: the stride arithmetic below is mod 2^64 while a narrow
+    // iv wraps at its declared modulus. The arming site already declines
+    // these; re-prove it here so no future caller can slip one through.
+    if (ctx.narrow_slots.contains(iv_slot)) return false;
     var bend: u32 = body_end;
     // No branches in the range: deletion shifts indices and would invalidate
     // branch targets. (`break`/`continue` lower to `.br`, so they decline.)
@@ -7103,9 +7107,16 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 var ivsr_armed = false;
                 if (ivsrCheckBody(&ws.body)) |ih| {
                     if (ctx.locals.get(ih.iv)) |slot| {
-                        ivsr_armed = true;
-                        ivsr_slot = slot;
-                        ivsr_step = ih.step;
+                        // Narrow (i8/i16/...) and non-integer slots decline:
+                        // the stride variable advances mod 2^64, but a narrow
+                        // iv wraps at its declared modulus, desynchronizing
+                        // v = iv*C+K on wrap. Mirrors the unrollPlainIntSlot
+                        // gate on the fixed-point early-exit prologue above.
+                        if (unrollPlainIntSlot(ctx, slot)) {
+                            ivsr_armed = true;
+                            ivsr_slot = slot;
+                            ivsr_step = ih.step;
+                        }
                     }
                 }
                 try emitUnrolledWhilePrologue(ctx, ws);
