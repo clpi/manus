@@ -4920,8 +4920,8 @@ const Arm64Compiler = struct {
                     // lower.zig emits the zero guard ahead of every `.div`
                     // (deleted only when a dominating `x != 0` proved the
                     // slot via `nonzero_slots`), so x != 0 on every path that
-                    // reaches the division, and truncating `1/x` is then
-                    // exactly `x == 1 ? 1 : (x == -1 ? -1 : 0)`: two compares
+                    // reaches the division, and floored `1/x` (P0-1) is then
+                    // exactly `x == 1 ? 1 : (x < 0 ? -1 : 0)`: two compares
                     // and two conditional selects against `sdiv`'s ~20-cycle
                     // latency. (Evidence: cltz's `is1 = 1/n` inner loop, where
                     // clang emits `cmp; csinc` for the same shape.) The guard
@@ -4933,8 +4933,8 @@ const Arm64Compiler = struct {
                         if (preferred_result != null) self.claimReg(dst);
                         try self.emitCmpImm(rhs, 1);
                         try self.emitFmt(encodeCset(dst, .eq), "cset x{d}, eq", .{dst});
-                        try self.emitCmnImm(rhs, 1);
-                        try self.emitFmt(encodeCsinv(dst, dst, dst, .ne), "csinv x{d}, x{d}, x{d}, ne", .{ dst, dst, dst });
+                        try self.emitCmpImm(rhs, 0);
+                        try self.emitFmt(encodeCsinv(dst, dst, dst, .ge), "csinv x{d}, x{d}, x{d}, ge", .{ dst, dst, dst });
                         _ = try self.emitNarrowFit(dst, dst, ins.ty);
                         if (rhs_held) self.gp_reg_owner[rhs] = null;
                         if (rhs != dst and !Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
