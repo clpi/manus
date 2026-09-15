@@ -4421,13 +4421,13 @@ const Arm64Compiler = struct {
     ) ?u5 {
         if (ins.op != .binop or next.op != .store_local) return null;
         switch (ins.binop) {
-            .add, .sub, .shl, .shr => {},
+            .add, .sub, .shl, .shr, .band, .bor, .bxor, .mul => {},
             else => return null,
         }
-        // .add/.sub/.shl/.shr emit a single read-before-write instruction on
-        // every path (reg-reg op or immediate shift plus an optional single
-        // narrowing), so the home may alias an operand: the old home value
-        // dies with the store.
+        // Every admitted op emits a single read-before-write instruction on
+        // every path (reg-reg op, immediate shift/mask, or multiply-by-const
+        // lowering, plus an optional single dst-to-dst narrowing), so the
+        // home may alias an operand: the old home value dies with the store.
         const result = ins.result orelse return null;
         if (next.lhs != .temp or next.lhs.temp != result) return null;
         const slot = next.result orelse return null;
