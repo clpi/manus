@@ -6699,13 +6699,15 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 // below; any doubt drops the plan and the loop lowers ordinarily.
                 const counted = ctx.counted_plan;
                 ctx.counted_plan = null;
+                var fix_plan: ?CountedPlan = null;
                 if (counted) |plan| if (plan.stmt == stmt) {
+                    fix_plan = plan;
                     if (try lowerSelfMapCountedWhile(ctx, ws, plan)) {
-                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &. {});
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
                         break :ordinary;
                     }
                     if (try lowerDirectCountedWhile(ctx, ws, plan)) {
-                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &. {});
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
                         break :ordinary;
                     }
                     if (try lowerNestedDirectCountedWhile(ctx, ws, plan)) |live| {
@@ -6732,34 +6734,59 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 };
                 try emitUnrolledWhilePrologue(ctx, ws);
                 try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
-            const head_idx: u32 = @intCast(ctx.instrs.items.len);
-            try ctx.loop_heads.append(ctx.alloc, head_idx);
-            defer _ = ctx.loop_heads.pop();
-            const cond = try lowerExpr(ctx, ws.cond);
-            const fail_idx = ctx.instrs.items.len;
-            try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
-            // `while b != 0` HAS ALREADY DECIDED WHETHER `b` IS ZERO. The branch
-            // above leaves the loop when it is, so the body below is reached
-            // only when it is not — which is precisely the question a divisor
-            // guard inside the body would ask a second time. Publish the fact;
-            // `emit` retracts it the moment the body writes the slot.
-            const proved: ?u32 = nonZeroSlotOfCondition(ctx, ws.cond);
-            const already_proved = if (proved) |sl| ctx.nonzero_slots.contains(sl) else false;
-            if (proved) |sl| {
-                if (!already_proved) try ctx.nonzero_slots.put(ctx.alloc, sl, {});
-            }
-            defer if (proved) |sl| {
-                // Outside the loop the name is ZERO, not non-zero. The fact is
-                // scoped to the body and must not outlive it.
-                if (!already_proved) _ = ctx.nonzero_slots.remove(sl);
-            };
-            // A loop body is never an implicit-tail position: its last statement
-            // runs once per iteration, not once per call. Propagating
-            // `allow_return` here makes `tryEmitTailDemandReturn` end the body
-            // with `return <last expr>`, so the loop returns after one pass.
-            // Explicit `return` inside the body still lowers via the `.ret` arm.
-            _ = try lowerBlockReturns(ctx, &ws.body, false);
-            try ctx.emit(.{ .op = .br, .branch_target = head_idx });
+                const head_idx: u32 = @intCast(ctx.instrs.items.len);
+                try ctx.loop_heads.append(ctx.alloc, head_idx);
+                defer _ = ctx.loop_heads.pop();
+                const cond = try lowerExpr(ctx, ws.cond);
+                const fail_idx = ctx.instrs.items.len;
+                try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
+                // `while b != 0` HAS ALREADY DECIDED WHETHER `b` IS ZERO. The branch
+                // above leaves the loop when it is, so the body below is reached
+                // only when it is not — which is precisely the question a divisor
+                // guard inside the body would ask a second time. Publish the fact;
+                // `emit` retracts it the moment the body writes the slot.
+                const proved: ?u32 = nonZeroSlotOfCondition(ctx, ws.cond);
+                const already_proved = if (proved) |sl| ctx.nonzero_slots.contains(sl) else false;
+                if (proved) |sl| {
+                    if (!already_proved) try ctx.nonzero_slots.put(ctx.alloc, sl, {});
+                }
+                defer if (proved) |sl| {
+                    // Outside the loop the name is ZERO, not non-zero. The fact is
+                    // scoped to the body and must not outlive it.
+                    if (!already_proved) _ = ctx.nonzero_slots.remove(sl);
+                };
+                // Absorbing fixed-point early exit: the arm proved the body maps
+                // `target == value` to itself exactly, so every remaining iteration
+                // is a no-op. Emits `if target == value { iv = bound; break }`.
+                // The induction write-back preserves the full trip count's
+                // post-loop `iv == bound`; the target is already exact and every
+                // other body-assigned name was proven dead after the loop.
+                if (fix_plan) |fp| if (fp.fix_exit) |fx| {
+                    if (fp.bound_lit) |bl| {
+                        if (ctx.locals.get(fx.target)) |tslot| {
+                            if (ctx.locals.get(fp.iv)) |ivslot| {
+                                if (unrollPlainIntSlot(ctx, tslot) and unrollPlainIntSlot(ctx, ivslot)) {
+                                    const t = ctx.freshTemp();
+                                    try ctx.emit(.{ .op = .binop, .result = t, .binop = .eq, .lhs = .{ .local = tslot }, .rhs = .{ .i64 = fx.value } });
+                                    const else_idx: u32 = @intCast(ctx.instrs.items.len);
+                                    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = t }, .branch_target = 0, .branch_condition = .when_false });
+                                    try ctx.emit(.{ .op = .store_local, .result = ivslot, .lhs = .{ .i64 = bl }, .ty = .i64 });
+                                    const br_idx: u32 = @intCast(ctx.instrs.items.len);
+                                    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+                                    try ctx.loop_breaks.items[ctx.loop_breaks.items.len - 1].append(ctx.alloc, br_idx);
+                                    ctx.instrs.items[else_idx].branch_target = @intCast(ctx.instrs.items.len);
+                                }
+                            }
+                        }
+                    }
+                };
+                // A loop body is never an implicit-tail position: its last statement
+                // runs once per iteration, not once per call. Propagating
+                // `allow_return` here makes `tryEmitTailDemandReturn` end the body
+                // with `return <last expr>`, so the loop returns after one pass.
+                // Explicit `return` inside the body still lowers via the `.ret` arm.
+                _ = try lowerBlockReturns(ctx, &ws.body, false);
+                try ctx.emit(.{ .op = .br, .branch_target = head_idx });
                 try finishWhileLowering(ctx, fail_idx, promo[0..promo_len], null, &.{});
             }
         },
@@ -8644,6 +8671,15 @@ fn loopUpperBound(graph: *const semantic_graph.SemanticGraph, cond: *const ast.E
 // never runs on a zero trip). Every aliasing doubt declines.
 
 /// The plan the block prologue arms for the immediately following `while`.
+/// Absorbing fixed-point early exit for a counted loop. When the loop-carried
+/// state `target` reaches `value`, the body maps that state to itself exactly
+/// (proven by exact evaluation, traps included), so every remaining iteration
+/// is a no-op and the loop may exit at the top as soon as the state is seen.
+const FixExit = struct {
+    target: []const u8,
+    value: i64,
+};
+
 const CountedPlan = struct {
     /// Identity with the `while` statement the prologue saw, so a plan is
     /// never consumed by a different loop.
@@ -8671,6 +8707,14 @@ const CountedPlan = struct {
     /// evaluation), so the loop is dead and the induction variable is bound
     /// to the trip count with no loop emitted. False unless proven.
     self_map: bool = false,
+    /// Absorbing fixed-point early exit, settled at arm time: the body is
+    /// straight-line pure integer dataflow with a proven absorbing state
+    /// `target == value`, so the loop may exit at the top as soon as that
+    /// state is observed. The induction variable is written back to the bound
+    /// on the early path, preserving the full trip count's post-loop state.
+    /// Null unless proven. Only armed for literal bounds, so the trip count
+    /// cannot change under the loop.
+    fix_exit: ?FixExit = null,
 };
 
 /// The direct form's accumulator, settled at ARM time. The body must be
@@ -8878,7 +8922,275 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     if (plan.bound_lit) |bl| {
         if (selfMapLoopProven(ctx, stmts, at, ws, iv, bl)) plan.self_map = true;
     }
+    // Absorbing fixed-point early exit (fixExitProven): only for literal
+    // bounds, so the trip count cannot change under the loop. Moot when the
+    // self-map proof already deleted the loop.
+    if (plan.bound_lit != null and !plan.self_map) {
+        plan.fix_exit = fixExitProven(ctx, stmts, at, st, ws, iv);
+    }
     ctx.counted_plan = plan;
+}
+
+/// Three-valued environment for the fixed-point proof: null is unknown.
+const FixExitEnv = struct {
+    names: [self_map_max_names][]const u8 = undefined,
+    value: [self_map_max_names]?i64 = undefined,
+    len: usize = 0,
+
+    fn indexOf(self: *const FixExitEnv, name: []const u8) ?usize {
+        for (0..self.len) |i| {
+            if (std.mem.eql(u8, self.names[i], name)) return i;
+        }
+        return null;
+    }
+};
+
+/// Absorbing fixed-point early exit, settled at arm time. Recognizes a counted
+/// loop whose body is straight-line pure integer dataflow (`assign` only, one
+/// plain-ident target each) with exactly one write to the induction variable
+/// (the terminal step), and proves that some loop-carried state `target`
+/// reaches an absorbing fixed point `value` in {0, 1}: exact wrapping
+/// evaluation of the body from the abstract state `target == value` (other
+/// carried names unknown, loop-invariant names resolved, traps refusing)
+/// reproduces `target == value`. Every other name the body assigns must be
+/// dead after the loop (nameDeadAfterFold's conservative both-directions
+/// scan); the induction variable is made exact by the emission's write-back.
+/// Fails closed on any effect, branch, unsupported expression, multiple
+/// induction writes, trap, or live state.
+fn fixExitProven(
+    ctx: *LowerCtx,
+    stmts: []const ast.Stmt,
+    at: usize,
+    st: *const ast.Stmt,
+    ws: anytype,
+    iv: []const u8,
+) ?FixExit {
+    const body_all = ws.body.stmts;
+    const n = body_all.len;
+    if (n == 0) return null;
+    const body = body_all[0 .. n - 1];
+    // Shape: every statement a single-target single-value plain-ident assign;
+    // exactly one write to the induction variable in the whole body (the
+    // terminal step, verified by the arming above), so the trip count is
+    // exact and the loop terminates.
+    var iv_writes: usize = 0;
+    for (body_all) |*s| {
+        const a = switch (s.*) {
+            .assign => |x| x,
+            else => return null,
+        };
+        if (a.targets.len != 1 or a.values.len != 1) return null;
+        const t = identOf(a.targets[0]) orelse return null;
+        if (std.mem.eql(u8, t, iv)) iv_writes += 1;
+    }
+    if (iv_writes != 1) return null;
+    // Candidate targets: every name the body assigns, except the induction
+    // variable. The fixed-point values tried are 0 and 1.
+    var seen: [self_map_max_names][]const u8 = undefined;
+    var seen_len: usize = 0;
+    for (body) |*s| {
+        const a = switch (s.*) {
+            .assign => |x| x,
+            else => return null,
+        };
+        const t = identOf(a.targets[0]) orelse return null;
+        if (std.mem.eql(u8, t, iv)) continue;
+        var dup = false;
+        for (seen[0..seen_len]) |x| if (std.mem.eql(u8, x, t)) {
+            dup = true;
+            break;
+        };
+        if (dup) continue;
+        if (seen_len >= self_map_max_names) return null;
+        seen[seen_len] = t;
+        seen_len += 1;
+    }
+    for (seen[0..seen_len]) |target| {
+        for ([_]i64{ 0, 1 }) |v| {
+            if (!fixExitHolds(ctx, stmts, at, body, iv, target, v)) continue;
+            // Liveness: every other body-assigned name must be dead after the
+            // loop; the early exit leaves it at its break-time value instead
+            // of its after-all-iterations value. The target is exact (value)
+            // and the induction variable is written back by the emission.
+            var ok = true;
+            for (seen[0..seen_len]) |other| {
+                if (std.mem.eql(u8, other, target)) continue;
+                if (!nameDeadAfterFold(ctx, other, st)) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) return .{ .target = target, .value = v };
+        }
+    }
+    return null;
+}
+
+/// Exact three-valued evaluation of the body from the abstract fixed-point
+/// state `target == value`. Names resolve to: the fixed-point value for the
+/// target, unknown for the induction variable and for carried names read
+/// before their assignment, loop-invariant constants for names the body never
+/// assigns (via the dominating store), and sequential values for names
+/// assigned earlier in the body. Any unknown input, unsupported shape, or
+/// trap (division by zero, INT64_MIN / -1) fails the proof. Success with the
+/// target reproducing `value` proves the state absorbing: by induction over
+/// the body, every assigned name's abstract value equals its runtime value
+/// whenever the body is entered with `target == value`, so the runtime body
+/// maps the fixed-point state to itself exactly.
+fn fixExitHolds(
+    ctx: *LowerCtx,
+    stmts: []const ast.Stmt,
+    at: usize,
+    body: []const ast.Stmt,
+    iv: []const u8,
+    target: []const u8,
+    value: i64,
+) bool {
+    var fenv = FixExitEnv{};
+    for (body) |*s| {
+        const a = switch (s.*) {
+            .assign => |x| x,
+            else => return false,
+        };
+        if (!fixExitCollectExpr(ctx, a.targets[0], &fenv)) return false;
+        if (!fixExitCollectExpr(ctx, a.values[0], &fenv)) return false;
+    }
+    // Carried names (other than the target) are unknown at entry; only the
+    // target is pinned to the fixed-point value.
+    var carried: [self_map_max_names]bool = undefined;
+    for (&carried) |*c| c.* = false;
+    for (body) |*s| {
+        const a = switch (s.*) {
+            .assign => |x| x,
+            else => return false,
+        };
+        const t = identOf(a.targets[0]) orelse return false;
+        const idx = fenv.indexOf(t) orelse return false;
+        carried[idx] = true;
+    }
+    for (0..fenv.len) |i| {
+        const nm = fenv.names[i];
+        if (std.mem.eql(u8, nm, target)) {
+            fenv.value[i] = value;
+        } else if (std.mem.eql(u8, nm, iv)) {
+            fenv.value[i] = null;
+        } else if (carried[i]) {
+            fenv.value[i] = null;
+        } else if (countedDominatingStoreRhs(stmts, at, nm)) |re| {
+            fenv.value[i] = ctx.graph.exactI64OfExpr(re);
+        } else {
+            fenv.value[i] = null;
+        }
+    }
+    for (body) |*s| {
+        const a = switch (s.*) {
+            .assign => |x| x,
+            else => return false,
+        };
+        var failed = false;
+        const v = fixExitEvalExpr(ctx, a.values[0], &fenv, &failed);
+        if (failed) return false;
+        const t = identOf(a.targets[0]) orelse return false;
+        const idx = fenv.indexOf(t) orelse return false;
+        fenv.value[idx] = v;
+    }
+    const tidx = fenv.indexOf(target) orelse return false;
+    const tv = fenv.value[tidx] orelse return false;
+    return tv == value;
+}
+
+/// Name/shape collection for the fixed-point proof. Accepts integer literals,
+/// plain names, and the four integer binops; anything else (calls, tables,
+/// comparisons, gate-transport applications) declines the proof.
+fn fixExitCollectExpr(ctx: *LowerCtx, e: *const ast.Expr, fenv: *FixExitEnv) bool {
+    if (ctx.occurrences.get(e) != null) return false;
+    switch (e.*) {
+        .int_lit => return true,
+        .name => |nm| {
+            if (fenv.indexOf(nm.ident) != null) return true;
+            if (fenv.len >= self_map_max_names) return false;
+            fenv.names[fenv.len] = nm.ident;
+            fenv.value[fenv.len] = null;
+            fenv.len += 1;
+            return true;
+        },
+        .binop => |b| {
+            switch (b.op) {
+                .add, .sub, .mul, .div => {},
+                else => return false,
+            }
+            return fixExitCollectExpr(ctx, b.lhs, fenv) and
+                fixExitCollectExpr(ctx, b.rhs, fenv);
+        },
+        else => return false,
+    }
+}
+
+/// Exact three-valued expression evaluation for the fixed-point proof.
+/// Wrapping add/sub/mul, truncating division; division by zero and INT64_MIN
+/// / -1 are traps and fail the proof (null), exactly like the emitted code's
+/// runtime trap check.
+/// Exact three-valued expression evaluation for the fixed-point proof.
+/// Wrapping add/sub/mul, truncating division. Unknown inputs propagate as
+/// null (the assigned name keeps an unknown abstract value); only definite
+/// proof failures set `failed`: unsupported shapes, division by zero,
+/// INT64_MIN / -1, or a division whose divisor is unknown (it might be zero
+/// when the fixed point holds, and trap-freedom cannot be established).
+fn fixExitEvalExpr(
+    ctx: *LowerCtx,
+    e: *const ast.Expr,
+    fenv: *const FixExitEnv,
+    failed: *bool,
+) ?i64 {
+    switch (e.*) {
+        .int_lit => |l| return l.val,
+        .name => |nm| {
+            const idx = fenv.indexOf(nm.ident) orelse {
+                failed.* = true;
+                return null;
+            };
+            return fenv.value[idx];
+        },
+        .binop => |b| {
+            switch (b.op) {
+                .add, .sub, .mul => {
+                    const l = fixExitEvalExpr(ctx, b.lhs, fenv, failed);
+                    const r = fixExitEvalExpr(ctx, b.rhs, fenv, failed);
+                    if (failed.*) return null;
+                    const lv = l orelse return null;
+                    const rv = r orelse return null;
+                    return selfMapFoldBinop(b.op, lv, rv);
+                },
+                .div => {
+                    const l = fixExitEvalExpr(ctx, b.lhs, fenv, failed);
+                    const r = fixExitEvalExpr(ctx, b.rhs, fenv, failed);
+                    if (failed.*) return null;
+                    const rv = r orelse {
+                        failed.* = true;
+                        return null;
+                    };
+                    if (rv == 0) {
+                        failed.* = true;
+                        return null;
+                    }
+                    if (rv == -1 and (l == null or l.? == std.math.minInt(i64))) {
+                        failed.* = true;
+                        return null;
+                    }
+                    const lv = l orelse return null;
+                    return selfMapFoldBinop(b.op, lv, rv);
+                },
+                else => {
+                    failed.* = true;
+                    return null;
+                },
+            }
+        },
+        else => {
+            failed.* = true;
+            return null;
+        },
+    }
 }
 
 /// Maximum distinct non-iv names a self-map proof tracks. Overflow declines
