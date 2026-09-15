@@ -28,12 +28,6 @@ pub const Error = error{
     DuplicateSymbol,
     UnknownSymbol,
     BranchOutOfRange,
-    /// Relocatable-object or dylib request on Linux/aarch64, mapping to
-    /// DNB012. The direct ELF writer only produces static executables.
-    UnsupportedObjectFormat,
-    /// Undefined symbols remain after lowering a static executable request,
-    /// mapping to DNB013. A static image has no linker to satisfy them.
-    UnresolvedExternals,
 } || std.mem.Allocator.Error;
 
 /// Mach-O / ELF labels cannot contain `.`; DNIR keeps logical `Type.method` names.
@@ -250,8 +244,6 @@ pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
     _ = target;
     return switch (err) {
         error.UnsupportedTarget => .{ .code = "DNB004", .message = "target object format or host is unsupported by the direct backend" },
-        error.UnsupportedObjectFormat => .{ .code = "DNB012", .message = "direct ELF writer emits static executables only; relocatable objects and shared libraries are not supported" },
-        error.UnresolvedExternals => .{ .code = "DNB013", .message = "static executable has undefined symbols no linker will satisfy" },
         error.UnsupportedProgram => .{ .code = "DNB001", .message = "program construct is outside the direct backend subset" },
         error.SemanticFactsInvalid => .{ .code = "DNB011", .message = "required graph facts or realization lineage are missing or inconsistent" },
         error.MissingMain => .{ .code = "DNB006", .message = "direct native module has no eligible functions" },
@@ -455,49 +447,6 @@ pub fn emitObjectWithGraphLineageObserved(
 
 /// When `entry` is set the named zero-arg function
 /// gets `fcvtzs x0, d0` on f64 returns so native executables receive an i64 exit code.
-/// Which host the direct backend is running on, for the object/executable
-/// dispatch. macOS/aarch64 keeps the Mach-O object path; Linux/aarch64 emits
-/// static ELF64 executables directly; anything else is a genuine DNB004
-/// (unsupported host). The parameterized form exists so the dispatch is
-/// unit-testable without a Linux machine.
-const NativeHost = enum { macos, linux, unsupported };
-
-fn nativeHostKindFor(os: std.Target.Os.Tag, arch: std.Target.Cpu.Arch) NativeHost {
-    if (os == .macos and arch == .aarch64) return .macos;
-    if (os == .linux and arch == .aarch64) return .linux;
-    return .unsupported;
-}
-
-fn nativeHostKind() NativeHost {
-    return nativeHostKindFor(builtin.os.tag, builtin.cpu.arch);
-}
-
-/// DNB013 refusal: a static executable has no linker to satisfy undefined
-/// symbols, so report the count and the first few names instead of emitting
-/// an image with dangling relocations.
-fn recordUnresolvedExternals(diagnostic: *Diagnostic, src: std.builtin.SourceLocation, symbols: []const Symbol) Error {
-    var count: usize = 0;
-    for (symbols) |sym| {
-        if (!sym.defined) count += 1;
-    }
-    diagnostic.site = src;
-    const w = std.fmt.bufPrint(&diagnostic.note_buffer, "{d} undefined:", .{count}) catch {
-        diagnostic.note_len = 0;
-        return error.UnresolvedExternals;
-    };
-    var len: usize = w.len;
-    var shown: usize = 0;
-    for (symbols) |sym| {
-        if (sym.defined) continue;
-        if (shown >= 5) break;
-        const piece = std.fmt.bufPrint(diagnostic.note_buffer[len..], " {s}", .{sym.name}) catch break;
-        len += piece.len;
-        shown += 1;
-    }
-    diagnostic.note_len = @intCast(len);
-    return error.UnresolvedExternals;
-}
-
 pub fn emitObjectForExecutableWithGraphLineage(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -516,8 +465,9 @@ pub fn emitObjectForExecutableWithGraphLineageObserved(
     diagnostic: *Diagnostic,
 ) Error!ObjectWithLineage {
     diagnostic.reset();
-    // The host gate lives in emitObjectModeWithGraphLineage so the object,
-    // dylib, and executable entries share one dispatch.
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        return error.UnsupportedTarget;
+    }
     return emitObjectModeWithGraphLineage(alloc, mod, entry, graph, diagnostic);
 }
 
@@ -547,53 +497,13 @@ fn emitObjectModeWithGraphLineage(
     graph: *const semantic_graph.SemanticGraph,
     diagnostic: *Diagnostic,
 ) Error!ObjectWithLineage {
-    // One host gate shared by the object, dylib, and executable entries:
-    // macOS/aarch64 keeps the Mach-O object path; Linux/aarch64 emits a
-    // static ELF64 executable directly (DNB012 refuses the object/dylib
-    // request up front). Any other host is a genuine DNB004.
-    const host = nativeHostKind();
-    if (host == .unsupported) return error.UnsupportedTarget;
-    if (host == .linux and entry == null) return error.UnsupportedObjectFormat;
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        return error.UnsupportedTarget;
+    }
 
     var output = try emitArm64ModuleWithGraph(alloc, mod, entry, graph, diagnostic);
     defer output.deinit(alloc);
     if (output.graph != graph) return invalidFactsWith(diagnostic, @src(), "object-graph-context");
-
-    if (host == .linux) {
-        const exe_entry = entry orelse return error.UnsupportedObjectFormat;
-        // DNB013: a static executable has no linker to satisfy undefined
-        // symbols. Refuse with the count and names instead of emitting an
-        // image with dangling relocations.
-        for (output.symbols) |sym| {
-            if (!sym.defined) return recordUnresolvedExternals(diagnostic, @src(), output.symbols);
-        }
-        const bytes = try emitElfArm64StaticExec(
-            alloc,
-            output.text,
-            output.cstring,
-            output.const_data,
-            output.symbols,
-            output.relocations,
-            output.data_relocations,
-            output.bss_size,
-            output.global_data,
-            exe_entry,
-        );
-        errdefer alloc.free(bytes);
-        const lineage = try alloc.dupe(MachineLineage, output.lineage);
-        errdefer alloc.free(lineage);
-        for (lineage) |*row| {
-            row.object_start = @intCast(elfTextFileOffset() + row.text_start);
-            row.object_end = @intCast(elfTextFileOffset() + row.text_end);
-        }
-        return .{
-            .bytes = bytes,
-            .lineage = lineage,
-            .graph = graph,
-            .need = &.{},
-        };
-    }
-
     const bytes = try emitMachOArm64ObjectWithConst(
         alloc,
         output.text,
@@ -682,10 +592,7 @@ fn emitAssemblyModeWithGraphLineage(
     graph: *const semantic_graph.SemanticGraph,
     diagnostic: *Diagnostic,
 ) Error!AssemblyWithLineage {
-    // Assembly text is host-independent lowering; the object/executable
-    // writers pick the format. Open on Linux/aarch64 so --emit asm works
-    // everywhere the ELF writer runs.
-    if (nativeHostKind() == .unsupported) {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
         return error.UnsupportedTarget;
     }
     var output = try emitArm64ModuleWithGraph(alloc, mod, entry, graph, diagnostic);
@@ -6107,19 +6014,14 @@ const Arm64Compiler = struct {
 
     /// The expansion of `dnir_lower.trap_abort_tag` — `abort()` WITHOUT a call.
     ///
-    /// Six words, no `bl`, no x30, no relocation, no import. The syscall
-    /// number register differs per host; the shape does not:
+    /// Six words, no `bl`, no x30, no relocation, no import:
     ///
-    ///     host          getpid          svc       kill
-    ///     macOS/aarch64 mov x16, #20   svc #0x80 mov x16, #37
-    ///     Linux/aarch64 mov x8,  #172  svc #0    mov x8,  #129
-    ///
-    ///     mov x1,  #6       ; SIGABRT — must not reuse x0 (it holds the pid)
+    ///     mov x16, #20      ; SYS_getpid
+    ///     svc #0x80         ; -> x0 = pid
+    ///     mov x1,  #6       ; SIGABRT
+    ///     mov x16, #37      ; SYS_kill
+    ///     svc #0x80         ; kill(getpid(), SIGABRT)
     ///     brk #1            ; unreachable; SIGTRAP if the kernel ever returns
-    ///
-    /// macOS takes the BSD number in x16; Linux aarch64 takes the __NR_*
-    /// number in x8 — the kernel reads x8 on svc #0, so x16 would be ignored
-    /// there.
     ///
     /// WHY THE SIGNAL AND NOT JUST `brk`. `brk` alone is one word and terminates,
     /// but it raises SIGTRAP, so the process exits 133 where `abort()` exited
@@ -6142,24 +6044,16 @@ const Arm64Compiler = struct {
     /// does not consume a frame, so a function whose only "call" was this one is
     /// still a leaf.
     fn emitTrapAbort(self: *Arm64Compiler) Error!void {
-        // Per-host trap syscalls. builtin.os.tag is comptime, so the
-        // unchosen arm vanishes and macOS emission is bit-identical.
-        const host_linux = builtin.os.tag == .linux;
-        const sc: u5 = if (host_linux) 8 else 16;
-        const nr_getpid: u16 = if (host_linux) 172 else 20;
-        const nr_kill: u16 = if (host_linux) 129 else 37;
-        const svc_word: u32 = if (host_linux) 0xd4000001 else 0xd4001001;
-        const svc_text: []const u8 = if (host_linux) "svc #0" else "svc #0x80";
         const movz = struct {
             fn word(reg: u5, imm: u16) u32 {
                 return 0xd2800000 | (@as(u32, imm) << 5) | @as(u32, reg);
             }
         }.word;
-        try self.emitFmt(movz(sc, nr_getpid), "mov x{d}, #{d}", .{ sc, nr_getpid });
-        try self.emit(svc_word, svc_text);
+        try self.emitFmt(movz(16, 20), "mov x16, #{d}", .{20});
+        try self.emit(0xd4001001, "svc #0x80");
         try self.emitFmt(movz(1, 6), "mov x1, #{d}", .{6});
-        try self.emitFmt(movz(sc, nr_kill), "mov x{d}, #{d}", .{ sc, nr_kill });
-        try self.emit(svc_word, svc_text);
+        try self.emitFmt(movz(16, 37), "mov x16, #{d}", .{37});
+        try self.emit(0xd4001001, "svc #0x80");
         try self.emit(0xd4200020, "brk #1");
     }
 
@@ -9736,15 +9630,8 @@ const Arm64Compiler = struct {
         try self.emitFmt(movz(0, 2), "mov x0, #{d}", .{2});
         try self.emitAdrpAdd(1, sym);
         try self.emitFmt(movz(2, @intCast(msg.len)), "mov x2, #{d}", .{msg.len});
-        // Per-host write(2): macOS BSD 4 via x16/svc #0x80, Linux __NR 64 via
-        // x8/svc #0. (See emitTrapAbort for why the register differs.)
-        const host_linux = builtin.os.tag == .linux;
-        const sc: u5 = if (host_linux) 8 else 16;
-        const nr_write: u16 = if (host_linux) 64 else 4;
-        const svc_word: u32 = if (host_linux) 0xd4000001 else 0xd4001001;
-        const svc_text: []const u8 = if (host_linux) "svc #0" else "svc #0x80";
-        try self.emitFmt(movz(sc, nr_write), "mov x{d}, #{d}", .{ sc, nr_write });
-        try self.emit(svc_word, svc_text);
+        try self.emitFmt(movz(16, 4), "mov x16, #{d}", .{4});
+        try self.emit(0xd4001001, "svc #0x80");
         try self.emitTrapAbort();
     }
 
@@ -9808,12 +9695,9 @@ const Arm64Compiler = struct {
     ///     limit = sp_at_entry - (min(RLIMIT_STACK.rlim_cur, 8 MiB when absurd
     ///                                or unavailable) - 64 KiB)
     ///
-    /// `getrlimit` answers into a two-word buffer: BSD syscall 194 on macOS,
-    /// __NR 163 on Linux aarch64. macOS reports failure in the CARRY flag, so
-    /// the fallback is a `csel`; Linux returns -errno in x0 with flags
-    /// untouched, so the Linux arm synthesizes carry with
-    /// `adds x16, x0, #4096` first. The 64 KiB margin is what the fault block
-    /// itself and the frame
+    /// `getrlimit` is BSD syscall 194 and answers into a two-word buffer; Darwin
+    /// reports failure in the CARRY flag, so the fallback is a `csel` and not a
+    /// branch. The 64 KiB margin is what the fault block itself and the frame
     /// that trips the check stand on, and it is generous by an order of
     /// magnitude over the largest prologue this backend emits.
     ///
@@ -9834,25 +9718,9 @@ const Arm64Compiler = struct {
         try self.emitStrSp(1, 24);
         try self.emitFmt(movz(0, 3, 0), "mov x0, #{d}", .{3});
         try self.emit(0x910003e1, "mov x1, sp");
-        // Per-host getrlimit: macOS BSD 194 via x16/svc #0x80, Linux __NR
-        // 163 via x8/svc #0. (See emitTrapAbort for why the register differs.)
-        const host_linux = builtin.os.tag == .linux;
-        const sc: u5 = if (host_linux) 8 else 16;
-        const nr_getrlimit: u16 = if (host_linux) 163 else 194;
-        const svc_word: u32 = if (host_linux) 0xd4000001 else 0xd4001001;
-        const svc_text: []const u8 = if (host_linux) "svc #0" else "svc #0x80";
-        try self.emitFmt(movz(sc, nr_getrlimit, 0), "mov x{d}, #{d}", .{ sc, nr_getrlimit });
-        try self.emit(svc_word, svc_text);
+        try self.emitFmt(movz(16, 194, 0), "mov x16, #{d}", .{194});
+        try self.emit(0xd4001001, "svc #0x80");
         try self.emitFmt(0xf9400000 | (@as(u32, 31) << 5) | 17, "ldr x17, [sp]", .{});
-        if (host_linux) {
-            // Linux returns -errno in x0 and leaves PSTATE alone, so the
-            // macOS carry-set-on-failure test below would read a stale flag.
-            // Synthesize it: x0 + 4096 carries out iff x0 is in [-4096, -1],
-            // exactly the kernel's error range. x0 is reloaded from its park
-            // slot two instructions later, so clobbering x16 here is free;
-            // the `csel cs` below then reads this adds-set carry.
-            try self.emit(0xb1400010, "adds x16, x0, #4096");
-        }
         try self.emitLdrSp(0, 16);
         try self.emitLdrSp(1, 24);
         try self.emit(0x910083ff, "add sp, sp, #32");
@@ -13931,246 +13799,6 @@ fn appendU64(out: *std.ArrayList(u8), alloc: std.mem.Allocator, value: u64) !voi
     try out.appendSlice(alloc, &buf);
 }
 
-
-// ============================================================================
-// Direct AArch64+Linux static ELF64 executable writer.
-//
-// Takes the same lowered module the Mach-O writer takes and returns a
-// ready-to-run static executable: no assembler, no linker, no libc, no host
-// toolchain. The Linux kernel maps the three PT_LOAD segments and jumps to
-// the _start stub, which calls the Idol entry and exits via __NR_exit.
-//
-// Layout (file offsets; vaddr = elfBaseVaddr + file offset for every byte):
-//   [0, 64)      ELF64 header (ET_EXEC, EM_AARCH64)
-//   [64, 232)    3 x Elf64_Phdr: R+X headers+stub+text, R rodata, RW data
-//   [232, 244)   _start stub: bl <entry>; mov x8, #93; svc #0
-//   [244, ...)   .text
-//   page-aligned .rodata = cstring ++ zero pad ++ const_data        (R)
-//   page-aligned .data   = global_data                              (RW;
-//                p_memsz covers the bss tail; the kernel zero-fills it)
-//
-// Relocations resolve here, at emission time: page21/pageoff12 against the
-// symbol's final vaddr, abs64 as a little-endian u64. branch26 needs no
-// patch — .text shifts as one unit, so PC-relative branches are already
-// correct. Any undefined symbol is refused as DNB013 before this runs.
-//
-// A symbol's offset is stamped by `finish` as an absolute address in the VM
-// layout (text at 0, then cstring, then 8-aligned const, then bss), NOT as a
-// Mach-O section-relative value — so the writer maps each symbol to its ELF
-// section by offset RANGE, without consulting Mach-O section indices at all.
-// .rodata mirrors that VM order exactly (cstring, pad-to-8, const), so
-// (offset - text.len) is the rodata offset.
-// ============================================================================
-
-/// Base virtual address every direct-ELF image is linked at, clear of the
-/// Linux arm64 default mmap base. Each segment's vaddr is base + its file
-/// offset, so p_offset === p_vaddr (mod p_align) holds by construction.
-const elfBaseVaddr: u64 = 0x400000;
-/// 64 KiB: the only page size Linux arm64 guarantees.
-const elfPageAlign: u64 = 0x10000;
-/// File offset of `.text`: 64-byte EHDR + 3x56-byte PHDR + 12-byte stub.
-const elfTextOff: usize = 64 + 3 * 56 + 12;
-
-/// File offset of `.text` in the direct-ELF image. Lineage rows add their
-/// text-relative ranges to this, mirroring the `machOTextOffset` use.
-fn elfTextFileOffset() usize {
-    return elfTextOff;
-}
-
-/// Patch an `adrp` placeholder (emitted as `adrp rd, #0`) to target
-/// `target_vaddr` from the instruction at `insn_vaddr`. Keeps Rd and the
-/// opcode; rewrites immlo (bits 30:29) and immhi (bits 23:5).
-fn patchAdrp(word: u32, insn_vaddr: u64, target_vaddr: u64) u32 {
-    const page_mask = ~@as(u64, 0xfff);
-    const diff: i64 = @as(i64, @intCast(target_vaddr & page_mask)) - @as(i64, @intCast(insn_vaddr & page_mask));
-    std.debug.assert(@rem(diff, 0x1000) == 0);
-    const imm21 = @divTrunc(diff, 0x1000);
-    std.debug.assert(imm21 >= -(1 << 20) and imm21 < (1 << 20));
-    const imm: u32 = @as(u32, @intCast(imm21 & 0x1fffff));
-    return (word & 0x9f00001f) | ((imm & 0x3) << 29) | (((imm >> 2) & 0x7ffff) << 5);
-}
-
-/// Patch a page-offset imm12 (bits 21:10). The caller selects the value:
-/// plain `add` takes the byte offset; load/store forms scale it by their
-/// access size first (see the pageoff12 arm of the writer).
-fn patchAddImm12(word: u32, page_offset: u32) u32 {
-    std.debug.assert(page_offset < 0x1000);
-    return (word & 0xffc003ff) | ((page_offset & 0xfff) << 10);
-}
-
-fn writeElfPhdr(phdr: *[56]u8, p_type: u32, p_flags: u32, p_offset: u64, p_vaddr: u64, p_filesz: u64, p_memsz: u64, p_align: u64) void {
-    std.mem.writeInt(u32, phdr[0..4], p_type, .little);
-    std.mem.writeInt(u32, phdr[4..8], p_flags, .little);
-    std.mem.writeInt(u64, phdr[8..16], p_offset, .little);
-    std.mem.writeInt(u64, phdr[16..24], p_vaddr, .little);
-    std.mem.writeInt(u64, phdr[24..32], p_vaddr, .little); // p_paddr = p_vaddr
-    std.mem.writeInt(u64, phdr[32..40], p_filesz, .little);
-    std.mem.writeInt(u64, phdr[40..48], p_memsz, .little);
-    std.mem.writeInt(u64, phdr[48..56], p_align, .little);
-}
-
-/// Final virtual address of a lowered symbol, by VM-layout offset range.
-/// Anything outside the three known ranges is a lowering/writer
-/// disagreement — fail closed, never guess a section.
-fn elfSymbolVAddr(
-    sym: Symbol,
-    text_len: usize,
-    rodata_len: usize,
-    bss_base: usize,
-    bss_size: u64,
-    text_vaddr: u64,
-    rodata_vaddr: u64,
-    data_vaddr: u64,
-) Error!u64 {
-    const o: usize = sym.offset;
-    if (o < text_len) return text_vaddr + @as(u64, o);
-    if (o < text_len + rodata_len) return rodata_vaddr + @as(u64, o - text_len);
-    if (o >= bss_base and o < bss_base + @as(usize, bss_size)) return data_vaddr + @as(u64, o - bss_base);
-    return error.SemanticFactsInvalid;
-}
-
-fn emitElfArm64StaticExec(
-    alloc: std.mem.Allocator,
-    text: []const u8,
-    cstring: []const u8,
-    const_data: []const u8,
-    symbols: []const Symbol,
-    relocations: []const Relocation,
-    data_relocations: []const Relocation,
-    bss_size: u64,
-    global_data: []const u8,
-    entry: []const u8,
-) Error![]u8 {
-    // .rodata mirrors the VM layout: cstring, then zero padding to the same
-    // 8-alignment `finish` uses, then const_data — so a symbol's VM offset
-    // minus text.len is its rodata offset, with no section-index decoding.
-    const rodata_pad = (8 - ((text.len + cstring.len) % 8)) % 8;
-    const rodata_len = cstring.len + rodata_pad + const_data.len;
-    const bss_base = bssBaseAddr(text.len, cstring.len, const_data.len);
-
-    const text_off: usize = elfTextOff;
-    const text_vaddr: u64 = elfBaseVaddr + @as(u64, text_off);
-    const seg1_filesz: usize = text_off + text.len;
-
-    const rodata_off: usize = alignForward(seg1_filesz, @intCast(elfPageAlign));
-    const rodata_vaddr: u64 = elfBaseVaddr + @as(u64, rodata_off);
-    const data_off: usize = alignForward(rodata_off + rodata_len, @intCast(elfPageAlign));
-    const data_vaddr: u64 = elfBaseVaddr + @as(u64, data_off);
-    const total: usize = data_off + global_data.len;
-
-    // The stub's bl targets the ENTRY symbol, not text start, so a future
-    // reordering of functions cannot silently break the entry point.
-    const link_entry = try linkerSymbolName(alloc, entry);
-    defer alloc.free(link_entry);
-    var entry_off: ?u32 = null;
-    for (symbols) |sym| {
-        if (!sym.defined) continue;
-        if (std.mem.eql(u8, sym.name, link_entry)) {
-            entry_off = sym.offset;
-            break;
-        }
-    }
-    const eoff = entry_off orelse return error.MissingMain;
-    if (@as(usize, eoff) >= text.len) return error.SemanticFactsInvalid;
-    const entry_vaddr: u64 = text_vaddr + eoff;
-
-    var out = try alloc.alloc(u8, total);
-    errdefer alloc.free(out);
-    @memset(out, 0);
-
-    // --- ELF header ---
-    out[0] = 0x7f;
-    out[1] = 'E';
-    out[2] = 'L';
-    out[3] = 'F';
-    out[4] = 2; // ELFCLASS64
-    out[5] = 1; // ELFDATA2LSB
-    out[6] = 1; // EV_CURRENT
-    out[7] = 0; // ELFOSABI_SYSV
-    // [8, 16) already zero
-    std.mem.writeInt(u16, out[16..18], 2, .little); // ET_EXEC
-    std.mem.writeInt(u16, out[18..20], 183, .little); // EM_AARCH64
-    std.mem.writeInt(u32, out[20..24], 1, .little); // EV_CURRENT
-    std.mem.writeInt(u64, out[24..32], elfBaseVaddr + 232, .little); // e_entry: the _start stub
-    std.mem.writeInt(u64, out[32..40], 64, .little); // e_phoff
-    // e_shoff = 0 (no section headers in an executable image)
-    std.mem.writeInt(u32, out[48..52], 0, .little); // e_flags
-    std.mem.writeInt(u16, out[52..54], 64, .little); // e_ehsize
-    std.mem.writeInt(u16, out[54..56], 56, .little); // e_phentsize
-    std.mem.writeInt(u16, out[56..58], 3, .little); // e_phnum
-    // e_shentsize / e_shnum / e_shstrndx stay zero
-
-    // --- Program headers: R+X headers+stub+text, R rodata, RW data ---
-    writeElfPhdr(out[64..][0..56], 1, 5, 0, elfBaseVaddr, @intCast(seg1_filesz), @intCast(seg1_filesz), elfPageAlign);
-    writeElfPhdr(out[120..][0..56], 1, 4, @intCast(rodata_off), rodata_vaddr, @intCast(rodata_len), @intCast(rodata_len), elfPageAlign);
-    writeElfPhdr(out[176..][0..56], 1, 6, @intCast(data_off), data_vaddr, @intCast(global_data.len), bss_size, elfPageAlign);
-
-    // --- _start stub: bl <entry>; mov x8, #93 (__NR_exit); svc #0 ---
-    const stub_vaddr: u64 = elfBaseVaddr + 232;
-    const delta: i64 = @as(i64, @intCast(entry_vaddr)) - @as(i64, @intCast(stub_vaddr));
-    if (delta < -0x8000000 or delta >= 0x8000000) return error.BranchOutOfRange;
-    if (@rem(delta, 4) != 0) return error.BranchOutOfRange;
-    const bl_imm: u32 = @as(u32, @bitCast(@as(i32, @intCast(@divTrunc(delta, 4))))) & 0x03ffffff;
-    std.mem.writeInt(u32, out[232..][0..4], 0x94000000 | bl_imm, .little);
-    std.mem.writeInt(u32, out[236..][0..4], 0xd2800ba8, .little); // mov x8, #93
-    std.mem.writeInt(u32, out[240..][0..4], 0xd4000001, .little); // svc #0
-
-    // --- .text ---
-    @memcpy(out[text_off..][0..text.len], text);
-    for (relocations) |rel| {
-        if (rel.symbol_index >= symbols.len) return error.SemanticFactsInvalid;
-        if (@as(usize, rel.offset) + 4 > text.len) return error.SemanticFactsInvalid;
-        const sym = symbols[rel.symbol_index];
-        if (!sym.defined) return error.UnknownSymbol;
-        const target = try elfSymbolVAddr(sym, text.len, rodata_len, bss_base, bss_size, text_vaddr, rodata_vaddr, data_vaddr);
-        const at: usize = text_off + rel.offset;
-        switch (rel.kind) {
-            .branch26 => {
-                // PC-relative: .text shifts as one unit, already correct.
-            },
-            .page21 => {
-                const word = std.mem.readInt(u32, out[at..][0..4], .little);
-                std.mem.writeInt(u32, out[at..][0..4], patchAdrp(word, text_vaddr + rel.offset, target), .little);
-            },
-            .pageoff12 => {
-                const word = std.mem.readInt(u32, out[at..][0..4], .little);
-                const page_offset: u32 = @intCast(target & 0xfff);
-                // Opcode-aware: `add` takes the byte offset; `ldr`
-                // scales the unsigned immediate by its 8-byte access
-                // size. Anything else is a producer this writer does
-                // not know — fail closed, never guess.
-                const patched = if (word & 0xff000000 == 0x91000000)
-                    patchAddImm12(word, page_offset)
-                else if (word & 0xffc00000 == 0xf9400000) blk: {
-                    if (page_offset % 8 != 0) return error.SemanticFactsInvalid;
-                    break :blk patchAddImm12(word, page_offset >> 3);
-                } else return error.SemanticFactsInvalid;
-                std.mem.writeInt(u32, out[at..][0..4], patched, .little);
-            },
-            .abs64 => return error.SemanticFactsInvalid,
-        }
-    }
-
-    // --- .rodata ---
-    @memcpy(out[rodata_off..][0..cstring.len], cstring);
-    // rodata_pad bytes are already zero
-    @memcpy(out[rodata_off + cstring.len + rodata_pad ..][0..const_data.len], const_data);
-
-    // --- .data (+ bss tail, zero-filled by the kernel via p_memsz) ---
-    @memcpy(out[data_off..][0..global_data.len], global_data);
-    for (data_relocations) |rel| {
-        if (rel.symbol_index >= symbols.len) return error.SemanticFactsInvalid;
-        if (rel.kind != .abs64) return error.SemanticFactsInvalid;
-        if (@as(usize, rel.offset) + 8 > global_data.len) return error.SemanticFactsInvalid;
-        const sym = symbols[rel.symbol_index];
-        if (!sym.defined) return error.UnknownSymbol;
-        const target = try elfSymbolVAddr(sym, text.len, rodata_len, bss_base, bss_size, text_vaddr, rodata_vaddr, data_vaddr);
-        std.mem.writeInt(u64, out[data_off + rel.offset ..][0..8], target, .little);
-    }
-
-    return out;
-}
-
 fn alignForward(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
 }
@@ -17330,157 +16958,6 @@ test "native backend refuses source length2 short-circuit absent physical loweri
         &sem,
         "graph-dnir-unsupported",
     );
-}
-
-
-test "direct ELF: native host dispatch" {
-    try std.testing.expectEqual(NativeHost.macos, nativeHostKindFor(.macos, .aarch64));
-    try std.testing.expectEqual(NativeHost.linux, nativeHostKindFor(.linux, .aarch64));
-    try std.testing.expectEqual(NativeHost.unsupported, nativeHostKindFor(.linux, .x86_64));
-    try std.testing.expectEqual(NativeHost.unsupported, nativeHostKindFor(.macos, .x86_64));
-    try std.testing.expectEqual(NativeHost.unsupported, nativeHostKindFor(.windows, .aarch64));
-}
-
-test "direct ELF: patchAdrp round-trips through decode" {
-    // adrp x16, #0 at 0x4000f4 targeting 0x410008: +16 pages.
-    try std.testing.expectEqual(@as(u32, 0x90000090), patchAdrp(0x90000010, 0x4000f4, 0x410008));
-    const cases = [_]struct { insn: u64, target: u64 }{
-        .{ .insn = 0x4000f4, .target = 0x410008 },
-        .{ .insn = 0x4000f4, .target = 0x400ff8 },
-        .{ .insn = 0x410004, .target = 0x400008 },
-    };
-    for (cases) |c| {
-        const w = patchAdrp(0x90000010, c.insn, c.target);
-        try std.testing.expectEqual(@as(u32, 0x10), w & 0x1f); // Rd preserved
-        const immlo = (w >> 29) & 0x3;
-        const immhi = (w >> 5) & 0x7ffff;
-        const raw: i64 = @intCast(immlo | (immhi << 2));
-        const signed: i64 = if (raw >= (1 << 20)) raw - (@as(i64, 1) << 21) else raw;
-        const got_page: i64 = @as(i64, @intCast(c.insn & ~@as(u64, 0xfff))) + signed * 0x1000;
-        try std.testing.expectEqual(@as(i64, @intCast(c.target & ~@as(u64, 0xfff))), got_page);
-    }
-}
-
-test "direct ELF: patchAddImm12 writes bits 21:10 only" {
-    try std.testing.expectEqual(@as(u32, 0x91000210), patchAddImm12(0x91000210, 0));
-    try std.testing.expectEqual(@as(u32, 0x91000210 | (0xabc << 10)), patchAddImm12(0x91000210, 0xabc));
-}
-
-test "direct ELF: header, program headers, and _start stub" {
-    const alloc = std.testing.allocator;
-    const text = [_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }; // ret
-    const syms = [_]Symbol{
-        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
-    };
-    const bytes = try emitElfArm64StaticExec(alloc, &text, "", "", &syms, &.{}, &.{}, 0, "", "main");
-    defer alloc.free(bytes);
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0x7f, 'E', 'L', 'F', 2, 1, 1, 0 }, bytes[0..8]);
-    try std.testing.expectEqual(@as(u16, 2), std.mem.readInt(u16, bytes[16..18], .little)); // ET_EXEC
-    try std.testing.expectEqual(@as(u16, 183), std.mem.readInt(u16, bytes[18..20], .little)); // EM_AARCH64
-    try std.testing.expectEqual(@as(u64, 0x400000 + 232), std.mem.readInt(u64, bytes[24..32], .little)); // e_entry
-    try std.testing.expectEqual(@as(u64, 64), std.mem.readInt(u64, bytes[32..40], .little)); // e_phoff
-    try std.testing.expectEqual(@as(u16, 3), std.mem.readInt(u16, bytes[56..58], .little)); // e_phnum
-    // PHDR 0: PT_LOAD R+X covering headers+stub+text.
-    try std.testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, bytes[64..68], .little));
-    try std.testing.expectEqual(@as(u32, 5), std.mem.readInt(u32, bytes[68..72], .little));
-    try std.testing.expectEqual(@as(u64, 0), std.mem.readInt(u64, bytes[72..80], .little));
-    try std.testing.expectEqual(@as(u64, 0x400000), std.mem.readInt(u64, bytes[80..88], .little));
-    try std.testing.expectEqual(@as(u64, 248), std.mem.readInt(u64, bytes[96..104], .little)); // p_filesz
-    // PHDR 1: PT_LOAD R rodata at the first page boundary.
-    try std.testing.expectEqual(@as(u32, 4), std.mem.readInt(u32, bytes[124..128], .little));
-    try std.testing.expectEqual(@as(u64, 0x10000), std.mem.readInt(u64, bytes[128..136], .little));
-    try std.testing.expectEqual(@as(u64, 0x410000), std.mem.readInt(u64, bytes[136..144], .little));
-    // PHDR 2: PT_LOAD RW data.
-    try std.testing.expectEqual(@as(u32, 6), std.mem.readInt(u32, bytes[180..184], .little));
-    // _start stub: bl entry; mov x8, #93; svc #0.
-    const stub = bytes[232..244];
-    const bl = std.mem.readInt(u32, stub[0..4], .little);
-    try std.testing.expectEqual(@as(u32, 0x94000000), bl & 0xfc000000);
-    // entry at 0x4000f4, stub at 0x4000e8: delta 12 -> imm 3.
-    try std.testing.expectEqual(@as(u32, 3), bl & 0x03ffffff);
-    try std.testing.expectEqual(@as(u32, 0xd2800ba8), std.mem.readInt(u32, stub[4..8], .little));
-    try std.testing.expectEqual(@as(u32, 0xd4000001), std.mem.readInt(u32, stub[8..12], .little));
-    // .text lands at file offset 244.
-    try std.testing.expectEqualSlices(u8, &text, bytes[244 .. 244 + text.len]);
-}
-
-test "direct ELF: page21+pageoff12 resolve against final vaddrs" {
-    const alloc = std.testing.allocator;
-    var text_buf: [12]u8 = undefined;
-    std.mem.writeInt(u32, text_buf[0..4], 0x90000010, .little); // adrp x16, #0
-    std.mem.writeInt(u32, text_buf[4..8], 0x91000210, .little); // add x16, x16, #0
-    std.mem.writeInt(u32, text_buf[8..12], 0xd65f03c0, .little); // ret
-    const syms = [_]Symbol{
-        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
-        .{ .name = "Lstr", .offset = 12, .defined = true, .section = 2, .external = false },
-    };
-    const relocs = [_]Relocation{
-        .{ .offset = 0, .symbol_index = 1, .kind = .page21 },
-        .{ .offset = 4, .symbol_index = 1, .kind = .pageoff12 },
-    };
-    const bytes = try emitElfArm64StaticExec(alloc, &text_buf, "hi\x00", "", &syms, &relocs, &.{}, 0, "", "main");
-    defer alloc.free(bytes);
-    // String at rodata page 0x410000; adrp from 0x4000f4 is +16 pages.
-    try std.testing.expectEqual(@as(u32, 0x90000090), std.mem.readInt(u32, bytes[244..248], .little));
-    // Page offset 0: the add keeps its placeholder imm12.
-    try std.testing.expectEqual(@as(u32, 0x91000210), std.mem.readInt(u32, bytes[248..252], .little));
-}
-
-test "direct ELF: ldr pageoff12 scales by access size (depth-check shape)" {
-    const alloc = std.testing.allocator;
-    var text_buf: [8]u8 = undefined;
-    std.mem.writeInt(u32, text_buf[0..4], 0x90000010, .little); // adrp x16, #0
-    std.mem.writeInt(u32, text_buf[4..8], 0xf9400210, .little); // ldr x16, [x16]
-    const syms = [_]Symbol{
-        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
-        .{ .name = "Lduo_g_depth", .offset = 16, .defined = true, .section = 4, .external = false },
-    };
-    const relocs = [_]Relocation{
-        .{ .offset = 0, .symbol_index = 1, .kind = .page21 },
-        .{ .offset = 4, .symbol_index = 1, .kind = .pageoff12 },
-    };
-    var bss: [16]u8 = undefined;
-    @memset(&bss, 0);
-    const bytes = try emitElfArm64StaticExec(alloc, &text_buf, "", "", &syms, &relocs, &.{}, 16, &bss, "main");
-    defer alloc.free(bytes);
-    try std.testing.expectEqual(@as(u32, 0x90000090), std.mem.readInt(u32, bytes[244..248], .little));
-    // Word at bss VM offset 16, bss base 8 -> data page offset 8 -> imm12 1.
-    try std.testing.expectEqual(@as(u32, 0xf9400610), std.mem.readInt(u32, bytes[248..252], .little));
-}
-
-test "direct ELF: abs64 data relocation carries the string vaddr" {
-    const alloc = std.testing.allocator;
-    const text = [_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }; // ret
-    const syms = [_]Symbol{
-        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
-        .{ .name = "Ls", .offset = 4, .defined = true, .section = 2, .external = false },
-    };
-    const drelocs = [_]Relocation{
-        .{ .offset = 0, .symbol_index = 1, .kind = .abs64 },
-    };
-    var word: [8]u8 = undefined;
-    @memset(&word, 0);
-    const bytes = try emitElfArm64StaticExec(alloc, &text, "s\x00", "", &syms, &.{}, &drelocs, 8, &word, "main");
-    defer alloc.free(bytes);
-    // rodata_off = 0x10000, so the string vaddr is 0x410000; the data word
-    // itself lives at data_off = 0x20000 (rodata_len 4 rounds the next page).
-    try std.testing.expectEqual(@as(u64, 0x410000), std.mem.readInt(u64, bytes[0x20000 .. 0x20000 + 8], .little));
-}
-
-test "direct ELF: entry need not be the first function" {
-    const alloc = std.testing.allocator;
-    var text_buf: [8]u8 = undefined;
-    std.mem.writeInt(u32, text_buf[0..4], 0xd65f03c0, .little); // helper: ret
-    std.mem.writeInt(u32, text_buf[4..8], 0xd65f03c0, .little); // main: ret
-    const syms = [_]Symbol{
-        .{ .name = "helper", .offset = 0, .defined = true, .section = 1, .external = false },
-        .{ .name = "main", .offset = 4, .defined = true, .section = 1, .external = false },
-    };
-    const bytes = try emitElfArm64StaticExec(alloc, &text_buf, "", "", &syms, &.{}, &.{}, 0, "", "main");
-    defer alloc.free(bytes);
-    // entry at 0x4000f8, stub at 0x4000e8: delta 16 -> imm 4.
-    const bl = std.mem.readInt(u32, bytes[232..236], .little);
-    try std.testing.expectEqual(@as(u32, 0x94000004), bl);
 }
 
 test "native backend target classification includes executable target" {
