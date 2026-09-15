@@ -6445,6 +6445,367 @@ fn calleeForCall(ctx: *LowerCtx, name: []const u8) ![]const u8 {
     return try ctx.alloc.dupe(u8, name);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// LINEAR-IV STRENGTH REDUCTION
+//
+// A `while` loop whose body ends in `iv = iv + step` and evaluates `iv*C+K`
+// (literal C != 0, literal K) in the body pays one multiply per occurrence
+// per iteration — the backend fuses the `mul`+`add` into a madd, but it stays
+// a multiply-class operation on the loop's critical path. `v = iv*C+K` is
+// itself an induction variable with stride `C*step`: set it once before the
+// loop, advance it once per iteration next to the iv step, and every
+// `iv*C+K` in the body becomes a plain register read.
+//
+// The (C,K) pairs are discovered from the lowered DNIR, so the rewrite only
+// fires on the exact shapes the backend would otherwise multiply. The AST
+// check is a cheap pre-filter (last statement is the iv step); every
+// legality proof is re-established on the DNIR before anything is mutated:
+// exactly one iv store of the right shape, no branches in the body range
+// (deletion would invalidate their targets), every pair's uses accounted
+// for. Any decline leaves the instruction stream untouched: the inits are
+// inserted only after the rewrite commits.
+//
+// WHY IT IS CORRECT. Before the iv step of each iteration, `v = iv*C+K`
+// holds: the init establishes it on loop entry, and the update adds exactly
+// `(iv+step)*C+K - (iv*C+K) = C*step`, computed mod 2^64 exactly like the
+// original chain. The step is the body's last statement and the range holds
+// no branches, so every rewritten use executes after its iteration's
+// init/update and before the next update. `break`/`continue` lower to `.br`
+// and decline the rewrite; the iv-store count declines any second write.
+const IvsrPair = struct {
+    c: i64,
+    k: i64,
+    v_slot: u32,
+    ty: RT,
+};
+
+const IvsrHead = struct {
+    iv: []const u8,
+    step: i64,
+};
+
+/// Cheap AST pre-filter: the body's last statement must be `iv = iv + step`
+/// with a nonzero literal step. Returns the iv name and step, or null.
+fn ivsrCheckBody(body: *const ast.Block) ?IvsrHead {
+    if (body.tail_expr != null) return null;
+    const n = body.stmts.len;
+    if (n == 0) return null;
+    const last: *const ast.Stmt = &body.stmts[n - 1];
+    const as = switch (last.*) {
+        .assign => |*a| a,
+        else => return null,
+    };
+    if (as.targets.len != 1 or as.values.len != 1) return null;
+    const iv = switch (as.targets[0].*) {
+        .name => |nm| nm.ident,
+        else => return null,
+    };
+    const b = switch (as.values[0].*) {
+        .binop => |*bb| bb,
+        else => return null,
+    };
+    // iv+k, k+iv (step k), or iv-k (step -k). k-iv is not a
+    // constant step and declines.
+    const step: i64 = if (b.op == .add and b.lhs.* == .name and std.mem.eql(u8, b.lhs.name.ident, iv) and b.rhs.* == .int_lit)
+        b.rhs.int_lit.val
+    else if (b.op == .add and b.rhs.* == .name and std.mem.eql(u8, b.rhs.name.ident, iv) and b.lhs.* == .int_lit)
+        b.lhs.int_lit.val
+    else if (b.op == .sub and b.lhs.* == .name and std.mem.eql(u8, b.lhs.name.ident, iv) and b.rhs.* == .int_lit)
+        0 -% b.rhs.int_lit.val
+    else
+        return null;
+    if (step == 0) return null;
+    return .{ .iv = iv, .step = step };
+}
+
+fn ivsrIsLocal(v: dnir.Value, slot: u32) bool {
+    return switch (v) {
+        .local => |s| s == slot,
+        else => false,
+    };
+}
+
+fn ivsrIsTemp(v: dnir.Value, t: u32) bool {
+    return switch (v) {
+        .temp => |tt| tt == t,
+        else => false,
+    };
+}
+
+fn ivsrAsI64(v: dnir.Value) ?i64 {
+    return switch (v) {
+        .i64 => |x| x,
+        else => null,
+    };
+}
+
+/// True when `ins` reads temp `t` in any operand position.
+fn ivsrUsesTemp(ins: *const dnir.Instr, t: u32) bool {
+    if (ivsrIsTemp(ins.lhs, t)) return true;
+    if (ivsrIsTemp(ins.rhs, t)) return true;
+    if (ivsrIsTemp(ins.third, t)) return true;
+    for (ins.vals) |v| if (ivsrIsTemp(v, t)) return true;
+    return false;
+}
+
+/// When `ins` is `add(temp(t), K)` with a literal K (either order), returns K.
+fn ivsrAddTempLit(ins: *const dnir.Instr, t: u32) ?i64 {
+    if (ins.op != .binop or ins.binop != .add) return null;
+    if (ivsrIsTemp(ins.lhs, t)) return ivsrAsI64(ins.rhs);
+    if (ivsrIsTemp(ins.rhs, t)) return ivsrAsI64(ins.lhs);
+    return null;
+}
+
+/// Get-or-create the stride slot for (c,k).
+fn ivsrPairFor(
+    ctx: *LowerCtx,
+    pairs: *std.ArrayListUnmanaged(IvsrPair),
+    c: i64,
+    k: i64,
+    ty: RT,
+) Error!u32 {
+    for (pairs.items) |pr| if (pr.c == c and pr.k == k) return pr.v_slot;
+    const v = ctx.freshTemp();
+    try pairs.append(ctx.alloc, .{ .c = c, .k = k, .v_slot = v, .ty = ty });
+    return v;
+}
+
+fn ivsrPairSlot(pairs: *const std.ArrayListUnmanaged(IvsrPair), c: i64, k: i64) ?u32 {
+    for (pairs.items) |pr| if (pr.c == c and pr.k == k) return pr.v_slot;
+    return null;
+}
+
+/// DNIR rewrite for linear-IV strength reduction (see the section header).
+/// Discovers `mul(iv,C)` sources and their `add(.,K)` consumers in
+/// [body_start, body_end), replaces every consumed value with a stride
+/// variable `v = iv*C+K`, deletes the dead multiplies, inserts one
+/// `v += C*step` per pair after the iv step, and inserts the inits before
+/// the loop head (adjusting head_idx, fail_idx, and the loop_heads top for
+/// the shift). Returns true on commit; false leaves the stream untouched.
+fn applyLinearIVSR(
+    ctx: *LowerCtx,
+    iv_slot: u32,
+    step: i64,
+    head_idx: *u32,
+    fail_idx: *usize,
+    body_start: u32,
+    body_end: u32,
+) Error!bool {
+    var bend: u32 = body_end;
+    // No branches in the range: deletion shifts indices and would invalidate
+    // branch targets. (`break`/`continue` lower to `.br`, so they decline.)
+    for (ctx.instrs.items[body_start..bend]) |ins| {
+        if (ins.op == .br) return false;
+        // `vals` is const: a doomed temp used there could not be rewritten.
+        if (ins.vals.len > 0) return false;
+    }
+    // temp -> defining instruction index, for the range.
+    var def = std.AutoHashMapUnmanaged(u32, u32).empty;
+    defer def.deinit(ctx.alloc);
+    for (ctx.instrs.items[body_start..bend], body_start..) |ins, idx| {
+        if (ins.result) |r| try def.put(ctx.alloc, r, @intCast(idx));
+    }
+    // The iv step: exactly one `store_local iv_slot` in the range, and it
+    // must store `iv + step`.
+    var step_count: u32 = 0;
+    for (ctx.instrs.items[body_start..bend]) |ins| {
+        if (ins.op != .store_local or ins.result != iv_slot) continue;
+        step_count += 1;
+        const t = switch (ins.lhs) {
+            .temp => |tt| tt,
+            else => return false,
+        };
+        const di = def.get(t) orelse return false;
+        const din = ctx.instrs.items[di];
+        if (din.op != .binop) return false;
+        // add(iv, step) in either operand order, or sub(iv, k) with
+        // step == -k. sub(k, iv) is not a constant step and declines.
+        const step_ok: bool = switch (din.binop) {
+            .add => (ivsrIsLocal(din.lhs, iv_slot) and ivsrAsI64(din.rhs) == step) or
+                (ivsrIsLocal(din.rhs, iv_slot) and ivsrAsI64(din.lhs) == step),
+            .sub => ivsrIsLocal(din.lhs, iv_slot) and ivsrAsI64(din.rhs) == (0 -% step),
+            else => false,
+        };
+        if (!step_ok) return false;
+    }
+    if (step_count != 1) return false;
+
+    // C-sources: `mul(iv, C)` / `mul(C, iv)` with C != 0.
+    const CSource = struct { idx: u32, t1: u32, c: i64, ty: RT };
+    var sources = std.ArrayListUnmanaged(CSource).empty;
+    defer sources.deinit(ctx.alloc);
+    for (ctx.instrs.items[body_start..bend], body_start..) |ins, idx| {
+        if (ins.op != .binop or ins.binop != .mul) continue;
+        const r = ins.result orelse continue;
+        const c: ?i64 = if (ivsrIsLocal(ins.lhs, iv_slot))
+            ivsrAsI64(ins.rhs)
+        else if (ivsrIsLocal(ins.rhs, iv_slot))
+            ivsrAsI64(ins.lhs)
+        else
+            null;
+        const cc = c orelse continue;
+        if (cc == 0) continue;
+        try sources.append(ctx.alloc, .{ .idx = @intCast(idx), .t1 = r, .c = cc, .ty = ins.ty });
+    }
+    if (sources.items.len == 0) return false;
+
+    // Per source: the `add(t1, K)` consumers and whether t1 is used raw.
+    const AddUse = struct { idx: u32, t2: u32, k: i64, ty: RT };
+    const SrcPlan = struct {
+        src: CSource,
+        adds: std.ArrayListUnmanaged(AddUse),
+        raw_use: bool,
+    };
+    var plans = std.ArrayListUnmanaged(SrcPlan).empty;
+    defer {
+        for (plans.items) |*p| p.adds.deinit(ctx.alloc);
+        plans.deinit(ctx.alloc);
+    }
+    for (sources.items) |src| {
+        var adds = std.ArrayListUnmanaged(AddUse).empty;
+        var raw_use = false;
+        for (ctx.instrs.items[body_start..bend], body_start..) |ins, idx| {
+            if (idx == src.idx) continue;
+            if (!ivsrUsesTemp(&ins, src.t1)) continue;
+            if (ivsrAddTempLit(&ins, src.t1)) |k| {
+                const t2 = ins.result orelse return false;
+                try adds.append(ctx.alloc, .{ .idx = @intCast(idx), .t2 = t2, .k = k, .ty = ins.ty });
+            } else {
+                raw_use = true;
+            }
+        }
+        try plans.append(ctx.alloc, .{ .src = src, .adds = adds, .raw_use = raw_use });
+    }
+
+    // One stride variable per distinct (C,K).
+    var pairs = std.ArrayListUnmanaged(IvsrPair).empty;
+    defer pairs.deinit(ctx.alloc);
+    for (plans.items) |*p| {
+        for (p.adds.items) |a| _ = try ivsrPairFor(ctx, &pairs, p.src.c, a.k, a.ty);
+        if (p.raw_use) _ = try ivsrPairFor(ctx, &pairs, p.src.c, 0, p.src.ty);
+    }
+    if (pairs.items.len == 0) return false;
+
+    // --- Commit: rewrite uses. ---
+    var items = ctx.instrs.items;
+    for (plans.items) |*p| {
+        for (p.adds.items) |a| {
+            const v = ivsrPairSlot(&pairs, p.src.c, a.k) orelse return false;
+            const nv: dnir.Value = .{ .local = v };
+            for (items[body_start..bend]) |*ins| {
+                if (ivsrIsTemp(ins.lhs, a.t2)) ins.lhs = nv;
+                if (ivsrIsTemp(ins.rhs, a.t2)) ins.rhs = nv;
+                if (ivsrIsTemp(ins.third, a.t2)) ins.third = nv;
+
+            }
+        }
+        if (p.raw_use) {
+            const v = ivsrPairSlot(&pairs, p.src.c, 0) orelse return false;
+            const nv: dnir.Value = .{ .local = v };
+            for (items[body_start..bend]) |*ins| {
+                // The add-consumers keep reading t1 until deleted below.
+                if (ivsrAddTempLit(ins, p.src.t1) != null) continue;
+                if (ivsrIsTemp(ins.lhs, p.src.t1)) ins.lhs = nv;
+                if (ivsrIsTemp(ins.rhs, p.src.t1)) ins.rhs = nv;
+                if (ivsrIsTemp(ins.third, p.src.t1)) ins.third = nv;
+
+            }
+        }
+    }
+
+    // --- Commit: delete the dead muls and adds. ---
+    var del = std.ArrayListUnmanaged(u32).empty;
+    defer del.deinit(ctx.alloc);
+    var doomed = std.ArrayListUnmanaged(u32).empty;
+    defer doomed.deinit(ctx.alloc);
+    for (plans.items) |*p| {
+        for (p.adds.items) |a| {
+            try del.append(ctx.alloc, a.idx);
+            try doomed.append(ctx.alloc, a.t2);
+        }
+        try del.append(ctx.alloc, p.src.idx);
+        try doomed.append(ctx.alloc, p.src.t1);
+    }
+    // Safety: every remaining use of a doomed temp must sit inside a doomed
+    // instruction (about to be deleted with it).
+    items = ctx.instrs.items;
+    for (doomed.items) |t| {
+        for (items[body_start..bend], body_start..) |*ins, idx| {
+            if (!ivsrUsesTemp(ins, t)) continue;
+            var ok = false;
+            for (del.items) |di| if (di == idx) {
+                ok = true;
+                break;
+            };
+            if (!ok) return false;
+        }
+    }
+    std.mem.sort(u32, del.items, {}, std.sort.desc(u32));
+    for (del.items) |di| _ = ctx.instrs.orderedRemove(@as(usize, di));
+    // Deletions move the body end left.
+    bend -= @intCast(del.items.len);
+    // --- Commit: one `v += C*step` per pair, right after the iv step. ---
+    var si: ?u32 = null;
+    for (ctx.instrs.items[body_start..bend], body_start..) |ins, idx| {
+        if (ins.op == .store_local and ins.result == iv_slot) si = @intCast(idx);
+    }
+    const step_at = si orelse return false; // unreachable: stores are untouched
+    var at: usize = step_at;
+    for (pairs.items) |pr| {
+        const stride: i64 = pr.c *% step;
+        const t = ctx.freshTemp();
+        try ctx.instrs.insert(ctx.alloc, at + 1, .{
+            .op = .binop, .binop = .add, .result = t,
+            .lhs = .{ .local = pr.v_slot }, .rhs = .{ .i64 = stride }, .ty = pr.ty,
+        });
+        at += 1;
+        try ctx.instrs.insert(ctx.alloc, at + 1, .{
+            .op = .store_local, .result = pr.v_slot, .lhs = .{ .temp = t }, .ty = pr.ty,
+        });
+        at += 1;
+        _ = ctx.nonzero_slots.remove(pr.v_slot);
+        try ctx.cseKillLocal(pr.v_slot);
+    }
+
+    // --- Commit: the `v = iv*C+K` inits before the loop head. ---
+    // Inserted in reverse at head_idx so the stream reads mul, add, store.
+    var inserted: u32 = 0;
+    for (pairs.items) |pr| {
+        const t1 = ctx.freshTemp();
+        if (pr.k == 0) {
+            try ctx.instrs.insert(ctx.alloc, @as(usize, head_idx.*), .{
+                .op = .store_local, .result = pr.v_slot, .lhs = .{ .temp = t1 }, .ty = pr.ty,
+            });
+            try ctx.instrs.insert(ctx.alloc, @as(usize, head_idx.*), .{
+                .op = .binop, .binop = .mul, .result = t1,
+                .lhs = .{ .local = iv_slot }, .rhs = .{ .i64 = pr.c }, .ty = pr.ty,
+            });
+            inserted += 2;
+        } else {
+            const t2 = ctx.freshTemp();
+            try ctx.instrs.insert(ctx.alloc, @as(usize, head_idx.*), .{
+                .op = .store_local, .result = pr.v_slot, .lhs = .{ .temp = t2 }, .ty = pr.ty,
+            });
+            try ctx.instrs.insert(ctx.alloc, @as(usize, head_idx.*), .{
+                .op = .binop, .binop = .add, .result = t2,
+                .lhs = .{ .temp = t1 }, .rhs = .{ .i64 = pr.k }, .ty = pr.ty,
+            });
+            try ctx.instrs.insert(ctx.alloc, @as(usize, head_idx.*), .{
+                .op = .binop, .binop = .mul, .result = t1,
+                .lhs = .{ .local = iv_slot }, .rhs = .{ .i64 = pr.c }, .ty = pr.ty,
+            });
+            inserted += 3;
+        }
+        _ = ctx.nonzero_slots.remove(pr.v_slot);
+        try ctx.cseKillLocal(pr.v_slot);
+    }
+    head_idx.* += inserted;
+    fail_idx.* += inserted;
+    if (ctx.loop_heads.items.len > 0) {
+        ctx.loop_heads.items[ctx.loop_heads.items.len - 1] += inserted;
+    }
+    return true;
+}
 fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!void {
     switch (stmt.*) {
         .local_decl => |ld| {
@@ -6732,17 +7093,32 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                         break :ordinary;
                     }
                 };
+                // LINEAR-IV STRENGTH REDUCTION arming (see the section
+                // header above `lowerStmt`). The AST check is only a
+                // pre-filter; `applyLinearIVSR` re-proves everything on the
+                // DNIR after the body is lowered and declines without
+                // touching the stream.
+                var ivsr_slot: u32 = 0;
+                var ivsr_step: i64 = 0;
+                var ivsr_armed = false;
+                if (ivsrCheckBody(&ws.body)) |ih| {
+                    if (ctx.locals.get(ih.iv)) |slot| {
+                        ivsr_armed = true;
+                        ivsr_slot = slot;
+                        ivsr_step = ih.step;
+                    }
+                }
                 try emitUnrolledWhilePrologue(ctx, ws);
                 try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
-                const head_idx: u32 = @intCast(ctx.instrs.items.len);
+                var head_idx: u32 = @intCast(ctx.instrs.items.len);
                 try ctx.loop_heads.append(ctx.alloc, head_idx);
                 defer _ = ctx.loop_heads.pop();
                 const cond = try lowerExpr(ctx, ws.cond);
-                const fail_idx = ctx.instrs.items.len;
+                var fail_idx = ctx.instrs.items.len;
                 try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
                 // `while b != 0` HAS ALREADY DECIDED WHETHER `b` IS ZERO. The branch
                 // above leaves the loop when it is, so the body below is reached
-                // only when it is not — which is precisely the question a divisor
+                // only when it is not -- which is precisely the question a divisor
                 // guard inside the body would ask a second time. Publish the fact;
                 // `emit` retracts it the moment the body writes the slot.
                 const proved: ?u32 = nonZeroSlotOfCondition(ctx, ws.cond);
@@ -6755,6 +7131,13 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                     // scoped to the body and must not outlive it.
                     if (!already_proved) _ = ctx.nonzero_slots.remove(sl);
                 };
+                // Captured BEFORE the fixed-point early-exit prologue below: that
+                // prologue emits `.br` instructions and an extra iv store, so the
+                // belt-and-braces re-verification inside applyLinearIVSR (no `.br`,
+                // exactly one iv store in range) declines whenever fix-exit fired.
+                // When fix-exit does not fire the range is exactly the lowered body,
+                // the shape this transform was verified against.
+                const ivsr_body_start: u32 = @intCast(ctx.instrs.items.len);
                 // Absorbing fixed-point early exit: the arm proved the body maps
                 // `target == value` to itself exactly, so every remaining iteration
                 // is a no-op. Emits `if target == value { iv = bound; break }`.
@@ -6786,6 +7169,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 // with `return <last expr>`, so the loop returns after one pass.
                 // Explicit `return` inside the body still lowers via the `.ret` arm.
                 _ = try lowerBlockReturns(ctx, &ws.body, false);
+                if (ivsr_armed) {
+                    const ivsr_body_end: u32 = @intCast(ctx.instrs.items.len);
+                    _ = try applyLinearIVSR(ctx, ivsr_slot, ivsr_step, &head_idx, &fail_idx, ivsr_body_start, ivsr_body_end);
+                }
                 try ctx.emit(.{ .op = .br, .branch_target = head_idx });
                 try finishWhileLowering(ctx, fail_idx, promo[0..promo_len], null, &.{});
             }
