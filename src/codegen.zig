@@ -5789,8 +5789,20 @@ pub const CodeGen = struct {
                 .concat => .any,
                 else => blk: {
                     const lt = self.precheck_value_type(b.lhs);
+                    const rt = self.precheck_value_type(b.rhs);
+                    // Integer promotion law (native): integer x integer -> i64.
+                    // The native backend widens narrow operands to i64 and
+                    // unboxes dynamic numerics to i64, so a bare narrow
+                    // operand (i8/i16/...) in an integer binop yields i64 --
+                    // the same law `expr_type` applies to binops above.
+                    // Demanding both sides spelled `.i64` refused
+                    // `acc = acc + i` (i64 acc, narrow i) while the
+                    // semantically identical `acc + i * 3` passed, because
+                    // only the latter happened to widen through `expr_type`
+                    // first. (P0-B: bare i64+narrow addition.)
+                    if (lt.is_integer() and rt.is_integer()) break :blk .i64;
                     if (lt != .i64) break :blk .any;
-                    break :blk if (self.precheck_value_type(b.rhs) == .i64) .i64 else .any;
+                    break :blk if (rt == .i64) .i64 else .any;
                 },
             },
             // A call answers what its callee DECLARED, and only when that
