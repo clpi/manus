@@ -4167,7 +4167,8 @@ const Arm64Compiler = struct {
                     try self.emitFusedCompareBranch(&temps, &pinned, ins, b.instrs[bi + 2], &branch_patches);
                     extra_consumed = 2;
                 } else if (fuse_madd) {
-                    try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1]);
+                    const after_madd = if (bi + 2 < b.instrs.len) b.instrs[bi + 2] else null;
+                    try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1], after_madd);
                     extra_consumed = 1;
                 } else if (fuse_ubfx) {
                     try self.emitFusedUbfx(&temps, &pinned, ins, b.instrs[bi + 1]);
@@ -4432,6 +4433,21 @@ const Arm64Compiler = struct {
         const slot = next.result orelse return null;
         const home = self.gpLocalHomeReg(temps, pinned, slot) orelse return null;
         return home;
+    }
+
+    fn maddStoreHome(
+        self: *const Arm64Compiler,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        add: dnir.Instr,
+        after: ?dnir.Instr,
+    ) ?u5 {
+        const nx = after orelse return null;
+        if (nx.op != .store_local) return null;
+        const result = add.result orelse return null;
+        if (nx.lhs != .temp or nx.lhs.temp != result) return null;
+        const slot = nx.result orelse return null;
+        return self.gpLocalHomeReg(temps, pinned, slot);
     }
 
     /// `at` is the flat instruction index of `ins` in the function being
@@ -12285,13 +12301,19 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         pinned: *const std.AutoHashMapUnmanaged(u32, u5),
         ins: dnir.Instr,
         nx: dnir.Instr,
+        after: ?dnir.Instr,
     ) Error!void {
         const t = ins.result.?;
         const a = try self.evalDnirValue(temps, ins.lhs);
         const b = try self.evalDnirValue(temps, ins.rhs);
         const acc_val = if (nx.lhs == .temp and nx.lhs.temp == t) nx.rhs else nx.lhs;
         const c = try self.evalDnirValue(temps, acc_val);
-        const dst = try self.allocReg();
+        //  is a single read-before-write instruction (plus an optional
+        // single dst-to-dst narrowing), so the home may alias any of its
+        // three sources: the old home value dies with the store.
+        const home = self.maddStoreHome(temps, pinned, nx, after);
+        const dst = home orelse try self.allocReg();
+        if (home != null) self.claimReg(dst);
         // THE SUM'S DECLARED WIDTH SURVIVES THE FUSION.
         //
         // `dnir_lower.subsumeProducerRefit` MOVES a `u32` store's refit onto
@@ -12314,9 +12336,9 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
             try self.emitMaddReg(dst, a, b, c);
             _ = try self.emitNarrowFit(dst, dst, nx.ty);
         }
-        if (!Arm64Compiler.regIsPinned(pinned, a)) self.releaseReg(a);
-        if (!Arm64Compiler.regIsPinned(pinned, b)) self.releaseReg(b);
-        if (!Arm64Compiler.regIsPinned(pinned, c)) self.releaseReg(c);
+        if (a != dst and !Arm64Compiler.regIsPinned(pinned, a)) self.releaseReg(a);
+        if (b != dst and !Arm64Compiler.regIsPinned(pinned, b)) self.releaseReg(b);
+        if (c != dst and !Arm64Compiler.regIsPinned(pinned, c)) self.releaseReg(c);
         const d = nx.result.?;
         try temps.put(self.alloc, d, dst);
         if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
