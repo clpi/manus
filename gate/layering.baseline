@@ -27,6 +27,20 @@
 #     IR -> BACKEND .........  2
 #     SEMA -> BACKEND .......  2
 #
+# Re-measured 2026-09-15: speed/summary.zig classified SEMA, one new
+# BACKEND->SEMA edge pinned (see note above the edge).
+#   subjects ................ 131 src/*.zig (100% classified)
+#   distinct import edges ... 675
+#   forbidden edges ......... 77
+#     BACKEND -> SEMA ....... 41
+#     BACKEND -> AST ........ 20
+#     AST -> BACKEND ........  4
+#     AST -> SEMA ...........  3
+#     IR -> AST .............  3
+#     IR -> SEMA ............  2
+#     IR -> BACKEND .........  2
+#     SEMA -> BACKEND .......  2
+#
 # Edges inside `test` blocks are counted. In Zig a test-block @import is a
 # real compile-time dependency; exempting them would leave the obvious hiding
 # place open.
@@ -66,6 +80,16 @@ BACKEND	graph/lower.zig	SEMA	subject_home.zig
 BACKEND	graph/lower.zig	SEMA	table_apply.zig
 BACKEND	graph/lower.zig	SEMA	table_facts.zig
 BACKEND	graph/lower.zig	SEMA	tail_result_demand.zig
+# 2026-09-15: the summary cache is the one SEMA handoff the demand-instance
+# optimization could not avoid without making every compilation pay for eager
+# whole-program effect analysis. speed/summary.zig introduces no new semantic
+# authority: every fact it retains (terminates / effect-free / const /
+# arg-independent) is decided by an existing SEMA authority
+# (effectFreeCalleeClosure, foldRelationBody, foldValueExpr) and only cached for
+# call-site lowering. The backend consumes decided answers; it re-derives
+# nothing. This pin keeps the firewall exact: any further BACKEND->SEMA reach
+# still fails, and removing this one still fails until it is re-pinned.
+BACKEND	graph/lower.zig	SEMA	speed/summary.zig
 BACKEND	jit.zig	AST	ast.zig
 BACKEND	jit.zig	AST	pretty.zig
 BACKEND	meta_codegen.zig	AST	ast.zig

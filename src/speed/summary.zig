@@ -10,7 +10,7 @@
 //! All facts are derived from existing authorities:
 //! - purity from `graph_query.effectFreeCalleeClosure`
 //! - const/arg-independence from `comptime.foldRelationBody`
-//! - param mentions from `lower.exprMentionsIdent` (syntactic, conservative)
+//! - param mentions from `ast.exprMentionsIdent` (syntactic, conservative)
 //!
 //! This module introduces no new semantic authority. It only caches and
 //! re-exposes what the graph and evaluator already prove.
@@ -20,7 +20,6 @@ const ast = @import("../ast.zig");
 const semantic_graph = @import("../graph.zig");
 const graph_query = @import("../graph_query.zig");
 const comptime_eval = @import("../comptime.zig");
-const lower = @import("../graph/lower.zig");
 
 /// Whether a callable terminates.
 pub const Termination = enum { yes, no, unknown };
@@ -110,7 +109,7 @@ fn computeSummary(
             // the result cannot depend on arguments.
             arg_independent = true;
             for (decl.func.params) |param| {
-                if (lower.blockMentionsIdent(body, param.name)) {
+                if (ast.blockMentionsIdent(body, param.name)) {
                     arg_independent = false;
                     break;
                 }

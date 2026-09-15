@@ -96,6 +96,7 @@ SEMA     assumption_guard.zig
 SEMA     effect.zig
 SEMA     world.zig
 SEMA     lower.zig
+SEMA     speed/summary.zig
 
 IR       types.zig
 IR       native/ir.zig

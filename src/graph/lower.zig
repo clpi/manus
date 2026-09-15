@@ -2676,49 +2676,6 @@ fn relationEdgeLevel(symbol: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Does an expression subtree name `ident` anywhere? Used to decide whether a
-/// relation-edge projection level (`family(level) = (…)`, mangled `family__level`)
-/// is a runtime subject parameter or a compile-time-only qualifier.
-///
-///   `len(path) = (min)` body reads `path` → the level is a runtime subject slot;
-///     it is applied `len(value)(min)` / `value:len(min)` (level passed as an arg).
-///   `subject(tail) = (code)` body never reads `tail` → the level is a pure
-///     compile-time marker baked into the mangled callee `subject__tail`; the call
-///     `subject(tail)(code)` lowers to `subject__tail(code)` with the level absent
-///     from the operand list, so allocating a level slot would misplace `code`.
-pub fn exprMentionsIdent(expr: *const ast.Expr, ident: []const u8) bool {
-    return switch (expr.*) {
-        .name => |n| std.mem.eql(u8, n.ident, ident),
-        .index => |x| exprMentionsIdent(x.obj, ident) or exprMentionsIdent(x.key, ident),
-        .field => |x| exprMentionsIdent(x.obj, ident),
-        .call => |c| blk: {
-            if (exprMentionsIdent(c.func, ident)) break :blk true;
-            for (c.args) |a| if (exprMentionsIdent(a, ident)) break :blk true;
-            break :blk false;
-        },
-        .method_call => |m| blk: {
-            if (exprMentionsIdent(m.obj, ident)) break :blk true;
-            for (m.args) |a| if (exprMentionsIdent(a, ident)) break :blk true;
-            break :blk false;
-        },
-        .binop => |b| exprMentionsIdent(b.lhs, ident) or exprMentionsIdent(b.rhs, ident),
-        .unop => |u| exprMentionsIdent(u.operand, ident),
-        .if_expr => |ie| exprMentionsIdent(ie.cond, ident) or
-            exprMentionsIdent(ie.then_expr, ident) or exprMentionsIdent(ie.else_expr, ident),
-        .try_expr => |x| exprMentionsIdent(x.operand, ident),
-        .unwrap_expr => |x| exprMentionsIdent(x.operand, ident),
-        .await_expr => |x| exprMentionsIdent(x.operand, ident),
-        .contains_expr => |x| exprMentionsIdent(x.lhs, ident) or exprMentionsIdent(x.rhs, ident),
-        .sequence => |s| blk: {
-            for (s.exprs) |e| if (exprMentionsIdent(e, ident)) break :blk true;
-            break :blk false;
-        },
-        .range => |r| exprMentionsIdent(r.start, ident) or exprMentionsIdent(r.end, ident) or
-            (if (r.step) |st| exprMentionsIdent(st, ident) else false),
-        else => false,
-    };
-}
-
 /// True when `expr` may evaluate a call or method call. The loopselect
 /// defining-RHS scan refuses any intervening statement whose value may call:
 /// a call can rebind a module binding, which would break the "bound at the
@@ -2747,58 +2704,6 @@ fn exprHasCall(expr: *const ast.Expr) bool {
         .int_lit, .float_lit, .true_lit, .false_lit, .nil, .quoted, .vararg, .func_expr => false,
         .name => false,
         else => true,
-    };
-}
-
-pub fn blockMentionsIdent(block: *const ast.Block, ident: []const u8) bool {
-    for (block.stmts) |*s| if (stmtMentionsIdent(s, ident)) return true;
-    if (block.tail_expr) |t| return exprMentionsIdent(t, ident);
-    return false;
-}
-
-fn stmtMentionsIdent(stmt: *const ast.Stmt, ident: []const u8) bool {
-    return switch (stmt.*) {
-        .local_decl => |d| blk: {
-            for (d.inits) |e| if (exprMentionsIdent(e, ident)) break :blk true;
-            break :blk false;
-        },
-        .const_decl => |d| exprMentionsIdent(d.val, ident),
-        .global_decl => |d| blk: {
-            for (d.inits) |e| if (exprMentionsIdent(e, ident)) break :blk true;
-            break :blk false;
-        },
-        .assign => |a| blk: {
-            for (a.targets) |e| if (exprMentionsIdent(e, ident)) break :blk true;
-            for (a.values) |e| if (exprMentionsIdent(e, ident)) break :blk true;
-            break :blk false;
-        },
-        .call_stmt => |c| exprMentionsIdent(c.expr, ident),
-        .expr_stmt => |c| exprMentionsIdent(c.expr, ident),
-        .do_block => |d| blockMentionsIdent(&d.body, ident),
-        .while_loop => |w| exprMentionsIdent(w.cond, ident) or blockMentionsIdent(&w.body, ident),
-        .repeat_loop => |r| blockMentionsIdent(&r.body, ident) or exprMentionsIdent(r.cond, ident),
-        .if_stmt => |f| blk: {
-            if (f.binding) |b| if (exprMentionsIdent(b.expr, ident)) break :blk true;
-            if (exprMentionsIdent(f.cond, ident)) break :blk true;
-            if (blockMentionsIdent(&f.then, ident)) break :blk true;
-            for (f.elseifs) |ei| {
-                if (exprMentionsIdent(ei.cond, ident)) break :blk true;
-                if (blockMentionsIdent(&ei.body, ident)) break :blk true;
-            }
-            if (f.else_body) |eb| if (blockMentionsIdent(&eb, ident)) break :blk true;
-            break :blk false;
-        },
-        .num_for => |n| exprMentionsIdent(n.start, ident) or exprMentionsIdent(n.stop, ident) or
-            (if (n.step) |st| exprMentionsIdent(st, ident) else false) or blockMentionsIdent(&n.body, ident),
-        .gen_for => |g| blk: {
-            for (g.iters) |e| if (exprMentionsIdent(e, ident)) break :blk true;
-            break :blk blockMentionsIdent(&g.body, ident);
-        },
-        .ret => |r| blk: {
-            for (r.vals) |e| if (exprMentionsIdent(e, ident)) break :blk true;
-            break :blk false;
-        },
-        else => false,
     };
 }
 
@@ -5178,7 +5083,7 @@ fn lowerFunction(
     // slot here would shift every operand by one register.
     if (fd.path.len == 1) {
         if (relationEdgeLevel(fd.path[0])) |level| {
-            if (blockMentionsIdent(&fd.func.body, level)) {
+            if (ast.blockMentionsIdent(&fd.func.body, level)) {
                 const owned = try alloc.dupe(u8, level);
                 ctx.locals.put(alloc, owned, param_slot_cursor) catch |err| {
                     alloc.free(owned);
@@ -10161,7 +10066,7 @@ fn lowerDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error
     // Distinct identities; the accumulator must not observe the counter.
     if (std.mem.eql(u8, acc_name, iv)) return false;
     if (plan.bound_name) |bn| if (std.mem.eql(u8, acc_name, bn)) return false;
-    if (stmtMentionsIdent(acc_stmt.?, iv)) return false;
+    if (ast.stmtMentionsIdent(acc_stmt.?, iv)) return false;
     const iv_slot = ctx.locals.get(plan.iv) orelse return false;
     const acc_slot = ctx.locals.get(acc_name) orelse return false;
     // The type gate was settled at arm time, when the slot markings were
@@ -10215,7 +10120,7 @@ fn popEnclosingFrame(ctx: *LowerCtx) void {
 fn blockStmtsMentionIdent(stmts: []const ast.Stmt, name: []const u8, excl: ?*const ast.Stmt) bool {
     for (stmts) |*s| {
         if (excl) |e| if (s == e) continue;
-        if (stmtMentionsIdent(s, name)) return true;
+        if (ast.stmtMentionsIdent(s, name)) return true;
     }
     return false;
 }
@@ -10243,28 +10148,28 @@ fn nameDeadAfterFold(ctx: *LowerCtx, name: []const u8, excl: *const ast.Stmt) bo
         if (fr.idx > 0 and
             blockStmtsMentionIdent(fr.block.stmts[0..fr.idx], name, excl)) return false;
         if (fr.block.tail_expr) |te| {
-            if (exprMentionsIdent(te, name)) return false;
+            if (ast.exprMentionsIdent(te, name)) return false;
         }
         const s = &fr.block.stmts[fr.idx];
         if (s == excl) continue;
         switch (s.*) {
             .while_loop => |w| {
-                if (exprMentionsIdent(w.cond, name)) return false;
+                if (ast.exprMentionsIdent(w.cond, name)) return false;
                 if (blockStmtsMentionIdent(w.body.stmts, name, excl)) return false;
-                if (w.body.tail_expr) |te| if (exprMentionsIdent(te, name)) return false;
+                if (w.body.tail_expr) |te| if (ast.exprMentionsIdent(te, name)) return false;
             },
             .repeat_loop => |r| {
-                if (exprMentionsIdent(r.cond, name)) return false;
+                if (ast.exprMentionsIdent(r.cond, name)) return false;
                 if (blockStmtsMentionIdent(r.body.stmts, name, excl)) return false;
-                if (r.body.tail_expr) |te| if (exprMentionsIdent(te, name)) return false;
+                if (r.body.tail_expr) |te| if (ast.exprMentionsIdent(te, name)) return false;
             },
             .num_for => |f| {
                 if (blockStmtsMentionIdent(f.body.stmts, name, excl)) return false;
-                if (f.body.tail_expr) |te| if (exprMentionsIdent(te, name)) return false;
+                if (f.body.tail_expr) |te| if (ast.exprMentionsIdent(te, name)) return false;
             },
             .gen_for => |f| {
                 if (blockStmtsMentionIdent(f.body.stmts, name, excl)) return false;
-                if (f.body.tail_expr) |te| if (exprMentionsIdent(te, name)) return false;
+                if (f.body.tail_expr) |te| if (ast.exprMentionsIdent(te, name)) return false;
             },
             else => {},
         }
@@ -10382,7 +10287,7 @@ fn accNameOfIncrement(st: *const ast.Stmt, forbidden: []const u8) ?[]const u8 {
     };
     if (as.targets.len != 1 or as.values.len != 1) return null;
     const tname = identOf(as.targets[0]) orelse return null;
-    if (stmtMentionsIdent(st, forbidden)) return null;
+    if (ast.stmtMentionsIdent(st, forbidden)) return null;
     const bo = switch (as.values[0].*) {
         .binop => |x| x,
         else => return null,
@@ -10441,7 +10346,7 @@ fn lowerCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!?Coun
     if (scan.iv_writes != 1) return null;
     if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[body_n - 1], plan.iv)) return null;
     for (ws.body.stmts[0 .. body_n - 1]) |*s| {
-        if (stmtMentionsIdent(s, plan.iv)) return null;
+        if (ast.stmtMentionsIdent(s, plan.iv)) return null;
     }
 
     // ALL CHECKS PASSED — emit the countdown.
@@ -11213,8 +11118,8 @@ fn tryEmitLoopSelectPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize)
             if (lhs_is_acc == rhs_is_acc) return false;
             const lit = if (lhs_is_acc) b.rhs else b.lhs;
             acc_const = ctx.graph.exactI64OfExpr(lit) orelse return false;
-            if (exprMentionsIdent(a.values[0], iv)) return false;
-            if (exprMentionsIdent(a.values[0], bound_name)) return false;
+            if (ast.exprMentionsIdent(a.values[0], iv)) return false;
+            if (ast.exprMentionsIdent(a.values[0], bound_name)) return false;
             acc = tname;
             seen_add = true;
         }
@@ -25987,7 +25892,7 @@ const Parameter = struct {
         errdefer for (params.items) |param| deinitParam(alloc, param);
         if (fd.path.len == 1) {
             if (relationEdgeLevel(fd.path[0])) |level| {
-                if (blockMentionsIdent(&fd.func.body, level)) {
+                if (ast.blockMentionsIdent(&fd.func.body, level)) {
                     const param_name = try alloc.dupe(u8, level);
                     params.append(alloc, .{
                         .name = param_name,
