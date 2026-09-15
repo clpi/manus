@@ -163,12 +163,9 @@ pub fn foldCallSite(
     // This handles `sum45(0)` → 45 without evaluating at the call site.
     if (summary.const_value) |k| return k;
 
-    // Pure but arg-dependent: if the authoritative folder can evaluate
+    // Pure with no const_value: if the authoritative folder can evaluate
     // the call with its actual arguments, use it. This handles
-    // `double(21)` → 42.
-    if (!summary.arg_independent) {
-        return comptime_eval.foldValueExpr(cache.alloc, graph, caller_id, call_expr);
-    }
-
-    return null;
+    // `double(21)` → 42 (arg-dependent) and `sum45(0)` → 45 (arg-independent
+    // but the summary computer did not materialize the const).
+    return comptime_eval.foldValueExpr(cache.alloc, graph, caller_id, call_expr);
 }

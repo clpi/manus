@@ -6947,7 +6947,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // A binding is lowered first and unconditionally, above, because
             // `if x = f() ...` binds whatever the condition decides.
             if (is.binding == null and is.elseifs.len == 0) {
-                if (constConditionTruth(ctx.graph, is.cond)) |truth| {
+                if (constConditionTruth(ctx, is.cond)) |truth| {
                     // THE CONDITION IS DECIDED, ITS APPLICATIONS ARE NOT ABSENT.
                     //
                     // `constConditionTruth` answers from `exactI64OfExpr`, and
@@ -8294,11 +8294,29 @@ fn constIntValue(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr)
     }
 }
 
-fn constConditionTruth(graph: *const semantic_graph.SemanticGraph, cond: *const ast.Expr) ?bool {
+/// Try to fold an expression to an integer via the callable summary cache.
+/// Returns null if the expression is not a summary-foldable call.
+fn summaryConstInt(ctx: *LowerCtx, e: *const ast.Expr) ?i64 {
+    const cache = ctx.summary_cache orelse return null;
+    const caller = ctx.function orelse return null;
+    if (e.* != .call) return null;
+    const k = summary.foldCallSite(cache, ctx.graph, caller, e) orelse return null;
+    // Record the folded application so the realization validator does not
+    // expect it to be materialized. Mirrors the hook in lowerExprCons.
+    var folded: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
+    defer folded.deinit(ctx.alloc);
+    collectFoldedCallApplications(ctx, e, &folded);
+    for (folded.items) |app_id| {
+        ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+    }
+    return k;
+}
+
+fn constConditionTruth(ctx: *LowerCtx, cond: *const ast.Expr) ?bool {
     if (cond.* != .binop) return null;
     const b = cond.binop;
-    const lhs = constIntValue(graph, b.lhs) orelse return null;
-    const rhs = constIntValue(graph, b.rhs) orelse return null;
+    const lhs = constIntValue(ctx.graph, b.lhs) orelse summaryConstInt(ctx, b.lhs) orelse return null;
+    const rhs = constIntValue(ctx.graph, b.rhs) orelse summaryConstInt(ctx, b.rhs) orelse return null;
     return switch (b.op) {
         .eq => lhs == rhs,
         .neq => lhs != rhs,
