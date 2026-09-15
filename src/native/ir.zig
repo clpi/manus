@@ -468,6 +468,13 @@ pub const Function = struct {
     /// owns replacement identity, at which point the absence is derivable and
     /// this field is redundant.
     absent_applications: []const semantic_graph.id = &.{},
+    /// Applications this lowering folded via function summaries
+    /// (src/speed/summary.zig) and realized NOWHERE. Unlike
+    /// `absent_applications` (aggregate projections), these are ordinary
+    /// function calls whose callee summary proved a constant result.
+    /// Producer: `lowerExprCons` summary hook. Consumer: realization
+    /// validation, through `validateSummaryFoldedApplications`.
+    summary_folded_applications: []const semantic_graph.id = &.{},
     blocks: []const Block,
 };
 

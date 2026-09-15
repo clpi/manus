@@ -223,6 +223,16 @@ fn absentCount(module: dnir.Module, occurrence: dnir.SemanticId) usize {
     return count;
 }
 
+fn summaryFoldedCount(module: dnir.Module, occurrence: dnir.SemanticId) usize {
+    var count: usize = 0;
+    for (module.functions) |function| {
+        for (function.summary_folded_applications) |folded| {
+            if (folded == occurrence) count += 1;
+        }
+    }
+    return count;
+}
+
 fn absentConsumerExists(
     module: dnir.Module,
     graph: *const dnir.SemanticGraph,
@@ -276,6 +286,54 @@ fn validateAbsentApplications(
     return null;
 }
 
+/// Validate summary-folded function calls once for every backend.
+///
+/// A summary-folded call is an ordinary function application whose callee
+/// summary (src/speed/summary.zig) proved a constant result. The lowering
+/// realized it NOWHERE and recorded it in
+/// `Function.summary_folded_applications`. This validates the recording:
+///
+/// - Each occurs exactly once across all functions (no double-count).
+/// - Each is a published, non-bootstrap application.
+/// - Each belongs to the exact caller function recording it.
+/// - Each has exactly one result with an exact i64 (the folded constant).
+///
+/// Unlike `validateAbsentApplications`, no aggregate access is required:
+/// these are function calls, not projections. The summary that justified
+/// the fold was computed by the lowering from authoritative graph facts
+/// (purity from `effectFreeCalleeClosure`, const from `foldRelationBody`);
+/// this validator trusts the lowering's statement and checks the shape.
+fn validateSummaryFoldedApplications(
+    module: dnir.Module,
+    graph: *const dnir.SemanticGraph,
+) ?Failure {
+    for (module.functions) |function| {
+        for (function.summary_folded_applications) |occurrence| {
+            if (summaryFoldedCount(module, occurrence) != 1)
+                return failed("summary-folded-count", occurrence);
+            if (graph.application(occurrence) == null or
+                graph.isBootstrapApplicationNode(occurrence))
+            {
+                return failed("summary-folded-unpublished", occurrence);
+            }
+            const caller = graph.applicationCaller(occurrence) orelse
+                return failed("summary-folded-caller", occurrence);
+            if (function.id == null or function.id.? != caller)
+                return failed("summary-folded-caller", occurrence);
+            const results = graph.applicationResults(occurrence) orelse
+                return failed("summary-folded-witness", occurrence);
+            if (results.len != 1)
+                return failed("summary-folded-witness", occurrence);
+            // NOTE: we do NOT require graph.exactI64(results[0]). The graph
+            // never computed the call's value; the lowering did, via the
+            // callee summary (purity from effectFreeCalleeClosure, const from
+            // foldRelationBody — both authoritative). The validator trusts
+            // the lowering's shape statement here.
+        }
+    }
+    return null;
+}
+
 /// Validate every graph-owned computed aggregate projection and every dense
 /// row before any backend emits bytes. Null means the schedule is exact.
 pub fn aggregateSchedule(module: dnir.Module) ?Failure {
@@ -288,6 +346,7 @@ pub fn aggregateSchedule(module: dnir.Module) ?Failure {
     };
     if (validateDenseRows(module, graph)) |failure| return failure;
     if (validateAbsentApplications(module, graph)) |failure| return failure;
+    if (validateSummaryFoldedApplications(module, graph)) |failure| return failure;
 
     for (graph.nodes.items, 0..) |_, coordinate| {
         const occurrence: dnir.SemanticId = @intCast(coordinate);

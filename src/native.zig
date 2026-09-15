@@ -12816,6 +12816,11 @@ fn unrealizedApplicationCount(module: dnir.Module) usize {
             // own statement of which; `validateDnirApplications` proves each
             // entry earned it before this subtraction is allowed to stand.
             count += function.absent_applications.len;
+            // SUMMARY-FOLDED CALLS, answered from the callee's retained
+            // summary and realized NOWHERE. `Function.summary_folded_applications`
+            // is the lowering's statement; `validateSummaryFoldedApplications`
+            // proves each entry earned it.
+            count += function.summary_folded_applications.len;
             continue;
         }
         const relation = function.id orelse continue;

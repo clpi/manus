@@ -23,6 +23,7 @@ const tail_result_demand = @import("../tail_result_demand.zig");
 const table_facts = @import("../table_facts.zig");
 const collection_relation = @import("../collection_relation.zig");
 const fieldindex = @import("field.zig");
+const summary = @import("../speed/summary.zig");
 const RT = types.ResolvedType;
 
 // DNIR only needs the machine class of a pointer. Its exact pointee descriptor
@@ -311,6 +312,7 @@ fn deinitFunction(alloc: std.mem.Allocator, function: dnir.Function) void {
     }
     alloc.free(function.blocks);
     if (function.absent_applications.len > 0) alloc.free(function.absent_applications);
+    if (function.summary_folded_applications.len > 0) alloc.free(function.summary_folded_applications);
 }
 
 fn deinitExtern(alloc: std.mem.Allocator, external: dnir.Extern) void {
@@ -2684,7 +2686,7 @@ fn relationEdgeLevel(symbol: []const u8) ?[]const u8 {
 ///     compile-time marker baked into the mangled callee `subject__tail`; the call
 ///     `subject(tail)(code)` lowers to `subject__tail(code)` with the level absent
 ///     from the operand list, so allocating a level slot would misplace `code`.
-fn exprMentionsIdent(expr: *const ast.Expr, ident: []const u8) bool {
+pub fn exprMentionsIdent(expr: *const ast.Expr, ident: []const u8) bool {
     return switch (expr.*) {
         .name => |n| std.mem.eql(u8, n.ident, ident),
         .index => |x| exprMentionsIdent(x.obj, ident) or exprMentionsIdent(x.key, ident),
@@ -2748,7 +2750,7 @@ fn exprHasCall(expr: *const ast.Expr) bool {
     };
 }
 
-fn blockMentionsIdent(block: *const ast.Block, ident: []const u8) bool {
+pub fn blockMentionsIdent(block: *const ast.Block, ident: []const u8) bool {
     for (block.stmts) |*s| if (stmtMentionsIdent(s, ident)) return true;
     if (block.tail_expr) |t| return exprMentionsIdent(t, ident);
     return false;
@@ -3271,6 +3273,8 @@ fn lowerModuleFromGraph(
     try residency(graph, &signature, diagnostic);
     var skipped: ?[]const u8 = null;
     defer if (skipped) |name| alloc.free(name);
+    var summary_cache = summary.Cache.init(alloc);
+    defer summary_cache.deinit();
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
@@ -3323,6 +3327,7 @@ fn lowerModuleFromGraph(
             &entity_linkage,
             &relation_edges,
             &signature,
+            &summary_cache,
         );
         functions.append(alloc, f) catch |err| {
             deinitFunction(alloc, f);
@@ -4645,6 +4650,10 @@ pub const LowerCtx = struct {
     /// Producer: `foldAggregateAccess`. Consumer: `native_backend`'s
     /// realization-count checks, through `Function.absent_applications`.
     absent_applications: std.ArrayListUnmanaged(semantic_graph.id) = .empty,
+    /// Applications this lowering folded via function summaries and realized
+    /// NOWHERE. Producer: `lowerExprCons` summary hook. Consumer:
+    /// realization validation, through `Function.summary_folded_applications`.
+    summary_folded: std.ArrayListUnmanaged(semantic_graph.id) = .empty,
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
     table_lens: std.AutoHashMapUnmanaged(u32, i64) = .empty,
@@ -4745,6 +4754,9 @@ pub const LowerCtx = struct {
     instrs: std.ArrayList(dnir.Instr) = .empty,
     /// Exact function entity being lowered. Name resolve walks this home only.
     function: ?semantic_graph.id = null,
+    /// Function summaries (purity, const, arg-independence), computed on
+    /// demand and retained for call-site folding. See speed/summary.zig.
+    summary_cache: ?*summary.Cache = null,
     /// A counted-loop reduction armed by the block prologue for the immediately
     /// following `while` statement, or null. The prologue recognizes the shape
     /// (`iv = 0` immediately before `while iv < bound` with a provably
@@ -4861,6 +4873,7 @@ pub const LowerCtx = struct {
         self.bitrev_swallowed.deinit(self.alloc);
         self.loopselect_swallowed.deinit(self.alloc);
         self.absent_applications.deinit(self.alloc);
+        self.summary_folded.deinit(self.alloc);
     }
 
     fn freshTemp(self: *LowerCtx) u32 {
@@ -5092,6 +5105,7 @@ fn lowerFunction(
     entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
     relation_edges: *const std.StringHashMapUnmanaged([]const u8),
     signature: *const Parameter.Map,
+    summary_cache: *summary.Cache,
 ) Error!dnir.Function {
     const borrowed = if (id) |entity| if (signature.get(entity)) |layout| layout.params else null else null;
     const physical = borrowed orelse try Parameter.lower(alloc, fd, records);
@@ -5127,6 +5141,7 @@ fn lowerFunction(
         .signature = signature,
         .graph = graph,
         .function = id,
+        .summary_cache = summary_cache,
         .occurrences = occurrences,
         .require_graph_facts = require_graph_facts,
         .externs = externs,
@@ -5393,6 +5408,11 @@ fn lowerFunction(
     else
         try ctx.absent_applications.toOwnedSlice(alloc);
     errdefer alloc.free(owned_absent);
+    const owned_summary_folded = if (folded)
+        try alloc.alloc(semantic_graph.id, 0)
+    else
+        try ctx.summary_folded.toOwnedSlice(alloc);
+    errdefer alloc.free(owned_summary_folded);
 
     const ret_rec = findRecordName(records, fd.func.ret_type);
     const ret_record_name = if (ret_rec) |r| try alloc.dupe(u8, r.name) else null;
@@ -5422,6 +5442,7 @@ fn lowerFunction(
         .id = id,
         .folded_to_constant = folded,
         .absent_applications = owned_absent,
+        .summary_folded_applications = owned_summary_folded,
         .blocks = blocks,
     };
 }
@@ -5551,6 +5572,8 @@ fn root(
     blocks[0] = .{ .instrs = owned_instrs };
     const owned_absent = try ctx.absent_applications.toOwnedSlice(alloc);
     errdefer alloc.free(owned_absent);
+    const owned_summary_folded = try ctx.summary_folded.toOwnedSlice(alloc);
+    errdefer alloc.free(owned_summary_folded);
     const export_name = try alloc.dupe(u8, "main");
     errdefer alloc.free(export_name);
     return .{
@@ -5560,6 +5583,7 @@ fn root(
         .ret_record = null,
         .id = id,
         .absent_applications = owned_absent,
+        .summary_folded_applications = owned_summary_folded,
         .blocks = blocks,
     };
 }
@@ -14920,6 +14944,135 @@ fn lowerAggregateAccess(
     return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-result");
 }
 
+
+/// Collect the semantic-graph application IDs for every call expression
+/// within `expr` (including `expr` itself if it is a call).
+///
+/// When summary propagation folds an expression to a constant, the calls
+/// inside it are realized NOWHERE. Each must be recorded in
+/// `ctx.summary_folded` — the lowering's own statement of summary-folded
+/// absence that realization validation consumes. Without this, the
+/// realization-count check fails because the graph still has the
+/// application but the DNIR has no instruction for it.
+fn collectFoldedCallApplications(
+    ctx: *LowerCtx,
+    expr: *const ast.Expr,
+    out: *std.ArrayListUnmanaged(semantic_graph.id),
+) void {
+    // If this expression is itself a call, record its application.
+    switch (expr.*) {
+        .call, .method_call => {
+            if (ctx.occurrences.id(expr)) |app_id| {
+                out.append(ctx.alloc, app_id) catch {};
+            }
+        },
+        else => {},
+    }
+    // Recurse into sub-expressions that may contain calls.
+    // Modeled on `exprHasCall` — same coverage.
+    switch (expr.*) {
+        .call => |c| {
+            collectFoldedCallApplications(ctx, c.func, out);
+            for (c.args) |arg| collectFoldedCallApplications(ctx, arg, out);
+        },
+        .method_call => |m| {
+            collectFoldedCallApplications(ctx, m.obj, out);
+            for (m.args) |arg| collectFoldedCallApplications(ctx, arg, out);
+        },
+        .index => |x| {
+            collectFoldedCallApplications(ctx, x.obj, out);
+            collectFoldedCallApplications(ctx, x.key, out);
+        },
+        .field => |x| collectFoldedCallApplications(ctx, x.obj, out),
+        .binop => |b| {
+            collectFoldedCallApplications(ctx, b.lhs, out);
+            collectFoldedCallApplications(ctx, b.rhs, out);
+        },
+        .unop => |u| collectFoldedCallApplications(ctx, u.operand, out),
+        .if_expr => |ie| {
+            collectFoldedCallApplications(ctx, ie.cond, out);
+            collectFoldedCallApplications(ctx, ie.then_expr, out);
+            collectFoldedCallApplications(ctx, ie.else_expr, out);
+        },
+        .try_expr => |x| collectFoldedCallApplications(ctx, x.operand, out),
+        .unwrap_expr => |x| collectFoldedCallApplications(ctx, x.operand, out),
+        .await_expr => |x| collectFoldedCallApplications(ctx, x.operand, out),
+        .contains_expr => |x| {
+            collectFoldedCallApplications(ctx, x.lhs, out);
+            collectFoldedCallApplications(ctx, x.rhs, out);
+        },
+        .sequence => |s| {
+            for (s.exprs) |e| collectFoldedCallApplications(ctx, e, out);
+        },
+        .range => |r| {
+            collectFoldedCallApplications(ctx, r.start, out);
+            collectFoldedCallApplications(ctx, r.end, out);
+            if (r.step) |st| collectFoldedCallApplications(ctx, st, out);
+        },
+        .quote => |q| collectFoldedCallApplications(ctx, q.expr, out),
+        .unquote => |u| collectFoldedCallApplications(ctx, u.expr, out),
+        else => {},
+    }
+}
+
+/// Try to fold a binop where operands contain summary-foldable calls.
+/// Folds each operand via the summary (if it's a call) or via foldValueExpr,
+/// then computes the binop on the constants. Returns null if any operand
+/// can't be folded or the operator isn't supported.
+fn tryFoldBinopWithSummary(
+    cache: *summary.Cache,
+    ctx: *LowerCtx,
+    caller: semantic_graph.id,
+    expr: *const Expr,
+) ?i64 {
+    if (expr.* != .binop) return null;
+    const b = expr.binop;
+    
+    // Fold lhs: try summary first for calls, fall back to authoritative folder.
+    const lhs_val: ?i64 = blk: {
+        if (b.lhs.* == .call) {
+            if (summary.foldCallSite(cache, ctx.graph, caller, b.lhs)) |k| {
+                break :blk k;
+            }
+        }
+        if (b.lhs.* == .int_lit) {
+            break :blk b.lhs.int_lit.val;
+        }
+        break :blk comptime_eval.foldValueExpr(ctx.alloc, ctx.graph, caller, b.lhs);
+    };
+    const lhs = lhs_val orelse return null;
+    
+    // Fold rhs: try summary first for calls, fall back to authoritative folder.
+    const rhs_val: ?i64 = blk: {
+        if (b.rhs.* == .call) {
+            if (summary.foldCallSite(cache, ctx.graph, caller, b.rhs)) |k| {
+                break :blk k;
+            }
+        }
+        if (b.rhs.* == .int_lit) {
+            break :blk b.rhs.int_lit.val;
+        }
+        break :blk comptime_eval.foldValueExpr(ctx.alloc, ctx.graph, caller, b.rhs);
+    };
+    const rhs = rhs_val orelse return null;
+    
+    // Compute the binop
+    return switch (b.op) {
+        .add => lhs +% rhs,
+        .sub => lhs -% rhs,
+        .mul => lhs *% rhs,
+        .div => if (rhs != 0) @divTrunc(lhs, rhs) else null,
+        .mod => if (rhs != 0) @mod(lhs, rhs) else null,
+        .eq => if (lhs == rhs) @as(i64, 1) else @as(i64, 0),
+        .neq => if (lhs != rhs) @as(i64, 1) else @as(i64, 0),
+        .lt => if (lhs < rhs) @as(i64, 1) else @as(i64, 0),
+        .leq => if (lhs <= rhs) @as(i64, 1) else @as(i64, 0),
+        .gt => if (lhs > rhs) @as(i64, 1) else @as(i64, 0),
+        .geq => if (lhs >= rhs) @as(i64, 1) else @as(i64, 0),
+        else => null,
+    };
+}
+
 fn lowerExprCons(
     ctx: *LowerCtx,
     expr: *const Expr,
@@ -14945,6 +15098,56 @@ fn lowerExprCons(
             return refuseApplication(ctx.diagnostic, ctx.graph, @src(), "aggregate-access-fact", occurrence);
     }
     if (placeFold(ctx, expr)) |folded| return folded;
+    // SUMMARY PROPAGATION: answer pure constant calls from the retained
+    // summary, before the graph or the backend ever sees a call. A folded
+    // call materializes no `bl`, no argument marshaling, no result slot.
+    // `foldCallSite` needs only the summary, not the callee body.
+    //
+    // ACCOUNTING: a folded call is realized NOWHERE. Its application ID
+    // must be recorded in `ctx.absent_applications` — the lowering's own
+    // statement of absence that `validateDnirApplications` consumes.
+    // Without this, the realization-count check fails.
+    if (ctx.summary_cache) |cache| {
+        if (expr.* == .call) {
+            if (summary.foldCallSite(cache, ctx.graph, ctx.function, expr)) |k| {
+                var folded: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
+                collectFoldedCallApplications(ctx, expr, &folded);
+                for (folded.items) |app_id| {
+                    ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+                }
+                folded.deinit(ctx.alloc);
+                return .{ .i64 = k };
+            }
+        }
+        // Expressions containing calls (e.g. `sum45(0) == 45`): the
+        // authoritative folder answers if the whole thing is constant.
+        // Guarded by exprHasCall so pure arithmetic never pays for it.
+        if (exprHasCall(expr)) {
+            if (ctx.function) |caller| {
+                // First try the authoritative folder.
+                if (comptime_eval.foldValueExpr(ctx.alloc, ctx.graph, caller, expr)) |k| {
+                    var folded: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
+                    collectFoldedCallApplications(ctx, expr, &folded);
+                    for (folded.items) |app_id| {
+                        ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+                    }
+                    folded.deinit(ctx.alloc);
+                    return .{ .i64 = k };
+                }
+                // If that fails, try summary-aware binop folding: fold any
+                // calls in the operands via the summary, then compute the op.
+                if (tryFoldBinopWithSummary(cache, ctx, caller, expr)) |k| {
+                    var folded: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
+                    collectFoldedCallApplications(ctx, expr, &folded);
+                    for (folded.items) |app_id| {
+                        ctx.summary_folded.append(ctx.alloc, app_id) catch {};
+                    }
+                    folded.deinit(ctx.alloc);
+                    return .{ .i64 = k };
+                }
+            }
+        }
+    }
     if (applicationNeedsGraphOccurrence(ctx, expr)) {
         return refuseMissingApplication(ctx, @src(), expr);
     }
@@ -16996,8 +17199,22 @@ fn lowerIfExpr(ctx: *LowerCtx, ie: *const ast.IfExpr) Error!dnir.Value {
         exprTouchesF64(ctx, ie.then_expr) or
         exprTouchesF64(ctx, ie.else_expr)) return bailWith(ctx.diagnostic, @src(), "if-expr-f64");
 
+    // CONSTANT CONDITION ELIMINATION. If the condition folded to a constant
+    // (via summary propagation or comptime eval), the branch vanishes: we
+    // lower only the taken arm. This is what makes `if sum45(0)==45` disappear.
+    const cond_const = try lowerExpr(ctx, ie.cond);
+    if (cond_const == .i64) {
+        if (cond_const.i64 != 0) {
+            // True: take the then-branch, else-branch is dead.
+            return try lowerExpr(ctx, ie.then_expr);
+        } else {
+            // False: take the else-branch, then-branch is dead.
+            return try lowerExpr(ctx, ie.else_expr);
+        }
+    }
+
     const slot = ctx.freshTemp();
-    const cond = try lowerExpr(ctx, ie.cond);
+    const cond = cond_const;
     const test_idx = ctx.instrs.items.len;
     try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
 
