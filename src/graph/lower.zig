@@ -19426,7 +19426,6 @@ fn exprIsF64Value(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     };
 }
 
-
 fn lowerF64KernelCall(ctx: *LowerCtx, callee: []const u8, args: []const *ast.Expr) Error!dnir.Value {
     var slot: u32 = 0;
     for (args) |arg| {
