@@ -62,10 +62,9 @@ pub const RecordDesc = struct {
 /// WHY AN OPERAND IS KNOWN NON-NEGATIVE — a reference into the graph, and the
 /// reversal procedure for each arm.
 ///
-/// TWO OPERANDS READ THIS. A floored `idiv`/`mod` divisor reads it to license
-/// the cheap correction; a truncating `.div` dividend reads it to drop the bias
-/// sequence over a power-of-two divisor. The fact is the same either way —
-/// every value lies in `[0, 2^width)` — only the instruction selection differs.
+/// TWO OPERANDS READ THIS. A floored div/idiv/mod divisor reads it to license
+/// the cheap correction. (P0-1: div is floored now; the truncating bias sequence
+/// is retired.) Every value lies in [0, 2^width).
 ///
 /// THREE STATES, NOT A BOOLEAN. `unknown` is "nothing was proved", which is not
 /// "the divisor is negative" and not "the question was not asked". The other
@@ -100,9 +99,9 @@ pub const BinOpTag = enum {
     add,
     sub,
     mul,
-    /// `/` — TRUNCATING integer division on integer operands, real division on
-    /// float ones. Distinct from `idiv`; see it for why the distinction is not
-    /// optional.
+    /// slash — FLOORED integer division on integer operands (P0-1), real division on
+    /// float ones. Shares the floored law with idiv so (slash, percent) cohere;
+    /// see idiv for the law.
     div,
     /// `//` — FLOOR division (`law.numeric.floor`). It is a SEPARATE tag from
     /// `div` because Idol's `//` and `/` are separate relations with separate
@@ -306,15 +305,11 @@ pub const Instr = struct {
     /// This field is the compact derived encoding between them, and
     /// `dnir.DivisorSign` states how each arm reverses to the fact.
     divisor: DivisorSign = .unknown,
-    /// WHY THE DIVIDEND IS KNOWN NON-NEGATIVE — the same reference-into-the-
-    /// graph encoding as `divisor`, asked of the dividend's SOURCE expression
-    /// instead: a `dnir.Value` is a slot or an immediate and carries no
-    /// derivation, while the published fact is keyed on places. Consumed by
-    /// the constant-divisor `.div` realization: a non-negative dividend over
-    /// a positive power-of-two divisor needs no bias correction, so `x / 2^a`
-    /// is one `lsr`. §12 as for `divisor`: DNIR carries the encoding over
-    /// graph ids and facts; it does not own the fact.
+    /// WHY THE DIVIDEND IS KNOWN NON-NEGATIVE. (P0-1: the constant-divisor div
+    /// arm is merged with idiv; dividend is now read by the ubfx peephole,
+    /// which needs a non-negative dividend.)
     ///
+
     /// PRODUCER: `graph_lower.dividendSign`, over the same
     /// `SemanticGraph.ranges` column as `divisorSign`.
     /// CONSUMER: `native_backend.emitBinopConst`, `.div` arm only.

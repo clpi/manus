@@ -1849,7 +1849,9 @@ fn emitBinop(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
     }
 
     switch (ins.binop) {
-        .div, .mod => {
+        // P0-1: int slash is floored and shares the idiv realization below.
+        .mod => {
+
             // AArch64 `sdiv` DOES NOT TRAP: division by zero answers 0, and
             // `INT64_MIN / -1` answers `INT64_MIN`. `i64.div_s` traps on both.
             // Reproducing the AArch64 answer exactly is not an optimization
@@ -1964,7 +1966,9 @@ fn emitBinop(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
         //
         // `select` rather than a branch: both arms are already on the stack and
         // neither can trap.
-        .idiv => {
+        // P0-1: int slash is floored, so div shares idivs realization.
+        .div, .idiv => {
+
             try pushValue(e, b, ins.lhs, .i64);
             try b.set(e.scratch_a);
             try pushValue(e, b, ins.rhs, .i64);

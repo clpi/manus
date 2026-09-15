@@ -443,10 +443,10 @@ fn emitBinop(e: *Emitter, instruction: dnir.Instr) Error!void {
         .bxor => try emitWrappedBinary(e, "^", instruction.lhs, instruction.rhs),
         .shl => try emitWrappedShift(e, "<<", instruction.lhs, instruction.rhs),
         .shr => try emitWrappedShift(e, ">>", instruction.lhs, instruction.rhs),
-        // Division: `/` truncates (sdiv), `//` floors, `%` is the floored
-        // remainder. The helpers decide the INT64_MIN / -1 case explicitly;
+        // Division (P0-1): slash, doubleslash, and percent are ALL floored.
+        // The helpers decide the INT64_MIN slash -1 case explicitly;
         // the zero-divisor abort guard is already in the stream ahead.
-        .div => try emitDivCall(e, "idol_tdiv", instruction.lhs, instruction.rhs),
+        .div => try emitDivCall(e, "idol_fdiv", instruction.lhs, instruction.rhs),
         .idiv => try emitDivCall(e, "idol_fdiv", instruction.lhs, instruction.rhs),
         .mod => try emitDivCall(e, "idol_fmod", instruction.lhs, instruction.rhs),
     }
@@ -1574,7 +1574,7 @@ test "C backend realizes popcount, division, and shifts portably" {
         .functions = &.{.{ .name = "divs", .ret = .i64, .blocks = &.{.{ .instrs = &divs }} }},
     }, "", null, &diagnostic);
     defer std.testing.allocator.free(div_src);
-    try std.testing.expect(std.mem.indexOf(u8, div_src, "idol_tdiv(idol_u64(") != null);
+    // P0-1: div and idiv both emit idol_fdiv (floored); idol_tdiv is retired.
     try std.testing.expect(std.mem.indexOf(u8, div_src, "idol_fdiv(idol_u64(") != null);
     try std.testing.expect(std.mem.indexOf(u8, div_src, "idol_fmod(idol_u64(") != null);
     try std.testing.expect(std.mem.indexOf(u8, div_src, "& UINT64_C(63)))") != null);

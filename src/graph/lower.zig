@@ -9753,7 +9753,7 @@ fn selfMapFoldBinop(op: ast.BinOp, l: i64, r: i64) ?i64 {
         .div => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
             null
         else
-            @divTrunc(l, r),
+            @divFloor(l, r),
         else => null,
     };
 }

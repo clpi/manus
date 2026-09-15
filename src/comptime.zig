@@ -2694,16 +2694,17 @@ fn evalNumeric(op: ast.BinOp, left: Value, right: Value, native_integers: bool) 
             .add => .{ .int = l +% r },
             .sub => .{ .int = l -% r },
             .mul => .{ .int = l *% r },
-            // `/` ON TWO INTEGERS IS STILL TRUNCATING, and that is an OPEN
-            // ROW, not part of this ruling. Lua's `/` always produces a FLOAT
-            // (`-7/10` is `-0.7`), so unlike `%` and `//` there is a real
-            // descriptor question here — `a: i64 / b: i64` has no float to
-            // return — and settling it is a separate ruling with a separate
-            // cost. `docs/rulings.md` carries the `law:`/`today:`/`delta:` row.
+            // INT DIVISION IS FLOORED. This was the OPEN ROW the floored-modulo
+            // ruling left unsettled. P0-1 settles it: percent is floored by the
+            // Lua chain and law.numeric.floor, so changing percent would break
+            // the ruled (idiv, mod) identity and the x-mod-2n to-and lowering.
+            // The only coherent law keeping percent floored is floored slash,
+            // so int slash answers divFloor and x == (x / y) * y + (x % y) holds.
+
             .div => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
                 error.DivisionByZero
             else
-                .{ .int = @divTrunc(l, r) },
+                .{ .int = @divFloor(l, r) },
             else => error.UnsupportedOperator,
         };
     }

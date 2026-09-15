@@ -4904,7 +4904,7 @@ const Arm64Compiler = struct {
                     const lhs_held = self.holdReg(lhs, pinned);
                     const dst = preferred_result orelse try self.allocReg();
                     if (preferred_result != null) self.claimReg(dst);
-                    try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty, ins.dividend);
+                    try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty);
                     if (lhs_held) self.gp_reg_owner[lhs] = null;
                     if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
@@ -7139,8 +7139,11 @@ const Arm64Compiler = struct {
     /// Fold a binary operation on two integer literals to its compile-time
     /// answer, so `1000000 / 7` never emits an `sdiv`. Division by zero and
     /// `minInt / -1` are NOT folded -- null falls through to the hardware path,
-    /// preserving the trap the program would have executed. `.div` is
-    /// truncating, `.idiv`/`.mod` are floored, matching the emitted code.
+    /// preserving the trap the program would have executed. div, idiv,
+    /// and mod are ALL floored (P0-1: int slash settled to floor so it
+    /// coheres with floored percent), matching the emitted code.
+
+
     fn foldConstBinop(op: dnir.BinOpTag, l: i64, r: i64) ?i64 {
         return switch (op) {
             .add => l +% r,
@@ -7149,7 +7152,7 @@ const Arm64Compiler = struct {
             .div => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
                 null
             else
-                @divTrunc(l, r),
+                @divFloor(l, r),
             .idiv => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
                 null
             else
@@ -7174,8 +7177,8 @@ const Arm64Compiler = struct {
         return switch (ins.binop) {
             .add, .sub => if (k == 0 or (k > 0 and k <= 4095) or (k < 0 and k >= -4095)) k else null,
             .mul => if (k == 0 or k == 1 or powerOfTwoShift(k) != null or mulShiftAddShift(k) != null) k else null,
-            .div => if (k == 1 or (k > 1 and powerOfTwoShift(k) != null) or magicTruncAdmit(k)) k else null,
-            .idiv => if (k == 1 or powerOfTwoShift(k) != null or magicFlooredDivisor(k) != null) k else null,
+            // P0-1: div and idiv share the floored law, so they share admission.
+            .div, .idiv => if (k == 1 or powerOfTwoShift(k) != null or magicFlooredDivisor(k) != null) k else null,
             .mod => if (k == 1 or k == -1 or powerOfTwoShift(k) != null or magicFlooredDivisor(k) != null) k else null,
             .band => if (k == 0 or k == -1 or lowMaskWidth(k) != null) k else null,
             .bor => if (k == 0 or lowMaskWidth(k) != null) k else null,
@@ -7396,7 +7399,6 @@ const Arm64Compiler = struct {
         k: i64,
         op: dnir.BinOpTag,
         ty: native_types.ResolvedType,
-        dividend: dnir.DivisorSign,
     ) Error!void {
         const w32 = wForm32(ty, op);
         var fitted = false;
@@ -7442,46 +7444,10 @@ const Arm64Compiler = struct {
                     }
                 } else unreachable; // constBinopRealization gates
             },
-            .div => {
-                if (k == 1) {
-                    try self.emitMovReg(dst, lhs);
-                } else if (powerOfTwoShift(k)) |sh| {
-                    if (dividend.proved()) {
-                        // A non-negative dividend needs no bias correction:
-                        // trunc(x / 2^a) = x lsr a for x >= 0. The published
-                        // width bounds the true value below 2^63, so the
-                        // register holds the value itself, sign bit clear.
-                        try self.emitLsrImm(dst, lhs, sh);
-                    } else if (sh == 1) {
-                        // Trunc(x/2) = (x + (x<0 ? 1 : 0)) asr 1, and x lsr 63
-                        // is the 0/1 sign bit: the lsr+add fuse into one
-                        // shifted add. Same shape as clang 21.
-                        try self.emitAddLsrReg(dst, lhs, lhs, 63);
-                        try self.emitAsrImm(dst, dst, 1);
-                    } else {
-                        // Trunc(x/2^a) = (x + (x<0 ? 2^a-1 : 0)) asr a.
-                        // t = x asr 63 is 0 or -1, so t lsr (64-a) is 0 or
-                        // 2^a-1: the old lsr+add pair fuses into one add.
-                        // x+bias cannot overflow: for x<0, x+2^a-1 < 2^a-1.
-                        try self.emitAsrImm(dst, lhs, 63);
-                        try self.emitAddLsrReg(dst, lhs, dst, @intCast(64 - @as(u7, sh)));
-                        try self.emitAsrImm(dst, dst, sh);
-                    }
-                } else if (magicTruncAdmit(k)) {
-                    // Granlund-Montgomery truncating magic, proved per divisor
-                    // by `truncMagicSound`: smulh, the optional add-back, one
-                    // asr, and the one-instruction S(n)+[S(n)<0] fixup.
-                    // Negative divisors run the |k| search and negate.
-                    const ad: i64 = if (k < 0) -k else k;
-                    try self.emitBinopTruncConstDivisor(dst, lhs, magicTruncDivisor(ad).?, k < 0);
-                } else unreachable; // constBinopRealization gates
-            },
-            // `x // 1 = x`; `x // 2^n = x asr n` under FLOORED law, for every
-            // x, with no range fact. `asr` and not `lsr`: the arithmetic shift
-            // is the one that rounds toward negative infinity, which is what
-            // floor division means, and the logical one would answer a huge
-            // positive number for a negative x.
-            .idiv => {
+            // P0-1: int slash is floored, so x / 2n = x asr n for every x,
+            // with no range fact. Merged with idiv: one law, one realization.
+            .div, .idiv => {
+
                 if (k == 1)
                     try self.emitMovReg(dst, lhs)
                 else if (powerOfTwoShift(k)) |sh|
@@ -7680,8 +7646,10 @@ const Arm64Compiler = struct {
             .add => try self.emitAddReg(dst, lhs, rhs),
             .sub => try self.emitSubReg(dst, lhs, rhs),
             .mul => try self.emitMulReg(dst, lhs, rhs),
-            .div => try self.emitSdivReg(dst, lhs, rhs),
-            .idiv, .mod => try self.emitFlooredDivRem(dst, lhs, rhs, op, divisor),
+            // P0-1: int slash is floored, so it shares the floored divrem
+            // step inside the floored sequence.
+            .div, .idiv, .mod => try self.emitFlooredDivRem(dst, lhs, rhs, op, divisor),
+
             // Bitwise and shift, register forms. AArch64 encodes all five with
             // the same field layout as add/sub, so they share one emitter.
             .band => try self.emitBitReg(0x8a000000, "and", dst, lhs, rhs),
@@ -12136,11 +12104,11 @@ const Arm64Compiler = struct {
     /// `ubfx` computes `(X >> k) & ((1<<w)-1)` by definition, which is what
     /// the `lsr`+`and` pair computes. The preconditions are not tolerances:
     ///
-    /// - `ins` is the truncating `.div` (not `.idiv`/`.mod`), with a constant
+    /// - `ins` is the `.div` (not `.idiv`/`.mod`), with a constant
     ///   power-of-two divisor, and the dividend proved non-negative
-    ///   (`ins.dividend.proved()`) — the same proof the `lsr` realization
-    ///   itself demands, since trunc division of a negative by 2^k is not a
-    ///   logical shift;
+    ///   (`ins.dividend.proved()`) — the same proof the shift realization
+    ///   itself demands: a negative dividend's floored quotient is an
+    ///   arithmetic shift, and `ubfx` is the logical form;
     /// - the mask is a low run `2^w - 1` (`lowMaskWidth`), so the `and` is
     ///   the logical-immediate form;
     /// - `k + w <= 64`, the UBFM field constraint;
@@ -12195,10 +12163,10 @@ const Arm64Compiler = struct {
     /// test to fail.
     ///
     /// Admissible only when, over the whole function:
-    /// - the div meets every `ubfxFusible` ground (truncating `.div`,
+    /// - the div meets every `ubfxFusible` ground (`.div`,
     ///   constant power-of-two divisor, dividend proved non-negative, full
     ///   width, no f64) — the dividend proof is load-bearing, not a
-    ///   tolerance: without it the original is a truncating division of a
+    ///   tolerance: without it the original is a floored division of a
     ///   possibly-negative value, not a logical shift;
     /// - the div temp's single reader is the naming store
     ///   (`singleReaderByTightDef`, the R15 ground);
