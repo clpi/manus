@@ -9436,13 +9436,13 @@ fn nestedTriangularParts(
     if (exprHasCall(acc_st.value)) return null;
     const ib = s_while.body.stmts;
     if (ib.len != 2 or s_while.body.tail_expr != null) return null;
-    var tacc: ?*const ast.Stmt = null;
-    if (stepIsIncrementOfOne(ctx.graph, &ib[0], j_name)) {
-        tacc = &ib[1];
-    } else if (stepIsIncrementOfOne(ctx.graph, &ib[1], j_name)) {
-        tacc = &ib[0];
-    } else return null;
-    const ta_st = assignTargetAndValue(tacc.?) orelse return null;
+    // The J-increment must trail the accumulation: the closed form sums
+    // J*K over the J values at the accumulation point, which are 0..M-1
+    // only when the increment is last. A leading increment accumulates
+    // 1..M (M*(M+1)/2), a different sum -- decline rather than misfold.
+    if (!stepIsIncrementOfOne(ctx.graph, &ib[1], j_name)) return null;
+    const tacc = &ib[0];
+    const ta_st = assignTargetAndValue(tacc) orelse return null;
     if (!std.mem.eql(u8, ta_st.name, t_name)) return null;
     if (ast.exprMentionsIdent(ta_st.value, acc_name)) return null;
     if (exprHasCall(ta_st.value)) return null;
@@ -10585,13 +10585,11 @@ fn lowerNestedTriangularCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedP
     if (!acc_sides_ok) return null;
     const ib = s_while.body.stmts;
     if (ib.len != 2 or s_while.body.tail_expr != null) return null;
-    var tacc: ?*const ast.Stmt = null;
-    if (stepIsIncrementOfOne(ctx.graph, &ib[0], nt.inner_iv)) {
-        tacc = &ib[1];
-    } else if (stepIsIncrementOfOne(ctx.graph, &ib[1], nt.inner_iv)) {
-        tacc = &ib[0];
-    } else return null;
-    const ta_st = assignTargetAndValue(tacc.?) orelse return null;
+    // The J-increment must trail the accumulation (see the arm above):
+    // a leading increment accumulates J*K over 1..M, not 0..M-1.
+    if (!stepIsIncrementOfOne(ctx.graph, &ib[1], nt.inner_iv)) return null;
+    const tacc = &ib[0];
+    const ta_st = assignTargetAndValue(tacc) orelse return null;
     if (!std.mem.eql(u8, ta_st.name, nt.inner_acc)) return null;
     const ta_bo = switch (ta_st.value.*) {
         .binop => |x| x,
