@@ -105,7 +105,7 @@ bench_load_gate
 
 ARCH="$(uname -m)"; OS="$(uname -s)"
 echo "bench: host ${ARCH}-${OS}, rounds=${ROUNDS}"
-if [ "${ARCH}-${OS}" != "arm64-Darwin" ]; then
+if [ "${ARCH}-${OS}" != "arm64-Darwin" ] && [ "${ARCH}-${OS}" != "aarch64-Linux" ]; then
   echo "bench: no backend for ${ARCH}-${OS} yet (see platforms/). aborting." >&2
   exit 3
 fi
