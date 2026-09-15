@@ -9094,13 +9094,19 @@ const CountedPlan = struct {
     /// evaluation), so the loop is dead and the induction variable is bound
     /// to the trip count with no loop emitted. False unless proven.
     self_map: bool = false,
+    /// K-step convergence state, settled at arm time alongside `self_map`:
+    /// the exact fixed-point state the proof reached (equal to the entry
+    /// constants when the body is a one-step self-map). The emitter rebinds
+    /// surviving names to these constants; a name whose fixed point equals
+    /// its entry constant needs no store. Null unless `self_map` was proven.
+    self_map_env: ?SelfMapEnv = null,
     /// Absorbing fixed-point early exit, settled at arm time: the body is
     /// straight-line pure integer dataflow with a proven absorbing state
     /// `target == value`, so the loop may exit at the top as soon as that
     /// state is observed. The induction variable is written back to the bound
     /// on the early path, preserving the full trip count's post-loop state.
     /// Null unless proven. Only armed for literal bounds, so the trip count
-    /// cannot change under the loop.
+    /// cannot change under the loop. Moot when `self_map` deleted the loop.
     fix_exit: ?FixExit = null,
 };
 
@@ -9307,7 +9313,7 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
         plan.nested_direct = nestedDirectParts(ctx, stmts, at, ws, iv, plan.bound_name);
     }
     if (plan.bound_lit) |bl| {
-        if (selfMapLoopProven(ctx, stmts, at, ws, iv, bl)) plan.self_map = true;
+        if (selfMapLoopProven(ctx, stmts, at, ws, iv, bl, &plan)) plan.self_map = true;
     }
     // Absorbing fixed-point early exit (fixExitProven): only for literal
     // bounds, so the trip count cannot change under the loop. Moot when the
@@ -9584,6 +9590,20 @@ fn fixExitEvalExpr(
 /// the transform (fails closed); real counted loops stay far below it.
 const self_map_max_names = 32;
 
+/// Maximum body evaluations the K-step convergence proof runs before it
+/// gives up and declines. Each step is exact constant evaluation, so the
+/// compile-time cost is trivial; 32 covers every converging bench program
+/// (div 15, divby7 11, divpow2 8) with margin.
+const self_map_max_steps: usize = 32;
+
+/// IDOL_CONVK_OFF set -- THE SEVERING CONTROL for the K-step convergence
+/// generalization. Set it and the self-map proof runs exactly one body
+/// evaluation (the pre-generalization single-step check); unset and it runs
+/// up to self_map_max_steps evaluations hunting a fixed point.
+fn convKDisabled() bool {
+    return std.c.getenv("IDOL_CONVK_OFF") != null;
+}
+
 /// Entry environment for the self-map proof: every non-iv name the body
 /// mentions, with its loop-entry constant and its value as the proof
 /// evaluates the body once on the entry state.
@@ -9674,15 +9694,19 @@ fn selfMapEvalExpr(ctx: *LowerCtx, e: *const ast.Expr, senv: *const SelfMapEnv) 
     }
 }
 
-/// SELF-MAP LOOP DELETION (arm-time proof).
+/// SELF-MAP LOOP DELETION, K-STEP CONVERGENCE (arm-time proof).
 ///
 /// A counted loop with a literal bound whose body is straight-line pure
-/// integer dataflow that reproduces the loop-entry state is dead: the first
-/// iteration sees the entry state and returns it unchanged, so by induction
-/// every iteration does, and the loop computes nothing. Proved here by exact
-/// evaluation of the body on the entry constants; anything the proof cannot
-/// follow exactly refuses the transform and the loop lowers through the other
-/// counted forms or ordinarily. In particular:
+/// integer dataflow is dead when bounded exact evaluation of the body reaches
+/// a fixed point: step one on the entry constants is the old single-step
+/// check (entry already a fixed point); a later step whose output reproduces
+/// its input state is a fixed point of the deterministic body, so every
+/// remaining iteration is dead and the loop's final state is that fixed
+/// point. Only an immediate S_j == S_{j-1} is deletion-sound -- cycles
+/// decline -- and convergence must land within the actual trip count.
+/// Proved here by exact evaluation; anything the proof cannot follow exactly
+/// refuses the transform and the loop lowers through the other counted forms
+/// or ordinarily. In particular:
 ///   - only `.assign` statements with a single plain-name target;
 ///   - the induction variable is never read (no entry constant) and only the
 ///     trailing step may write it;
@@ -9691,7 +9715,7 @@ fn selfMapEvalExpr(ctx: *LowerCtx, e: *const ast.Expr, senv: *const SelfMapEnv) 
 ///     settled at arm time while the slot markings are intact;
 ///   - a name the dominating-store scan cannot pin to a constant (outer
 ///     induction variables, calls, unknown values) declines.
-fn selfMapLoopProven(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, ws: anytype, iv: []const u8, bound: i64) bool {
+fn selfMapLoopProven(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, ws: anytype, iv: []const u8, bound: i64, plan: *CountedPlan) bool {
     if (bound < 0) return false;
     const body = ws.body.stmts;
     const n = body.len;
@@ -9717,22 +9741,45 @@ fn selfMapLoopProven(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, ws: any
         senv.entry[k] = v;
         senv.value[k] = v;
     }
-    for (body[0 .. n - 1]) |*st| {
-        const a = switch (st.*) {
-            .assign => |x| x,
-            else => return false,
-        };
-        const target = identOf(a.targets[0]) orelse return false;
-        const v = selfMapEvalExpr(ctx, a.values[0], &senv) orelse return false;
-        const i = senv.indexOf(target) orelse return false;
-        senv.value[i] = v;
+    var prev: [self_map_max_names]i64 = undefined;
+    for (0..senv.len) |k| prev[k] = senv.entry[k];
+    const max_steps: usize = if (convKDisabled()) 1 else self_map_max_steps;
+    var step: usize = 0;
+    while (step < max_steps) : (step += 1) {
+        for (body[0 .. n - 1]) |*st| {
+            const a = switch (st.*) {
+                .assign => |x| x,
+                else => return false,
+            };
+            const target = identOf(a.targets[0]) orelse return false;
+            const v = selfMapEvalExpr(ctx, a.values[0], &senv) orelse return false;
+            const i = senv.indexOf(target) orelse return false;
+            senv.value[i] = v;
+        }
+        // A step that reproduces its input state is a fixed point of the
+        // deterministic body: by induction every later iteration does too.
+        // Names only read are never updated, so they compare equal
+        // trivially; only immediate S_j == S_{j-1} deletes -- a cycle that
+        // merely revisits an older state declines.
+        var fixed = true;
+        for (0..senv.len) |k| {
+            if (senv.value[k] != prev[k]) {
+                fixed = false;
+                break;
+            }
+        }
+        if (fixed) {
+            // The fixed point must be reached inside the actual trip count;
+            // a loop that ends first still computes real iterations. Step 0
+            // reproduces the entry state itself, so it is sound for any
+            // bound (it is the pre-generalization single-step check).
+            if (step > 0 and step + 1 > @as(usize, @intCast(bound))) return false;
+            plan.self_map_env = senv;
+            return true;
+        }
+        for (0..senv.len) |k| prev[k] = senv.value[k];
     }
-    // Dead iff every mentioned name reproduces its entry value. Names only
-    // read are never updated, so they compare equal trivially.
-    for (0..senv.len) |k| {
-        if (senv.value[k] != senv.entry[k]) return false;
-    }
-    return true;
+    return false;
 }
 
 /// The bound name is provably non-negative.
@@ -9856,14 +9903,15 @@ fn finishWhileLowering(ctx: *LowerCtx, fail_idx: ?usize, promo: []const Promotio
     }
 }
 
-/// Self-map deletion: the arm-time proof showed the body reproduces the
-/// loop-entry state on every iteration, so the loop computes nothing. Binds
-/// the induction variable to the trip count -- its value after the loop --
-/// and emits no loop. Returns true when the proven shape matched and the
-/// deletion was emitted, false to fall back to the direct form, the
-/// countdown, or the ordinary loop. Only the emission runs here; the proof
-/// itself settled at arm time (slot markings intact) and is re-verified
-/// below by structural identity only.
+/// Self-map deletion: the arm-time proof showed bounded exact evaluation
+/// of the body reaches a fixed point, so every iteration past convergence is
+/// dead and the loop computes nothing. Binds the induction variable to the
+/// trip count -- its value after the loop -- rebinds each surviving name to
+/// its proven fixed-point constant, and emits no loop. Returns true when the
+/// proven shape matched and the deletion was emitted, false to fall back to
+/// the direct form, the countdown, or the ordinary loop. Only the emission
+/// runs here; the proof itself settled at arm time (slot markings intact) and
+/// is re-verified below by structural identity only.
 ///
 /// Runs inside the promotion's shadow scope (after the preloads, before the
 /// write-backs), so the induction variable and the bound resolve through
@@ -9886,6 +9934,18 @@ fn lowerSelfMapCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Erro
     try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
     const bound_v = try lowerExpr(ctx, b.rhs);
     try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
+    // K-step convergence: the fixed point can differ from the entry state, so
+    // rebind each surviving name to its proven fixed-point constant. The
+    // promotion write-backs then carry the loop's true final state out.
+    // A name whose fixed point equals its entry constant needs no store;
+    // a name the shadow scope cannot resolve fails closed to the other forms.
+    if (plan.self_map_env) |fix| {
+        for (0..fix.len) |k| {
+            if (fix.value[k] == fix.entry[k]) continue;
+            const slot = ctx.locals.get(fix.names[k]) orelse return false;
+            try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = .{ .i64 = fix.value[k] }, .ty = .i64 });
+        }
+    }
     return true;
 }
 
