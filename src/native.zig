@@ -4181,7 +4181,8 @@ const Arm64Compiler = struct {
                 } else {
                     const preferred_result = if (bi + 1 < b.instrs.len)
                         self.returnPackBinopDestination(&temps, ins, b.instrs[bi + 1]) orelse
-                            self.returnConstDestination(ins, b.instrs[bi + 1], flat_idx)
+                            self.returnConstDestination(ins, b.instrs[bi + 1], flat_idx) orelse
+                            self.returnStoreLocalDestination(&temps, &pinned, ins, b.instrs[bi + 1])
                     else
                         null;
                     try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches, preferred_result, flat_idx);
@@ -4408,6 +4409,26 @@ const Arm64Compiler = struct {
         if (next.lhs != .temp or next.lhs.temp != result) return null;
         if (self.value_free_at.get(result) != flat_idx + 1) return null;
         return 0;
+    }
+
+    fn returnStoreLocalDestination(
+        self: *const Arm64Compiler,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+        next: dnir.Instr,
+    ) ?u5 {
+        if (ins.op != .binop or next.op != .store_local) return null;
+        switch (ins.binop) {
+            .add, .sub => {},
+            else => return null,
+        }
+        if (constBinopRealization(ins) == null) return null;
+        const result = ins.result orelse return null;
+        if (next.lhs != .temp or next.lhs.temp != result) return null;
+        const slot = next.result orelse return null;
+        const home = self.gpLocalHomeReg(temps, pinned, slot) orelse return null;
+        return home;
     }
 
     /// `at` is the flat instruction index of `ins` in the function being
@@ -4671,6 +4692,24 @@ const Arm64Compiler = struct {
                         self.releaseFpReg(d);
                     }
                 } else {
+                    var stored_imm_direct = false;
+                    if (ins.lhs == .i64 and self.imm_hoist.get(ins.lhs.i64) == null) {
+                        if (ins.result) |imm_slot| {
+                            if (self.gp_stack_locals.get(imm_slot) == null and
+                                self.gpLocalHomeReg(temps, pinned, imm_slot) == null and
+                                !self.gpSlotUsesStack(imm_slot))
+                            {
+                                const imm_home = try self.allocHomeReg();
+                                try self.emitMovImm(imm_home, ins.lhs.i64);
+                                _ = try self.emitNarrowFit(imm_home, imm_home, ins.ty);
+                                self.markGpHome(imm_home);
+                                try pinned.put(self.alloc, imm_slot, imm_home);
+                                try temps.put(self.alloc, imm_slot, imm_home);
+                                stored_imm_direct = true;
+                            }
+                        }
+                    }
+                    if (!stored_imm_direct) {
                     const val_reg = try self.evalDnirValue(temps, ins.lhs);
                     // A STORE IS WHERE THE DECLARED WIDTH APPLIES. The C
                     // backend spells this `x = ((uint32_t)(expr))` on every
@@ -4792,6 +4831,7 @@ const Arm64Compiler = struct {
                         }
                     } else if (!Arm64Compiler.regIsPinned(pinned, val_reg)) {
                         self.releaseReg(val_reg);
+                    }
                     }
                 }
             },
