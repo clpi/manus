@@ -381,6 +381,24 @@ fn emitWrappedBinary(e: *Emitter, op: []const u8, lhs: dnir.Value, rhs: dnir.Val
     try w.writeAll("))");
 }
 
+fn emitWrappedShift(e: *Emitter, op: []const u8, lhs: dnir.Value, rhs: dnir.Value) Error!void {
+    const w = e.writer();
+    try w.writeAll("idol_bits_i64(idol_u64(");
+    try emitValue(e, lhs);
+    try w.print(") {s} (idol_u64(", .{op});
+    try emitValue(e, rhs);
+    try w.writeAll(") & UINT64_C(63)))");
+}
+
+fn emitDivCall(e: *Emitter, name: []const u8, lhs: dnir.Value, rhs: dnir.Value) Error!void {
+    const w = e.writer();
+    try w.print("{s}(idol_u64(", .{name});
+    try emitValue(e, lhs);
+    try w.writeAll("), idol_u64(");
+    try emitValue(e, rhs);
+    try w.writeAll("))");
+}
+
 fn emitComparison(e: *Emitter, op: []const u8, lhs: dnir.Value, rhs: dnir.Value) Error!void {
     const w = e.writer();
     try w.writeAll("((int64_t)(");
@@ -416,7 +434,21 @@ fn emitBinop(e: *Emitter, instruction: dnir.Instr) Error!void {
         .gt => try emitComparison(e, ">", instruction.lhs, instruction.rhs),
         .leq => try emitComparison(e, "<=", instruction.lhs, instruction.rhs),
         .geq => try emitComparison(e, ">=", instruction.lhs, instruction.rhs),
-        else => return e.refuse("binop-not-in-c99-slice"),
+        // Bitwise and shift: the backend is bit-preserving over u64, and C99
+        // defines &, |, ^, <<, >> on unsigned operands exactly as ARM64
+        // and/or/eor/lsl/lsr. Idol masks shift counts to 6 bits, so the count
+        // is masked here too (identity for counts < 64, defined for the rest).
+        .band => try emitWrappedBinary(e, "&", instruction.lhs, instruction.rhs),
+        .bor => try emitWrappedBinary(e, "|", instruction.lhs, instruction.rhs),
+        .bxor => try emitWrappedBinary(e, "^", instruction.lhs, instruction.rhs),
+        .shl => try emitWrappedShift(e, "<<", instruction.lhs, instruction.rhs),
+        .shr => try emitWrappedShift(e, ">>", instruction.lhs, instruction.rhs),
+        // Division: `/` truncates (sdiv), `//` floors, `%` is the floored
+        // remainder. The helpers decide the INT64_MIN / -1 case explicitly;
+        // the zero-divisor abort guard is already in the stream ahead.
+        .div => try emitDivCall(e, "idol_tdiv", instruction.lhs, instruction.rhs),
+        .idiv => try emitDivCall(e, "idol_fdiv", instruction.lhs, instruction.rhs),
+        .mod => try emitDivCall(e, "idol_fmod", instruction.lhs, instruction.rhs),
     }
 }
 
@@ -811,37 +843,46 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             try emitValue(e, instruction.rhs);
             try w.writeAll(" - 1];\n");
         },
-        // The two `hw_unary` tag conventions the index lowering emits. A
-        // genuine hardware intrinsic stays refused — this arm honors only the
-        // control-flow tags, and `index.bounds` is the same one unsigned
+        // The `hw_unary` tag conventions the lowering emits. `.popcount`
+        // has a portable software realization above; every other genuine
+        // hardware intrinsic stays refused — this arm honors only the
+        // control-flow tags besides it, and `index.bounds` is the same one unsigned
         // compare `native_backend.emitIndexBoundsCheck` documents: `i - 1`
         // wraps for every `i <= 0`, so one test decides both sides.
         .hw_unary => {
-            if (instruction.hw != .none) return e.refuse("hw-op-not-in-c99-slice");
-            if (std.mem.eql(u8, instruction.field, dnir_lower.trap_abort_tag)) {
-                try w.writeAll("  abort();\n");
-            } else if (std.mem.eql(u8, instruction.field, dnir_lower.index_bounds_tag)) {
-                try w.writeAll("  if (idol_u64(");
-                try emitValue(e, instruction.lhs);
-                try w.writeAll(") - idol_u64(1) >= idol_u64(");
-                try emitValue(e, instruction.rhs);
-                try w.writeAll(")) abort();\n");
-            } else if (std.mem.eql(u8, instruction.field, dnir_lower.vec_reduce_add_i64_tag)) {
-                // `lhs` base, `rhs` 1-based first element, `third` element
-                // count. The tag states the SUM fact, not a lane width; a
-                // scalar loop is a lawful realization of it in portable C99,
-                // and the C compiler's own vectorizer may take it from here.
+            if (instruction.hw == .popcount) {
                 const result = instruction.result orelse return e.refuse("result-slot-missing");
-                try w.writeAll("  { const int64_t *idol_p = (const int64_t *)(intptr_t)");
+                try w.writeAll("  ");
+                try w.print("s{d} = idol_popcount(idol_u64(", .{result});
                 try emitValue(e, instruction.lhs);
-                try w.writeAll("; int64_t idol_n = ");
-                try emitValue(e, instruction.third);
-                try w.writeAll("; int64_t idol_acc = 0; int64_t idol_k = 0;\n");
-                try w.writeAll("    while (idol_k < idol_n) { idol_acc = idol_bits_i64(idol_u64(idol_acc) + idol_u64(idol_p[");
-                try emitValue(e, instruction.rhs);
-                try w.writeAll(" - 1 + idol_k])); idol_k = idol_k + 1; }\n");
-                try w.print("    s{d} = idol_acc; }}\n", .{result});
-            } else return e.refuse("hw-op-not-in-c99-slice");
+                try w.writeAll("));\n");
+            } else {
+                if (instruction.hw != .none) return e.refuse("hw-op-not-in-c99-slice");
+                if (std.mem.eql(u8, instruction.field, dnir_lower.trap_abort_tag)) {
+                    try w.writeAll("  abort();\n");
+                } else if (std.mem.eql(u8, instruction.field, dnir_lower.index_bounds_tag)) {
+                    try w.writeAll("  if (idol_u64(");
+                    try emitValue(e, instruction.lhs);
+                    try w.writeAll(") - idol_u64(1) >= idol_u64(");
+                    try emitValue(e, instruction.rhs);
+                    try w.writeAll(")) abort();\n");
+                } else if (std.mem.eql(u8, instruction.field, dnir_lower.vec_reduce_add_i64_tag)) {
+                    // `lhs` base, `rhs` 1-based first element, `third` element
+                    // count. The tag states the SUM fact, not a lane width; a
+                    // scalar loop is a lawful realization of it in portable C99,
+                    // and the C compiler's own vectorizer may take it from here.
+                    const result = instruction.result orelse return e.refuse("result-slot-missing");
+                    try w.writeAll("  { const int64_t *idol_p = (const int64_t *)(intptr_t)");
+                    try emitValue(e, instruction.lhs);
+                    try w.writeAll("; int64_t idol_n = ");
+                    try emitValue(e, instruction.third);
+                    try w.writeAll("; int64_t idol_acc = 0; int64_t idol_k = 0;\n");
+                    try w.writeAll("    while (idol_k < idol_n) { idol_acc = idol_bits_i64(idol_u64(idol_acc) + idol_u64(idol_p[");
+                    try emitValue(e, instruction.rhs);
+                    try w.writeAll(" - 1 + idol_k])); idol_k = idol_k + 1; }\n");
+                    try w.print("    s{d} = idol_acc; }}\n", .{result});
+                } else return e.refuse("hw-op-not-in-c99-slice");
+            }
         },
         // Portable realization of print(v) / stdout:write(v) (DNIR
         // print_value). All shapes call idols_printf(fmt, .) with
@@ -1061,6 +1102,51 @@ pub fn emitSource(
         \\  int64_t value;
         \\  __builtin_memcpy(&value, &bits, sizeof value);
         \\  return value;
+        \\}
+        \\/* Division semantics. Idol `/` truncates toward zero (ARM64 sdiv),
+        \\ * `//` floors toward negative infinity (law.numeric.floor), and `%`
+        \\ * is the floored remainder (sign of the divisor). The zero-divisor
+        \\ * guard is emitted ahead of every division by lowering and renders
+        \\ * as abort() here, so y != 0 on every path that reaches these
+        \\ * helpers. INT64_MIN / -1 is undefined behavior in C99 (it wraps on
+        \\ * ARM64 sdiv), so the one singular case is decided explicitly;
+        \\ * every other input uses C99 `/` and `%`, which are fully defined
+        \\ * for nonzero divisors outside that case. Operands arrive as u64
+        \\ * bit patterns (the backend is bit-preserving) and are reinterpreted
+        \\ * with __builtin_memcpy, the same device idol_bits_i64 uses. */
+        \\static inline int64_t idol_tdiv(uint64_t xb, uint64_t yb) {
+        \\  int64_t x, y;
+        \\  __builtin_memcpy(&x, &xb, sizeof x);
+        \\  __builtin_memcpy(&y, &yb, sizeof y);
+        \\  if (x == (INT64_C(-9223372036854775807) - 1) && y == -1) return x;
+        \\  return x / y;
+        \\}
+        \\static inline int64_t idol_fdiv(uint64_t xb, uint64_t yb) {
+        \\  int64_t x, y, q, r;
+        \\  __builtin_memcpy(&x, &xb, sizeof x);
+        \\  __builtin_memcpy(&y, &yb, sizeof y);
+        \\  if (x == (INT64_C(-9223372036854775807) - 1) && y == -1) return x;
+        \\  q = x / y; r = x % y;
+        \\  if (r != 0 && ((r < 0) != (y < 0))) q -= 1;
+        \\  return q;
+        \\}
+        \\static inline int64_t idol_fmod(uint64_t xb, uint64_t yb) {
+        \\  int64_t x, y, r;
+        \\  __builtin_memcpy(&x, &xb, sizeof x);
+        \\  __builtin_memcpy(&y, &yb, sizeof y);
+        \\  if (x == (INT64_C(-9223372036854775807) - 1) && y == -1) return 0;
+        \\  r = x % y;
+        \\  if (r != 0 && ((r < 0) != (y < 0))) r += y;
+        \\  return r;
+        \\}
+        \\/* Population count. Lowering emits a SWAR sequence for hardware;
+        \\ * this is the portable C99 equivalent. All arithmetic is on
+        \\ * unsigned operands, so every operation is fully defined. */
+        \\static inline int64_t idol_popcount(uint64_t x) {
+        \\  x = x - ((x >> 1) & UINT64_C(0x5555555555555555));
+        \\  x = (x & UINT64_C(0x3333333333333333)) + ((x >> 2) & UINT64_C(0x3333333333333333));
+        \\  x = (x + (x >> 4)) & UINT64_C(0x0f0f0f0f0f0f0f0f);
+        \\  return (int64_t)((x * UINT64_C(0x0101010101010101)) >> 56);
         \\}
         \\/* Bounds guards lower to the standard process-abort boundary. This
         \\ * declaration is the C99 signature; libc supplies the definition. */
@@ -1436,14 +1522,16 @@ test "C backend lowers the indexed-store family with its bounds guard" {
     try std.testing.expect(std.mem.indexOf(u8, source, "s2 = ((int64_t *)(intptr_t)s0)[s1 - 1];") != null);
 }
 
-test "C backend refuses byte-width indexed access and genuine hardware intrinsics" {
+test "C backend refuses byte-width indexed access and non-popcount hardware intrinsics" {
     const byte_store = [_]dnir.Instr{
         .{ .op = .alloc_slots, .result = 0, .lhs = .{ .i64 = 2 } },
         .{ .op = .store_index, .ty = .any, .lhs = .{ .temp = 0 }, .rhs = .{ .i64 = 1 }, .third = .{ .i64 = 7 } },
         .{ .op = .ret, .lhs = .{ .i64 = 0 } },
     };
+    // .clz has no portable C99 realization yet, so it stays refused; .popcount
+    // has the idol_popcount software fallback and must be accepted.
     const hw_intrinsic = [_]dnir.Instr{
-        .{ .op = .hw_unary, .hw = .popcount, .result = 0, .lhs = .{ .i64 = 7 } },
+        .{ .op = .hw_unary, .hw = .clz, .result = 0, .lhs = .{ .i64 = 7 } },
         .{ .op = .ret, .lhs = .{ .temp = 0 } },
     };
     var diagnostic: Diagnostic = .{};
@@ -1452,10 +1540,44 @@ test "C backend refuses byte-width indexed access and genuine hardware intrinsic
     }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("index-width-not-i64", diagnostic.note().?);
 
+    diagnostic = .{};
     try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
-        .functions = &.{.{ .name = "hwpop", .ret = .i64, .blocks = &.{.{ .instrs = &hw_intrinsic }} }},
+        .functions = &.{.{ .name = "hwclz", .ret = .i64, .blocks = &.{.{ .instrs = &hw_intrinsic }} }},
     }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("hw-op-not-in-c99-slice", diagnostic.note().?);
+}
+
+test "C backend realizes popcount, division, and shifts portably" {
+    const pop = [_]dnir.Instr{
+        .{ .op = .hw_unary, .hw = .popcount, .result = 0, .lhs = .{ .i64 = 7 } },
+        .{ .op = .ret, .lhs = .{ .temp = 0 } },
+    };
+    const divs = [_]dnir.Instr{
+        .{ .op = .binop, .binop = .div, .result = 0, .lhs = .{ .i64 = 7 }, .rhs = .{ .i64 = 2 } },
+        .{ .op = .binop, .binop = .idiv, .result = 1, .lhs = .{ .temp = 0 }, .rhs = .{ .i64 = 2 } },
+        .{ .op = .binop, .binop = .mod, .result = 2, .lhs = .{ .temp = 1 }, .rhs = .{ .i64 = 2 } },
+        .{ .op = .binop, .binop = .band, .result = 3, .lhs = .{ .temp = 2 }, .rhs = .{ .i64 = 3 } },
+        .{ .op = .binop, .binop = .shl, .result = 4, .lhs = .{ .temp = 3 }, .rhs = .{ .i64 = 1 } },
+        .{ .op = .binop, .binop = .shr, .result = 5, .lhs = .{ .temp = 4 }, .rhs = .{ .i64 = 1 } },
+        .{ .op = .ret, .lhs = .{ .temp = 5 } },
+    };
+    var diagnostic: Diagnostic = .{};
+    const pop_src = try emitSource(std.testing.allocator, .{
+        .functions = &.{.{ .name = "hwpop", .ret = .i64, .blocks = &.{.{ .instrs = &pop }} }},
+    }, "", null, &diagnostic);
+    defer std.testing.allocator.free(pop_src);
+    try std.testing.expect(std.mem.indexOf(u8, pop_src, "idol_popcount(idol_u64(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, pop_src, "static inline int64_t idol_popcount") != null);
+
+    diagnostic = .{};
+    const div_src = try emitSource(std.testing.allocator, .{
+        .functions = &.{.{ .name = "divs", .ret = .i64, .blocks = &.{.{ .instrs = &divs }} }},
+    }, "", null, &diagnostic);
+    defer std.testing.allocator.free(div_src);
+    try std.testing.expect(std.mem.indexOf(u8, div_src, "idol_tdiv(idol_u64(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, div_src, "idol_fdiv(idol_u64(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, div_src, "idol_fmod(idol_u64(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, div_src, "& UINT64_C(63)))") != null);
 }
 
 test "C backend refuses damaged operation and control" {
