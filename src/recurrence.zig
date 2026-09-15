@@ -365,17 +365,51 @@ fn polyOfExpr(expr: *const ast.Expr, state: *const State, binds: Bindings) ?Poly
                 .add => Poly.add(lhs, rhs),
                 .sub => Poly.sub(lhs, rhs),
                 .mul => Poly.mul(lhs, rhs),
+                // CONSTANT division folds exactly (see divConstFold): both
+                // sides already reduced to ring constants, so the division is
+                // evaluated in integers, never through the ring. A division
+                // that would trap (by zero, or minInt / -1) declines, keeping
+                // the original trap behavior (O4).
+                .div => divConstFold(lhs, rhs),
                 // EXPLICITLY REFUSED, and the reason is O3 rather than effort:
-                // `/` `%` `>>` are floor operations that do NOT commute with
-                // reduction mod 2^64, so no closed form over the ring can
-                // reproduce them; `& | ^ <<` do commute but are not ring
-                // polynomial operations, so the basis search has nothing to
-                // search over. `pow` with a variable exponent is not polynomial.
+                // `/` with a non-constant side, `%`, `>>` are floor operations
+                // that do NOT commute with reduction mod 2^64, so no closed
+                // form over the ring can reproduce them; `& | ^ <<` do commute
+                // but are not ring polynomial operations, so the basis search
+                // has nothing to search over. `pow` with a variable exponent
+                // is not polynomial.
                 else => null,
             };
         },
         else => return null,
     }
+}
+
+/// The u64 bit-pattern of the polynomial's value when it is a constant (no
+/// variable mentions), null otherwise. A zero polynomial (len 0) is the
+/// constant 0.
+fn constantValue(p: Poly) ?u64 {
+    if (p.len == 0) return 0;
+    if (p.len == 1 and std.mem.eql(u8, &p.terms[0].mono, &zero_mono)) {
+        return p.terms[0].coeff;
+    }
+    return null;
+}
+
+/// Constant-only division, evaluated with the backend's own constant-folder
+/// semantics (`foldConstBinop` in native.zig): truncating division, declining
+/// (null) on division by zero and on minInt / -1. The decline keeps a body
+/// that would trap out of the closed form, so the loop keeps its original
+/// behavior (O4); a division that evaluates is trap-free by construction.
+/// Non-constant division stays refused: it does not commute with reduction
+/// mod 2^64 (O3).
+fn divConstFold(lhs: Poly, rhs: Poly) ?Poly {
+    const lc = constantValue(lhs) orelse return null;
+    const rc = constantValue(rhs) orelse return null;
+    const l: i64 = @bitCast(lc);
+    const r: i64 = @bitCast(rc);
+    if (r == 0 or (r == -1 and l == std.math.minInt(i64))) return null;
+    return Poly.constant(@bitCast(@divTrunc(l, r)));
 }
 
 // ── O5/O8: the guard ─────────────────────────────────────────────────────────
