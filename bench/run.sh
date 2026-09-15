@@ -529,9 +529,11 @@ def commit_of(repo):
 verdicts = {}
 for prog, d in res["programs"].items():
     vb = d["timing"].get("vs_best") or {}
+    _margin = vb.get("margin")
     verdicts[prog] = {
         "verdict": vb.get("verdict", "?"),
-        "margin_pct": round(vb.get("margin", 0.0) * 100, 2),
+        "margin_pct": (round(_margin * 100, 2) if _margin is not None else None),
+        "estimand_undefined": bool(vb.get("estimand_undefined", False)),
         "p_mean_diag": vb.get("welch_p_mean"),
         "sig": bool(vb.get("significant", False)),
         "equivalent": bool(vb.get("equivalent", False)),
@@ -569,7 +571,8 @@ for e in hist:
         a = agg.setdefault(prog, {"runs": 0, "first": e["ts"], "margins": [],
                                   "last_verdict": "?", "last_margin": 0.0})
         a["runs"] += 1
-        a["margins"].append(v["margin_pct"])
+        if v["margin_pct"] is not None:
+            a["margins"].append(v["margin_pct"])
         a["last_verdict"] = v["verdict"]
         a["last_margin"] = v["margin_pct"]
 
@@ -638,12 +641,17 @@ for prog, d in res["programs"].items():
     L.append("")
     vb = tj.get("vs_best")
     if vb:
-        ci95 = vb.get("ci95_median_diff_pct") or [float("nan"), float("nan")]
-        ci90 = vb.get("ci90_median_diff_pct") or [float("nan"), float("nan")]
+        _ci95 = vb.get("ci95_median_diff_pct")
+        _ci90 = vb.get("ci90_median_diff_pct")
+        ci95 = _ci95 if _ci95 and _ci95[0] is not None else [float("nan"), float("nan")]
+        ci90 = _ci90 if _ci90 and _ci90[0] is not None else [float("nan"), float("nan")]
+        _m = vb.get("margin")
+        _margin_txt = f"{_m*100:+.2f}%" if _m is not None else "undefined (insufficient evidence)"
+        _undef = " estimand_undefined=true;" if vb.get("estimand_undefined") else ""
         L.append("| # | directive |")
         L.append("|---|---|")
-        L.append(f"| 1 | Idol vs best rival ({vb['rival']}): {vb['verdict']}, "
-                 f"median margin {vb['margin']*100:+.2f}% "
+        L.append(f"| 1 | Idol vs best rival ({vb['rival']}): {vb['verdict']},{_undef} "
+                 f"median margin {_margin_txt} "
                  f"[95% CI {ci95[0]:+.2f}%, {ci95[1]:+.2f}%]; "
                  f"equivalent={str(bool(vb['equivalent'])).lower()} "
                  f"(90% CI [{ci90[0]:+.2f}%, {ci90[1]:+.2f}%] vs band [-2%,+2%]); "
@@ -706,8 +714,12 @@ L.append("| case | runs | first seen | last verdict | last margin% | worst margi
 L.append("|---|---|---|---|---|---|---|")
 for prog in sorted(agg):
     a = agg[prog]
+    _lm = f"{a['last_margin']:+.2f}%" if a["last_margin"] is not None else "undefined"
+    _mm = a["margins"]
+    _worst = f"{min(_mm):+.2f}%" if _mm else "undefined"
+    _best = f"{max(_mm):+.2f}%" if _mm else "undefined"
     L.append(f"| {prog} | {a['runs']} | {a['first']} | {a['last_verdict']} | "
-             f"{a['last_margin']:+.2f}% | {min(a['margins']):+.2f}% | {max(a['margins']):+.2f}% |")
+             f"{_lm} | {_worst} | {_best} |")
 open(out_path, "w").write("\n".join(L) + "\n")
 print(f"wrote {out_path} (+ history entry {entry['commit']} {entry['ts']})")
 PYEOF

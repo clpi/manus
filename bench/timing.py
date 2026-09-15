@@ -20,6 +20,15 @@ DECISION PROCEDURE (also documented in the emitted JSON and the report):
       or equivalence-by-default. The old rule "abs(median diff) <= 2% and
       Welch p >= 0.05 => parity" is retired.
 
+UNDEFINED-ESTIMATE ADMISSION:
+    The percentage estimand requires a nonzero rival median. A bootstrap
+    resample whose rival median is zero carries no defined percentage
+    difference and is discarded. If no resample remains usable, the estimand
+    is undefined: bootstrap_median_diff_ci returns (None, None) and the
+    verdict is "inconclusive" (insufficient evidence). "No usable
+    uncertainty calculation" is NEVER converted into an affirmative
+    [0, 0] interval or an "equivalent" verdict.
+
 MEAN-BASED DIAGNOSTIC (not the verdict):
     Welch's t with Welch-Satterthwaite degrees of freedom on the means is
     reported as welch_p_mean. When the mean-based and median-based
@@ -46,7 +55,9 @@ DECISION_RULE = (
     "CI (B=2000, seed 20260915) excludes 0. 'equivalent' iff 90% CI lies "
     "wholly inside predeclared band [-2%,+2%]. else 'inconclusive' (never "
     "'tie'). Welch t with Satterthwaite df reported as mean-based diagnostic "
-    "only; mean_median_conflict flags disagreement."
+    "only; mean_median_conflict flags disagreement. Undefined percentage "
+    "estimand (rival median zero in every bootstrap resample) is insufficient "
+    "evidence: verdict 'inconclusive', never an affirmative [0,0] interval."
 )
 
 
@@ -160,6 +171,13 @@ def bootstrap_median_diff_ci(idol_ns, rival_ns, cl):
     """Percentile bootstrap CI for (median(idol)-median(rival)) as % of rival median.
 
     Returns (lo, hi). Fixed seed so verdicts are exactly reproducible.
+
+    Returns (None, None) when the percentage estimand is undefined: resamples
+    whose rival median is zero carry no defined percentage difference and are
+    discarded; if none remain usable, no uncertainty calculation exists.
+    A (None, None) result must be admitted as "insufficient evidence"
+    (verdict "inconclusive"), never converted into an affirmative [0, 0]
+    interval.
     """
     rng = random.Random(BOOT_SEED)
     n1, n2 = len(idol_ns), len(rival_ns)
@@ -171,7 +189,7 @@ def bootstrap_median_diff_ci(idol_ns, rival_ns, cl):
         if m2:
             diffs.append((m1 - m2) / m2 * 100.0)
     if not diffs:
-        return 0.0, 0.0
+        return None, None
     diffs.sort()
     alpha = 1.0 - cl
     lo = diffs[int(len(diffs) * alpha / 2)]
@@ -307,11 +325,23 @@ def main():
             rival_ns = samples_by_name[best]
             im = idol_median(sorted(idol_ns)) / 1e9
             bm = idol_median(sorted(rival_ns)) / 1e9
-            margin = (bm - im) / bm if bm else 0.0
-            lo95, hi95 = bootstrap_median_diff_ci(idol_ns, rival_ns, 0.95)
-            lo90, hi90 = bootstrap_median_diff_ci(idol_ns, rival_ns, 0.90)
-            median_significant = (hi95 < 0.0) or (lo95 > 0.0)
-            equivalent = (lo90 >= -EQUIV_BAND_PCT) and (hi90 <= EQUIV_BAND_PCT)
+            # Percentage estimand domain: a zero rival median makes the
+            # percentage margin undefined. Record None (JSON null), never a
+            # silent 0.0.
+            margin = (bm - im) / bm if bm else None
+            ci95 = bootstrap_median_diff_ci(idol_ns, rival_ns, 0.95)
+            ci90 = bootstrap_median_diff_ci(idol_ns, rival_ns, 0.90)
+            lo95, hi95 = ci95
+            lo90, hi90 = ci90
+            # Undefined-estimate admission: if the bootstrap produced no
+            # usable resamples, there is no uncertainty calculation to admit.
+            # This is "insufficient evidence", never an affirmative interval.
+            estimand_undefined = (lo95 is None) or (lo90 is None)
+            median_significant = ((not estimand_undefined)
+                                  and ((hi95 < 0.0) or (lo95 > 0.0)))
+            equivalent = ((not estimand_undefined)
+                          and (lo90 >= -EQUIV_BAND_PCT)
+                          and (hi90 <= EQUIV_BAND_PCT))
             t_w, df_w, p_w = welch_t_satterthwaite(idol, rivals[best])
             welch_sig = p_w < ALPHA
             mean_diff = sum(idol) / len(idol) - sum(rivals[best]) / len(rivals[best])
@@ -319,7 +349,9 @@ def main():
             conflict = (welch_sig != median_significant) or (
                 welch_sig and median_significant
                 and (mean_diff > 0) != (median_diff > 0))
-            if median_significant:
+            if estimand_undefined:
+                verdict = "inconclusive"
+            elif median_significant:
                 verdict = "win" if median_diff < 0 else "loss"
             elif equivalent:
                 verdict = "equivalent"
@@ -332,11 +364,17 @@ def main():
                 "idol_median": im,
                 "rival_median": bm,
                 "margin": margin,
-                "margin_pct": margin * 100.0,
+                "margin_pct": (margin * 100.0 if margin is not None else None),
                 "ci95_median_diff_pct": [lo95, hi95],
                 "ci90_median_diff_pct": [lo90, hi90],
                 "median_significant": median_significant,
                 "equivalent": equivalent,
+                "estimand_undefined": estimand_undefined,
+                "estimand_undefined_reason": (
+                    "percentage estimand undefined: no bootstrap resample "
+                    "had a nonzero rival median; no usable uncertainty "
+                    "calculation (insufficient evidence)"
+                    if estimand_undefined else None),
                 "welch_t_mean": t_w,
                 "welch_df": df_w,
                 "welch_p_mean": p_w,
@@ -347,7 +385,12 @@ def main():
                 "verdict": verdict,
                 "decision_rule": DECISION_RULE,
             }
-            if conflict:
+            if estimand_undefined:
+                print("verifier: WARNING: percentage estimand undefined "
+                      "(rival median zero in all bootstrap resamples); "
+                      "verdict=inconclusive (insufficient evidence)",
+                      file=sys.stderr)
+            elif conflict:
                 print("verifier: WARNING: mean/median diagnostic conflict "
                       f"(welch p={p_w:.4f} sig={welch_sig}, median 95% CI "
                       f"[{lo95:+.2f}%, {hi95:+.2f}%] sig={median_significant})",
