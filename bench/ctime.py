@@ -172,7 +172,12 @@ def main():
         return 2
     prog_id = os.path.join(benchdir, "programs", prog + ".id")
     prog_c = os.path.join(benchdir, "programs", prog + ".c")
-    reqs = [prog_id, prog_c, sdk, workdir]
+    reqs = [prog_id, prog_c, workdir]
+    # The macOS SDK path is consumed only by the restricted route's macOS-ld
+    # link step; the production route never references it (and no SDK exists
+    # on Linux hosts).
+    if route == "restricted":
+        reqs.append(sdk)
     reqs.append(idol_bin if route == "production" else native)
     for req in reqs:
         if not os.path.exists(req):

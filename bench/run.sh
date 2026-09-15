@@ -5,7 +5,8 @@
 #   ./run.sh                 # full run: 21 interleaved rounds per benchmark
 #   ./run.sh --quick         # smoke run: 5 rounds
 #   ./run.sh --progs "sum fib" --compilers "clang"
-#   ./run.sh --route production   # production compiler route (default: restricted)
+#   ./run.sh --route production   # --route is REQUIRED (restricted|production); there is no default.
+#   A bare invocation is not a production-compiler campaign.
 #
 # Pipeline per benchmark program P and compiler C:
 #   1. Build P with the Idol compiler for this run's route. Restricted route:
@@ -80,22 +81,30 @@ rm -f "$WORK/.unqualified" "$WORK/.load_samples"
 ROUNDS=21
 PROGS="sum arith fib nest div mul13 bigconst zerotrip upbranch startup brm1 brm2 brm3 divv divm divd dgcd divpow2 ceildiv mulc mulh madd sred1 powmod popc bitr xsft absd cltz nest3d unroll mixop loopinv satadd regp ilp stride3"
 WANT_COMPILERS="clang gcc"
-ROUTE="restricted"
+ROUTE=""
+ROUTE_EXPLICIT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --quick) ROUNDS=5 ;;
     --progs) PROGS="$2"; shift ;;
     --compilers) WANT_COMPILERS="$2"; shift ;;
-    --route) ROUTE="$2"; shift ;;
+    --route) ROUTE="$2"; ROUTE_EXPLICIT=1; shift ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
   shift
 done
+if [ "$ROUTE_EXPLICIT" -ne 1 ]; then
+  echo "bench: FATAL: --route is required (restricted|production)." >&2
+  echo "bench: a bare invocation is not a production-compiler campaign: the restricted route" >&2
+  echo "bench: is a research path, not the production compiler. Pass --route production" >&2
+  echo "bench: for release/performance admission." >&2
+  exit 2
+fi
 case "$ROUTE" in
   restricted|production) ;;
   *) echo "unknown route: $ROUTE (expected restricted|production)" >&2; exit 2 ;;
 esac
-echo "bench: route=$ROUTE"
+echo "bench: route=$ROUTE (explicit)"
 
 # --- 0a. Hang watchdog for the restricted-route producer ---
 # The restricted route pipes program source through nativebench, which has a
@@ -135,10 +144,12 @@ bench_load_read() {
     [ -n "${BENCH_LOAD:-}" ] && load="$BENCH_LOAD"
     printf '%s' "$load"
 }
-bench_load_valid() { # $1=load $2=maxload -> 0 iff both numeric
-    case "$1" in ''|*[!0-9.]* ) return 1;; esac
-    case "$2" in ''|*[!0-9.]* ) return 1;; esac
-    return 0
+bench_load_valid() { # $1=load $2=maxload -> 0 iff both are valid numbers
+    # A genuine numeric parse, not a character whitelist: rejects "", ".",
+    # "1.2.3", "-1", "1e3", and anything with whitespace. Malformed
+    # observations must not count as valid load measurements.
+    local re='^[0-9]+(\.[0-9]+)?$'
+    [[ "$1" =~ $re ]] && [[ "$2" =~ $re ]]
 }
 mark_unqualified() { # $1=reason
     QUALIFIED=0
@@ -157,6 +168,12 @@ elif awk -v l="$LOAD_START" -v m="$MAXLOAD" 'BEGIN{exit !(l >= m)}'; then
 else
     echo "bench: load gate ok (1-min avg $LOAD_START < $MAXLOAD)"
 fi
+# A BENCH_LOAD override replaces the observed load with a synthetic value.
+# Test controls may use it, but the run can never be a qualified real-world
+# observation: force EXPLORATORY/UNQUALIFIED.
+if [ -n "${BENCH_LOAD:-}" ]; then
+    mark_unqualified "BENCH_LOAD='${BENCH_LOAD}' override active: compared load is synthetic, not an observed machine load"
+fi
 echo "$LOAD_START" > "$WORK/.load_start"
 
 ARCH="$(uname -m)"; OS="$(uname -s)"
@@ -165,7 +182,16 @@ if [ "${ARCH}-${OS}" != "arm64-Darwin" ] && [ "${ARCH}-${OS}" != "aarch64-Linux"
   echo "bench: no backend for ${ARCH}-${OS} yet (see platforms/). aborting." >&2
   exit 3
 fi
-SDK="$(xcrun --show-sdk-path)"
+if [ "$OS" = "Darwin" ]; then
+  if ! SDK="$(xcrun --show-sdk-path)"; then
+    echo "bench: FATAL: xcrun --show-sdk-path failed on Darwin; cannot locate the macOS SDK." >&2
+    exit 4
+  fi
+else
+  # Non-Darwin hosts (e.g. aarch64-Linux) need no macOS SDK: the native
+  # backend emits linked executables directly and no link step reads $SDK.
+  SDK=""
+fi
 
 # --- 1. Build the Idol compiler for this run's route (never stale) ---
 IDOL_BIN="$REPO/zig-out/bin/idol"
