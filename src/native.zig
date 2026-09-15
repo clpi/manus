@@ -34,6 +34,10 @@ pub const Error = error{
     /// Undefined symbols remain after lowering a static executable request,
     /// mapping to DNB013. A static image has no linker to satisfy them.
     UnresolvedExternals,
+    /// An undefined symbol on the Windows/PE32+ path names nothing in the
+    /// known import set (msvcrt/kernel32), mapping to DNB014. The PE writer
+    /// never guesses a DLL for a symbol it does not know.
+    UnknownImportSymbol,
 } || std.mem.Allocator.Error;
 
 /// Mach-O / ELF labels cannot contain `.`; DNIR keeps logical `Type.method` names.
@@ -252,6 +256,7 @@ pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
         error.UnsupportedTarget => .{ .code = "DNB004", .message = "target object format or host is unsupported by the direct backend" },
         error.UnsupportedObjectFormat => .{ .code = "DNB012", .message = "direct ELF writer emits static executables only; relocatable objects and shared libraries are not supported" },
         error.UnresolvedExternals => .{ .code = "DNB013", .message = "static executable has undefined symbols no linker will satisfy" },
+        error.UnknownImportSymbol => .{ .code = "DNB014", .message = "PE writer cannot import external symbol: outside the known CRT/kernel32 set" },
         error.UnsupportedProgram => .{ .code = "DNB001", .message = "program construct is outside the direct backend subset" },
         error.SemanticFactsInvalid => .{ .code = "DNB011", .message = "required graph facts or realization lineage are missing or inconsistent" },
         error.MissingMain => .{ .code = "DNB006", .message = "direct native module has no eligible functions" },
@@ -457,18 +462,32 @@ pub fn emitObjectWithGraphLineageObserved(
 /// gets `fcvtzs x0, d0` on f64 returns so native executables receive an i64 exit code.
 /// Which host the direct backend is running on, for the object/executable
 /// dispatch. macOS/aarch64 keeps the Mach-O object path; Linux/aarch64 emits
-/// static ELF64 executables directly; anything else is a genuine DNB004
-/// (unsupported host). The parameterized form exists so the dispatch is
-/// unit-testable without a Linux machine.
-const NativeHost = enum { macos, linux, unsupported };
+/// static ELF64 executables directly; Windows/aarch64 emits PE32+
+/// executables directly; anything else is a genuine DNB004 (unsupported
+/// host). The parameterized form exists so the dispatch is unit-testable
+/// without a Linux or Windows machine.
+const NativeHost = enum { macos, linux, windows, unsupported };
 
 fn nativeHostKindFor(os: std.Target.Os.Tag, arch: std.Target.Cpu.Arch) NativeHost {
     if (os == .macos and arch == .aarch64) return .macos;
     if (os == .linux and arch == .aarch64) return .linux;
+    if (os == .windows and arch == .aarch64) return .windows;
     return .unsupported;
 }
 
-fn nativeHostKind() NativeHost {
+/// IDOL_PE_TARGET=1 forces the Windows ARM64 / PE32+ target on any AArch64
+/// host. The fleet has no Windows hardware, so without this hatch the PE
+/// writer and its lowering arms could never be exercised end to end; on
+/// real Windows ARM64 hardware the host gate selects PE by itself and the
+/// variable is unnecessary. This is a verification hatch, not a second
+/// production route: the emitted image is the same one Windows hardware
+/// would get.
+fn peTargetForced() bool {
+    return builtin.cpu.arch == .aarch64 and std.c.getenv("IDOL_PE_TARGET") != null;
+}
+
+pub fn nativeHostKind() NativeHost {
+    if (peTargetForced()) return .windows;
     return nativeHostKindFor(builtin.os.tag, builtin.cpu.arch);
 }
 
@@ -549,8 +568,9 @@ fn emitObjectModeWithGraphLineage(
 ) Error!ObjectWithLineage {
     // One host gate shared by the object, dylib, and executable entries:
     // macOS/aarch64 keeps the Mach-O object path; Linux/aarch64 emits a
-    // static ELF64 executable directly (DNB012 refuses the object/dylib
-    // request up front). Any other host is a genuine DNB004.
+    // static ELF64 executable directly; Windows/aarch64 emits a PE32+
+    // executable directly (DNB012 refuses the object/dylib request up front
+    // on both direct-executable paths). Any other host is a genuine DNB004.
     const host = nativeHostKind();
     if (host == .unsupported) return error.UnsupportedTarget;
     if (host == .linux and entry == null) return error.UnsupportedObjectFormat;
@@ -585,6 +605,40 @@ fn emitObjectModeWithGraphLineage(
         for (lineage) |*row| {
             row.object_start = @intCast(elfTextFileOffset() + row.text_start);
             row.object_end = @intCast(elfTextFileOffset() + row.text_end);
+        }
+        return .{
+            .bytes = bytes,
+            .lineage = lineage,
+            .graph = graph,
+            .need = &.{},
+        };
+    }
+
+    if (host == .windows) {
+        // PE32+: undefined symbols become imports (msvcrt/kernel32) — the
+        // OS loader is the linker. Only the unimportable are refused, as
+        // DNB014 inside the writer. Object/dylib requests are refused
+        // exactly like the ELF path's DNB012: the writer emits executables
+        // only.
+        const exe_entry = entry orelse return error.UnsupportedObjectFormat;
+        const bytes = try emitPeArm64StaticExec(
+            alloc,
+            output.text,
+            output.cstring,
+            output.const_data,
+            output.symbols,
+            output.relocations,
+            output.data_relocations,
+            output.bss_size,
+            output.global_data,
+            exe_entry,
+        );
+        errdefer alloc.free(bytes);
+        const lineage = try alloc.dupe(MachineLineage, output.lineage);
+        errdefer alloc.free(lineage);
+        for (lineage) |*row| {
+            row.object_start = @intCast(peTextFileOffset() + row.text_start);
+            row.object_end = @intCast(peTextFileOffset() + row.text_end);
         }
         return .{
             .bytes = bytes,
@@ -1069,6 +1123,11 @@ const Arm64Compiler = struct {
     /// promotes nothing, so every DNIR-only entry point keeps today's emission
     /// byte for byte.
     const_licence: ?*const const_table.Licence = null,
+    /// True when this compilation targets Windows ARM64 (PE32+): set once
+    /// from `nativeHostKind()` at construction. The trap, depth-fault, and
+    /// depth-limit lowering arms read it. False on every existing path, so
+    /// macOS and Linux emission are untouched by its presence.
+    target_windows: bool = false,
     /// The resident graph this DNIR projection carries coordinates into, when
     /// it carries any. W8 (two-sided if-conversion) reads `ApplicationFact`
     /// from here rather than re-deriving effect from instruction shape; a null
@@ -6142,6 +6201,17 @@ const Arm64Compiler = struct {
     /// does not consume a frame, so a function whose only "call" was this one is
     /// still a leaf.
     fn emitTrapAbort(self: *Arm64Compiler) Error!void {
+        if (self.target_windows) {
+            // __fastfail: the documented immediate-termination primitive on
+            // Windows. MSVC lowers it to exactly `brk #0xF000` with the
+            // failure code in w0; there is no stable raw syscall to use
+            // instead (NTDLL numbers change between builds and Microsoft
+            // documents direct invocation as unsupported). 0x1D01 is the
+            // Idol generic-trap class; WER reports it with the crash.
+            try self.emit(0xd283a020, "movz w0, #0x1d01");
+            try self.emit(0xd43e0000, "brk #0xF000");
+            return;
+        }
         // Per-host trap syscalls. builtin.os.tag is comptime, so the
         // unchosen arm vanishes and macOS emission is bit-identical.
         const host_linux = builtin.os.tag == .linux;
@@ -9696,6 +9766,19 @@ const Arm64Compiler = struct {
     fn emitDepthFault(self: *Arm64Compiler) Error!void {
         const msg = "idol: error.depth: stack exhausted by non-tail recursion (§12; raise `ulimit -s`, or make the recursion a tail call)\n";
         const sym = try self.internString(msg);
+        if (self.target_windows) {
+            // puts(msg); __fastfail(0x1D02). Raw fd-2 write(2) does not
+            // exist on Windows, so the message travels the normal msvcrt
+            // import (a `bl puts` the PE writer routes through its thunk)
+            // instead of a syscall; the 0x1D02 code distinguishes a
+            // depth/bounds fault from the generic 0x1D01 trap.
+            try self.ensureExternalSymbol("puts");
+            try self.emitAdrpAdd(0, sym);
+            try self.emitBl("puts");
+            try self.emit(0xd283a040, "movz w0, #0x1d02");
+            try self.emit(0xd43e0000, "brk #0xF000");
+            return;
+        }
         const movz = struct {
             fn word(reg: u5, imm: u16) u32 {
                 return 0xd2800000 | (@as(u32, imm) << 5) | @as(u32, reg);
@@ -9809,17 +9892,25 @@ const Arm64Compiler = struct {
         const nr_getrlimit: u16 = if (host_linux) 163 else 194;
         const svc_word: u32 = if (host_linux) 0xd4000001 else 0xd4001001;
         const svc_text: []const u8 = if (host_linux) "svc #0" else "svc #0x80";
-        try self.emitFmt(movz(sc, nr_getrlimit, 0), "mov x{d}, #{d}", .{ sc, nr_getrlimit });
-        try self.emit(svc_word, svc_text);
-        try self.emitFmt(0xf9400000 | (@as(u32, 31) << 5) | 17, "ldr x17, [sp]", .{});
-        if (host_linux) {
-            // Linux returns -errno in x0 and leaves PSTATE alone, so the
-            // macOS carry-set-on-failure test below would read a stale flag.
-            // Synthesize it: x0 + 4096 carries out iff x0 is in [-4096, -1],
-            // exactly the kernel's error range. x0 is reloaded from its park
-            // slot two instructions later, so clobbering x16 here is free;
-            // the `csel cs` below then reads this adds-set carry.
-            try self.emit(0xb1400010, "adds x16, x0, #4096");
+        if (self.target_windows) {
+            // No getrlimit on Windows and no stable raw syscall to probe
+            // with — but there is nothing to probe: the PE header this same
+            // compilation writes declares SizeOfStackReserve (peStackReserve
+            // = 1 MiB), so x17 takes the fixed budget directly.
+            try self.emitFmt(movz(17, 0x10, 1), "mov x17, #{d}", .{0x100000});
+        } else {
+            try self.emitFmt(movz(sc, nr_getrlimit, 0), "mov x{d}, #{d}", .{ sc, nr_getrlimit });
+            try self.emit(svc_word, svc_text);
+            try self.emitFmt(0xf9400000 | (@as(u32, 31) << 5) | 17, "ldr x17, [sp]", .{});
+            if (host_linux) {
+                // Linux returns -errno in x0 and leaves PSTATE alone, so the
+                // macOS carry-set-on-failure test below would read a stale flag.
+                // Synthesize it: x0 + 4096 carries out iff x0 is in [-4096, -1],
+                // exactly the kernel's error range. x0 is reloaded from its park
+                // slot two instructions later, so clobbering x16 here is free;
+                // the `csel cs` below then reads this adds-set carry.
+                try self.emit(0xb1400010, "adds x16, x0, #4096");
+            }
         }
         try self.emitLdrSp(0, 16);
         try self.emitLdrSp(1, 24);
@@ -9827,11 +9918,13 @@ const Arm64Compiler = struct {
         // 8 MiB, the Darwin main-thread default, as the fallback for both the
         // failed call (carry set) and an rlim_cur at or past 2 GiB — which is how
         // RLIM_INFINITY arrives and is not a budget anything can stand on.
-        try self.emitFmt(movz(16, 0x80, 1), "mov x16, #{d}", .{0x800000});
-        try self.emit(0x9a912211, "csel x17, x16, x17, cs");
-        try self.emit(0xd35ffe2f, "lsr x15, x17, #31");
-        try self.emit(0xf10001ff, "cmp x15, #0");
-        try self.emit(0x9a911211, "csel x17, x16, x17, ne");
+        if (!self.target_windows) {
+            try self.emitFmt(movz(16, 0x80, 1), "mov x16, #{d}", .{0x800000});
+            try self.emit(0x9a912211, "csel x17, x16, x17, cs");
+            try self.emit(0xd35ffe2f, "lsr x15, x17, #31");
+            try self.emit(0xf10001ff, "cmp x15, #0");
+            try self.emit(0x9a911211, "csel x17, x16, x17, ne");
+        }
         // Reserve the margin, then floor = sp - budget.
         try self.emit(0xd1404231, "sub x17, x17, #16, lsl #12");
         try self.emit(0x910003f0, "mov x16, sp");
@@ -13320,6 +13413,7 @@ fn emitArm64FromDnirLicensed(
         .scal_records = &scal_records,
         .entry = entry,
         .const_licence = licence,
+        .target_windows = nativeHostKind() == .windows,
     };
     if (std.c.getenv("IDOL_IFCONV_TRACE") != null) compiler.ifconv_trace = true;
     // The tight-def fact's SEVERING CONTROL. Read as a VALUE, not a presence,
@@ -14138,6 +14232,500 @@ fn emitElfArm64StaticExec(
 
     return out;
 }
+
+// ============================================================================
+// Direct AArch64+Windows PE32+ executable writer.
+//
+// Same structural role as the ELF writer above: the production native backend
+// lowers Idol to AArch64 machine code once, and this writer packages the
+// lowered image as a PE32+ for Windows on ARM64 (IMAGE_FILE_MACHINE_ARM64 =
+// 0xAA64) — no linker, no CRT startup object, no import library.
+//
+// WHY IMPORTS, AND WHY THESE DLLS. Windows publishes no stable raw-syscall
+// ABI: NTDLL syscall numbers change between builds and Microsoft documents
+// direct system-call invocation as unsupported. The supported mechanism is
+// the loader-resolved import table, so every OS service in a PE image is a
+// DLL import:
+//
+//   msvcrt.dll    puts, printf, fflush (+ vprintf, memcpy, memmove, memset,
+//                 memcmp, strlen for compiler-emitted helpers) — `print`
+//                 lowers to `bl puts` / `bl printf` (see `print_value`); the
+//                 call sites are unchanged, and each becomes a thunk (below)
+//                 that calls through the IAT.
+//   kernel32.dll  ExitProcess — the entry stub tail-calls it with the Idol
+//                 entry's i64 exit code in x0. There is no raw exit syscall
+//                 to use instead.
+//
+// GetStdHandle/WriteFile are deliberately NOT imported: nothing in the
+// lowering does raw fd I/O (puts covers stdout; the depth-fault message goes
+// through puts too), so they would be unused surface. NTDLL is deliberately
+// NOT used: see the syscall paragraph above.
+//
+// Traps (div-by-zero, depth fault, bounds) cannot be syscalls either. They
+// are `__fastfail`: the documented immediate-termination primitive, which on
+// ARM64 is exactly `brk #0xF000` (0xD43E0000) with the failure code in w0 —
+// no import, no return, WER reports the code.
+//   0x1D01  generic trap (div-by-zero, unreachable)
+//   0x1D02  depth/bounds fault (message already on stdout via puts)
+//
+// Calls to imports go through per-import thunks appended to .text:
+//
+//     sub sp, sp, #32        ; Windows callee home (shadow) space; 32 keeps
+//     adrp x16, <iat page>   ; the 16-byte stack alignment
+//     ldr x16, [x16, #<off>] ; x16 = IAT slot (loader-resolved)
+//     blr x16
+//     add sp, sp, #32
+//     ret
+//
+// A `bl puts` (branch26 relocation against an undefined symbol) is rewritten
+// to `bl <thunk>` — the same size, still PC-relative, so no layout shift.
+// The thunk does the Windows-calling-convention work once per import
+// instead of once per call site.
+//
+// The entry stub (16 bytes at the top of .text) is:
+//
+//     bl <entry>             ; the Idol entry; x0 = i64 exit code
+//     adrp x16, <iat page>   ; ExitProcess slot
+//     ldr x16, [x16, #<off>]
+//     br x16                 ; tail-call; never returns
+//
+// Layout (RVAs; vaddr = ImageBase + rva):
+//   DOS header (64 B; e_lfanew = 64; no stub — the loader needs MZ + lfanew)
+//   PE sig + COFF (Machine 0xAA64, 3 sections) + PE32+ optional header
+//   .text   RVA 0x1000: entry stub, .text bytes, import thunks
+//   .rdata  section-aligned: import directory, ILT, IAT, hint/name table,
+//           DLL names
+//   .data   section-aligned: global_data; bss tail via VirtualSize (the
+//           loader zero-fills what has no file bytes)
+//
+// Relocations resolve here, at emission time, exactly like the ELF writer:
+// page21/pageoff12 against the symbol's final vaddr (ImageBase + rva),
+// abs64 as a little-endian u64 in .data, branch26 PC-relative within .text
+// (already correct) or rewritten to the import's thunk.
+//
+// No .reloc section is emitted and DllCharacteristics omits DYNAMIC_BASE:
+// the image loads at its linked ImageBase, honestly fixed rather than
+// pretending to be relocatable.
+//
+// Undefined symbols outside the known import set are refused as DNB014 —
+// fail closed, never guessed into an import table.
+// ============================================================================
+
+/// IMAGE_FILE_MACHINE_ARM64.
+const peMachineArm64: u16 = 0xAA64;
+/// PE32+ optional-header magic.
+const peOptMagic: u16 = 0x20b;
+/// Default Windows image base for ARM64 executables.
+const peImageBase: u64 = 0x140000000;
+// Untyped: coerces to usize for alignForward and to u64 for RVA arithmetic.
+const peSectionAlign = 0x1000;
+const peFileAlign = 0x200;
+/// Headers before the first section: DOS(64) + sig(4) + COFF(20) +
+/// optional(240) + 3 section headers(120) = 448, rounded to FileAlignment.
+const peSizeOfHeaders: usize = 0x200;
+/// Entry stub: bl entry; adrp x16, iat; ldr x16, [x16, #off]; br x16.
+const peStubLen: usize = 16;
+/// Import thunk: sub sp,sp,#32; adrp; ldr; blr; add sp,sp,#32; ret.
+const peThunkLen: usize = 24;
+/// __fastfail codes (w0) — the classes are documented above.
+const peTrapGeneric: u32 = 0x1d01;
+const peTrapDepth: u32 = 0x1d02;
+/// Stack reserve declared in the PE header; the depth-limit init on the PE
+/// path derives its floor from this instead of probing getrlimit.
+const peStackReserve: u64 = 0x100000;
+const peDllMsvcrt = "msvcrt.dll";
+const peDllKernel32 = "kernel32.dll";
+
+/// File offset of `.text` content in the PE image (headers + entry stub).
+/// Lineage rows add their text-relative ranges to this, mirroring the
+/// `elfTextFileOffset` use.
+fn peTextFileOffset() usize {
+    return peSizeOfHeaders + peStubLen;
+}
+
+/// Which DLL provides a known import name. Anything else is DNB014.
+fn peImportDll(name: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, name, "ExitProcess")) return peDllKernel32;
+    const crt = [_][]const u8{ "puts", "printf", "fflush", "vprintf", "memcpy", "memmove", "memset", "memcmp", "strlen" };
+    for (crt) |c| {
+        if (std.mem.eql(u8, name, c)) return peDllMsvcrt;
+    }
+    return null;
+}
+
+/// Final virtual address of a lowered symbol, by VM-layout offset range —
+/// the same VM layout the ELF writer uses (text, then cstring, then
+/// 8-aligned const, then bss), so no section-index decoding is needed.
+fn peSymbolVAddr(
+    sym: Symbol,
+    text_len: usize,
+    rodata_len: usize,
+    bss_base: usize,
+    bss_size: u64,
+    text_vaddr: u64,
+    rodata_vaddr: u64,
+    data_vaddr: u64,
+) Error!u64 {
+    const o: usize = sym.offset;
+    if (o < text_len) return text_vaddr + @as(u64, o);
+    if (o < text_len + rodata_len) return rodata_vaddr + @as(u64, o - text_len);
+    if (o >= bss_base and o < bss_base + @as(usize, bss_size)) return data_vaddr + @as(u64, o - bss_base);
+    return error.SemanticFactsInvalid;
+}
+
+fn writePeSectionHeader(sh: *[40]u8, name: []const u8, vsize: u32, vaddr: u32, raw_size: u32, raw_ptr: u32, chars: u32) void {
+    @memset(sh[0..8], 0);
+    const n = @min(name.len, 8);
+    @memcpy(sh[0..n], name[0..n]);
+    std.mem.writeInt(u32, sh[8..12], vsize, .little);
+    std.mem.writeInt(u32, sh[12..16], vaddr, .little);
+    std.mem.writeInt(u32, sh[16..20], raw_size, .little);
+    std.mem.writeInt(u32, sh[20..24], raw_ptr, .little);
+    std.mem.writeInt(u32, sh[36..40], chars, .little);
+}
+
+fn emitPeArm64StaticExec(
+    alloc: std.mem.Allocator,
+    text: []const u8,
+    cstring: []const u8,
+    const_data: []const u8,
+    symbols: []const Symbol,
+    relocations: []const Relocation,
+    data_relocations: []const Relocation,
+    bss_size: u64,
+    global_data: []const u8,
+    entry: []const u8,
+) Error![]u8 {
+    if (bss_size > 0xffffffff) return error.SemanticFactsInvalid;
+
+    // --- imports: undefined symbols in first-seen order, ExitProcess appended.
+    // A duplicate name cannot be both defined here and imported (the
+    // lowerer refuses that as DuplicateSymbol), so first-seen order is
+    // total and deterministic.
+    var import_names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer import_names.deinit(alloc);
+    var seen_exit = false;
+    for (symbols) |sym| {
+        if (sym.defined) continue;
+        var dup = false;
+        for (import_names.items) |n| if (std.mem.eql(u8, n, sym.name)) {
+            dup = true;
+            break;
+        };
+        if (dup) continue;
+        if (peImportDll(sym.name) == null) return error.UnknownImportSymbol;
+        if (std.mem.eql(u8, sym.name, "ExitProcess")) seen_exit = true;
+        try import_names.append(alloc, sym.name);
+    }
+    if (!seen_exit) try import_names.append(alloc, "ExitProcess");
+    const nimports = import_names.items.len;
+
+    // DLLs are emitted in a fixed order; imports keep first-seen order
+    // within their DLL.
+    const dlls = [_][]const u8{ peDllMsvcrt, peDllKernel32 };
+    var dll_counts = [_]usize{ 0, 0 };
+    var import_dll = try alloc.alloc(u8, nimports);
+    defer alloc.free(import_dll);
+    var import_slot = try alloc.alloc(u32, nimports);
+    defer alloc.free(import_slot);
+    for (import_names.items, 0..) |name, i| {
+        const dll = peImportDll(name) orelse return error.UnknownImportSymbol;
+        var di: u8 = 0;
+        for (dlls, 0..) |d, k| if (std.mem.eql(u8, d, dll)) {
+            di = @intCast(k);
+            break;
+        };
+        import_dll[i] = di;
+        import_slot[i] = @intCast(dll_counts[di]);
+        dll_counts[di] += 1;
+    }
+    var ndll: usize = 0;
+    for (dll_counts) |c| {
+        if (c > 0) ndll += 1;
+    }
+
+    // --- section layout (RVAs; file offsets are FileAlignment-rounded) ---
+    const text_rva: u64 = 0x1000;
+    const text_file: usize = peSizeOfHeaders;
+    const content_file: usize = text_file + peStubLen;
+    const content_rva: u64 = text_rva + @as(u64, peStubLen);
+    const content_vaddr: u64 = peImageBase + content_rva;
+    const thunks_file: usize = content_file + text.len;
+    const thunks_rva: u64 = content_rva + @as(u64, text.len);
+    const text_vsize: u64 = @as(u64, peStubLen) + @as(u64, text.len) + @as(u64, peThunkLen) * @as(u64, nimports);
+    const text_raw: usize = alignForward(@as(usize, @intCast(text_vsize)), peFileAlign);
+
+    const rdata_rva: u64 = text_rva + @as(u64, alignForward(@as(usize, @intCast(text_vsize)), peSectionAlign));
+    const rdata_file: usize = text_file + text_raw;
+    // .rdata: import directory (20/dll + 20 null), ILT+IAT (8*(n+1) each
+    // per dll), hint/name entries, DLL names.
+    var rdata_len: usize = 20 * (ndll + 1);
+    for (dll_counts) |c| {
+        if (c == 0) continue;
+        rdata_len += 16 * (c + 1);
+    }
+    for (import_names.items) |name| rdata_len += alignForward(2 + name.len + 1, 2);
+    for (dlls, 0..) |d, k| {
+        if (dll_counts[k] == 0) continue;
+        rdata_len += d.len + 1;
+    }
+    const rdata_raw: usize = alignForward(rdata_len, peFileAlign);
+
+    const data_rva: u64 = rdata_rva + @as(u64, alignForward(rdata_len, peSectionAlign));
+    const data_file: usize = rdata_file + rdata_raw;
+    const data_vsize: u64 = @as(u64, global_data.len) + bss_size;
+    const data_raw: usize = alignForward(global_data.len, peFileAlign);
+    const image_size: u64 = data_rva + @as(u64, alignForward(@as(usize, @intCast(data_vsize)), peSectionAlign));
+    const total: usize = data_file + data_raw;
+
+    // --- .rdata RVA assignment (all of these ARE rvas, not file offsets) ---
+    var ilt_rva = [_]u64{ 0, 0 };
+    var iat_rva = [_]u64{ 0, 0 };
+    var dll_name_rva = [_]u64{ 0, 0 };
+    var ro: usize = 20 * (ndll + 1);
+    for (0..2) |k| {
+        if (dll_counts[k] == 0) continue;
+        ilt_rva[k] = rdata_rva + ro;
+        ro += 8 * (dll_counts[k] + 1);
+    }
+    for (0..2) |k| {
+        if (dll_counts[k] == 0) continue;
+        iat_rva[k] = rdata_rva + ro;
+        ro += 8 * (dll_counts[k] + 1);
+    }
+    var hn_rva = try alloc.alloc(u64, nimports);
+    defer alloc.free(hn_rva);
+    for (import_names.items, 0..) |name, i| {
+        hn_rva[i] = rdata_rva + ro;
+        ro += alignForward(2 + name.len + 1, 2);
+    }
+    for (0..2) |k| {
+        if (dll_counts[k] == 0) continue;
+        dll_name_rva[k] = rdata_rva + ro;
+        ro += dlls[k].len + 1;
+    }
+    std.debug.assert(ro == rdata_len);
+
+    // --- entry symbol ---
+    const link_entry = try linkerSymbolName(alloc, entry);
+    defer alloc.free(link_entry);
+    var entry_off: ?u32 = null;
+    for (symbols) |sym| {
+        if (!sym.defined) continue;
+        if (std.mem.eql(u8, sym.name, link_entry)) {
+            entry_off = sym.offset;
+            break;
+        }
+    }
+    const eoff = entry_off orelse return error.MissingMain;
+    if (@as(usize, eoff) >= text.len) return error.SemanticFactsInvalid;
+    const entry_vaddr: u64 = content_vaddr + @as(u64, eoff);
+
+    var out = try alloc.alloc(u8, total);
+    errdefer alloc.free(out);
+    @memset(out, 0);
+
+    // --- DOS header: MZ + e_lfanew; no stub, the loader needs nothing else.
+    out[0] = 'M';
+    out[1] = 'Z';
+    std.mem.writeInt(u32, out[60..64], 64, .little); // e_lfanew
+    // --- PE signature ---
+    out[64] = 'P';
+    out[65] = 'E';
+    // --- COFF header ---
+    std.mem.writeInt(u16, out[68..70], peMachineArm64, .little);
+    std.mem.writeInt(u16, out[70..72], 3, .little); // NumberOfSections
+    // TimeDateStamp stays 0: deterministic output.
+    std.mem.writeInt(u16, out[84..86], 240, .little); // SizeOfOptionalHeader
+    std.mem.writeInt(u16, out[86..88], 0x0022, .little); // EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE
+    // --- PE32+ optional header ---
+    std.mem.writeInt(u16, out[88..90], peOptMagic, .little);
+    std.mem.writeInt(u32, out[92..96], @as(u32, @intCast(text_raw)), .little); // SizeOfCode
+    std.mem.writeInt(u32, out[96..100], @as(u32, @intCast(rdata_raw + data_raw)), .little); // SizeOfInitializedData
+    std.mem.writeInt(u32, out[100..104], @as(u32, @intCast(bss_size)), .little); // SizeOfUninitializedData
+    std.mem.writeInt(u32, out[104..108], @as(u32, @intCast(text_rva)), .little); // AddressOfEntryPoint: the stub
+    std.mem.writeInt(u32, out[108..112], @as(u32, @intCast(text_rva)), .little); // BaseOfCode
+    std.mem.writeInt(u64, out[112..120], peImageBase, .little);
+    std.mem.writeInt(u32, out[120..124], @as(u32, @intCast(peSectionAlign)), .little);
+    std.mem.writeInt(u32, out[124..128], @as(u32, @intCast(peFileAlign)), .little);
+    std.mem.writeInt(u16, out[128..130], 6, .little); // MajorOperatingSystemVersion
+    std.mem.writeInt(u16, out[136..138], 6, .little); // MajorSubsystemVersion
+    std.mem.writeInt(u32, out[144..148], @as(u32, @intCast(image_size)), .little); // SizeOfImage
+    std.mem.writeInt(u32, out[148..152], @as(u32, @intCast(peSizeOfHeaders)), .little); // SizeOfHeaders
+    std.mem.writeInt(u16, out[156..158], 3, .little); // Subsystem: CONSOLE
+    // DllCharacteristics: NX_COMPAT | TERMINAL_SERVER_AWARE. DYNAMIC_BASE is
+    // deliberately NOT set: no .reloc section is emitted, so the image must
+    // load at its linked ImageBase (all relocations resolve at emission).
+    std.mem.writeInt(u16, out[158..160], 0x8100, .little);
+    std.mem.writeInt(u64, out[160..168], peStackReserve, .little);
+    std.mem.writeInt(u64, out[168..176], 0x1000, .little); // SizeOfStackCommit
+    std.mem.writeInt(u64, out[176..184], 0x100000, .little); // SizeOfHeapReserve
+    std.mem.writeInt(u64, out[184..192], 0x1000, .little); // SizeOfHeapCommit
+    std.mem.writeInt(u32, out[196..200], 16, .little); // NumberOfRvaAndSizes
+    std.mem.writeInt(u32, out[208..212], @as(u32, @intCast(rdata_rva)), .little); // Import Table RVA
+    std.mem.writeInt(u32, out[212..216], @as(u32, @intCast(20 * (ndll + 1))), .little); // Import Table size
+    // --- section headers ---
+    writePeSectionHeader(out[328..][0..40], ".text", @as(u32, @intCast(text_vsize)), @as(u32, @intCast(text_rva)), @as(u32, @intCast(text_raw)), @as(u32, @intCast(text_file)), 0x60000020);
+    writePeSectionHeader(out[368..][0..40], ".rdata", @as(u32, @intCast(rdata_len)), @as(u32, @intCast(rdata_rva)), @as(u32, @intCast(rdata_raw)), @as(u32, @intCast(rdata_file)), 0x40000040);
+    writePeSectionHeader(out[408..][0..40], ".data", @as(u32, @intCast(data_vsize)), @as(u32, @intCast(data_rva)), @as(u32, @intCast(data_raw)), @as(u32, @intCast(data_file)), 0xc0000040);
+
+    // --- .rdata: import directory (20 bytes per DLL + 20 null) ---
+    var dir_n: usize = 0;
+    for (0..2) |k| {
+        if (dll_counts[k] == 0) continue;
+        const e: usize = rdata_file + 20 * dir_n;
+        std.mem.writeInt(u32, out[e..][0..4], @as(u32, @intCast(ilt_rva[k])), .little);
+        // TimeDateStamp + ForwarderChain stay 0.
+        std.mem.writeInt(u32, out[e + 12 ..][0..4], @as(u32, @intCast(dll_name_rva[k])), .little);
+        std.mem.writeInt(u32, out[e + 16 ..][0..4], @as(u32, @intCast(iat_rva[k])), .little);
+        dir_n += 1;
+    }
+    // --- .rdata: ILT (loader reads) + IAT (loader writes) ---
+    for (0..2) |k| {
+        if (dll_counts[k] == 0) continue;
+        const ilt_file: usize = rdata_file + @as(usize, @intCast(ilt_rva[k] - rdata_rva));
+        const iat_file: usize = rdata_file + @as(usize, @intCast(iat_rva[k] - rdata_rva));
+        var s: usize = 0;
+        for (import_names.items, 0..) |name, i| {
+            if (import_dll[i] != k) continue;
+            std.debug.assert(import_slot[i] == @as(u32, @intCast(s)));
+            _ = name;
+            const hrva: u64 = hn_rva[i];
+            std.mem.writeInt(u64, out[ilt_file + s * 8 ..][0..8], hrva, .little);
+            std.mem.writeInt(u64, out[iat_file + s * 8 ..][0..8], hrva, .little);
+            s += 1;
+        }
+        std.debug.assert(s == dll_counts[k]);
+    }
+    // --- .rdata: hint/name entries ---
+    for (import_names.items, 0..) |name, i| {
+        const at: usize = rdata_file + @as(usize, @intCast(hn_rva[i] - rdata_rva));
+        std.mem.writeInt(u16, out[at..][0..2], 0, .little); // hint
+        @memcpy(out[at + 2 ..][0..name.len], name);
+        out[at + 2 + name.len] = 0;
+    }
+    // --- .rdata: DLL names ---
+    for (0..2) |k| {
+        if (dll_counts[k] == 0) continue;
+        const at: usize = rdata_file + @as(usize, @intCast(dll_name_rva[k] - rdata_rva));
+        @memcpy(out[at..][0..dlls[k].len], dlls[k]);
+        out[at + dlls[k].len] = 0;
+    }
+
+    // --- entry stub ---
+    // ExitProcess is always an import (appended above); find its IAT slot.
+    var exit_i: usize = 0;
+    for (import_names.items, 0..) |name, i| if (std.mem.eql(u8, name, "ExitProcess")) {
+        exit_i = i;
+        break;
+    };
+    const exit_slot_vaddr: u64 = peImageBase + iat_rva[@as(usize, import_dll[exit_i])] + @as(u64, import_slot[exit_i]) * 8;
+    const stub_vaddr: u64 = peImageBase + text_rva;
+    const delta: i64 = @as(i64, @intCast(entry_vaddr)) - @as(i64, @intCast(stub_vaddr));
+    if (delta < -0x8000000 or delta >= 0x8000000) return error.BranchOutOfRange;
+    if (@rem(delta, 4) != 0) return error.BranchOutOfRange;
+    const bl_imm: u32 = @as(u32, @bitCast(@as(i32, @intCast(@divTrunc(delta, 4))))) & 0x03ffffff;
+    std.mem.writeInt(u32, out[text_file..][0..4], 0x94000000 | bl_imm, .little);
+    std.mem.writeInt(u32, out[text_file + 4 ..][0..4], patchAdrp(0x90000010, stub_vaddr + 4, exit_slot_vaddr), .little);
+    const exit_off: u32 = @intCast(exit_slot_vaddr & 0xfff);
+    std.mem.writeInt(u32, out[text_file + 8 ..][0..4], 0xf9400000 | ((exit_off >> 3) << 10) | (16 << 5) | 16, .little); // ldr x16, [x16, #off]
+    std.mem.writeInt(u32, out[text_file + 12 ..][0..4], 0xd61f0200, .little); // br x16
+
+    // --- import thunks ---
+    for (0..nimports) |i| {
+        const t: usize = thunks_file + i * peThunkLen;
+        const thunk_vaddr: u64 = peImageBase + thunks_rva + @as(u64, i) * @as(u64, peThunkLen);
+        const slot_vaddr: u64 = peImageBase + iat_rva[@as(usize, import_dll[i])] + @as(u64, import_slot[i]) * 8;
+        std.mem.writeInt(u32, out[t..][0..4], 0xd10083ff, .little); // sub sp, sp, #32
+        std.mem.writeInt(u32, out[t + 4 ..][0..4], patchAdrp(0x90000010, thunk_vaddr + 4, slot_vaddr), .little);
+        const so: u32 = @intCast(slot_vaddr & 0xfff);
+        std.mem.writeInt(u32, out[t + 8 ..][0..4], 0xf9400000 | ((so >> 3) << 10) | (16 << 5) | 16, .little); // ldr x16, [x16, #off]
+        std.mem.writeInt(u32, out[t + 12 ..][0..4], 0xd63f0200, .little); // blr x16
+        std.mem.writeInt(u32, out[t + 16 ..][0..4], 0x910083ff, .little); // add sp, sp, #32
+        std.mem.writeInt(u32, out[t + 20 ..][0..4], 0xd65f03c0, .little); // ret
+    }
+
+    // --- .text ---
+    @memcpy(out[content_file..][0..text.len], text);
+    const rodata_pad = (8 - ((text.len + cstring.len) % 8)) % 8;
+    const rodata_len = cstring.len + rodata_pad + const_data.len;
+    const bss_base = bssBaseAddr(text.len, cstring.len, const_data.len);
+    const rodata_vaddr: u64 = peImageBase + rdata_rva;
+    const data_vaddr: u64 = peImageBase + data_rva;
+    for (relocations) |rel| {
+        if (rel.symbol_index >= symbols.len) return error.SemanticFactsInvalid;
+        if (@as(usize, rel.offset) + 4 > text.len) return error.SemanticFactsInvalid;
+        const sym = symbols[rel.symbol_index];
+        const at: usize = content_file + rel.offset;
+        const insn_vaddr: u64 = content_vaddr + rel.offset;
+        switch (rel.kind) {
+            .branch26 => {
+                if (sym.defined) {
+                    // PC-relative within .text: the content shifts as one
+                    // unit, already correct (same as the ELF writer).
+                } else {
+                    // Import call: rewrite `bl <sym>` to `bl <thunk>`.
+                    var ti: ?usize = null;
+                    for (import_names.items, 0..) |n, i| if (std.mem.eql(u8, n, sym.name)) {
+                        ti = i;
+                        break;
+                    };
+                    const thunk = ti orelse return error.SemanticFactsInvalid;
+                    const thunk_vaddr: u64 = peImageBase + thunks_rva + @as(u64, thunk) * @as(u64, peThunkLen);
+                    const tdelta: i64 = @as(i64, @intCast(thunk_vaddr)) - @as(i64, @intCast(insn_vaddr));
+                    if (tdelta < -0x8000000 or tdelta >= 0x8000000) return error.BranchOutOfRange;
+                    if (@rem(tdelta, 4) != 0) return error.BranchOutOfRange;
+                    const imm: u32 = @as(u32, @bitCast(@as(i32, @intCast(@divTrunc(tdelta, 4))))) & 0x03ffffff;
+                    const word = std.mem.readInt(u32, out[at..][0..4], .little);
+                    std.mem.writeInt(u32, out[at..][0..4], (word & 0xfc000000) | imm, .little);
+                }
+            },
+            .page21 => {
+                if (!sym.defined) return error.UnknownSymbol;
+                const target = try peSymbolVAddr(sym, text.len, rodata_len, bss_base, bss_size, content_vaddr, rodata_vaddr, data_vaddr);
+                const word = std.mem.readInt(u32, out[at..][0..4], .little);
+                std.mem.writeInt(u32, out[at..][0..4], patchAdrp(word, insn_vaddr, target), .little);
+            },
+            .pageoff12 => {
+                if (!sym.defined) return error.UnknownSymbol;
+                const target = try peSymbolVAddr(sym, text.len, rodata_len, bss_base, bss_size, content_vaddr, rodata_vaddr, data_vaddr);
+                const word = std.mem.readInt(u32, out[at..][0..4], .little);
+                const page_offset: u32 = @intCast(target & 0xfff);
+                // Opcode-aware, same as the ELF writer: `add` takes the byte
+                // offset; `ldr` scales by its 8-byte access size; anything
+                // else is a producer this writer does not know.
+                const patched = if (word & 0xff000000 == 0x91000000)
+                    patchAddImm12(word, page_offset)
+                else if (word & 0xffc00000 == 0xf9400000) blk: {
+                    if (page_offset % 8 != 0) return error.SemanticFactsInvalid;
+                    break :blk patchAddImm12(word, page_offset >> 3);
+                } else return error.SemanticFactsInvalid;
+                std.mem.writeInt(u32, out[at..][0..4], patched, .little);
+            },
+            .abs64 => return error.SemanticFactsInvalid,
+        }
+    }
+
+    // --- .rdata: cstring ++ pad ++ const_data ---
+    @memcpy(out[rdata_file..][0..cstring.len], cstring);
+    // rodata_pad bytes are already zero
+    @memcpy(out[rdata_file + cstring.len + rodata_pad ..][0..const_data.len], const_data);
+
+    // --- .data (+ bss tail, zero-filled by the loader via VirtualSize) ---
+    @memcpy(out[data_file..][0..global_data.len], global_data);
+    for (data_relocations) |rel| {
+        if (rel.symbol_index >= symbols.len) return error.SemanticFactsInvalid;
+        if (rel.kind != .abs64) return error.SemanticFactsInvalid;
+        if (@as(usize, rel.offset) + 8 > global_data.len) return error.SemanticFactsInvalid;
+        const sym = symbols[rel.symbol_index];
+        if (!sym.defined) return error.UnknownSymbol;
+        const target = try peSymbolVAddr(sym, text.len, rodata_len, bss_base, bss_size, content_vaddr, rodata_vaddr, data_vaddr);
+        std.mem.writeInt(u64, out[data_file + rel.offset ..][0..8], target, .little);
+    }
+
+    return out;
+}
+
 
 fn alignForward(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
@@ -17304,9 +17892,10 @@ test "native backend refuses source length2 short-circuit absent physical loweri
 test "direct ELF: native host dispatch" {
     try std.testing.expectEqual(NativeHost.macos, nativeHostKindFor(.macos, .aarch64));
     try std.testing.expectEqual(NativeHost.linux, nativeHostKindFor(.linux, .aarch64));
+    try std.testing.expectEqual(NativeHost.windows, nativeHostKindFor(.windows, .aarch64));
+    try std.testing.expectEqual(NativeHost.unsupported, nativeHostKindFor(.windows, .x86_64));
     try std.testing.expectEqual(NativeHost.unsupported, nativeHostKindFor(.linux, .x86_64));
     try std.testing.expectEqual(NativeHost.unsupported, nativeHostKindFor(.macos, .x86_64));
-    try std.testing.expectEqual(NativeHost.unsupported, nativeHostKindFor(.windows, .aarch64));
 }
 
 test "direct ELF: patchAdrp round-trips through decode" {
@@ -17449,6 +18038,199 @@ test "direct ELF: entry need not be the first function" {
     // entry at 0x4000f8, stub at 0x4000e8: delta 16 -> imm 4.
     const bl = std.mem.readInt(u32, bytes[232..236], .little);
     try std.testing.expectEqual(@as(u32, 0x94000004), bl);
+}
+
+test "PE32+: headers identify a Windows ARM64 console executable" {
+    const alloc = std.testing.allocator;
+    const text = [_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }; // ret
+    const syms = [_]Symbol{
+        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
+    };
+    const bytes = try emitPeArm64StaticExec(alloc, &text, "", "", &syms, &.{}, &.{}, 0, "", "main");
+    defer alloc.free(bytes);
+    // DOS header + PE signature.
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 'M', 'Z' }, bytes[0..2]);
+    try std.testing.expectEqual(@as(u32, 64), std.mem.readInt(u32, bytes[60..64], .little)); // e_lfanew
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 'P', 'E', 0, 0 }, bytes[64..68]);
+    // COFF: ARM64, 3 sections, executable image.
+    try std.testing.expectEqual(@as(u16, 0xAA64), std.mem.readInt(u16, bytes[68..70], .little));
+    try std.testing.expectEqual(@as(u16, 3), std.mem.readInt(u16, bytes[70..72], .little));
+    try std.testing.expectEqual(@as(u16, 0x0022), std.mem.readInt(u16, bytes[86..88], .little));
+    // PE32+ optional header.
+    try std.testing.expectEqual(@as(u16, 0x20B), std.mem.readInt(u16, bytes[88..90], .little));
+    try std.testing.expectEqual(@as(u32, 0x1000), std.mem.readInt(u32, bytes[104..108], .little)); // entry RVA = .text
+    try std.testing.expectEqual(@as(u64, 0x140000000), std.mem.readInt(u64, bytes[112..120], .little)); // ImageBase
+    try std.testing.expectEqual(@as(u16, 3), std.mem.readInt(u16, bytes[156..158], .little)); // CONSOLE subsystem
+    try std.testing.expectEqual(@as(u64, 0x100000), std.mem.readInt(u64, bytes[160..168], .little)); // StackReserve
+    // Import table data directory points into .rdata (RVA 0x2000..0x3000).
+    const imp_rva = std.mem.readInt(u32, bytes[208..212], .little);
+    try std.testing.expect(imp_rva >= 0x2000 and imp_rva < 0x3000);
+    // Section headers: .text RX, .rdata R, .data RW.
+    try std.testing.expectEqualSlices(u8, ".text", bytes[328..333]);
+    try std.testing.expectEqual(@as(u32, 0x60000020), std.mem.readInt(u32, bytes[328 + 36 ..][0..4], .little));
+    try std.testing.expectEqualSlices(u8, ".rdata", bytes[368..374]);
+    try std.testing.expectEqual(@as(u32, 0x40000040), std.mem.readInt(u32, bytes[368 + 36 ..][0..4], .little));
+    try std.testing.expectEqualSlices(u8, ".data", bytes[408..413]);
+    try std.testing.expectEqual(@as(u32, 0xc0000040), std.mem.readInt(u32, bytes[408 + 36 ..][0..4], .little));
+    // Entry stub at file offset 0x200: bl entry; adrp x16, iat; ldr x16, [x16, #off]; br x16.
+    // Entry is the first (only) function: content starts 16 bytes into .text,
+    // so the bl skips the stub's own 4 bytes -> imm 4.
+    try std.testing.expectEqual(@as(u32, 0x94000004), std.mem.readInt(u32, bytes[0x200..][0..4], .little));
+    try std.testing.expectEqual(@as(u32, 0x90000000), std.mem.readInt(u32, bytes[0x204..][0..4], .little) & 0x9f000000);
+    try std.testing.expectEqual(@as(u32, 0xd61f0200), std.mem.readInt(u32, bytes[0x20c..][0..4], .little));
+    // .text content lands after the stub.
+    try std.testing.expectEqualSlices(u8, &text, bytes[0x210 .. 0x210 + text.len]);
+}
+
+test "PE32+: import table names kernel32/ExitProcess and msvcrt/puts" {
+    const alloc = std.testing.allocator;
+    // bl puts placeholder; the writer must route it through a thunk.
+    var text_buf: [4]u8 = undefined;
+    std.mem.writeInt(u32, text_buf[0..4], 0x94000000, .little); // bl <puts>
+    const syms = [_]Symbol{
+        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
+        .{ .name = "puts", .offset = 0, .defined = false },
+    };
+    const relocs = [_]Relocation{
+        .{ .offset = 0, .symbol_index = 1, .kind = .branch26 },
+    };
+    const bytes = try emitPeArm64StaticExec(alloc, &text_buf, "", "", &syms, &relocs, &.{}, 0, "", "main");
+    defer alloc.free(bytes);
+
+    // Walk the import directory: collect (dll, [names]).
+    const imp_rva = std.mem.readInt(u32, bytes[208..212], .little);
+    const rdata_file: usize = 0x400; // SizeOfHeaders(0x200) + text_raw(0x200)
+    const rdata_rva: u64 = 0x2000;
+    const imp_file: usize = rdata_file + @as(usize, @intCast(@as(u64, imp_rva) - rdata_rva));
+    var dlls_found: usize = 0;
+    var saw_kernel32_exit = false;
+    var saw_msvcrt_puts = false;
+    var d: usize = 0;
+    while (d < 2) : (d += 1) {
+        const e: usize = imp_file + d * 20;
+        const ilt = std.mem.readInt(u32, bytes[e..][0..4], .little);
+        const name_rva = std.mem.readInt(u32, bytes[e + 12 ..][0..4], .little);
+        const iat = std.mem.readInt(u32, bytes[e + 16 ..][0..4], .little);
+        if (ilt == 0 and name_rva == 0 and iat == 0) break; // null terminator
+        dlls_found += 1;
+        const name_file: usize = rdata_file + @as(usize, @intCast(@as(u64, name_rva) - rdata_rva));
+        var name_end = name_file;
+        while (bytes[name_end] != 0) name_end += 1;
+        const dll_name = bytes[name_file..name_end];
+        // First qword of the ILT names the first import.
+        const ilt_file: usize = rdata_file + @as(usize, @intCast(@as(u64, ilt) - rdata_rva));
+        const hn_rva = std.mem.readInt(u64, bytes[ilt_file..][0..8], .little);
+        const hn_file: usize = rdata_file + @as(usize, @intCast(hn_rva - rdata_rva));
+        var fn_end = hn_file + 2;
+        while (bytes[fn_end] != 0) fn_end += 1;
+        const fn_name = bytes[hn_file + 2 .. fn_end];
+        if (std.mem.eql(u8, dll_name, "kernel32.dll") and std.mem.eql(u8, fn_name, "ExitProcess")) saw_kernel32_exit = true;
+        if (std.mem.eql(u8, dll_name, "msvcrt.dll") and std.mem.eql(u8, fn_name, "puts")) saw_msvcrt_puts = true;
+    }
+    try std.testing.expectEqual(@as(usize, 2), dlls_found);
+    try std.testing.expect(saw_kernel32_exit);
+    try std.testing.expect(saw_msvcrt_puts);
+
+    // The bl was rewritten to the puts thunk: thunk 0 sits right after the
+    // 4-byte text (content at 0x210, thunk at 0x214). bl from 0x210 to
+    // 0x214: delta 4 -> imm 1.
+    try std.testing.expectEqual(@as(u32, 0x94000001), std.mem.readInt(u32, bytes[0x210..][0..4], .little));
+    // Thunk bytes: sub sp,sp,#32; adrp x16; ldr x16,[x16,#off]; blr x16; add sp,sp,#32; ret.
+    const thunk = bytes[0x214..0x22c];
+    try std.testing.expectEqual(@as(u32, 0xd10083ff), std.mem.readInt(u32, thunk[0..4], .little));
+    try std.testing.expectEqual(@as(u32, 0x90000000), std.mem.readInt(u32, thunk[4..8], .little) & 0x9f000000);
+    try std.testing.expectEqual(@as(u32, 0xd63f0200), std.mem.readInt(u32, thunk[12..16], .little));
+    try std.testing.expectEqual(@as(u32, 0x910083ff), std.mem.readInt(u32, thunk[16..20], .little));
+    try std.testing.expectEqual(@as(u32, 0xd65f03c0), std.mem.readInt(u32, thunk[20..24], .little));
+}
+
+test "PE32+: page21+pageoff12 resolve against ImageBase RVAs" {
+    const alloc = std.testing.allocator;
+    var text_buf: [12]u8 = undefined;
+    std.mem.writeInt(u32, text_buf[0..4], 0x90000010, .little); // adrp x16, #0
+    std.mem.writeInt(u32, text_buf[4..8], 0x91000210, .little); // add x16, x16, #0
+    std.mem.writeInt(u32, text_buf[8..12], 0xd65f03c0, .little); // ret
+    const syms = [_]Symbol{
+        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
+        .{ .name = "Lstr", .offset = 12, .defined = true, .section = 2, .external = false },
+    };
+    const relocs = [_]Relocation{
+        .{ .offset = 0, .symbol_index = 1, .kind = .page21 },
+        .{ .offset = 4, .symbol_index = 1, .kind = .pageoff12 },
+    };
+    const bytes = try emitPeArm64StaticExec(alloc, &text_buf, "hi\x00", "", &syms, &relocs, &.{}, 0, "", "main");
+    defer alloc.free(bytes);
+    // String at .rdata RVA 0x2000 -> vaddr 0x140002000. adrp from content
+    // vaddr 0x140001010 targets page 0x140002000: +1 page -> imm21 = 1 ->
+    // immlo=1 (bits 30:29), immhi=0 -> 0x90000010 | (1<<29) = 0xB0000010.
+    try std.testing.expectEqual(@as(u32, 0xb0000010), std.mem.readInt(u32, bytes[0x210..][0..4], .little));
+    // Page offset 0: the add keeps its placeholder imm12.
+    try std.testing.expectEqual(@as(u32, 0x91000210), std.mem.readInt(u32, bytes[0x214..][0..4], .little));
+}
+
+test "PE32+: abs64 data relocation carries the ImageBase vaddr" {
+    const alloc = std.testing.allocator;
+    const text = [_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }; // ret
+    const syms = [_]Symbol{
+        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
+        .{ .name = "Ls", .offset = 4, .defined = true, .section = 2, .external = false },
+    };
+    const drelocs = [_]Relocation{
+        .{ .offset = 0, .symbol_index = 1, .kind = .abs64 },
+    };
+    var word: [8]u8 = undefined;
+    @memset(&word, 0);
+    const bytes = try emitPeArm64StaticExec(alloc, &text, "s\x00", "", &syms, &.{}, &drelocs, 8, &word, "main");
+    defer alloc.free(bytes);
+    // .rdata RVA 0x2000 -> string vaddr 0x140002000; the data word lives at
+    // .data RVA 0x3000 -> file offset 0x600.
+    try std.testing.expectEqual(@as(u64, 0x140002000), std.mem.readInt(u64, bytes[0x600 .. 0x600 + 8], .little));
+}
+
+test "PE32+: bss tail is VirtualSize without file bytes" {
+    const alloc = std.testing.allocator;
+    const text = [_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }; // ret
+    const syms = [_]Symbol{
+        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
+    };
+    const bytes = try emitPeArm64StaticExec(alloc, &text, "", "", &syms, &.{}, &.{}, 64, "", "main");
+    defer alloc.free(bytes);
+    // .data VirtualSize covers the 64-byte bss; SizeOfRawData is 0.
+    try std.testing.expectEqual(@as(u32, 64), std.mem.readInt(u32, bytes[408 + 8 ..][0..4], .little));
+    try std.testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, bytes[408 + 16 ..][0..4], .little));
+}
+
+test "PE32+: unknown external is refused as DNB014" {
+    const alloc = std.testing.allocator;
+    const text = [_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }; // ret
+    const syms = [_]Symbol{
+        .{ .name = "main", .offset = 0, .defined = true, .section = 1, .external = false },
+        .{ .name = "SomeWinAPI", .offset = 0, .defined = false },
+    };
+    try std.testing.expectError(error.UnknownImportSymbol, emitPeArm64StaticExec(alloc, &text, "", "", &syms, &.{}, &.{}, 0, "", "main"));
+    const diag = directDiagnostic(error.UnknownImportSymbol, "native-exe");
+    try std.testing.expectEqualStrings("DNB014", diag.code);
+}
+
+test "PE32+: trap lowering emits __fastfail, never a syscall" {
+    const alloc = std.testing.allocator;
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+        .target_windows = true,
+    };
+    defer compiler.deinit();
+    try compiler.emitTrapAbort();
+    try std.testing.expectEqual(@as(usize, 8), compiler.code.items.len);
+    // movz w0, #0x1d01; brk #0xF000 — no svc, no syscall number.
+    try std.testing.expectEqual(@as(u32, 0xd283a020), std.mem.readInt(u32, compiler.code.items[0..4], .little));
+    try std.testing.expectEqual(@as(u32, 0xd43e0000), std.mem.readInt(u32, compiler.code.items[4..8], .little));
 }
 
 test "native backend target classification includes executable target" {
