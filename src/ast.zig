@@ -540,6 +540,43 @@ pub fn negatedIntLiteral(written: i64) ?i64 {
 ///
 /// Null is a real answer here, not the absence of one — law.md §1: "Unknown,
 /// absent, false, zero, empty, and not-asked are distinct."
+/// The two operands named by the XOR idiom `x + y - 2*(x & y)`, or null.
+///
+/// `x + y - 2*(x&y)` is exactly `x ^ y` over wrapping bit-vector arithmetic:
+/// `x + y = (x ^ y) + 2*(x & y)`, so the difference is the xor. The identity
+/// is bit-local, hence width-agnostic. Either `add` operand order and either
+/// `mul` operand order are admitted; the four operand positions must be bare
+/// names and the `add` pair must name the same two bindings as the `band`
+/// pair (in either order), so both occurrences of each name read the same
+/// value. Anything else -- a non-2 literal, `x | y` under the `2*`, operands
+/// that are not bare names, mismatched pairs -- declines, and the expression
+/// lowers as written.
+pub fn xorIdiomOperands(sub_lhs: *const Expr, sub_rhs: *const Expr) ?struct { a: *const Expr, b: *const Expr } {
+    if (sub_lhs.* != .binop or sub_lhs.binop.op != .add) return null;
+    if (sub_rhs.* != .binop or sub_rhs.binop.op != .mul) return null;
+    const m = sub_rhs.binop;
+    const band_e = if (intLiteralValue(m.lhs)) |v|
+        (if (v == 2) m.rhs else return null)
+    else if (intLiteralValue(m.rhs)) |v|
+        (if (v == 2) m.lhs else return null)
+    else
+        return null;
+    if (band_e.* != .binop or band_e.binop.op != .band) return null;
+    const add_a = sub_lhs.binop.lhs;
+    const add_b = sub_lhs.binop.rhs;
+    const band_a = band_e.binop.lhs;
+    const band_b = band_e.binop.rhs;
+    if (add_a.* != .name or add_b.* != .name or band_a.* != .name or band_b.* != .name) return null;
+    const a1 = add_a.name.ident;
+    const b1 = add_b.name.ident;
+    const a2 = band_a.name.ident;
+    const b2 = band_b.name.ident;
+    const same = (std.mem.eql(u8, a1, a2) and std.mem.eql(u8, b1, b2)) or
+        (std.mem.eql(u8, a1, b2) and std.mem.eql(u8, b1, a2));
+    if (!same) return null;
+    return .{ .a = add_a, .b = add_b };
+}
+
 pub fn intLiteralValue(expr: *const Expr) ?i64 {
     return switch (expr.*) {
         .int_lit => |lit| lit.val,

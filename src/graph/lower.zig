@@ -17741,6 +17741,27 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
         }
         return bailNamed(ctx.diagnostic, @src(), "binop-not-lowered", @tagName(op));
     };
+    // PROVED XOR IDIOM. `x + y - 2*(x&y)` is exactly `x ^ y`
+    // (bit-vector identity: `x + y = (x^y) + 2*(x&y)`), so the whole
+    // subtraction is one `eor`. Checked before either operand is lowered:
+    // on a match the `add`/`mul`/`band` are not emitted at all --
+    // ~9 instructions become one. `IDOL_XORIDIOM_OFF=1` severs it.
+    if (op == .sub and !f64_op and !xorIdiomOff()) {
+        if (ast.xorIdiomOperands(lhs, rhs)) |ops| {
+            const a = try lowerExpr(ctx, ops.a);
+            const b = try lowerExpr(ctx, ops.b);
+            const t = ctx.freshTemp();
+            try ctx.emit(.{
+                .op = .binop,
+                .result = t,
+                .binop = .bxor,
+                .lhs = a,
+                .rhs = b,
+                .ty = binopResultWidth(ctx, .bxor, ops.a, ops.b),
+            });
+            return .{ .temp = t };
+        }
+    }
     var cse_key: ?CseKey = null;
     var a = try lowerExpr(ctx, lhs);
     var b = try lowerExpr(ctx, rhs);
@@ -17865,6 +17886,17 @@ fn divisorSign(
 /// nothing observable.
 fn dividendNonnegOff() bool {
     return std.c.getenv("IDOL_DIVIDEND_NONNEG_OFF") != null;
+}
+
+/// IDOL_XORIDIOM_OFF=1 -- THE SEVERING CONTROL for the XOR-idiom lowering
+/// (`x + y - 2*(x&y)` to one `eor`). Set it and the idiom never fires, so
+/// every site emits exactly as this compiler did before the rule existed:
+/// the add/mul/band/sub sequence. The range producer's `xor_idiom` arm is a
+/// separate question with its own control (`IDOL_DIVIDEND_NONNEG_OFF` severs
+/// the division consumer); severing here changes nothing the producer
+/// publishes.
+fn xorIdiomOff() bool {
+    return std.c.getenv("IDOL_XORIDIOM_OFF") != null;
 }
 
 /// IDOL_RANGE_WITNESS=1 -- dump the dividend witness for every proved dividend.

@@ -260,6 +260,9 @@ pub const RangeRule = enum {
     sub_lit,
     /// Bitwise or/xor: both operands non-negative.
     bor_bxor,
+    /// The `x + y - 2*(x&y)` spelling of xor: exactly `x ^ y`, so the same
+    /// width the `bor_bxor` arm would answer for the xor itself.
+    xor_idiom,
     /// Logical right shift.
     rshift,
     /// Left shift with the result width kept within 63.
@@ -410,6 +413,19 @@ fn widthOfExprIn(lookup: Lookup, e: *const ast.Expr, fuel: u8) ?WidthRule {
                 // widthOfExprIn answer is <= 63 or null (the clamp below), so
                 // the shift cannot overflow.
 .sub => {
+                    // XOR IDIOM. `x + y - 2*(x&y)` is exactly `x ^ y`
+                    // (bit-vector identity, proved exhaustive-16 plus
+                    // randomized-64 against an independent oracle), so it
+                    // carries the xor's width: a clear sign bit in either
+                    // named operand clears it in the result. The matcher is
+                    // fail-closed -- anything but the exact idiom shape falls
+                    // through to the `L - x` arm below.
+                    if (ast.xorIdiomOperands(b.lhs, b.rhs)) |ops| {
+                        const lw = widthOfExprIn(lookup, ops.a, fuel) orelse break :blk null;
+                        const rw = widthOfExprIn(lookup, ops.b, fuel) orelse break :blk null;
+                        const m = nonNegJoin(lw.width, rw.width) orelse break :blk null;
+                        break :blk WidthRule{ .width = m, .rule = .xor_idiom };
+                    }
                     const L = ast.intLiteralValue(b.lhs) orelse break :blk null;
                     if (L < 0) break :blk null;
                     const w = widthOfExprIn(lookup, b.rhs, fuel) orelse break :blk null;
@@ -654,6 +670,16 @@ fn closedOverParams(params: []const ast.FuncParam, e: *const ast.Expr) bool {
 const ProducerEnv = struct {
     widths: *const NonNegEnv,
     results: ?Results,
+    /// Flow-sensitive mask refinement, or null when the caller has none.
+    /// `refine[name] = w` means the last assignment to `name` in scan order
+    /// was `name = <expr> & <non-negative literal of width w>`, so `name`'s
+    /// CURRENT value is in `[0, 2^w)` even when the widen-only global map has
+    /// already taken `name` to top (a big value was seen at an earlier program
+    /// point). The scan clears it on any control flow and removes `name` on
+    /// any non-mask assignment, so a stale refinement can never be read. It
+    /// is consulted only when the global map answers top or nothing; a
+    /// settled bounded global width always wins.
+    refine: ?*const NonNegEnv = null,
 
     fn lookup(self: *const ProducerEnv) Lookup {
         return .{
@@ -665,7 +691,11 @@ const ProducerEnv = struct {
 
     fn widthOfName(ctx: *const anyopaque, name: []const u8) ?u8 {
         const self: *const ProducerEnv = @ptrCast(@alignCast(ctx));
-        return self.widths.get(name);
+        if (self.widths.get(name)) |w| {
+            if (w < nonneg_top) return w;
+        }
+        if (self.refine) |r| return r.get(name);
+        return null;
     }
 
     fn derivationOfCallee(ctx: *const anyopaque, callee: []const u8) ?Derivation {
@@ -679,6 +709,40 @@ const ProducerEnv = struct {
 fn nonNegWidth(widths: *const NonNegEnv, results: ?Results, e: *const ast.Expr) ?u8 {
     const env = ProducerEnv{ .widths = widths, .results = results };
     return widthOfExpr(env.lookup(), e);
+}
+
+/// `nonNegWidth` with the scan's flow-sensitive mask refinement. Used only
+/// inside `nonNegScanBlock`, where `refine` is maintained.
+fn nonNegWidthR(widths: *const NonNegEnv, refine: *const NonNegEnv, results: ?Results, e: *const ast.Expr) ?u8 {
+    const env = ProducerEnv{ .widths = widths, .refine = refine, .results = results };
+    return widthOfExpr(env.lookup(), e);
+}
+
+/// Maintain the mask refinement for one `name = v` assignment. A `band` with
+/// a non-negative literal operand records the literal's width -- the assigned
+/// value is masked to it. Any other right-hand side removes the refinement:
+/// `name`'s current value is no longer the masked one.
+fn refineForAssign(alloc: std.mem.Allocator, refine: *NonNegEnv, target: []const u8, v: *const ast.Expr) std.mem.Allocator.Error!void {
+    if (v.* == .binop and v.binop.op == .band) {
+        const b = v.binop;
+        if (ast.intLiteralValue(b.lhs)) |lit| {
+            if (lit >= 0) {
+                if (nonNegWidthOfLit(lit)) |w| {
+                    try refine.put(alloc, target, w);
+                    return;
+                }
+            }
+        }
+        if (ast.intLiteralValue(b.rhs)) |lit| {
+            if (lit >= 0) {
+                if (nonNegWidthOfLit(lit)) |w| {
+                    try refine.put(alloc, target, w);
+                    return;
+                }
+            }
+        }
+    }
+    _ = refine.remove(target);
 }
 
 /// A loop induction variable whose bound comes from the loop's own shape
@@ -1152,13 +1216,28 @@ fn nonNegScanBlock(
     biv: ?BoundedIV,
     ind: ?[]const InductionCap,
 ) std.mem.Allocator.Error!void {
+    // Flow-sensitive mask/value refinement, block-local and replacement-based.
+    // `refine[name] = w` means the last straight-line assignment to `name` in
+    // THIS block scan gave it transfer width `w`, so `name`'s current value is
+    // in `[0, 2^w)` -- even when the widen-only global map has taken `name`
+    // to top from an earlier program point (e.g. `y = x * 8192` widens `y`
+    // before `y = y & mask` re-bounds it). It never touches `changed`: it is
+    // recomputed deterministically each round and stabilizes with the block.
+    // Cleared on any control flow; a fresh map per recursive call keeps
+    // sub-blocks from polluting their parents.
+    var refine: NonNegEnv = .empty;
+    defer refine.deinit(alloc);
     for (blk.stmts) |st| switch (st) {
         .local_decl => |d| {
             if (d.names.len != d.inits.len) {
                 for (d.names) |n| try nonNegRaise(alloc, widths, n.ident, changed);
                 continue;
             }
-            for (d.names, d.inits) |n, init| try nonNegObserve(alloc, widths, n.ident, nonNegWidth(widths, results, init), changed);
+            for (d.names, d.inits) |n, init| {
+                const w = nonNegWidthR(widths, &refine, results, init);
+                try nonNegObserve(alloc, widths, n.ident, w, changed);
+                if (w) |bw| try refine.put(alloc, n.ident, bw) else _ = refine.remove(n.ident);
+            }
         },
         .assign => |a| {
             if (a.targets.len != a.values.len) {
@@ -1174,8 +1253,10 @@ fn nonNegScanBlock(
                         // other write breaks the proof.
                         if (boundedIncrement(b.name, v)) {
                             try nonNegObserve(alloc, widths, b.name, b.cap, changed);
+                            try refine.put(alloc, b.name, b.cap);
                         } else {
                             try nonNegRaise(alloc, widths, b.name, changed);
+                            _ = refine.remove(b.name);
                         }
                         continue;
                     }
@@ -1186,15 +1267,24 @@ fn nonNegScanBlock(
                 // coarser inputs, not a bigger value: the proof just
                 // established the bound for this round's widths.
                 if (ind) |caps| if (capOf(caps, t.name.ident)) |cap| {
-                    const w = nonNegWidth(widths, results, v);
-                    try nonNegObserve(alloc, widths, t.name.ident, @min(w orelse cap, cap), changed);
+                    const w = nonNegWidthR(widths, &refine, results, v);
+                    const obs = @min(w orelse cap, cap);
+                    try nonNegObserve(alloc, widths, t.name.ident, obs, changed);
+                    try refine.put(alloc, t.name.ident, obs);
                     continue;
                 };
-                try nonNegObserve(alloc, widths, t.name.ident, nonNegWidth(widths, results, v), changed);
+                {
+                    const w = nonNegWidthR(widths, &refine, results, v);
+                    try nonNegObserve(alloc, widths, t.name.ident, w, changed);
+                    if (w) |bw| try refine.put(alloc, t.name.ident, bw) else _ = refine.remove(t.name.ident);
+                }
             }
         },
         // A name bound by any of these takes a value this pass does not model.
-        .global_decl => |d| for (d.names) |n| try nonNegRaise(alloc, widths, n.ident, changed),
+        .global_decl => |d| for (d.names) |n| {
+            try nonNegRaise(alloc, widths, n.ident, changed);
+            _ = refine.remove(n.ident);
+        },
         .num_for => |f| {
             // The driver keeps the IV inside the closed interval between
             // `start` and `stop` (inclusive stop, either sign of step), so
@@ -1214,6 +1304,7 @@ fn nonNegScanBlock(
             try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv, ind);
         },
         .while_loop => |w| {
+            refine.clearRetainingCapacity();
             const inner = try matchBoundedWhile(alloc, widths, results, w.cond, &w.body, changed);
             // Re-proved every round against that round's widths: a cap is
             // only ever observed beside the proof that justifies it.
@@ -1221,8 +1312,14 @@ fn nonNegScanBlock(
             defer if (caps) |c| alloc.free(c);
             try nonNegScanBlock(alloc, widths, results, &w.body, changed, unmodeled, inner orelse biv, caps orelse ind);
         },
-        .repeat_loop => |r| try nonNegScanBlock(alloc, widths, results, &r.body, changed, unmodeled, biv, ind),
-        .do_block => |d| try nonNegScanBlock(alloc, widths, results, &d.body, changed, unmodeled, biv, ind),
+        .repeat_loop => |r| {
+            refine.clearRetainingCapacity();
+            try nonNegScanBlock(alloc, widths, results, &r.body, changed, unmodeled, biv, ind);
+        },
+        .do_block => |d| {
+            refine.clearRetainingCapacity();
+            try nonNegScanBlock(alloc, widths, results, &d.body, changed, unmodeled, biv, ind);
+        },
         .if_stmt => |f| {
             if (f.binding) |b| try nonNegRaise(alloc, widths, b.name, changed);
             try nonNegScanBlock(alloc, widths, results, &f.then, changed, unmodeled, biv, ind);
@@ -1232,8 +1329,14 @@ fn nonNegScanBlock(
         // A nested function body can rebind names this one holds, and this pass
         // does not follow it. Refuse the WHOLE function rather than answer for
         // the part of it that is visible.
-        .func_decl => unmodeled.* = true,
-        .match_stmt, .try_stmt, .defer_stmt, .goto_stmt, .label_stmt => unmodeled.* = true,
+        .func_decl => {
+            refine.clearRetainingCapacity();
+            unmodeled.* = true;
+        },
+        .match_stmt, .try_stmt, .defer_stmt, .goto_stmt, .label_stmt => {
+            refine.clearRetainingCapacity();
+            unmodeled.* = true;
+        },
         else => {},
     };
 }
