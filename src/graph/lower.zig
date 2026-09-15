@@ -4654,6 +4654,11 @@ pub const LowerCtx = struct {
     /// `while`. Keyed by statement pointer; the prologue inserts, the loop
     /// skips.
     loopselect_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Statements swallowed by the statically-zero-trip elimination: `iv = v`
+    /// immediately before `while iv < n` with exact literals and `v >= n`, so
+    /// the body provably never executes. The binding lowers normally; the
+    /// dispatch loop must not lower the dead `while`.
+    zerotrip_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
@@ -4777,6 +4782,7 @@ pub const LowerCtx = struct {
         self.satadd_swallowed.deinit(self.alloc);
         self.bitrev_swallowed.deinit(self.alloc);
         self.loopselect_swallowed.deinit(self.alloc);
+        self.zerotrip_swallowed.deinit(self.alloc);
         self.absent_applications.deinit(self.alloc);
         self.summary_folded.deinit(self.alloc);
     }
@@ -5407,6 +5413,7 @@ fn root(
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
+        if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(&ctx, mod.body.stmts, i, stmtIsTailSlot(&mod.body, i))) continue;
         switch (stmt.*) {
@@ -5972,6 +5979,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
+        if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
@@ -5984,6 +5992,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
+        if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(ctx, block.stmts, i, allow_return and stmtIsTailSlot(block, i))) continue;
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
@@ -7205,6 +7214,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 try pushEnclosingFrame(ctx, &db.body, i);
                 defer popEnclosingFrame(ctx);
                 tryArmCountedLoop(ctx, db.body.stmts, i);
+                if (ctx.zerotrip_swallowed.contains(inner)) continue;
                 try lowerStmt(ctx, inner, false);
             }
             if (db.body.tail_expr) |te| _ = try lowerExprCons(ctx, te, .discard);
@@ -7960,6 +7970,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
+        if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
             try lowerStmt(ctx, stmt, tail_here);
@@ -7977,6 +7988,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
+        if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(ctx, block.stmts, i, tail_here)) continue;
         try lowerStmt(ctx, stmt, tail_here);
@@ -9494,6 +9506,20 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     };
     if (b.op != .lt) return;
     const iv = identOf(b.lhs) orelse return;
+    // A statically zero-trip loop: `iv = v` binds the induction variable to
+    // an exact literal immediately before, and the bound is an exact literal
+    // `n` with `v >= n`, so `iv < n` is false on entry and the body provably
+    // never executes. Swallow the loop; the binding lowers normally.
+    if (at > 0) {
+        if (literalBindingOf(ctx.graph, &stmts[at - 1], iv)) |v| {
+            if (ctx.graph.exactI64OfExpr(b.rhs)) |n| {
+                if (v >= n) {
+                    ctx.zerotrip_swallowed.put(ctx.alloc, st, {}) catch return;
+                    return;
+                }
+            }
+        }
+    }
     // The induction variable starts at exactly 0 in the immediately preceding
     // statement.
     if (at == 0) return;
