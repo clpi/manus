@@ -6070,7 +6070,20 @@ pub const Sema = struct {
         }
 
         return switch (op) {
-            .div, .pow => {
+            .div => blk: {
+                // `/` is FLOORED integer division on integer operands
+                // (P0-1: Lua chain + law.numeric.floor fix % floored, so /
+                // is floored for coherence; fold, native, wasm, and the C
+                // backend all realize it), real division on float ones.
+                // Typing it f64 unconditionally disagreed with the
+                // computed i64 value (P0-2).
+                if (lt.is_numeric() and rt.is_numeric()) {
+                    if (lt.is_float() or rt.is_float()) break :blk .f64;
+                    break :blk lt; // both integers: use left type
+                }
+                break :blk .any;
+            },
+            .pow => {
                 if (lt.is_numeric() and rt.is_numeric()) return .f64;
                 return .any;
             },
@@ -14166,12 +14179,14 @@ pub const Sema = struct {
                     _ = self.infer_expr(rhs, .str);
                     break :blk .str;
                 },
-                .div, .pow => {
+                .pow => {
                     _ = self.infer_expr(lhs, .f64);
                     _ = self.infer_expr(rhs, .f64);
                     return .f64;
                 },
-                .add, .sub, .mul, .idiv, .mod => blk: {
+                // `/` follows the same integer-division law as `//` and `%`:
+                // float only when a float operand is present (P0-2).
+                .div, .add, .sub, .mul, .idiv, .mod => blk: {
                     var rt: RT = if (self.expr_has_float(lhs) or self.expr_has_float(rhs)) .f64 else hint;
                     if (rt == .any or rt == .bool) rt = .i64;
                     const lt = self.infer_expr(lhs, rt);

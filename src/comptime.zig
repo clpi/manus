@@ -2687,19 +2687,20 @@ fn evalNumeric(op: ast.BinOp, left: Value, right: Value, native_integers: bool) 
             else => unreachable,
         };
     }
-    if (native_integers and left == .int and right == .int and op != .pow) {
+    if ((native_integers or op == .div) and left == .int and right == .int and op != .pow) {
         const l = left.int;
         const r = right.int;
         return switch (op) {
             .add => .{ .int = l +% r },
             .sub => .{ .int = l -% r },
             .mul => .{ .int = l *% r },
-            // INT DIVISION IS FLOORED. This was the OPEN ROW the floored-modulo
-            // ruling left unsettled. P0-1 settles it: percent is floored by the
-            // Lua chain and law.numeric.floor, so changing percent would break
-            // the ruled (idiv, mod) identity and the x-mod-2n to-and lowering.
-            // The only coherent law keeping percent floored is floored slash,
-            // so int slash answers divFloor and x == (x / y) * y + (x % y) holds.
+            // INT DIVISION IS FLOORED, FOR EVERY CONSUMER. P0-1 settles the
+            // value law: percent is floored by the Lua chain and
+            // law.numeric.floor, so the only coherent slash is floored too
+            // (x == (x / y) * y + (x % y) holds). P0-2 settles the
+            // descriptor: the gate above no longer conditions `.div` on
+            // `native_integers`, so every consumer of this evaluator gets
+            // the floored integer answer, never the float path.
 
             .div => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
                 error.DivisionByZero
