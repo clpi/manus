@@ -493,7 +493,7 @@ main: i64 = ()
           js = "{js}\"rounds\": {rounds}, "
           js = "{js}\"warmup\": {warmups}, "
           js = "{js}\"alpha\": \"0.05\", "
-          js = "{js}\"decision_rule\": \"verdicts computed downstream by bench/timing.py from raw samples: declared estimand median(idol)-median(rival) as pct of rival median; win/loss iff 95pct bootstrap percentile CI (B=2000, fixed seed) excludes 0; equivalent iff 90pct CI lies wholly inside predeclared band [-2pct,+2pct]; else inconclusive (never tie); Welch t with Satterthwaite df is a mean-based diagnostic only; empty compiler sha256 is a fatal error\", "
+          js = "{js}\"decision_rule\": \"verdicts computed downstream by bench/timing.py from raw samples: declared estimand median(rival)-median(idol) as pct of rival median; win/loss iff 95pct bootstrap percentile CI (B=2000, fixed seed) excludes 0; equivalent iff 90pct CI lies wholly inside predeclared band [-2pct,+2pct]; else inconclusive (never tie); Welch t with Satterthwaite df is a mean-based diagnostic only; empty compiler sha256 is a fatal error\", "
           js = "{js}\"timing_boundary\": \"t1 captured immediately after procrun returns; procrun drains child stdout to EOF then waits for child; per-invocation validation cost excluded from samples; rounds interleaved across binaries\", "
           chash: str = sha256file(compiler)
           js = "{js}\"compiler\": \"{compiler}\", "

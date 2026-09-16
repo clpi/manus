@@ -33,7 +33,7 @@
 #   5. timing.py is an independent cross-check verifier (not a timer): it
 #      recomputes every statistic from the timer's raw samples, verifies
 #      exact agreement, rejects unattributed timer output, and emits the
-#      vs_best verdict on the DECLARED ESTIMAND median(idol)-median(rival)
+#      vs_best verdict on the DECLARED ESTIMAND median(rival)-median(idol)
 #      as % of the rival median. Decision: win/loss iff the 95% bootstrap
 #      percentile CI (B=2000, fixed seed) excludes 0; 'equivalent' iff the
 #      90% CI lies WHOLLY inside the predeclared band [-2%,+2%]; otherwise

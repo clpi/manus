@@ -7,8 +7,8 @@ recomputes every statistic from the raw samples, verifies exact agreement
 with the timer's reported values, and emits the vs_best verdict.
 
 DECLARED ESTIMAND (median difference):
-    D = median(idol) - median(rival), reported as a percentage of the rival
-    median. The reported margin is -D (positive margin = idol faster).
+    D = median(rival) - median(idol), reported as a percentage of the rival
+    median (positive D = idol faster). The reported margin is D.
 
 DECISION PROCEDURE (also documented in the emitted JSON and the report):
     * Uncertainty: B=2000 bootstrap resamples with fixed seed 20260915;
@@ -50,8 +50,8 @@ BOOT_SEED = 20260915
 EQUIV_BAND_PCT = 2.0
 
 DECISION_RULE = (
-    "declared estimand: median(idol)-median(rival) as % of rival median "
-    "(positive margin = idol faster). win/loss iff 95% bootstrap percentile "
+    "declared estimand: median(rival)-median(idol) as % of rival median "
+    "(positive = idol faster). win/loss iff 95% bootstrap percentile "
     "CI (B=2000, seed 20260915) excludes 0. 'equivalent' iff 90% CI lies "
     "wholly inside predeclared band [-2%,+2%]. else 'inconclusive' (never "
     "'tie'). Welch t with Satterthwaite df reported as mean-based diagnostic "
@@ -168,7 +168,7 @@ def idol_pctl(s, which, n):
 
 
 def bootstrap_median_diff_ci(idol_ns, rival_ns, cl):
-    """Percentile bootstrap CI for (median(idol)-median(rival)) as % of rival median.
+    """Percentile bootstrap CI for (median(rival)-median(idol)) as % of rival median.
 
     Returns (lo, hi). Fixed seed so verdicts are exactly reproducible.
 
@@ -187,7 +187,7 @@ def bootstrap_median_diff_ci(idol_ns, rival_ns, cl):
         s2 = sorted(rival_ns[rng.randrange(n2)] for _ in range(n2))
         m1, m2 = idol_median(s1), idol_median(s2)
         if m2:
-            diffs.append((m1 - m2) / m2 * 100.0)
+            diffs.append((m2 - m1) / m2 * 100.0)
     if not diffs:
         return None, None
     diffs.sort()
@@ -344,23 +344,23 @@ def main():
                           and (hi90 <= EQUIV_BAND_PCT))
             t_w, df_w, p_w = welch_t_satterthwaite(idol, rivals[best])
             welch_sig = p_w < ALPHA
-            mean_diff = sum(idol) / len(idol) - sum(rivals[best]) / len(rivals[best])
-            median_diff = im - bm
+            mean_diff = sum(rivals[best]) / len(rivals[best]) - sum(idol) / len(idol)
+            median_diff = bm - im
             conflict = (welch_sig != median_significant) or (
                 welch_sig and median_significant
                 and (mean_diff > 0) != (median_diff > 0))
             if estimand_undefined:
                 verdict = "inconclusive"
             elif median_significant:
-                verdict = "win" if median_diff < 0 else "loss"
+                verdict = "win" if median_diff > 0 else "loss"
             elif equivalent:
                 verdict = "equivalent"
             else:
                 verdict = "inconclusive"
             out["vs_best"] = {
                 "rival": best,
-                "estimand": ("median(idol)-median(rival) as % of rival median; "
-                             "positive margin = idol faster"),
+                "estimand": ("median(rival)-median(idol) as % of rival median; "
+                             "positive = idol faster"),
                 "idol_median": im,
                 "rival_median": bm,
                 "margin": margin,
