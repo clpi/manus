@@ -4660,6 +4660,14 @@ pub const LowerCtx = struct {
     /// the body provably never executes. The binding lowers normally; the
     /// dispatch loop must not lower the dead `while`.
     zerotrip_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Statements proven dead by liveness: a counted loop whose body writes
+    /// only names never read after it (and not the iv), with every nested
+    /// loop provably zero-trip. The dispatch loop must not lower them.
+    deadloop_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Stack of (iv, bound) for enclosing counted loops with literal bounds.
+    /// Pushed on loop entry, popped on exit. Lets the zero-trip analysis prove
+    /// `x / C == 0` when `x` is an iv with bound `B <= C`.
+    enclosing_counted_bounds: std.ArrayListUnmanaged(CountedBound) = .empty,
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
@@ -4785,6 +4793,8 @@ pub const LowerCtx = struct {
         self.bitrev_swallowed.deinit(self.alloc);
         self.loopselect_swallowed.deinit(self.alloc);
         self.zerotrip_swallowed.deinit(self.alloc);
+        self.deadloop_swallowed.deinit(self.alloc);
+        self.enclosing_counted_bounds.deinit(self.alloc);
         self.absent_applications.deinit(self.alloc);
         self.summary_folded.deinit(self.alloc);
     }
@@ -5418,6 +5428,7 @@ fn root(
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
+        if (ctx.deadloop_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(&ctx, mod.body.stmts, i, stmtIsTailSlot(&mod.body, i))) continue;
         switch (stmt.*) {
@@ -5985,6 +5996,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
+        if (ctx.deadloop_swallowed.contains(stmt)) continue;
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
@@ -6000,6 +6012,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
+        if (ctx.deadloop_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(ctx, block.stmts, i, allow_return and stmtIsTailSlot(block, i))) continue;
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
@@ -7238,6 +7251,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 defer popEnclosingFrame(ctx);
                 tryArmCountedLoop(ctx, db.body.stmts, i);
                 if (ctx.zerotrip_swallowed.contains(inner)) continue;
+                if (ctx.deadloop_swallowed.contains(inner)) continue;
                 try lowerStmt(ctx, inner, false);
             }
             if (db.body.tail_expr) |te| _ = try lowerExprCons(ctx, te, .discard);
@@ -7995,6 +8009,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
+        if (ctx.deadloop_swallowed.contains(stmt)) continue;
         const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
             try lowerStmt(ctx, stmt, tail_here);
@@ -8014,6 +8029,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
+        if (ctx.deadloop_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(ctx, block.stmts, i, tail_here)) continue;
         try lowerStmt(ctx, stmt, tail_here);
@@ -9520,6 +9536,297 @@ fn nestedTriangularParts(
 /// `while iv < bound` with a provably non-negative bound and a trailing
 /// `iv = iv + 1` step. Arms `ctx.counted_plan`; emits nothing. Any doubt
 /// leaves the plan disarmed and the loop lowers ordinarily.
+const CountedBound = struct { iv: []const u8, bound: i64, };
+
+/// Prove while iv<b zero-trip via division bound.
+fn zeroTripViaDivision(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, bname: []const u8, v: i64) bool {
+    var i = at;
+    while (i > 0) {
+        i -= 1;
+        const tv = assignTargetAndValue(&stmts[i]) orelse continue;
+        if (!std.mem.eql(u8, tv.name, bname)) continue;
+        const bo = switch (tv.value.*) {
+            .binop => |x| x,
+            else => return false,
+        };
+        if (bo.op != .div and bo.op != .idiv) return false;
+        const xname = identOf(bo.lhs) orelse return false;
+        const c = ctx.graph.exactI64OfExpr(bo.rhs) orelse return false;
+        for (ctx.enclosing_counted_bounds.items) |cb| {
+            if (!std.mem.eql(u8, cb.iv, xname)) continue;
+            if (c > 0 and cb.bound <= c) return v >= 0;
+            if (c < 0) return v >= 0;
+        }
+        return false;
+    }
+    return false;
+}
+
+/// DEAD-LOOP LIVENESS ELIMINATION (arm-time proof).
+///
+/// A counted loop `while iv < bound` with an exact literal bound is dead when
+/// its body (minus the trailing iv step) has no observable effect: every
+/// statement is a trap-free `.assign` to a plain name, or a nested `while`
+/// provably zero-trip, and no written name -- nor the iv itself -- is read
+/// after the loop. Liveness walks the enclosing-block stack innermost-out
+/// (suffix, back-edge prefix, tail, enclosing conditions), so a read on any
+/// path keeps the loop. Anything the proof cannot follow exactly declines.
+const dead_loop_max_names = 64;
+
+const DeadLoopWritten = struct {
+    names: [dead_loop_max_names][]const u8 = undefined,
+    len: usize = 0,
+    fn note(self: *DeadLoopWritten, name: []const u8) bool {
+        for (self.names[0..self.len]) |n| if (std.mem.eql(u8, n, name)) return true;
+        if (self.len >= dead_loop_max_names) return false;
+        self.names[self.len] = name;
+        self.len += 1;
+        return true;
+    }
+    fn contains(self: *const DeadLoopWritten, name: []const u8) bool {
+        for (self.names[0..self.len]) |n| if (std.mem.eql(u8, n, name)) return true;
+        return false;
+    }
+};
+
+/// Trap-free integer/boolean RHS: wrapping arithmetic, comparisons, and
+/// division by an exact positive divisor. Anything else declines.
+fn deadLoopPureExpr(ctx: *LowerCtx, e: *const ast.Expr) bool {
+    switch (e.*) {
+        .int_lit => return true,
+        .name => return true,
+        .binop => |b| {
+            switch (b.op) {
+                .add, .sub, .mul, .band, .bor, .bxor, .eq, .neq, .lt, .gt, .leq, .geq => {
+                    return deadLoopPureExpr(ctx, b.lhs) and deadLoopPureExpr(ctx, b.rhs);
+                },
+                .div, .idiv, .mod => {
+                    if (!deadLoopPureExpr(ctx, b.lhs)) return false;
+                    const d = ctx.graph.exactI64OfExpr(b.rhs) orelse return false;
+                    return d > 0;
+                },
+                else => return false,
+            }
+        },
+        else => return false,
+    }
+}
+
+/// The nested `while` at `at` in `body` provably never executes: same check
+/// `tryArmCountedLoop` runs, with the outer bound on the stack.
+fn deadLoopNestedZeroTrip(ctx: *LowerCtx, body: []const ast.Stmt, at: usize) bool {
+    const ws = switch (body[at]) {
+        .while_loop => |w| w,
+        else => return false,
+    };
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .lt) return false;
+    const iv = identOf(b.lhs) orelse return false;
+    if (at == 0) return false;
+    const v = literalBindingOf(ctx.graph, &body[at - 1], iv) orelse return false;
+    if (ctx.graph.exactI64OfExpr(b.rhs)) |n| return v >= n;
+    const bname = identOf(b.rhs) orelse return false;
+    return zeroTripViaDivision(ctx, body, at, bname, v);
+}
+
+/// Conservatively: does evaluating `e` read `name`? Unhandled forms answer
+/// yes (fail-closed for liveness).
+fn deadLoopExprReads(e: *const ast.Expr, name: []const u8) bool {
+    switch (e.*) {
+        .name => |nm| return std.mem.eql(u8, nm.ident, name),
+        .int_lit, .float_lit, .true_lit, .false_lit, .nil, .quoted, .semantic, .semantic_scope, .vararg => return false,
+        .binop => |b| return deadLoopExprReads(b.lhs, name) or deadLoopExprReads(b.rhs, name),
+        .unop => |u| return deadLoopExprReads(u.operand, name),
+        .call => |c| {
+            if (deadLoopExprReads(c.func, name)) return true;
+            for (c.args) |a| if (deadLoopExprReads(a, name)) return true;
+            return false;
+        },
+        .method_call => |m| {
+            if (deadLoopExprReads(m.obj, name)) return true;
+            for (m.args) |a| if (deadLoopExprReads(a, name)) return true;
+            return false;
+        },
+        .index => |x| return deadLoopExprReads(x.obj, name) or deadLoopExprReads(x.key, name),
+        .field => |f| return deadLoopExprReads(f.obj, name),
+        .try_expr => |t| return deadLoopExprReads(t.operand, name),
+        .unwrap_expr => |u| return deadLoopExprReads(u.operand, name),
+        .await_expr => |a| return deadLoopExprReads(a.operand, name),
+        .contains_expr => |c| return deadLoopExprReads(c.lhs, name) or deadLoopExprReads(c.rhs, name),
+        else => return true,
+    }
+}
+
+/// Conservatively: does statement `st` read `name`? A plain-name write is
+/// not a read; a non-plain target (`a[i]`) reads its object. Unhandled
+/// statements answer yes.
+fn deadLoopStmtReads(st: *const ast.Stmt, excl: ?*const ast.Stmt, name: []const u8) bool {
+    if (excl) |e| if (st == e) return false;
+    switch (st.*) {
+        .assign => |a| {
+            for (a.targets) |t| {
+                if (identOf(t) == null and deadLoopExprReads(t, name)) return true;
+            }
+            for (a.values) |v| if (deadLoopExprReads(v, name)) return true;
+            return false;
+        },
+        .local_decl => |d| {
+            for (d.inits) |v| if (deadLoopExprReads(v, name)) return true;
+            return false;
+        },
+        .const_decl => |d| return deadLoopExprReads(d.val, name),
+        .global_decl => |d| {
+            for (d.inits) |v| if (deadLoopExprReads(v, name)) return true;
+            return false;
+        },
+        .call_stmt => |c| return deadLoopExprReads(c.expr, name),
+        .expr_stmt => |e| return deadLoopExprReads(e.expr, name),
+        .do_block => |db| return deadLoopBlockReads(&db.body, excl, name),
+        .while_loop => |w| {
+            if (deadLoopExprReads(w.cond, name)) return true;
+            return deadLoopBlockReads(&w.body, excl, name);
+        },
+        .repeat_loop => |r| {
+            if (deadLoopBlockReads(&r.body, excl, name)) return true;
+            return deadLoopExprReads(r.cond, name);
+        },
+        .if_stmt => |is| {
+            if (is.binding) |bd| if (deadLoopExprReads(bd.expr, name)) return true;
+            if (deadLoopExprReads(is.cond, name)) return true;
+            if (deadLoopBlockReads(&is.then, excl, name)) return true;
+            for (is.elseifs) |*ei| {
+                if (deadLoopExprReads(ei.cond, name)) return true;
+                if (deadLoopBlockReads(&ei.body, excl, name)) return true;
+            }
+            if (is.else_body) |*eb| if (deadLoopBlockReads(eb, excl, name)) return true;
+            return false;
+        },
+        .num_for => |nf| {
+            if (deadLoopExprReads(nf.start, name)) return true;
+            if (deadLoopExprReads(nf.stop, name)) return true;
+            if (nf.step) |s| if (deadLoopExprReads(s, name)) return true;
+            return deadLoopBlockReads(&nf.body, excl, name);
+        },
+        .gen_for => |gf| {
+            for (gf.iters) |it| if (deadLoopExprReads(it, name)) return true;
+            return deadLoopBlockReads(&gf.body, excl, name);
+        },
+        .ret => |r| {
+            for (r.vals) |v| if (deadLoopExprReads(v, name)) return true;
+            return false;
+        },
+        .brk, .cont, .goto_stmt, .label_stmt => return false,
+        .func_decl, .alias_def, .enum_def, .concept_def, .macro_def, .cinclude, .directive => return false,
+        else => return true,
+    }
+}
+
+fn deadLoopBlockReads(blk: *const ast.Block, excl: ?*const ast.Stmt, name: []const u8) bool {
+    for (blk.stmts) |*s| if (deadLoopStmtReads(s, excl, name)) return true;
+    if (blk.tail_expr) |te| if (deadLoopExprReads(te, name)) return true;
+    return false;
+}
+
+/// Is `name` read on any path after the loop `st`? Walks the enclosing-block
+/// stack innermost-out: suffix statements, prefix statements (an enclosing
+/// back edge re-executes them), the tail, and enclosing conditions/bodies.
+/// The iv's own `= 0` initializer is not a read.
+fn deadLoopNameLiveAfter(ctx: *LowerCtx, at: usize, st: *const ast.Stmt, name: []const u8) bool {
+    const frames = ctx.enclosing.items;
+    var fi = frames.len;
+    while (fi > 0) {
+        fi -= 1;
+        const fr = frames[fi];
+        const innermost = fi == frames.len - 1;
+        if (fr.idx + 1 < fr.block.stmts.len) {
+            for (fr.block.stmts[fr.idx + 1 ..]) |*s| {
+                if (deadLoopStmtReads(s, st, name)) return true;
+            }
+        }
+        if (fr.idx > 0) {
+            for (fr.block.stmts[0..fr.idx], 0..) |*s, pi| {
+                if (innermost and pi + 1 == at) continue;
+                if (deadLoopStmtReads(s, st, name)) return true;
+            }
+        }
+        if (fr.block.tail_expr) |te| if (deadLoopExprReads(te, name)) return true;
+        const s = &fr.block.stmts[fr.idx];
+        if (s == st) continue;
+        switch (s.*) {
+            .while_loop => |w| {
+                if (deadLoopExprReads(w.cond, name)) return true;
+                if (deadLoopBlockReads(&w.body, st, name)) return true;
+            },
+            .repeat_loop => |r| {
+                if (deadLoopBlockReads(&r.body, st, name)) return true;
+                if (deadLoopExprReads(r.cond, name)) return true;
+            },
+            .num_for => |f| {
+                if (deadLoopExprReads(f.start, name)) return true;
+                if (deadLoopExprReads(f.stop, name)) return true;
+                if (f.step) |sp| if (deadLoopExprReads(sp, name)) return true;
+                if (deadLoopBlockReads(&f.body, st, name)) return true;
+            },
+            .gen_for => |f| {
+                for (f.iters) |it| if (deadLoopExprReads(it, name)) return true;
+                if (deadLoopBlockReads(&f.body, st, name)) return true;
+            },
+            .if_stmt => |is| {
+                if (is.binding) |bd| if (deadLoopExprReads(bd.expr, name)) return true;
+                if (deadLoopExprReads(is.cond, name)) return true;
+                if (deadLoopBlockReads(&is.then, st, name)) return true;
+                for (is.elseifs) |*ei| {
+                    if (deadLoopExprReads(ei.cond, name)) return true;
+                    if (deadLoopBlockReads(&ei.body, st, name)) return true;
+                }
+                if (is.else_body) |*eb| if (deadLoopBlockReads(eb, st, name)) return true;
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// Prove `while iv < bound` (exact literal bound, iv bound to 0 just before,
+/// trailing `iv = iv + 1` step -- all verified by the caller) has no
+/// observable effect: the body writes only names never read after the loop,
+/// the iv is not read after, every nested loop is provably zero-trip, and
+/// every RHS is trap-free. Then the loop is dead.
+fn deadLoopLivenessProven(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, ws: anytype, iv: []const u8, bound: i64) bool {
+    if (bound < 0) return false;
+    const body = ws.body.stmts;
+    const n = body.len;
+    if (n == 0 or ws.body.tail_expr != null) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &body[n - 1], iv)) return false;
+    const st = &stmts[at];
+    ctx.enclosing_counted_bounds.append(ctx.alloc, .{ .iv = iv, .bound = bound }) catch return false;
+    defer _ = ctx.enclosing_counted_bounds.pop();
+    var written = DeadLoopWritten{};
+    for (body[0 .. n - 1], 0..) |*bs, bi| {
+        switch (bs.*) {
+            .assign => |a| {
+                if (a.targets.len != 1 or a.values.len != 1) return false;
+                const target = identOf(a.targets[0]) orelse return false;
+                if (std.mem.eql(u8, target, iv)) return false;
+                if (!deadLoopPureExpr(ctx, a.values[0])) return false;
+                if (!written.note(target)) return false;
+            },
+            .while_loop => {
+                if (!deadLoopNestedZeroTrip(ctx, body[0 .. n - 1], bi)) return false;
+            },
+            else => return false,
+        }
+    }
+    if (deadLoopNameLiveAfter(ctx, at, st, iv)) return false;
+    for (written.names[0..written.len]) |w| {
+        if (deadLoopNameLiveAfter(ctx, at, st, w)) return false;
+    }
+    return true;
+}
+
 fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     const st = &stmts[at];
     const ws = switch (st.*) {
@@ -9572,6 +9879,15 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
     }
     if (plan.bound_lit) |bl| {
         if (plan.iv_init == 0 and selfMapLoopProven(ctx, stmts, at, ws, iv, bl, &plan)) plan.self_map = true;
+    }
+    // Dead-loop liveness: the body writes only names never read after the
+    // loop (and not the iv), every nested loop is provably zero-trip, and
+    // every RHS is trap-free. The loop then has no observable effect.
+    if (plan.bound_lit) |bl| {
+        if (!plan.self_map and deadLoopLivenessProven(ctx, stmts, at, ws, iv, bl)) {
+            ctx.deadloop_swallowed.put(ctx.alloc, st, {}) catch return;
+            return;
+        }
     }
     // Absorbing fixed-point early exit (fixExitProven): only for literal
     // bounds, so the trip count cannot change under the loop. Moot when the
