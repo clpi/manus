@@ -5,11 +5,11 @@
 | correctness_oracle | clang (exit code + byte-identical stdout) |
 | route | production |
 | load_threshold | 8 (1-min avg; re-sampled before each program) |
-| qualification | QUALIFIED: load at start 4.78 vs threshold 8. Load re-sampled before each program's timing. |
+| qualification | QUALIFIED: load at start 5.70 vs threshold 8. Load re-sampled before each program's timing. |
 
 | # | directive |
 |---|---|
-| 1 | Generated 2026-09-16T01:08:09 by `bench/run.sh` (route production, 21 interleaved rounds, 3 warmup, median is primary). |
+| 1 | Generated 2026-09-16T02:00:55 by `bench/run.sh` (route production, 21 interleaved rounds, 3 warmup, median is primary). |
 
 | section |
 |---|---|
@@ -41,31 +41,31 @@
 
 | section |
 |---|---|
-| ceildiv |
+| regp |
 
 | compiler | median (s) | mean (s) | stddev | min | max | p95 | outliers |
 |---|---|---|---|---|---|---|---|
-| idol | 0.012137 | 0.012245 | 0.000539 | 0.011935 | 0.014562 | 0.012315 | 1 |
-| clang | 0.012131 | 0.012306 | 0.000514 | 0.011952 | 0.014121 | 0.013279 | 2 |
-| gcc | 0.012171 | 0.012176 | 0.000162 | 0.011896 | 0.012473 | 0.012438 | 0 |
+| idol | 0.001392 | 0.001393 | 0.000096 | 0.001259 | 0.001662 | 0.001516 | 0 |
+| clang | 0.001450 | 0.001428 | 0.000125 | 0.001240 | 0.001705 | 0.001577 | 0 |
+| gcc | 0.001394 | 0.001402 | 0.000091 | 0.001255 | 0.001634 | 0.001583 | 0 |
 
 | # | directive |
 |---|---|
-| 1 | Idol vs best rival (clang): equivalent, median margin -0.05% [95% CI -1.16%, +1.12%]; equivalent=true (90% CI [-0.70%, +0.96%] vs band [-2%,+2%]); mean/median conflict=false; Welch p (mean diagnostic)=0.7101. |
+| 1 | Idol vs best rival (gcc): inconclusive, median margin +0.21% [95% CI -5.70%, +3.64%]; equivalent=false (90% CI [-5.07%, +2.80%] vs band [-2%,+2%]); mean/median conflict=false; Welch p (mean diagnostic)=0.7636. |
 | 2 | Decision rule: declared estimand: median(idol)-median(rival) as % of rival median (positive margin = idol faster). win/loss iff 95% bootstrap percentile CI (B=2000, seed 20260915) excludes 0. 'equivalent' iff 90% CI lies wholly inside predeclared band [-2%,+2%]. else 'inconclusive' (never 'tie'). Welch t with Satterthwaite df reported as mean-based diagnostic only; mean_median_conflict flags disagreement. Undefined percentage estimand (rival median zero in every bootstrap resample) is insufficient evidence: verdict 'inconclusive', never an affirmative [0,0] interval. |
 
 | # | directive |
 |---|---|
-| 1 | Producer: /tmp/wt-ceildiv/zig-out/bin/idol sha256=914138468591aff1... (route production, rev e91b00c82a72a5e90b2f84021aee8694af96e79e). Load before timing: 4.78. |
+| 1 | Producer: /tmp/wt-regp/zig-out/bin/idol sha256=4890569964b8721a... (route production, rev ed30a440869f43077c74f0fade9b68eeca02479a). Load before timing: 5.70. |
 
 | # | directive |
 |---|---|
-| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.031s (5/5 ok); clang 0.040s (5/5 ok); gcc 0.045s (5/5 ok). Idol compiler sha256=914138468591aff1... |
+| 1 | Compile time, source to executable (median of successful attempts; FAILED attempts are failed work, never in the median): idol 0.033s (5/5 ok); clang 0.036s (5/5 ok); gcc 0.041s (5/5 ok). Idol compiler sha256=4890569964b8721a... |
 
 | # | directive |
 |---|---|
-| 1 | Executable size, bytes (linked executables, like-for-like): idol 16848, clang 16848, gcc 16840. |
-| 2 | Object size, bytes (relocatable objects, like-for-like; idol object kind: none): clang 744, gcc 744. |
+| 1 | Executable size, bytes (linked executables, like-for-like): idol 16840, clang 16840, gcc 16840. |
+| 2 | Object size, bytes (relocatable objects, like-for-like; idol object kind: none): clang 512, gcc 512. |
 | 3 | Code/data identification (`size -m` __TEXT/__DATA, best-effort): idol __TEXT 16384 __DATA 0; clang __TEXT 16384 __DATA 0; gcc __TEXT 16384 __DATA 0. |
 
 | section |
@@ -107,7 +107,7 @@
 | nest3d | 4 | 2026-09-15T05:56:29 | inconclusive | -1.33% | -8.66% | -0.26% |
 | popc | 7 | 2026-09-13T07:47:26 | win | +32.57% | -212.08% | +34.05% |
 | powmod | 6 | 2026-09-15T05:56:29 | loss | -20.37% | -96.35% | -19.81% |
-| regp | 4 | 2026-09-15T05:56:29 | loss | -26.83% | -27.47% | -20.64% |
+| regp | 7 | 2026-09-15T05:56:29 | inconclusive | +0.21% | -29.47% | +0.21% |
 | satadd | 7 | 2026-09-15T05:56:29 | win | +65.78% | -62.22% | +67.88% |
 | sred1 | 4 | 2026-09-15T05:56:29 | win | +96.01% | +95.42% | +96.27% |
 | startup | 4 | 2026-09-15T05:56:29 | inconclusive | -3.17% | -3.34% | -0.09% |
