@@ -4130,6 +4130,9 @@ const Arm64Compiler = struct {
                 const fuse_divmod = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and
                     ins.op == .binop and bi + 3 < b.instrs.len and
                     self.divmodFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
+                const fuse_divmod_rt = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and !fuse_divmod and
+                    ins.op == .binop and bi + 3 < b.instrs.len and
+                    self.divmodRuntimeFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
                 // §12 TAIL: `call_direct -> T ; ret T` is a JUMP, not a frame.
                 // The pair is folded into `restore the frame; b <callee>` — see
                 // `tailCallFusible` for every ground on which it is declined.
@@ -4196,6 +4199,10 @@ const Arm64Compiler = struct {
                     extra_consumed = 2;
                 } else if (fuse_divmod) {
                     try self.emitFusedDivmod(&temps, &pinned, ins, b.instrs[bi + 1], b.instrs[bi + 3], &branch_patches, flat_idx);
+                    extra_consumed = 3;
+                } else if (fuse_divmod_rt) {
+                    const q_dead = divmodQuotientDead(f, b.instrs[bi + 1], flat_idx);
+                    try self.emitFusedDivmodRuntime(&temps, &pinned, ins, b.instrs[bi + 1], b.instrs[bi + 3], &branch_patches, flat_idx, q_dead);
                     extra_consumed = 3;
                 } else if (fuse_tail) {
                     try self.emitTailCallDirect(&temps, &pinned, ins, flat_idx);
@@ -12395,6 +12402,78 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         return true;
     }
 
+    fn dnirValuesEqual(a: dnir.Value, b: dnir.Value) bool {
+        return switch (a) {
+            .local => |x| b == .local and b.local == x,
+            .temp => |x| b == .temp and b.temp == x,
+            .i64 => |x| b == .i64 and b.i64 == x,
+            else => false,
+        };
+    }
+
+    fn divmodRuntimeFusible(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        div_ins: dnir.Instr,
+        st_q: dnir.Instr,
+        mul_ins: dnir.Instr,
+        sub_ins: dnir.Instr,
+        flat_idx: u32,
+    ) bool {
+        if (div_ins.op != .binop) return false;
+        if (div_ins.binop != .div) return false;
+        if (div_ins.ty == .f64) return false;
+        if (div_ins.application != null or div_ins.relation != null or div_ins.value != null) return false;
+        if (div_ins.result == null) return false;
+        if (self.cur_func_float) return false;
+        if (dnirValuesEqual(div_ins.lhs, div_ins.rhs)) return false;
+        if (div_ins.lhs != .local and div_ins.lhs != .temp and div_ins.lhs != .i64) return false;
+        if (div_ins.rhs != .local and div_ins.rhs != .temp) return false;
+        if (!div_ins.divisor.proved()) return false;
+        if (st_q.op != .store_local) return false;
+        const t_q = div_ins.result.?;
+        if (st_q.lhs != .temp or st_q.lhs.temp != t_q) return false;
+        const lq = st_q.result orelse return false;
+        if (mul_ins.op != .binop or mul_ins.binop != .mul) return false;
+        if (mul_ins.ty == .f64) return false;
+        if (mul_ins.application != null or mul_ins.relation != null or mul_ins.value != null) return false;
+        if (mul_ins.result == null) return false;
+        const t_m = mul_ins.result.?;
+        const mul_divisor = if (mul_ins.lhs == .local and mul_ins.lhs.local == lq)
+            mul_ins.rhs
+        else if (mul_ins.rhs == .local and mul_ins.rhs.local == lq)
+            mul_ins.lhs
+        else
+            return false;
+        if (!dnirValuesEqual(mul_divisor, div_ins.rhs)) return false;
+        if (sub_ins.op != .binop or sub_ins.binop != .sub) return false;
+        if (sub_ins.ty == .f64) return false;
+        if (sub_ins.application != null or sub_ins.relation != null or sub_ins.value != null) return false;
+        if (sub_ins.result == null) return false;
+        if (!dnirValuesEqual(sub_ins.lhs, div_ins.lhs)) return false;
+        if (sub_ins.rhs != .temp or sub_ins.rhs.temp != t_m) return false;
+        if (dnirInstrReadsValue(div_ins, true, lq)) return false;
+        if (dnirInstrReadsValue(st_q, true, lq)) return false;
+        const q_last = self.value_free_at.get(t_q) orelse return false;
+        if (q_last != flat_idx + 1) return false;
+        const m_last = self.value_free_at.get(t_m) orelse return false;
+        if (m_last != flat_idx + 3) return false;
+        if (dnirBranchLandsWithin(f, flat_idx + 1, flat_idx + 3)) return false;
+        return true;
+    }
+
+    fn divmodQuotientDead(f: dnir.Function, st_q: dnir.Instr, flat_idx: u32) bool {
+        const lq = st_q.result orelse return false;
+        var idx: u32 = 0;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if ((idx < flat_idx or idx > flat_idx + 3) and dnirInstrReadsValue(ins, true, lq)) return false;
+                idx += 1;
+            }
+        }
+        return true;
+    }
+
     /// Emit the fused `ubfx` for a `ubfxFusible` pair. The shift temp is never
     /// materialized; the destination owns the `and`'s result temp.
     fn emitFusedUbfx(
@@ -12570,6 +12649,63 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         // sub never execute. `t_q`'s ownership is recorded by the main loop
         // from the div's result, exactly as for every other binop.
         try self.compileDnirInstr(temps, pinned, st_q, branch_patches, null, flat_idx + 1);
+    }
+
+    fn emitFusedDivmodRuntime(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *std.AutoHashMapUnmanaged(u32, u5),
+        div_ins: dnir.Instr,
+        st_q: dnir.Instr,
+        sub_ins: dnir.Instr,
+        branch_patches: *std.ArrayList(DnirBranchPatch),
+        flat_idx: u32,
+        q_dead: bool,
+    ) Error!void {
+        if (div_ins.binop != .div) return self.refuseWith(@src(), "divmod-rt-op");
+        if (!div_ins.divisor.proved()) return self.refuseWith(@src(), "divmod-rt-divisor");
+        const t_q = div_ins.result orelse return self.refuseWith(@src(), "divmod-rt-tq");
+        const t_d = sub_ins.result orelse return self.refuseWith(@src(), "divmod-rt-td");
+        const x = try self.evalDnirValue(temps, div_ins.lhs);
+        const x_held = self.holdReg(x, pinned);
+        const d = try self.evalDnirValue(temps, div_ins.rhs);
+        const d_held = self.holdReg(d, pinned);
+        const q_t = try self.allocReg();
+        try self.emitSdivReg(q_t, x, d);
+        const rem = try self.allocRegExcluding(q_t);
+        try self.emitMsubReg(rem, q_t, d, x);
+        const rp = try self.allocRegExcluding(q_t);
+        try self.emitAddReg(rp, rem, d);
+        try self.emitCmpZero(rem);
+        const d_dst = try self.allocRegExcluding(q_t);
+        var q_dst: u5 = 0;
+        if (q_dead) {
+            try self.emitCselReg(d_dst, rp, rem, .lt);
+        } else {
+            const qm1 = try self.allocRegExcluding(q_t);
+            try self.emitSubImm(qm1, q_t, 1);
+            q_dst = try self.allocRegExcluding(q_t);
+            try self.emitCselReg(q_dst, qm1, q_t, .lt);
+            self.releaseReg(qm1);
+            try self.emitCselReg(d_dst, rp, rem, .lt);
+            _ = try self.emitNarrowFit(q_dst, q_dst, div_ins.ty);
+            try temps.put(self.alloc, t_q, q_dst);
+        }
+        _ = try self.emitNarrowFit(d_dst, d_dst, sub_ins.ty);
+        self.releaseReg(rp);
+        self.releaseReg(rem);
+        self.releaseReg(q_t);
+        if (x_held) self.gp_reg_owner[x] = null;
+        if (d_held) self.gp_reg_owner[d] = null;
+        if (x != d_dst and (q_dead or x != q_dst) and !Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
+        if (d != d_dst and !Arm64Compiler.regIsPinned(pinned, d)) self.releaseReg(d);
+        try temps.put(self.alloc, t_d, d_dst);
+        if (d_dst >= 9 and d_dst < 29 and d_dst != platform_reserved_reg and !self.gp_home_regs[d_dst]) {
+            self.gp_reg_owner[d_dst] = t_d;
+        }
+        if (!q_dead) {
+            try self.compileDnirInstr(temps, pinned, st_q, branch_patches, null, flat_idx + 1);
+        }
     }
 
     /// Emit the fused `cmp; b.cond` for a `compareBranchFusible` pair. `when_true`
