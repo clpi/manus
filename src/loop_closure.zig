@@ -102,6 +102,14 @@ pub const max_plan = 8;
 /// relation's parameters. Overflow refuses the whole body.
 pub const max_poison = 64;
 
+/// Severing control: IDOL_LOOPCLOSURE_NESTED_OFF=1 restores the exact
+/// pre-nesting behavior -- a `while` body is never descended into, so nested
+/// loops are never closed by this pass. Read once per refused loop, at
+/// compile time only; never consulted at run time.
+pub fn nestedOff() bool {
+    return std.c.getenv("IDOL_LOOPCLOSURE_NESTED_OFF") != null;
+}
+
 pub const Census = struct {
     bodies_examined: u32 = 0,
     loops_seen: u32 = 0,
@@ -649,9 +657,27 @@ fn closeLoopsIn(
                 }
                 if (literalOf(a.values[0], &env)) |v| env.set(nm, v) else env.kill(nm);
             },
-            .while_loop => |w| {
+            .while_loop => {
+                const w = &st.while_loop;
                 census.loops_seen += 1;
-                const closed = recurrence.closeWhile(w, env.bindings()) orelse {
+                var closed_opt = recurrence.closeWhile(w.*, env.bindings());
+                if (closed_opt == null and !nestedOff()) {
+                    // INSIDE-OUT NESTING. The walk only visits a body's
+                    // top-level statements, so a loop nested inside another
+                    // loop's body is never asked -- yet a nested polynomial
+                    // recurrence is exactly what `closeWhile` already closes
+                    // standing alone (the inner loop of `fib35` closes the
+                    // same way `fib1` does). Descend first, with a FRESH
+                    // environment: no value from outside the outer body may
+                    // leak into an inner loop's entry, so an inner entry is
+                    // trusted only when the outer body's own straight-line
+                    // prologue re-establishes it. A closed inner loop is one
+                    // store, which can make the outer body assign-only -- so
+                    // the outer loop is retried afterwards.
+                    try closeLoopsIn(alloc, &w.body, poison, module_names, scope, census);
+                    closed_opt = recurrence.closeWhile(w.*, env.bindings());
+                }
+                const closed = closed_opt orelse {
                     // The loop ran and this pass cannot say what it did.
                     env.killAll();
                     continue;

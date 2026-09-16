@@ -384,6 +384,11 @@ const behaviour_env_table = [_]BehaviourEnvRow{
     .{ "IDOL_UNSAFE_TRUNC_DIVREM", .affects },
     .{ "IDOL_HOME_BUDGET", .affects },
     .{ "IDOL_NO_TIGHTDEF", .affects },
+    // THE NESTING COUNTERFACTUAL. Severs inside-out nested loop closure at
+    // the pass: a refused `while` body is never descended into. It changes
+    // the artifact, so `.affects` -- and the A/B harness reads this row to
+    // build the severed control.
+    .{ "IDOL_LOOPCLOSURE_NESTED_OFF", .affects },
     // THE SEVERING SIBLINGS of the census names above. Each restores an
     // older codegen path, so each changes the artifact: explicit `.affects`.
     .{ "IDOL_NO_DEPTH", .affects },
