@@ -7268,6 +7268,24 @@ const Arm64Compiler = struct {
     /// `msub`'s product wraps and that is not a defect. `S*k` may exceed i64,
     /// but `x - S*k` is exact modulo 2^64 and its TRUE value is in `[0, k]`, so
     /// the low 64 bits are the answer.
+    /// Acquire a register holding an integer constant for the floored-magic
+    /// division sequence: reuse the reserved preheader register when
+    /// `planImmHoist` hoisted the value, otherwise materialize it inline.
+    /// `exclude` is the claimed destination the sequence must not spill,
+    /// for the reason `emitBinopFlooredConstDivisor` states. A hoisted
+    /// register is a home, so the caller's `releaseReg` is a no-op on it.
+    fn acquireMagicConstReg(self: *Arm64Compiler, exclude: u5, value: i64) Error!u5 {
+        if (self.hoist_depth > 0) {
+            if (self.imm_hoist.get(value)) |hr| {
+                try self.ensureRegLive(hr);
+                return hr;
+            }
+        }
+        const r = try self.allocRegExcluding(exclude);
+        try self.emitMovImm(r, value);
+        return r;
+    }
+
     fn emitBinopFlooredConstDivisor(
         self: *Arm64Compiler,
         dst: u5,
@@ -7291,33 +7309,13 @@ const Arm64Compiler = struct {
         // releaseReg calls below are no-ops on them, and dst can never name
         // one (local homes predate the preheader allocation; later
         // allocations skip homes).
-        const rm: u5 = blk: {
-            if (self.hoist_depth > 0) {
-                if (self.imm_hoist.get(mg.m)) |hr| {
-                    try self.ensureRegLive(hr);
-                    break :blk hr;
-                }
-            }
-            const r = try self.allocRegExcluding(dst);
-            try self.emitMovImm(r, mg.m);
-            break :blk r;
-        };
+        const rm = try self.acquireMagicConstReg(dst, mg.m);
         const rt = try self.allocRegExcluding(dst);
         try self.emitSmulhReg(rt, rm, lhs);
         self.releaseReg(rm);
         if (mg.add_dividend) try self.emitAddReg(rt, rt, lhs);
         if (mg.shift > 0) try self.emitAsrImm(rt, rt, mg.shift);
-        const rd: u5 = blk: {
-            if (self.hoist_depth > 0) {
-                if (self.imm_hoist.get(k)) |hr| {
-                    try self.ensureRegLive(hr);
-                    break :blk hr;
-                }
-            }
-            const r = try self.allocRegExcluding(dst);
-            try self.emitMovImm(r, k);
-            break :blk r;
-        };
+        const rd = try self.acquireMagicConstReg(dst, k);
         const rv = try self.allocRegExcluding(dst);
         try self.emitMsubReg(rv, rt, rd, lhs);
         try self.emitCmpReg(rv, rd);
@@ -12537,15 +12535,17 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         const x = try self.evalDnirValue(temps, div_ins.lhs);
         const x_held = self.holdReg(x, pinned);
         const q_dst = try self.allocReg();
-        const rm = try self.allocRegExcluding(q_dst);
-        try self.emitMovImm(rm, mg.m);
+        // The sequence is `emitBinopFlooredConstDivisor` with `.idiv`,
+        // inlined so the residual survives for the remainder; the constant
+        // acquisition is shared, so hoisted preheader registers are reused
+        // here exactly as in the plain division.
+        const rm = try self.acquireMagicConstReg(q_dst, mg.m);
         const rt = try self.allocRegExcluding(q_dst);
         try self.emitSmulhReg(rt, rm, x);
         self.releaseReg(rm);
         if (mg.add_dividend) try self.emitAddReg(rt, rt, x);
         if (mg.shift > 0) try self.emitAsrImm(rt, rt, mg.shift);
-        const rd = try self.allocRegExcluding(q_dst);
-        try self.emitMovImm(rd, k);
+        const rd = try self.acquireMagicConstReg(q_dst, k);
         const rv = try self.allocRegExcluding(q_dst);
         try self.emitMsubReg(rv, rt, rd, x);
         try self.emitCmpReg(rv, rd);
