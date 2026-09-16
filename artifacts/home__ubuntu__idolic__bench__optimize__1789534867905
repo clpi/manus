@@ -1,0 +1,7 @@
+import { parse } from '../src/parse.mjs';
+import { check } from '../src/check.mjs';
+import { optimize } from '../src/optimize.mjs';
+
+const source = process.argv.slice(2).join(' ') || 'return 6 * 7;';
+const report = optimize(check(parse(source)));
+console.log(JSON.stringify({ source, claim: report.claim, improved: report.improved, candidates: report.candidates.map(({ name, metrics, result }) => ({ name, metrics, result })), frontier: report.frontier.map(({ name }) => name), selected: report.selected.name }, null, 2));

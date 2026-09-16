@@ -1,0 +1,47 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { parse } from '../src/parse.mjs';
+import { check } from '../src/check.mjs';
+import { compile } from '../src/compile.mjs';
+import { run } from '../src/run.mjs';
+import { graphProgram } from '../src/graph.mjs';
+
+const build = source => { const program = parse(source); const checked = check(program); return { program, checked, bytecode: compile(checked) }; };
+
+test('checks arithmetic and extracts a proof', () => {
+  const { checked } = build('let answer = 20 + 22; assert answer == 42; return answer;');
+  assert.equal(checked.proofs.length, 1);
+  assert.equal(checked.result.type, 'integer');
+});
+
+test('compiles and executes deterministically', () => {
+  const source = 'let answer = 20 + 22; assert answer == 42; return answer;';
+  const first = build(source);
+  const second = build(source);
+  assert.deepEqual(first.bytecode, second.bytecode);
+  assert.equal(run(first.bytecode).result, 42);
+});
+
+test('supports comparisons and boolean operators', () => {
+  const { bytecode } = build('assert 2 < 3 && 4 >= 4; return 9;');
+  assert.equal(run(bytecode).result, 9);
+});
+
+test('rejects unknown names', () => {
+  assert.throws(() => build('return missing;'), error => error.code === 'E201');
+});
+
+test('rejects false proofs', () => {
+  assert.throws(() => build('assert 1 == 2;'), error => error.code === 'E209');
+});
+
+test('rejects division by zero during checking', () => {
+  assert.throws(() => build('return 10 / 0;'), error => error.code === 'E204');
+});
+
+test('canonical graph is stable', () => {
+  const source = 'let answer = 20 + 22; assert answer == 42; return answer;';
+  const left = graphProgram(parse(source)).graph.canonical();
+  const right = graphProgram(parse(source)).graph.canonical();
+  assert.equal(left, right);
+});

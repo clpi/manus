@@ -1,0 +1,41 @@
+import { IdolicError } from './errors.mjs';
+
+const op = { '+': [0x48, 0x01], '-': [0x48, 0x29], '*': [0x48, 0x0f, 0xaf], '==': [0x48, 0x39], '!=': [0x48, 0x39], '<': [0x48, 0x39], '<=': [0x48, 0x39], '>': [0x48, 0x39], '>=': [0x48, 0x39] };
+const bytes = (...parts) => parts.flatMap(value => Array.isArray(value) ? value : [value]);
+const imm = value => { const b = Buffer.alloc(8); b.writeBigInt64LE(BigInt(value)); return [...b]; };
+
+function expression(node, out) {
+  if (node.type === 'literal') return out.push(...[0x48, 0xb8, ...imm(node.value)]);
+  if (node.type !== 'binary') throw new IdolicError('native backend supports expressions only', node.span, 'E401');
+  expression(node.left, out); out.push(0x50); expression(node.right, out); out.push(0x48, 0x89, 0xc1, 0x58);
+  if (node.operator === '/') throw new IdolicError('native division backend is not yet implemented', node.span, 'E402');
+  if (node.operator === '&&' || node.operator === '||') throw new IdolicError('native boolean backend is not yet implemented', node.span, 'E403');
+  if (!op[node.operator]) throw new IdolicError(`native operator ${node.operator} is not implemented`, node.span, 'E404');
+  if (node.operator === '*') out.push(...op[node.operator], 0xc1);
+  else if (node.operator === '+') out.push(0x48, 0x01, 0xc8);
+  else if (node.operator === '-') out.push(0x48, 0x29, 0xc8);
+  else {
+    out.push(0x48, 0x39, 0xc8, 0x0f, ({ '==': 0x94, '!=': 0x95, '<': 0x9c, '<=': 0x9e, '>': 0x9f, '>=': 0x9d })[node.operator], 0xc0, 0x48, 0x0f, 0xb6, 0xc0);
+  }
+}
+
+function elf(code) {
+  const header = Buffer.alloc(120);
+  header.writeUInt32LE(0x464c457f, 0); header[4] = 2; header[5] = 1; header[6] = 1;
+  header.writeUInt16LE(2, 16); header.writeUInt16LE(0x3e, 18); header.writeUInt32LE(1, 20);
+  header.writeBigUInt64LE(0x400078n, 24); header.writeBigUInt64LE(64n, 32); header.writeBigUInt64LE(0n, 40);
+  header.writeUInt16LE(64, 52); header.writeUInt16LE(56, 54); header.writeUInt16LE(1, 56);
+  header.writeUInt32LE(1, 64); header.writeUInt32LE(5, 68); header.writeBigUInt64LE(0n, 72);
+  header.writeBigUInt64LE(0x400000n, 80); header.writeBigUInt64LE(0x400000n, 88);
+  header.writeBigUInt64LE(BigInt(header.length + code.length), 96); header.writeBigUInt64LE(BigInt(header.length + code.length), 104); header.writeBigUInt64LE(0x1000n, 112);
+  return Buffer.concat([header, Buffer.from(code)]);
+}
+
+export function native(checked) {
+  const returns = checked.program.statements.filter(statement => statement.type === 'return');
+  if (returns.length !== 1) throw new IdolicError('native backend requires exactly one return', null, 'E405');
+  const value = returns[0].inferred?.constant;
+  if (!Number.isInteger(value) || value < 0 || value > 255) throw new IdolicError('native backend currently requires a proven integer return from 0 through 255', returns[0].span, 'E406');
+  const code = [0xbf, value, 0, 0, 0, 0xb8, 0x3c, 0, 0, 0, 0x0f, 0x05];
+  return elf(code);
+}

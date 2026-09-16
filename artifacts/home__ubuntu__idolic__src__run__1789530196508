@@ -1,0 +1,39 @@
+import { IdolicError } from './errors.mjs';
+
+export function run(bytecode) {
+  const stack = [];
+  const slots = Array(bytecode.slots);
+  const trace = [];
+  let ip = 0;
+  let result;
+  const pop = () => {
+    if (!stack.length) throw new IdolicError('stack underflow', null, 'E301');
+    return stack.pop();
+  };
+  while (ip < bytecode.code.length) {
+    const instruction = bytecode.code[ip++];
+    trace.push({ ip: ip - 1, instruction, depth: stack.length });
+    switch (instruction.op) {
+      case 'push': stack.push(instruction.value); break;
+      case 'load': stack.push(slots[instruction.slot]); break;
+      case 'store': slots[instruction.slot] = pop(); break;
+      case 'add': { const b = pop(); const a = pop(); stack.push(a + b); break; }
+      case 'sub': { const b = pop(); const a = pop(); stack.push(a - b); break; }
+      case 'mul': { const b = pop(); const a = pop(); stack.push(a * b); break; }
+      case 'div': { const b = pop(); const a = pop(); if (b === 0) throw new IdolicError('division by zero', null, 'E204'); stack.push(Math.trunc(a / b)); break; }
+      case 'eq': { const b = pop(); const a = pop(); stack.push(a === b); break; }
+      case 'ne': { const b = pop(); const a = pop(); stack.push(a !== b); break; }
+      case 'lt': { const b = pop(); const a = pop(); stack.push(a < b); break; }
+      case 'le': { const b = pop(); const a = pop(); stack.push(a <= b); break; }
+      case 'gt': { const b = pop(); const a = pop(); stack.push(a > b); break; }
+      case 'ge': { const b = pop(); const a = pop(); stack.push(a >= b); break; }
+      case 'and': { const b = pop(); const a = pop(); stack.push(a && b); break; }
+      case 'or': { const b = pop(); const a = pop(); stack.push(a || b); break; }
+      case 'assert': if (!pop()) throw new IdolicError('runtime assertion failed', null, 'E302'); break;
+      case 'return': result = pop(); return { result, trace };
+      case 'halt': return { result, trace };
+      default: throw new IdolicError(`unknown instruction ${instruction.op}`, null, 'E303');
+    }
+  }
+  return { result, trace };
+}

@@ -1,0 +1,26 @@
+# Idolic
+
+Idolic is a graph-native language and proof-system experiment. This repository contains the first verified vertical slice, not a claim that the full compiler, native backend, or self-hosted system already exists.
+
+The slice accepts a compact language with integer expressions, bindings, comparisons, boolean operators, assertions, and returns. It parses source into structured nodes, checks types and binding order, evaluates constant expressions, extracts true constant assertions as proof objects, emits deterministic stack bytecode, and executes that bytecode in a small virtual machine. The same parsed structure can be rendered as a canonical content-addressed graph.
+
+## Run
+
+```text
+npm test
+npm run bench
+node bin/idolic.mjs check examples/proof.idol
+node bin/idolic.mjs graph examples/proof.idol
+node bin/idolic.mjs compile examples/proof.idol
+node bin/idolic.mjs run examples/proof.idol
+```
+
+## Evidence
+
+The test suite covers arithmetic, proof extraction, comparisons, boolean operators, unknown names, false assertions, division by zero, deterministic bytecode, and canonical graph stability. The benchmark separates parsing, checking, compilation, and execution and reports the host runtime and workload.
+
+## Trust boundary
+
+The current trusted host is Node.js 22 and its runtime libraries. The implementation does not yet provide machine-code generation, a self-hosted compiler, formal proof-kernel soundness, cross-platform native backends, concurrency semantics, persistent cross-device synchronization, or universal performance guarantees. Those are explicit future milestones rather than hidden placeholders.
+
+The next high-value step is to replace the JavaScript host boundary with a small formally specified core and an independently checked bytecode format, then add translation validation and a native backend only after the semantic tests remain equivalent.

@@ -1,0 +1,12 @@
+export class IdolicError extends Error {
+  constructor(message, span = null, code = 'E000') {
+    super(message);
+    this.name = 'IdolicError';
+    this.code = code;
+    this.span = span;
+  }
+
+  diagnostic() {
+    return { code: this.code, message: this.message, span: this.span };
+  }
+}

@@ -1,0 +1,82 @@
+# Idolic Verified Vertical Slice Implementation Plan
+
+> **For agentic workers:** This plan implements the first evidence-backed vertical slice of the Idolic specification.
+
+**Goal:** Build a dependency-free graph-native language prototype that parses Idolic source, checks semantics, emits deterministic bytecode, executes it, emits a canonical graph, and validates behavior with tests and benchmarks.
+
+**Architecture:** The prototype uses a canonical graph as the shared representation for tokens, expressions, bindings, proofs, bytecode, and diagnostics. A small parser produces graph nodes; a semantic checker validates types, bindings, arithmetic constraints, and assertions; a deterministic compiler emits bytecode; and a stack virtual machine executes the bytecode. The implementation is intentionally self-contained and uses only the Node.js standard runtime as a temporary host, with the host boundary documented for future self-hosting.
+
+**Tech Stack:** Node.js 22, ECMAScript modules, Node built-in test runner, no third-party dependencies.
+
+**Spec:** `/home/ubuntu/Idolic_Actionable_Master_Prompt.md`
+
+## Global Constraints
+
+- Preserve intent through explicit semantics and deterministic evaluation.
+- Treat the graph as the canonical source of structural information.
+- Do not claim self-hosting, machine-code generation, or universal performance before those capabilities are implemented and measured.
+- Record implemented capabilities and limitations.
+- Keep tests executable and reproducible.
+
+---
+
+### Task 1: Repository and graph model
+
+**Files:** `package.json`, `src/graph.mjs`, `src/errors.mjs`
+
+- [ ] Define stable node identities from content and insertion order.
+- [ ] Represent nodes and directed labeled edges in canonical sorted form.
+- [ ] Represent diagnostics as structured graph-linked values.
+- [ ] Test graph determinism and edge preservation.
+
+### Task 2: Lexer and parser
+
+**Files:** `src/parse.mjs`, `test/parse.test.mjs`
+
+- [ ] Parse literals, names, binary operators, bindings, assertions, returns, and expression statements.
+- [ ] Reject malformed and ambiguous syntax with source spans.
+- [ ] Emit an AST that is immediately interned into the canonical graph.
+
+### Task 3: Semantic checker and proof kernel
+
+**Files:** `src/check.mjs`, `test/check.test.mjs`
+
+- [ ] Enforce integer and boolean types.
+- [ ] Enforce binding-before-use.
+- [ ] Evaluate constant expressions in the checker.
+- [ ] Treat a true constant assertion as a proof object.
+- [ ] Reject false constant assertions and division by zero.
+
+### Task 4: Deterministic compiler and runtime
+
+**Files:** `src/compile.mjs`, `src/run.mjs`, `test/run.test.mjs`
+
+- [ ] Emit stable stack bytecode from checked programs.
+- [ ] Execute bytecode with explicit value and control invariants.
+- [ ] Preserve integer division and comparison semantics.
+- [ ] Return structured execution traces for inspection.
+
+### Task 5: CLI and examples
+
+**Files:** `bin/idolic.mjs`, `examples/hello.idol`, `examples/proof.idol`, `README.md`
+
+- [ ] Provide commands for check, graph, compile, and run.
+- [ ] Make all output deterministic.
+- [ ] Include examples that demonstrate semantic checking and proof extraction.
+
+### Task 6: Conformance and benchmark harness
+
+**Files:** `test/conformance.test.mjs`, `bench/benchmark.mjs`
+
+- [ ] Cover valid programs, invalid programs, arithmetic, assertions, determinism, and diagnostics.
+- [ ] Benchmark parse, check, compile, and run phases separately.
+- [ ] Report environment and repeatable timing without claiming superiority over unmeasured systems.
+
+### Acceptance
+
+- `npm test` passes.
+- The example program checks, compiles, and runs deterministically.
+- The same source yields the same graph and bytecode across repeated invocations.
+- Invalid programs fail with structured diagnostics.
+- Benchmark output identifies the measured phases and workload.
+- README states the trusted host boundary and all unimplemented capabilities.

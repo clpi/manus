@@ -1,0 +1,60 @@
+import { IdolicError } from './errors.mjs';
+
+const integerOperators = new Set(['+', '-', '*', '/']);
+const comparisonOperators = new Set(['==', '!=', '<', '<=', '>', '>=']);
+const booleanOperators = new Set(['&&', '||']);
+
+function apply(operator, left, right) {
+  if (integerOperators.has(operator)) {
+    if (operator === '/' && right === 0) throw new IdolicError('division by zero', null, 'E204');
+    if (operator === '+') return left + right;
+    if (operator === '-') return left - right;
+    if (operator === '*') return left * right;
+    return Math.trunc(left / right);
+  }
+  if (comparisonOperators.has(operator)) return operator === '==' ? left === right : operator === '!=' ? left !== right : operator === '<' ? left < right : operator === '<=' ? left <= right : operator === '>' ? left > right : left >= right;
+  if (operator === '&&') return left && right;
+  if (operator === '||') return left || right;
+  throw new IdolicError(`unknown operator ${operator}`, null, 'E205');
+}
+
+export function check(program) {
+  const bindings = new Map();
+  const proofs = [];
+  const typed = new Map();
+  const infer = node => {
+    if (typed.has(node)) return typed.get(node);
+    let result;
+    if (node.type === 'literal') result = { type: node.valueType, constant: node.value };
+    else if (node.type === 'name') {
+      if (!bindings.has(node.name)) throw new IdolicError(`unknown name ${node.name}`, node.span, 'E201');
+      result = bindings.get(node.name);
+    } else if (node.type === 'binary') {
+      const left = infer(node.left); const right = infer(node.right);
+      if (integerOperators.has(node.operator) && (left.type !== 'integer' || right.type !== 'integer')) throw new IdolicError('arithmetic requires integers', node.span, 'E202');
+      if (comparisonOperators.has(node.operator) && left.type !== right.type) throw new IdolicError('comparison requires matching types', node.span, 'E203');
+      if (booleanOperators.has(node.operator) && (left.type !== 'boolean' || right.type !== 'boolean')) throw new IdolicError('boolean operator requires booleans', node.span, 'E206');
+      const type = integerOperators.has(node.operator) ? 'integer' : 'boolean';
+      const constant = left.constant !== undefined && right.constant !== undefined ? apply(node.operator, left.constant, right.constant) : undefined;
+      result = { type, ...(constant === undefined ? {} : { constant }) };
+    } else throw new IdolicError(`cannot infer ${node.type}`, node.span, 'E207');
+    typed.set(node, result);
+    return result;
+  };
+  let result = { type: 'unit' };
+  for (const statement of program.statements) {
+    if (statement.type === 'let') { const value = infer(statement.value); bindings.set(statement.name, value); statement.inferred = value; }
+    else if (statement.type === 'assert') {
+      const value = infer(statement.value);
+      if (value.type !== 'boolean') throw new IdolicError('assert requires a boolean', statement.span, 'E208');
+      if (value.constant !== undefined) {
+        if (!value.constant) throw new IdolicError('assertion is false', statement.span, 'E209');
+        proofs.push({ kind: 'constant-assertion', span: statement.span, statement });
+      }
+      statement.inferred = value;
+    } else if (statement.type === 'return' || statement.type === 'expression') { result = infer(statement.value); statement.inferred = result; }
+  }
+  return { program, result, proofs, bindings };
+}
+
+export { apply };

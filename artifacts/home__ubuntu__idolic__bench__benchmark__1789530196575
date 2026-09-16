@@ -1,0 +1,22 @@
+import { performance } from 'node:perf_hooks';
+import { parse } from '../src/parse.mjs';
+import { check } from '../src/check.mjs';
+import { compile } from '../src/compile.mjs';
+import { run } from '../src/run.mjs';
+
+const source = 'let answer = 20 + 22; assert answer == 42; return answer;';
+const phases = [
+  ['parse', parse],
+  ['check', value => check(parse(value))],
+  ['compile', value => compile(check(parse(value)))],
+  ['run', value => run(compile(check(parse(value))))]
+];
+const repeat = 10000;
+console.log(JSON.stringify({ node: process.version, repeat, workload: source }, null, 2));
+for (const [name, action] of phases) {
+  const start = performance.now();
+  let value;
+  for (let index = 0; index < repeat; index += 1) value = action(source);
+  const elapsed = performance.now() - start;
+  console.log(JSON.stringify({ phase: name, totalMs: Number(elapsed.toFixed(3)), averageUs: Number((elapsed * 1000 / repeat).toFixed(3)), result: name === 'run' ? value.result : undefined }));
+}

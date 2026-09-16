@@ -1,0 +1,19 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, chmod } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { parse } from '../src/parse.mjs';
+import { check } from '../src/check.mjs';
+import { native } from '../src/native.mjs';
+
+const execute = path => new Promise((resolve, reject) => { const child = spawn(path); child.on('error', reject); child.on('close', code => resolve(code)); });
+
+test('emits a runnable native x86-64 ELF for integer expressions', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'idolic-'));
+  const path = join(directory, 'program');
+  await writeFile(path, native(check(parse('return 6 * 7;'))));
+  await chmod(path, 0o755);
+  assert.equal(await execute(path), 42);
+});

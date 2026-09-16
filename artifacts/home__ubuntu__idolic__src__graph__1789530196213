@@ -1,0 +1,48 @@
+import { createHash } from 'node:crypto';
+
+export class Graph {
+  constructor() {
+    this.nodes = new Map();
+    this.edges = [];
+  }
+
+  add(kind, value = {}, edges = []) {
+    const normalized = { kind, value, edges: [...edges].sort() };
+    const id = createHash('sha256').update(JSON.stringify(normalized)).digest('hex').slice(0, 16);
+    if (!this.nodes.has(id)) this.nodes.set(id, normalized);
+    for (const edge of normalized.edges) this.edges.push({ from: id, label: edge.label, to: edge.to });
+    return id;
+  }
+
+  canonical() {
+    return JSON.stringify({
+      nodes: [...this.nodes.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      edges: [...this.edges].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+    });
+  }
+}
+
+export function graphProgram(program) {
+  const graph = new Graph();
+  const ids = new Map();
+  const visit = node => {
+    if (!node || typeof node !== 'object') return null;
+    if (ids.has(node)) return ids.get(node);
+    const edges = [];
+    for (const [key, value] of Object.entries(node)) {
+      if (Array.isArray(value)) for (const child of value) {
+        const to = visit(child);
+        if (to) edges.push({ label: key, to });
+      }
+      else if (value && typeof value === 'object') {
+        const to = visit(value);
+        if (to) edges.push({ label: key, to });
+      }
+    }
+    const scalar = Object.fromEntries(Object.entries(node).filter(([, value]) => value === null || ['string', 'number', 'boolean'].includes(typeof value)));
+    const id = graph.add(node.type ?? 'program', scalar, edges);
+    ids.set(node, id);
+    return id;
+  };
+  return { graph, root: visit(program) };
+}

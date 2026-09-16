@@ -1,0 +1,25 @@
+#!/usr/bin/env node
+import { readFile } from 'node:fs/promises';
+import { parse } from '../src/parse.mjs';
+import { check } from '../src/check.mjs';
+import { compile } from '../src/compile.mjs';
+import { run } from '../src/run.mjs';
+import { graphProgram } from '../src/graph.mjs';
+import { native } from '../src/native.mjs';
+
+const [command, file] = process.argv.slice(2);
+if (!command || !file) { console.error('usage: idolic <check|graph|compile|run> <file>'); process.exit(2); }
+try {
+  const source = await readFile(file, 'utf8');
+  const program = parse(source);
+  const checked = check(program);
+  if (command === 'check') console.log(JSON.stringify({ ok: true, proofs: checked.proofs.length, result: checked.result.type }, null, 2));
+  else if (command === 'graph') { const { graph, root } = graphProgram(program); console.log(JSON.stringify({ root, graph: JSON.parse(graph.canonical()) }, null, 2)); }
+  else if (command === 'compile') console.log(JSON.stringify(compile(checked), null, 2));
+  else if (command === 'native') process.stdout.write(native(checked));
+  else if (command === 'run') console.log(JSON.stringify(run(compile(checked)), null, 2));
+  else throw new Error(`unknown command ${command}`);
+} catch (error) {
+  console.error(JSON.stringify(error.diagnostic ? error.diagnostic() : { message: error.message }, null, 2));
+  process.exit(1);
+}

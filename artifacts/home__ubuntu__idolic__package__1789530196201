@@ -1,0 +1,14 @@
+{
+  "name": "idolic",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Graph-native verified language vertical slice",
+  "scripts": {
+    "test": "node --test",
+    "bench": "node bench/benchmark.mjs"
+  },
+  "bin": {
+    "idolic": "bin/idolic.mjs"
+  }
+}

@@ -1,0 +1,21 @@
+const operations = { '+': 'add', '-': 'sub', '*': 'mul', '/': 'div', '==': 'eq', '!=': 'ne', '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge', '&&': 'and', '||': 'or' };
+
+export function compile(checked) {
+  const code = [];
+  const slots = new Map();
+  let nextSlot = 0;
+  const emit = instruction => code.push(instruction);
+  const expression = node => {
+    if (node.type === 'literal') return emit({ op: 'push', value: node.value });
+    if (node.type === 'name') return emit({ op: 'load', slot: slots.get(node.name) });
+    expression(node.left); expression(node.right); emit({ op: operations[node.operator] });
+  };
+  for (const statement of checked.program.statements) {
+    if (statement.type === 'let') { expression(statement.value); const slot = nextSlot++; slots.set(statement.name, slot); emit({ op: 'store', slot }); }
+    else if (statement.type === 'assert') { expression(statement.value); emit({ op: 'assert' }); }
+    else if (statement.type === 'return') { expression(statement.value); emit({ op: 'return' }); }
+    else expression(statement.value);
+  }
+  emit({ op: 'halt' });
+  return { version: 1, slots: nextSlot, code };
+}

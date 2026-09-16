@@ -1,0 +1,19 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { parse } from '../src/parse.mjs';
+import { check } from '../src/check.mjs';
+import { optimize } from '../src/optimize.mjs';
+
+test('selects a verified improvement when metrics improve', () => {
+  const result = optimize(check(parse('return 6 * 7;')));
+  assert.equal(result.selected.result, 42);
+  assert.equal(result.selected.name, 'constant-folded');
+  assert.equal(result.improved, true);
+  assert.equal(result.claim, 'best among measured verified candidates');
+});
+
+test('retains semantic equivalence for nonconstant returns', () => {
+  const result = optimize(check(parse('let x = 6; return x * 7;')));
+  assert.equal(result.selected.result, 42);
+  assert.ok(result.frontier.length >= 1);
+});

@@ -1,0 +1,63 @@
+import { IdolicError } from './errors.mjs';
+
+const tokenPattern = /\s+|\/\/[^\n]*|(?:\d+)|(?:[A-Za-z][A-Za-z0-9]*)|(?:==|!=|<=|>=|&&|\|\||[+*\/<>=;(){}-])/gy;
+
+function lex(source) {
+  const tokens = [];
+  let at = 0;
+  while (at < source.length) {
+    tokenPattern.lastIndex = at;
+    const match = tokenPattern.exec(source);
+    if (!match) throw new IdolicError('unexpected character', { start: at, end: at + 1 }, 'E101');
+    const text = match[0];
+    const start = at;
+    at = tokenPattern.lastIndex;
+    if (/^\s|^\/\//.test(text)) continue;
+    const kind = /^\d+$/.test(text) ? 'number' : /^[A-Za-z]/.test(text) ? 'name' : 'operator';
+    tokens.push({ kind, text, start, end: at });
+  }
+  tokens.push({ kind: 'eof', text: '', start: at, end: at });
+  return tokens;
+}
+
+export function parse(source) {
+  const tokens = lex(source);
+  let cursor = 0;
+  const peek = () => tokens[cursor];
+  const take = text => {
+    const token = peek();
+    if (text && token.text !== text) throw new IdolicError(`expected ${text}`, { start: token.start, end: token.end }, 'E102');
+    cursor += 1;
+    return token;
+  };
+  const precedence = { '||': 1, '&&': 2, '==': 3, '!=': 3, '<': 4, '<=': 4, '>': 4, '>=': 4, '+': 5, '-': 5, '*': 6, '/': 6 };
+  const primary = () => {
+    const token = peek();
+    if (token.kind === 'number') { take(); return { type: 'literal', value: Number(token.text), valueType: 'integer', span: [token.start, token.end] }; }
+    if (token.kind === 'name') { take(); return { type: 'name', name: token.text, span: [token.start, token.end] }; }
+    if (token.text === '(') { take('('); const value = expression(); take(')'); return value; }
+    throw new IdolicError('expected expression', { start: token.start, end: token.end }, 'E103');
+  };
+  const expression = (minimum = 1) => {
+    let left = primary();
+    while (precedence[peek().text] >= minimum) {
+      const operator = take().text;
+      const right = expression(precedence[operator] + 1);
+      left = { type: 'binary', operator, left, right, span: [left.span[0], right.span[1]] };
+    }
+    return left;
+  };
+  const statement = () => {
+    const start = peek().start;
+    if (peek().text === 'let') {
+      take('let'); const name = take(); if (name.kind !== 'name') throw new IdolicError('binding requires a name', [name.start, name.end], 'E104');
+      take('='); const value = expression(); take(';'); return { type: 'let', name: name.text, value, span: [start, value.span[1]] };
+    }
+    if (peek().text === 'assert') { take('assert'); const value = expression(); take(';'); return { type: 'assert', value, span: [start, value.span[1]] }; }
+    if (peek().text === 'return') { take('return'); const value = expression(); take(';'); return { type: 'return', value, span: [start, value.span[1]] }; }
+    const value = expression(); take(';'); return { type: 'expression', value, span: [start, value.span[1]] };
+  };
+  const statements = [];
+  while (peek().kind !== 'eof') statements.push(statement());
+  return { type: 'program', statements, span: [0, source.length] };
+}

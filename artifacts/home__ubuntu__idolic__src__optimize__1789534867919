@@ -1,0 +1,33 @@
+import { compile } from './compile.mjs';
+import { run } from './run.mjs';
+
+const size = value => JSON.stringify(value).length;
+const dominates = (left, right) => {
+  const keys = ['instructions', 'bytes', 'steps'];
+  return keys.every(key => left.metrics[key] <= right.metrics[key]) && keys.some(key => left.metrics[key] < right.metrics[key]);
+};
+
+function baseline(checked) {
+  const bytecode = compile(checked);
+  const execution = run(bytecode);
+  return { name: 'baseline', bytecode, result: execution.result, metrics: { instructions: bytecode.code.length, bytes: size(bytecode), steps: execution.trace.length } };
+}
+
+function folded(checked) {
+  const statements = checked.program.statements.map(statement => {
+    if (statement.type === 'return' && statement.inferred?.constant !== undefined) return { ...statement, value: { type: 'literal', value: statement.inferred.constant, valueType: 'integer', span: statement.value.span } };
+    return statement;
+  });
+  const bytecode = compile({ ...checked, program: { ...checked.program, statements } });
+  const execution = run(bytecode);
+  return { name: 'constant-folded', bytecode, result: execution.result, metrics: { instructions: bytecode.code.length, bytes: size(bytecode), steps: execution.trace.length } };
+}
+
+export function optimize(checked) {
+  const candidates = [baseline(checked), folded(checked)];
+  const reference = candidates[0].result;
+  const valid = candidates.filter(candidate => candidate.result === reference);
+  const frontier = valid.filter(candidate => !valid.some(other => other !== candidate && dominates(other, candidate)));
+  const selected = frontier.slice().sort((a, b) => a.metrics.instructions - b.metrics.instructions || a.metrics.steps - b.metrics.steps || a.metrics.bytes - b.metrics.bytes)[0];
+  return { candidates: valid, frontier, selected, improved: selected.name !== 'baseline', claim: 'best among measured verified candidates' };
+}

@@ -1,0 +1,9 @@
+# Machine-Code Trust Root
+
+`idolic-seed` is a hand-authored x86-64 ELF executable containing nine machine-code bytes. It exits through the Linux x86-64 system-call ABI with status zero. Its purpose is to establish and test the binary trust root, not to pretend that a complete compiler exists.
+
+The validated seed has no section table, no dynamic linker, no C runtime, and no host-language runtime dependency. It is intentionally minimal. The current target is x86-64 Linux; cross-platform support requires separately specified target seeds or a formally defined portable machine model.
+
+The next bootstrap stage must be implemented from this seed's allowed operations and must produce, in order, a byte writer, instruction encoder, object format writer, parser, semantic checker, proof kernel, compiler, and self-rebuild path. Each stage must be reproducible and compared against the previous stage. The JavaScript vertical slice is an executable specification and differential oracle only; it is not part of the trusted final toolchain.
+
+The seed does not yet contain an assembler, compiler, linker, runtime, or language implementation. Those are declared work, not hidden placeholders.

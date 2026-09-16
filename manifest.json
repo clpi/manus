@@ -1,0 +1,259 @@
+{
+  "share_id": "cbucYUTkWGxdmjuZ1yUxgb",
+  "share_url": "https://manus.im/share/cbucYUTkWGxdmjuZ1yUxgb",
+  "title": "Uploaded File Content Summary",
+  "api_source": "https://api.manus.im/api/chat/getSessionV2?sessionId=cbucYUTkWGxdmjuZ1yUxgb&type=shared&getFirstSegment=true",
+  "auth_required": false,
+  "message_count": 52,
+  "total_events": 249,
+  "event_types": {
+    "cascadeTaskClock": 32,
+    "chat": 52,
+    "fileOperationPromotion": 5,
+    "newPlanStep": 1,
+    "planUpdate": 6,
+    "queueStatusChange": 1,
+    "sandboxUpdate": 9,
+    "statusUpdate": 32,
+    "toolUsed": 111
+  },
+  "time_range_utc": {
+    "first": "2026-09-16 03:19:50 UTC",
+    "last": "2026-09-16 08:39:26 UTC"
+  },
+  "session_created_utc": "2026-09-16 03:19:50 UTC",
+  "session_updated_utc": "2026-09-16 08:39:27 UTC",
+  "artifacts_downloaded": 28,
+  "artifacts": [
+    {
+      "file": "Clipboard_0_D69319F0__notime",
+      "original_sandbox_path": "Clipboard_0_D69319F0__notime",
+      "sandbox_timestamp_ms": null,
+      "bytes": 1630,
+      "sha256": "cc42b93b1a793ef326df3ecdc2633ce6e6d3b0074fd9863324a507fada36ce1a",
+      "file_type": "gzip compressed data, original size modulo 2^32 3535"
+    },
+    {
+      "file": "Pasted_content__notime",
+      "original_sandbox_path": "Pasted_content__notime",
+      "sandbox_timestamp_ms": null,
+      "bytes": 4762,
+      "sha256": "0a738f56d32e50cf858aa048ab28298714ccf12c4c2cd77b7403d02f59cb8f27",
+      "file_type": "Unicode text, UTF-8 text, with very long lines (1510)"
+    },
+    {
+      "file": "home__ubuntu__Idolic_Actionable_Master_Prompt__1789528971151",
+      "original_sandbox_path": "/home/ubuntu/Idolic_Actionable_Master_Prompt",
+      "sandbox_timestamp_ms": "1789528971151",
+      "bytes": 14531,
+      "sha256": "9eaca3a05955c850ea22e0d0306087e0135b8d19c844b9657fd48599c9abc89b",
+      "file_type": "Unicode text, UTF-8 text, with very long lines (420)"
+    },
+    {
+      "file": "home__ubuntu__Idolic_Actionable_Master_Prompt__1789529889075",
+      "original_sandbox_path": "/home/ubuntu/Idolic_Actionable_Master_Prompt",
+      "sandbox_timestamp_ms": "1789529889075",
+      "bytes": 21238,
+      "sha256": "c666a1b52ec4041bdae272d5d14a6c47cac0a101fc6c0ceb0039b7dfc2221206",
+      "file_type": "Unicode text, UTF-8 text, with very long lines (420)"
+    },
+    {
+      "file": "home__ubuntu__idolic__README__1789530196217",
+      "original_sandbox_path": "/home/ubuntu/idolic/README",
+      "sandbox_timestamp_ms": "1789530196217",
+      "bytes": 1891,
+      "sha256": "369172996f534e1370d68f27fba2845534cffe93855b93fa25316c13ea749b94",
+      "file_type": "ASCII text, with very long lines (458)"
+    },
+    {
+      "file": "home__ubuntu__idolic__README__1789532234264",
+      "original_sandbox_path": "/home/ubuntu/idolic/README",
+      "sandbox_timestamp_ms": "1789532234264",
+      "bytes": 2270,
+      "sha256": "09cd86c4fa002b8f275c2ac03fc0493f9a29d3e5fa3926b43a009efac35dee7d",
+      "file_type": "ASCII text, with very long lines (458)"
+    },
+    {
+      "file": "home__ubuntu__idolic__bench__benchmark__1789530196575",
+      "original_sandbox_path": "/home/ubuntu/idolic/bench/benchmark",
+      "sandbox_timestamp_ms": "1789530196575",
+      "bytes": 997,
+      "sha256": "7317b58affec0200a7c45d57692cbfc8735a0d273ef98eb4959c78612897ba8a",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__bench__optimize__1789534867905",
+      "original_sandbox_path": "/home/ubuntu/idolic/bench/optimize",
+      "sandbox_timestamp_ms": "1789534867905",
+      "bytes": 523,
+      "sha256": "6a06f46de50067d65fb1e9422237094c3b66f3528edde837d2869a361275184d",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__bin__idolic__1789530196541",
+      "original_sandbox_path": "/home/ubuntu/idolic/bin/idolic",
+      "sandbox_timestamp_ms": "1789530196541",
+      "bytes": 1251,
+      "sha256": "9f70b9568c2e040921cecf871840cae5d1c60ee9cb8e68bfc80d25ffad285356",
+      "file_type": "Node.js script executable, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__bin__idolic__1789532234247",
+      "original_sandbox_path": "/home/ubuntu/idolic/bin/idolic",
+      "sandbox_timestamp_ms": "1789532234247",
+      "bytes": 1367,
+      "sha256": "efa7193d04c17f8f7a2dfb4caf6b24d934a85fb51b6cfcdd702e4aee2485ce48",
+      "file_type": "Node.js script executable, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__bootstrap__README__1789530433038",
+      "original_sandbox_path": "/home/ubuntu/idolic/bootstrap/README",
+      "sandbox_timestamp_ms": "1789530433038",
+      "bytes": 1189,
+      "sha256": "ca8befb7412eaf37c2563ccf122575eba8f843801e20850828aa65ee8f760864",
+      "file_type": "ASCII text, with very long lines (450)"
+    },
+    {
+      "file": "home__ubuntu__idolic__bootstrap__idolic-seed__1789530433035",
+      "original_sandbox_path": "/home/ubuntu/idolic/bootstrap/idolic-seed",
+      "sandbox_timestamp_ms": "1789530433035",
+      "bytes": 129,
+      "sha256": "87858b6b4d11ebf4caff9c548fb26bd9da6dea051cc22b61006afb180c2793a3",
+      "file_type": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, no section header"
+    },
+    {
+      "file": "home__ubuntu__idolic__bootstrap__idolic-seed__1789533276576",
+      "original_sandbox_path": "/home/ubuntu/idolic/bootstrap/idolic-seed",
+      "sandbox_timestamp_ms": "1789533276576",
+      "bytes": 4616,
+      "sha256": "6939af77f0c0486628522216a8c9b463195be713cc9d6d52252c46e5f67131fd",
+      "file_type": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, not stripped"
+    },
+    {
+      "file": "home__ubuntu__idolic__bootstrap__seed__1789533276560",
+      "original_sandbox_path": "/home/ubuntu/idolic/bootstrap/seed",
+      "sandbox_timestamp_ms": "1789533276560",
+      "bytes": 81,
+      "sha256": "483f62fac9c2b394c909af62ddf382aa8827165b35dd188305a1ed65b529c7f0",
+      "file_type": "ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__docs__2026-09-15-vertical-slice__1789530196221",
+      "original_sandbox_path": "/home/ubuntu/idolic/docs/2026-09-15-vertical-slice",
+      "sandbox_timestamp_ms": "1789530196221",
+      "bytes": 3952,
+      "sha256": "4412ce4ebfb4913720c9a988547c8f9e5636cfb80d199d70ead3edc7a36a6882",
+      "file_type": "ASCII text, with very long lines (542)"
+    },
+    {
+      "file": "home__ubuntu__idolic__examples__proof__1789530196613",
+      "original_sandbox_path": "/home/ubuntu/idolic/examples/proof",
+      "sandbox_timestamp_ms": "1789530196613",
+      "bytes": 58,
+      "sha256": "09dd80f66989f888709c81a9ba08591015af82ad7d6b4d2d2ac6238fad0f3e56",
+      "file_type": "ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__package__1789530196201",
+      "original_sandbox_path": "/home/ubuntu/idolic/package",
+      "sandbox_timestamp_ms": "1789530196201",
+      "bytes": 284,
+      "sha256": "b4b721b8fdd59515334b6bc77e9a4b41be305194c38ccf1ee1598cb99280df98",
+      "file_type": "JSON text data"
+    },
+    {
+      "file": "home__ubuntu__idolic__src__check__1789530196416",
+      "original_sandbox_path": "/home/ubuntu/idolic/src/check",
+      "sandbox_timestamp_ms": "1789530196416",
+      "bytes": 3446,
+      "sha256": "c3bf318257c954654c9692928fc089f0d05ff57468c3aa04c5ccf8edd782b4a9",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__src__compile__1789530196420",
+      "original_sandbox_path": "/home/ubuntu/idolic/src/compile",
+      "sandbox_timestamp_ms": "1789530196420",
+      "bytes": 1142,
+      "sha256": "4c2fc32a993283766604f75da5bb6baa62b1790052c527683cc9995c34e0eec2",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__src__errors__1789530196374",
+      "original_sandbox_path": "/home/ubuntu/idolic/src/errors",
+      "sandbox_timestamp_ms": "1789530196374",
+      "bytes": 289,
+      "sha256": "aa6f2a705e22bf39c028c5ea68f730de1662413071aa1c179552f8dc8101fafe",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__src__graph__1789530196213",
+      "original_sandbox_path": "/home/ubuntu/idolic/src/graph",
+      "sandbox_timestamp_ms": "1789530196213",
+      "bytes": 1663,
+      "sha256": "79c610caa11d84c8fe2686620cd85d782ca7229742c0171b1952c676c25d1ccb",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__src__native__1789532234232",
+      "original_sandbox_path": "/home/ubuntu/idolic/src/native",
+      "sandbox_timestamp_ms": "1789532234232",
+      "bytes": 2943,
+      "sha256": "eb55abd83b4499cdb9d29f78b36dd4ec9a566f4b063b7e52d64d26fb62242a09",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__src__optimize__1789534867919",
+      "original_sandbox_path": "/home/ubuntu/idolic/src/optimize",
+      "sandbox_timestamp_ms": "1789534867919",
+      "bytes": 1929,
+      "sha256": "d7c4a999708ec2d5369c125407faf09fd0ba9e066492641fa7e6a5ac4cd96595",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__src__parse__1789530196399",
+      "original_sandbox_path": "/home/ubuntu/idolic/src/parse",
+      "sandbox_timestamp_ms": "1789530196399",
+      "bytes": 3064,
+      "sha256": "a8fbc434b2d4df0a4ff865d2024dcf1efe6c40c86ab8e6721944a970e11233f4",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__src__run__1789530196508",
+      "original_sandbox_path": "/home/ubuntu/idolic/src/run",
+      "sandbox_timestamp_ms": "1789530196508",
+      "bytes": 2086,
+      "sha256": "cb1a745533f8e5ea56c75c9c79bf6583cd24faa374ca6c1d6e0b01fb1e722484",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__test__idolic.test__1789530196562",
+      "original_sandbox_path": "/home/ubuntu/idolic/test/idolic.test",
+      "sandbox_timestamp_ms": "1789530196562",
+      "bytes": 1820,
+      "sha256": "145ba327e4e0339ba5ea1b41db1ec800b1e28bcc5918625e3d5bf2349642a8a6",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__test__native.test__1789532234250",
+      "original_sandbox_path": "/home/ubuntu/idolic/test/native.test",
+      "sandbox_timestamp_ms": "1789532234250",
+      "bytes": 857,
+      "sha256": "f551869f2d929ce13b98de9a42ac98b38ace9a0c7b79cda8b1131eb9b2dcf5e0",
+      "file_type": "JavaScript source, ASCII text"
+    },
+    {
+      "file": "home__ubuntu__idolic__test__optimize.test__1789534867903",
+      "original_sandbox_path": "/home/ubuntu/idolic/test/optimize.test",
+      "sandbox_timestamp_ms": "1789534867903",
+      "bytes": 776,
+      "sha256": "c6ed068840af1f2cdcf7239f033a31e95a6f2414ef0125b8305b4b1c15a55578",
+      "file_type": "JavaScript source, ASCII text"
+    }
+  ],
+  "notes": [
+    "User uploads: Pasted_content.txt (4.7KB design principles for 'Idolic' compiler-language) and Clipboard_0_D69319F0 (Apple Notes export protobuf referencing Devin/Meta/Grok/Ampcode links).",
+    "Sandbox files are Manus-generated 'idolic' JS prototype + hand-authored x86-64 ELF seeds. Filenames encode original sandbox path + snapshot timestamp; duplicates preserved.",
+    "ELF binaries classified by magic bytes only; none executed.",
+    "No login was required; share is public."
+  ]
+}
