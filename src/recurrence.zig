@@ -146,7 +146,17 @@ const ast = @import("ast.zig");
 
 /// Loop-carried variables admitted. The matrix is (basis)² per multiply and the
 /// basis grows combinatorially in this, so it is the real cost control.
-pub const max_vars: usize = 6;
+pub const max_vars: usize = 16;
+/// Pre-change budget, kept as the severing control's restoration point.
+pub const legacy_max_vars: usize = 6;
+
+/// Severing control: IDOL_LOOPCLOSURE_MULTISTORE_OFF=1 restores the exact
+/// pre-multi-store behavior -- the 6-variable budget here and the single-store
+/// W5 rule in loop_closure.zig. Compile-time cost only; never consulted at
+/// run time.
+pub fn multiStoreOff() bool {
+    return std.c.getenv("IDOL_LOOPCLOSURE_MULTISTORE_OFF") != null;
+}
 /// Per-variable exponent, and total monomial degree. A body whose basis needs a
 /// higher degree diverges in practice (see `s *= i`), so this doubles as the
 /// divergence detector.
@@ -287,7 +297,8 @@ const State = struct {
 
     fn intern(self: *State, name: []const u8) ?usize {
         if (self.indexOf(name)) |i| return i;
-        if (self.len == max_vars) return null;
+        const budget = if (multiStoreOff()) legacy_max_vars else max_vars;
+        if (self.len == budget) return null;
         self.names[self.len] = name;
         self.len += 1;
         return self.len - 1;
