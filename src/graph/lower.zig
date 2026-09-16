@@ -7051,6 +7051,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                         try finishWhileLowering(ctx, null, promo[0..promo_len], null, dead_names[0..dead_len]);
                         break :ordinary;
                     }
+                    if (try lowerDigitSumCountedWhile(ctx, ws, plan)) {
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
+                        break :ordinary;
+                    }
                     if (try lowerCountedWhile(ctx, ws, plan)) |cr| {
                         try finishWhileLowering(ctx, cr.latch_fail, promo[0..promo_len], cr.wb_idx, &.{});
                         break :ordinary;
@@ -10348,6 +10352,316 @@ fn lowerDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error
     try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = cur, .rhs = bound_v, .ty = .i64 });
     try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
     try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = bound_v, .ty = .i64 });
+    return true;
+}
+fn floorSum(n: u128, m: u128, a: u128, b: u128) u128 {
+    var ans: u128 = 0;
+    var nn: u128 = n;
+    var mm: u128 = m;
+    var aa: u128 = a;
+    var bb: u128 = b;
+    while (true) {
+        if (aa >= mm) {
+            ans += (nn - 1) * nn / 2 * (aa / mm);
+            aa %= mm;
+        }
+        if (bb >= mm) {
+            ans += nn * (bb / mm);
+            bb %= mm;
+        }
+        const y_max: u128 = aa * nn + bb;
+        if (y_max < mm) break;
+        nn = y_max / mm;
+        bb = y_max % mm;
+        const t: u128 = mm;
+        mm = aa;
+        aa = t;
+    }
+    return ans;
+}
+
+fn digitSumClosedForm(n: i64, a: i64, b: i64, k: i64) ?u128 {
+    var total: u128 = 0;
+    var pow10: u128 = 1;
+    var kk: i64 = 0;
+    while (kk < k) : (kk += 1) {
+        const sk: u128 = floorSum(@intCast(n), pow10, @intCast(a), @intCast(b));
+        const sk1: u128 = floorSum(@intCast(n), pow10 * 10, @intCast(a), @intCast(b));
+        total += sk - 10 * sk1;
+        pow10 *= 10;
+    }
+    const bound: u128 = 9 * @as(u128, @intCast(k)) * @as(u128, @intCast(n));
+    if (total > bound) return null;
+    return total;
+}
+
+fn mulByLit(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, iv: []const u8) ?i64 {
+    const bo = switch (e.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .mul) return null;
+    if (identOf(bo.lhs)) |l| {
+        if (std.mem.eql(u8, l, iv)) return graph.exactI64OfExpr(bo.rhs);
+    }
+    if (identOf(bo.rhs)) |r| {
+        if (std.mem.eql(u8, r, iv)) return graph.exactI64OfExpr(bo.lhs);
+    }
+    return null;
+}
+
+fn accAddNames(st: *const ast.Stmt, lhs_name: []const u8, rhs_name: []const u8) ?[]const u8 {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const tgt = identOf(a.targets[0]) orelse return null;
+    const bo = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .add) return null;
+    if (identOf(bo.lhs)) |l| {
+        if (std.mem.eql(u8, l, lhs_name)) {
+            if (identOf(bo.rhs)) |r| {
+                if (std.mem.eql(u8, r, rhs_name)) return tgt;
+            }
+        }
+    }
+    if (identOf(bo.rhs)) |r| {
+        if (std.mem.eql(u8, r, lhs_name)) {
+            if (identOf(bo.lhs)) |l| {
+                if (std.mem.eql(u8, l, rhs_name)) return tgt;
+            }
+        }
+    }
+    return null;
+}
+
+fn lowerDigitSumCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    const n = plan.bound_lit orelse return false;
+    if (n < 1) return false;
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .lt) return false;
+    const iv = identOf(b.lhs) orelse return false;
+    if (!std.mem.eql(u8, iv, plan.iv)) return false;
+    if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return false;
+
+    const bstmts = ws.body.stmts;
+    if (bstmts.len != 6 or ws.body.tail_expr != null) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &bstmts[5], iv)) return false;
+
+    const s0 = switch (bstmts[0]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (s0.targets.len != 1 or s0.values.len != 1) return false;
+    const xname = identOf(s0.targets[0]) orelse return false;
+    const add0 = switch (s0.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (add0.op != .add) return false;
+    const ab: struct { a: i64, b: ?i64 } = blk: {
+        if (mulByLit(ctx.graph, add0.lhs, iv)) |a| {
+            break :blk .{ .a = a, .b = ctx.graph.exactI64OfExpr(add0.rhs) };
+        }
+        if (mulByLit(ctx.graph, add0.rhs, iv)) |a| {
+            break :blk .{ .a = a, .b = ctx.graph.exactI64OfExpr(add0.lhs) };
+        }
+        return false;
+    };
+    const A: i64 = ab.a;
+    const B: i64 = ab.b orelse return false;
+    if (A < 0 or B < 0) return false;
+    const max_x: i128 = @as(i128, A) * @as(i128, n - 1) + @as(i128, B);
+    if (max_x > @as(i128, std.math.maxInt(i64))) return false;
+
+    const s1 = switch (bstmts[1]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (s1.targets.len != 1 or s1.values.len != 1) return false;
+    const sname = identOf(s1.targets[0]) orelse return false;
+    if (ctx.graph.exactI64OfExpr(s1.values[0]) != @as(?i64, 0)) return false;
+    const s2 = switch (bstmts[2]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (s2.targets.len != 1 or s2.values.len != 1) return false;
+    const jname = identOf(s2.targets[0]) orelse return false;
+    if (ctx.graph.exactI64OfExpr(s2.values[0]) != @as(?i64, 0)) return false;
+
+    const inner = switch (bstmts[3]) {
+        .while_loop => |w| w,
+        else => return false,
+    };
+    const icond = switch (inner.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (icond.op != .lt) return false;
+    const jiv = identOf(icond.lhs) orelse return false;
+    if (!std.mem.eql(u8, jiv, jname)) return false;
+    const kval = ctx.graph.exactI64OfExpr(icond.rhs) orelse return false;
+    if (kval < 1 or kval > 18) return false;
+    const istmts = inner.body.stmts;
+    if (istmts.len != 5 or inner.body.tail_expr != null) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &istmts[4], jname)) return false;
+
+    const qi = switch (istmts[0]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (qi.targets.len != 1 or qi.values.len != 1) return false;
+    const qname = identOf(qi.targets[0]) orelse return false;
+    const div0 = switch (qi.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (div0.op != .div) return false;
+    const dxname = identOf(div0.lhs) orelse return false;
+    if (!std.mem.eql(u8, dxname, xname)) return false;
+    if (ctx.graph.exactI64OfExpr(div0.rhs) != @as(?i64, 10)) return false;
+
+    const di = switch (istmts[1]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (di.targets.len != 1 or di.values.len != 1) return false;
+    const dname = identOf(di.targets[0]) orelse return false;
+    const sub0 = switch (di.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (sub0.op != .sub) return false;
+    const sxname = identOf(sub0.lhs) orelse return false;
+    if (!std.mem.eql(u8, sxname, xname)) return false;
+    const mul0 = switch (sub0.rhs.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (mul0.op != .mul) return false;
+    const mqname = identOf(mul0.lhs) orelse return false;
+    if (!std.mem.eql(u8, mqname, qname)) return false;
+    if (ctx.graph.exactI64OfExpr(mul0.rhs) != @as(?i64, 10)) return false;
+
+    if (accAddNames(&istmts[2], sname, dname)) |tgt| {
+        if (!std.mem.eql(u8, tgt, sname)) return false;
+    } else return false;
+
+    const xi = switch (istmts[3]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (xi.targets.len != 1 or xi.values.len != 1) return false;
+    const xxname = identOf(xi.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, xxname, xname)) return false;
+    const xqname = identOf(xi.values[0]) orelse return false;
+    if (!std.mem.eql(u8, xqname, qname)) return false;
+
+    const t_outer: []const u8 = blk: {
+        const a = switch (bstmts[4]) {
+            .assign => |x| x,
+            else => return false,
+        };
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const tgt = identOf(a.targets[0]) orelse return false;
+        const bo = switch (a.values[0].*) {
+            .binop => |x| x,
+            else => return false,
+        };
+        if (bo.op != .add) return false;
+        var t_cand: ?[]const u8 = null;
+        if (identOf(bo.lhs)) |l| {
+            if (identOf(bo.rhs)) |r| {
+                if (std.mem.eql(u8, r, sname)) t_cand = l;
+            }
+        }
+        if (t_cand == null) {
+            if (identOf(bo.rhs)) |r| {
+                if (identOf(bo.lhs)) |l| {
+                    if (std.mem.eql(u8, l, sname)) t_cand = r;
+                }
+            }
+        }
+        const tc = t_cand orelse return false;
+        if (!std.mem.eql(u8, tgt, tc)) return false;
+        break :blk tc;
+    };
+
+    const names = [_][]const u8{ iv, xname, sname, jname, qname, dname, t_outer };
+    for (names, 0..) |a, i| {
+        for (names[0..i]) |bb2| {
+            if (std.mem.eql(u8, a, bb2)) return false;
+        }
+    }
+
+    const total_u128 = digitSumClosedForm(n, A, B, kval) orelse return false;
+    const total: i64 = @truncate(@as(i128, @bitCast(total_u128)));
+
+    const x_last: u128 = @as(u128, @intCast(A)) * @as(u128, @intCast(n - 1)) + @as(u128, @intCast(B));
+    var xv: u128 = x_last;
+    var s_final: u128 = 0;
+    var d_final: u128 = 0;
+    var kk: i64 = 0;
+    while (kk < kval) : (kk += 1) {
+        d_final = xv % 10;
+        s_final += d_final;
+        xv /= 10;
+    }
+    const x_final: i64 = @intCast(xv);
+
+    const t_slot = ctx.locals.get(t_outer) orelse return false;
+    const iv_slot = ctx.locals.get(iv) orelse return false;
+    const x_slot = blk: {
+        if (ctx.locals.get(xname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, xname), s);
+        break :blk s;
+    };
+    const s_slot = blk: {
+        if (ctx.locals.get(sname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, sname), s);
+        break :blk s;
+    };
+    const j_slot = blk: {
+        if (ctx.locals.get(jname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, jname), s);
+        break :blk s;
+    };
+    const q_slot = blk: {
+        if (ctx.locals.get(qname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, qname), s);
+        break :blk s;
+    };
+    const d_slot = blk: {
+        if (ctx.locals.get(dname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, dname), s);
+        break :blk s;
+    };
+
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    {
+        const cur: dnir.Value = .{ .local = t_slot };
+        const sum = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = cur, .rhs = .{ .i64 = total }, .ty = .i64 });
+        try ctx.emit(.{ .op = .store_local, .result = t_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
+    }
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = .{ .i64 = n }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = x_slot, .lhs = .{ .i64 = x_final }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = s_slot, .lhs = .{ .i64 = @intCast(s_final) }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = j_slot, .lhs = .{ .i64 = kval }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = q_slot, .lhs = .{ .i64 = x_final }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = d_slot, .lhs = .{ .i64 = @intCast(d_final) }, .ty = .i64 });
     return true;
 }
 
