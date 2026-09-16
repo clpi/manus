@@ -4083,11 +4083,6 @@ const Arm64Compiler = struct {
         // next. Track the final instruction separately.
         var tail_terminates = false;
         var flat_idx: u32 = 0;
-        // Severing control for the countdown-latch fusion below:
-        // IDOL_COUNTDOWN_LATCH_OFF=1 restores the stock sub/cmp/b.eq/b
-        // latch exactly. Read once per function; the emission loop must
-        // not pay a libc call per instruction.
-        const latch_fuse_off = std.c.getenv("IDOL_COUNTDOWN_LATCH_OFF") != null;
         // Severing control for the madd shift-add strength reduction below:
         // IDOL_MADD_SHIFTADD_OFF=1 restores the stock madd emission exactly.
         // Read once per function; the emission loop must not pay a libc call
@@ -4114,26 +4109,21 @@ const Arm64Compiler = struct {
                 // readers instead and folds to the identical `cmp; b.cond`.
                 const fuse_named = !fuse_branch and ins.op == .binop and bi + 2 < b.instrs.len and
                     self.namedCompareBranchFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], flat_idx);
-                // Countdown latch: fold `sub(local n, 1)` `store_local n`
-                // `neq(local n, 0)` `br when_false -> EXIT` `br -> HEAD` into
-                // `subs xN, xN, #1` `b.ne HEAD` (see countdownLatchFusible).
-                const fuse_latch = !latch_fuse_off and !fuse_branch and !fuse_named and ins.op == .binop and bi + 4 < b.instrs.len and
-                    self.countdownLatchFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], b.instrs[bi + 4], flat_idx);
                 // Peephole: fold `mul -> T ; add(T, c) -> D` into `madd D,a,b,c`
                 // when T's only reader is that add (FTCFTW debt (2)).
-                const fuse_madd = !fuse_branch and !fuse_named and !fuse_latch and ins.op == .binop and bi + 1 < b.instrs.len and
+                const fuse_madd = !fuse_branch and !fuse_named and ins.op == .binop and bi + 1 < b.instrs.len and
                     self.mulAddFusible(ins, b.instrs[bi + 1], flat_idx);
                 // Peephole: fold `div(X, 2^k) -> T ; band(T, 2^w - 1) -> D`
                 // into `ubfx D, X, #k, #w` when T's only reader is that
                 // `and` and the dividend is proved non-negative (the exact
                 // identity `lsr`+`and` computes; see `ubfxFusible`).
-                const fuse_ubfx = !fuse_branch and !fuse_named and !fuse_latch and !fuse_madd and ins.op == .binop and bi + 1 < b.instrs.len and
+                const fuse_ubfx = !fuse_branch and !fuse_named and !fuse_madd and ins.op == .binop and bi + 1 < b.instrs.len and
                     self.ubfxFusible(ins, b.instrs[bi + 1], flat_idx);
                 // R15-style named variant: `div(X, 2^k) -> T ; store_local L <- T ;
                 // band(L, 2^w - 1) -> D ; store_local L <- D` folds to the same
                 // `ubfx D, X, #k, #w` when the shift passes through a named local
                 // (see `namedUbfxFusible`).
-                const fuse_named_ubfx = !fuse_branch and !fuse_named and !fuse_latch and !fuse_madd and !fuse_ubfx and
+                const fuse_named_ubfx = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and
                     ins.op == .binop and bi + 3 < b.instrs.len and
                     self.namedUbfxFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
                 // Divmod: fold `div(X, k) -> T ; store_local Lq <- T ;
@@ -4142,10 +4132,10 @@ const Arm64Compiler = struct {
                 // (for Lq) and the already-computed floored residual (for D).
                 // The separate multiply/subtract never execute; see
                 // `divmodFusible` for every ground on which it is declined.
-                const fuse_divmod = !fuse_branch and !fuse_named and !fuse_latch and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and
+                const fuse_divmod = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and
                     ins.op == .binop and bi + 3 < b.instrs.len and
                     self.divmodFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
-                const fuse_divmod_rt = !fuse_branch and !fuse_named and !fuse_latch and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and !fuse_divmod and
+                const fuse_divmod_rt = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and !fuse_divmod and
                     ins.op == .binop and bi + 3 < b.instrs.len and
                     self.divmodRuntimeFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
                 // §12 TAIL: `call_direct -> T ; ret T` is a JUMP, not a frame.
@@ -4194,10 +4184,6 @@ const Arm64Compiler = struct {
                     if (fuse_branch or fuse_named) self.countTightDefAdmission(ins, flat_idx);
                     try self.emitIfConvertedTwoSided(&temps, &pinned, plan, &branch_patches, flat_idx);
                     extra_consumed = plan.extra;
-                } else if (fuse_latch) {
-                    self.countTightDefAdmission(ins, flat_idx);
-                    try self.emitFusedCountdownLatch(&temps, &pinned, ins, b.instrs[bi + 4], &branch_patches);
-                    extra_consumed = 4;
                 } else if (fuse_branch) {
                     self.countTightDefAdmission(ins, flat_idx);
                     try self.emitFusedCompareBranch(&temps, &pinned, ins, b.instrs[bi + 1], &branch_patches);
@@ -12862,141 +12848,6 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         const arm: Condition = if (nx.branch_condition == .when_true) cond else invertCondition(cond);
         const patch_off = try self.emitBCond(arm, 0);
         try branch_patches.append(self.alloc, .{ .patch_off = patch_off, .target_instr = nx.branch_target, .is_cond = true });
-    }
-
-    /// Peephole precondition: fold the counted-loop countdown latch
-    ///   `dec = sub(local n, 1)` . `store_local n <- dec` .
-    ///   `latch_t = neq(local n, 0)` . `br when_false latch_t -> EXIT` .
-    ///   `br -> HEAD`
-    /// into `subs xN, xN, #1` . `b.ne HEAD`, with EXIT as the fall-through.
-    /// The stock lowering emits the decrement as a flag-less `sub`, then
-    /// re-tests the counter with `cmp xN, #0` and two branches -- four
-    /// instructions where two suffice. `subs` sets NZCV from the decrement
-    /// itself (Z iff the post-decrement counter is zero) and `b.ne HEAD`
-    /// loops while it is nonzero; zero falls through to EXIT, the address
-    /// the exit branch already targeted. The eliminated `cmp` sat on the
-    /// loop-carried critical path (`sub -> cmp -> b.eq`), and the second
-    /// branch is pure overhead.
-    ///
-    /// ADMISSIBLE ONLY WHEN every ground below holds; anything else
-    /// declines to the stock four-instruction latch, which stays correct.
-    /// `IDOL_COUNTDOWN_LATCH_OFF=1` (read once per function at the emission
-    /// loop) severs the rule entirely.
-    fn countdownLatchFusible(
-        self: *const Arm64Compiler,
-        f: dnir.Function,
-        sub_ins: dnir.Instr,
-        store_ins: dnir.Instr,
-        cmp_ins: dnir.Instr,
-        br_exit: dnir.Instr,
-        br_head: dnir.Instr,
-        flat_idx: u32,
-    ) bool {
-        if (self.cur_func_float) return false;
-        // i0: `dec = sub(local n, i64 1)`. No lineage facts: the fold erases
-        // the temp, so a fact the main loop would record on it must decline.
-        if (sub_ins.op != .binop or sub_ins.binop != .sub) return false;
-        if (sub_ins.ty == .f64) return false;
-        if (self.valueIsFp(sub_ins.lhs)) return false;
-        const n = switch (sub_ins.lhs) {
-            .local => |slot| slot,
-            else => return false,
-        };
-        const is_one = switch (sub_ins.rhs) {
-            .i64 => |k| k == 1,
-            else => false,
-        };
-        if (!is_one) return false;
-        const dec = sub_ins.result orelse return false;
-        if (sub_ins.relation != null or sub_ins.application != null or sub_ins.value != null) return false;
-        // i1: the naming store, `store_local n <- dec`.
-        if (store_ins.op != .store_local) return false;
-        const n_stored = store_ins.result orelse return false;
-        if (n_stored != n) return false;
-        const dec_read = switch (store_ins.lhs) {
-            .temp => |t| t,
-            else => return false,
-        };
-        if (dec_read != dec) return false;
-        if (store_ins.relation != null or store_ins.application != null or store_ins.value != null) return false;
-        // i2: `latch_t = neq(local n, i64 0)`.
-        if (cmp_ins.op != .binop or cmp_ins.binop != .neq) return false;
-        if (cmp_ins.ty == .f64) return false;
-        if (self.valueIsFp(cmp_ins.lhs)) return false;
-        const n_cmp = switch (cmp_ins.lhs) {
-            .local => |slot| slot,
-            else => return false,
-        };
-        if (n_cmp != n) return false;
-        const is_zero = switch (cmp_ins.rhs) {
-            .i64 => |k| k == 0,
-            else => false,
-        };
-        if (!is_zero) return false;
-        const latch_t = cmp_ins.result orelse return false;
-        if (cmp_ins.relation != null or cmp_ins.application != null or cmp_ins.value != null) return false;
-        // i3: `br when_false latch_t -> EXIT`. EXIT is the very next
-        // instruction, the fold's fall-through, so the exit branch simply
-        // disappears.
-        if (br_exit.op != .br) return false;
-        if (br_exit.branch_condition != .when_false) return false;
-        const latch_read = switch (br_exit.lhs) {
-            .temp => |t| t,
-            else => return false,
-        };
-        if (latch_read != latch_t) return false;
-        if (br_exit.branch_target != flat_idx + 5) return false;
-        if (br_exit.relation != null or br_exit.application != null or br_exit.value != null) return false;
-        // i4: the unconditional back edge. It must go backward: the fused
-        // `b.ne` can only loop.
-        if (br_head.op != .br) return false;
-        if (br_head.branch_condition != .unconditional) return false;
-        if (br_head.branch_target >= flat_idx) return false;
-        if (br_head.relation != null or br_head.application != null or br_head.value != null) return false;
-        // Both erased temps are read exactly once, by the next instruction:
-        // nothing else observes the decrement or the comparison.
-        if (!self.singleReaderByTightDef(dec, flat_idx)) return false;
-        if (!self.singleReaderByTightDef(latch_t, flat_idx + 2)) return false;
-        // No branch lands inside the erased window: every consumed index
-        // collapses onto the `subs`/`b.ne` pair's code offset.
-        if (dnirBranchLandsWithin(f, flat_idx, flat_idx + 4)) return false;
-        // The counter dies at the latch: the countdown lowering never reads
-        // the induction variable, and the shared exit restores it from the
-        // bound. A later read would need the register the old shape retired;
-        // the census keeps the fold to the shape that was proved.
-        var reads: u32 = 0;
-        var writes: u32 = 0;
-        var read_at: u32 = 0;
-        var write_at: u32 = 0;
-        dnirLocalUseCensus(f, n, &reads, &writes, &read_at, &write_at);
-        if (read_at > flat_idx + 4) return false;
-        return true;
-    }
-
-    /// Emit the fused countdown latch: `subs xN, xN, #1` then `b.ne HEAD`.
-    /// The counter register is the one `evalDnirValue` already holds for the
-    /// local. The old latch's `cmp` retired it with a guarded `releaseReg`
-    /// and this fold retires it the same way -- a no-op while the
-    /// loop-carried owner still claims the register; the back-edge widening
-    /// of `value_free_at`, not this release, ends the live range.
-    fn emitFusedCountdownLatch(
-        self: *Arm64Compiler,
-        temps: *std.AutoHashMapUnmanaged(u32, u5),
-        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
-        sub_ins: dnir.Instr,
-        br_head: dnir.Instr,
-        branch_patches: *std.ArrayList(DnirBranchPatch),
-    ) Error!void {
-        const ctr = try self.evalDnirValue(temps, sub_ins.lhs);
-        try self.ensureRegLive(ctr);
-        try self.emitSubsImm(ctr, ctr, 1);
-        const back_off = try self.emitBCond(.ne, 0);
-        try branch_patches.append(self.alloc, .{
-            .patch_off = back_off,
-            .target_instr = br_head.branch_target,
-            .is_cond = true,
-        });
-        if (!Arm64Compiler.regIsPinned(pinned, ctr)) self.releaseReg(ctr);
     }
 
     fn emitMulReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
