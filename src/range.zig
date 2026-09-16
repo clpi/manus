@@ -1227,25 +1227,54 @@ fn nonNegScanBlock(
     // sub-blocks from polluting their parents.
     var refine: NonNegEnv = .empty;
     defer refine.deinit(alloc);
+    // Quotient definitions for the divmod-remainder width rule, in scan
+    // order. Fresh per block scan like `refine`; control flow clears it, so a
+    // definition never crosses a statement that could rebind a name the idiom
+    // reads. `processed` counts the assignment pairs fully processed; the
+    // idiom fires only for the pair immediately following its definition.
+    var divmods: std.StringHashMapUnmanaged(DivmodDef) = .empty;
+    defer divmods.deinit(alloc);
+    var processed: u32 = 0;
     for (blk.stmts) |st| switch (st) {
         .local_decl => |d| {
             if (d.names.len != d.inits.len) {
-                for (d.names) |n| try nonNegRaise(alloc, widths, n.ident, changed);
+                for (d.names) |n| {
+                    processed += 1;
+                    _ = divmods.remove(n.ident);
+                    try nonNegRaise(alloc, widths, n.ident, changed);
+                }
                 continue;
             }
             for (d.names, d.inits) |n, init| {
+                processed += 1;
                 const w = nonNegWidthR(widths, &refine, results, init);
+                if (try divmodRemWidth(alloc, widths, &refine, results, &divmods, n.ident, init, processed, changed)) {
+                    try divmodNoteDef(alloc, &divmods, n.ident, init, processed);
+                    continue;
+                }
                 try nonNegObserve(alloc, widths, n.ident, w, changed);
                 if (w) |bw| try refine.put(alloc, n.ident, bw) else _ = refine.remove(n.ident);
+                try divmodNoteDef(alloc, &divmods, n.ident, init, processed);
             }
         },
         .assign => |a| {
             if (a.targets.len != a.values.len) {
-                for (a.targets) |t| if (t.* == .name) try nonNegRaise(alloc, widths, t.name.ident, changed);
+                for (a.targets) |t| if (t.* == .name) {
+                    processed += 1;
+                    _ = divmods.remove(t.name.ident);
+                    try nonNegRaise(alloc, widths, t.name.ident, changed);
+                };
                 continue;
             }
             for (a.targets, a.values) |t, v| {
+                processed += 1;
                 if (t.* != .name) continue;
+                // The quotient definition is a syntactic fact about this pair,
+                // so it is recorded before the observation dispatch below: the
+                // remainder rule's soundness checks all run at the use site,
+                // and the definition must survive the quotient's width coming
+                // from the induction cap instead of the right-hand side.
+                try divmodNoteDef(alloc, &divmods, t.name.ident, v, processed);
                 if (biv) |b| {
                     if (std.mem.eql(u8, t.name.ident, b.name)) {
                         // The loop shape proved this IV bounded; only its
@@ -1275,17 +1304,24 @@ fn nonNegScanBlock(
                 };
                 {
                     const w = nonNegWidthR(widths, &refine, results, v);
+                    if (try divmodRemWidth(alloc, widths, &refine, results, &divmods, t.name.ident, v, processed, changed)) {
+                        continue;
+                    }
                     try nonNegObserve(alloc, widths, t.name.ident, w, changed);
                     if (w) |bw| try refine.put(alloc, t.name.ident, bw) else _ = refine.remove(t.name.ident);
                 }
             }
         },
         // A name bound by any of these takes a value this pass does not model.
-        .global_decl => |d| for (d.names) |n| {
-            try nonNegRaise(alloc, widths, n.ident, changed);
-            _ = refine.remove(n.ident);
+        .global_decl => |d| {
+            divmods.clearRetainingCapacity();
+            for (d.names) |n| {
+                try nonNegRaise(alloc, widths, n.ident, changed);
+                _ = refine.remove(n.ident);
+            }
         },
         .num_for => |f| {
+            divmods.clearRetainingCapacity();
             // The driver keeps the IV inside the closed interval between
             // `start` and `stop` (inclusive stop, either sign of step), so
             // provably non-negative bounds prove the IV. A body write only
@@ -1300,11 +1336,13 @@ fn nonNegScanBlock(
             try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv, ind);
         },
         .gen_for => |f| {
+            divmods.clearRetainingCapacity();
             for (f.vars) |v| try nonNegRaise(alloc, widths, v, changed);
             try nonNegScanBlock(alloc, widths, results, &f.body, changed, unmodeled, biv, ind);
         },
         .while_loop => |w| {
             refine.clearRetainingCapacity();
+            divmods.clearRetainingCapacity();
             const inner = try matchBoundedWhile(alloc, widths, results, w.cond, &w.body, changed);
             // Re-proved every round against that round's widths: a cap is
             // only ever observed beside the proof that justifies it.
@@ -1314,13 +1352,16 @@ fn nonNegScanBlock(
         },
         .repeat_loop => |r| {
             refine.clearRetainingCapacity();
+            divmods.clearRetainingCapacity();
             try nonNegScanBlock(alloc, widths, results, &r.body, changed, unmodeled, biv, ind);
         },
         .do_block => |d| {
             refine.clearRetainingCapacity();
+            divmods.clearRetainingCapacity();
             try nonNegScanBlock(alloc, widths, results, &d.body, changed, unmodeled, biv, ind);
         },
         .if_stmt => |f| {
+            divmods.clearRetainingCapacity();
             if (f.binding) |b| try nonNegRaise(alloc, widths, b.name, changed);
             try nonNegScanBlock(alloc, widths, results, &f.then, changed, unmodeled, biv, ind);
             for (f.elseifs) |ei| try nonNegScanBlock(alloc, widths, results, &ei.body, changed, unmodeled, biv, ind);
@@ -1331,13 +1372,15 @@ fn nonNegScanBlock(
         // the part of it that is visible.
         .func_decl => {
             refine.clearRetainingCapacity();
+            divmods.clearRetainingCapacity();
             unmodeled.* = true;
         },
         .match_stmt, .try_stmt, .defer_stmt, .goto_stmt, .label_stmt => {
             refine.clearRetainingCapacity();
+            divmods.clearRetainingCapacity();
             unmodeled.* = true;
         },
-        else => {},
+        else => divmods.clearRetainingCapacity(),
     };
 }
 
@@ -1359,6 +1402,134 @@ fn nonNegObserve(alloc: std.mem.Allocator, widths: *NonNegEnv, name: []const u8,
     if (gop.value_ptr.* >= width) return;
     gop.value_ptr.* = width;
     changed.* = true;
+}
+
+/// IDOL_DIVMOD_REM_WIDTH_OFF=1 -- THE SEVERING CONTROL for the divmod-
+/// remainder width rule below. Set it and an expanded `q = X/d; r = X-q*d`
+/// remainder keeps the answer it had before the rule existed (no width: the
+/// general floored correction stays on every consumer).
+fn divmodRemWidthOff() bool {
+    return std.c.getenv("IDOL_DIVMOD_REM_WIDTH_OFF") != null;
+}
+
+/// A floored-division quotient definition seen in scan order: `q = X / d`.
+/// Only `.div` (the integer floored slash) is recorded: it is the only op
+/// the runtime-divisor divmod fusion consumes, and the remainder bound below
+/// is a floored-division fact.
+const DivmodDef = struct {
+    x: *const ast.Expr,
+    d: *const ast.Expr,
+    /// Assignment pairs fully processed when this definition was recorded.
+    /// The remainder idiom fires only when no pair was processed between the
+    /// quotient definition and the remainder assignment.
+    after: u32,
+};
+
+/// Structural equality of two AST expressions, for the divmod idiom's "same
+/// X, same divisor" check. Locations never compare. Anything outside the
+/// compared shapes answers false and the idiom declines -- fail-closed, the
+/// optimization simply does not fire.
+fn divmodExprEqual(a: *const ast.Expr, b: *const ast.Expr) bool {
+    if (std.meta.activeTag(a.*) != std.meta.activeTag(b.*)) return false;
+    return switch (a.*) {
+        .int_lit => |x| x.val == b.int_lit.val,
+        .name => |x| x.world == b.name.world and std.mem.eql(u8, x.ident, b.name.ident),
+        .binop => |x| x.op == b.binop.op and
+            divmodExprEqual(x.lhs, b.binop.lhs) and
+            divmodExprEqual(x.rhs, b.binop.rhs),
+        .unop => |x| x.op == b.unop.op and divmodExprEqual(x.operand, b.unop.operand),
+        else => false,
+    };
+}
+
+/// The expressions a divmod idiom may be built from: literals, names, and
+/// pure operators over them. A call evaluated twice may answer twice
+/// differently, so `X` and the divisor must not contain one -- otherwise "the
+/// same X" at the quotient and at the remainder would be two different values
+/// and the bound would be a lie.
+fn divmodPure(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .int_lit, .true_lit, .false_lit, .nil => true,
+        .name => true,
+        .binop => |b| divmodPure(b.lhs) and divmodPure(b.rhs),
+        .unop => |u| divmodPure(u.operand),
+        else => false,
+    };
+}
+
+/// Record or retire a quotient definition for the divmod-remainder rule.
+/// `processed` counts the pairs processed including the one being recorded.
+fn divmodNoteDef(
+    alloc: std.mem.Allocator,
+    divmods: *std.StringHashMapUnmanaged(DivmodDef),
+    name: []const u8,
+    v: *const ast.Expr,
+    processed: u32,
+) std.mem.Allocator.Error!void {
+    if (divmodRemWidthOff()) return;
+    if (v.* == .binop and v.binop.op == .div) {
+        try divmods.put(alloc, name, .{ .x = v.binop.lhs, .d = v.binop.rhs, .after = processed });
+    } else {
+        _ = divmods.remove(name);
+    }
+}
+
+/// THE DIVMOD-REMAINDER WIDTH RULE. `t = X - q*m` where `q = X / d` was the
+/// immediately preceding processed assignment pair (no intervening pair, no
+/// intervening statement of any other kind -- the scan clears the definition
+/// map on control flow), `X` and the divisor are structurally the same pure
+/// expressions in both, and both carry a non-negative width.
+///
+/// The slash is floored and every non-f64 division carries the zero-divisor
+/// guard, so on any execution reaching the remainder assignment the divisor
+/// is positive and `X - q*d` is the floored remainder, in `[0, d)`. The
+/// dividend's sign is irrelevant -- floored division puts the remainder with
+/// the divisor -- which is why this rule terminates the induction the naive
+/// "prove the dividend non-negative" attempt cannot: the remainder's bound
+/// comes from the divisor alone, exactly like the `.mod` transfer arm. The
+/// integer widths on both sides are what keep this the integer floored
+/// division: a float operand never carries one. Observes `width(t)` as the
+/// divisor's width, since `[0, d)` lies inside `[0, 2^w)`.
+fn divmodRemWidth(
+    alloc: std.mem.Allocator,
+    widths: *NonNegEnv,
+    refine: *NonNegEnv,
+    results: ?Results,
+    divmods: *const std.StringHashMapUnmanaged(DivmodDef),
+    target: []const u8,
+    v: *const ast.Expr,
+    processed: u32,
+    changed: *bool,
+) std.mem.Allocator.Error!bool {
+    if (divmodRemWidthOff()) return false;
+    if (v.* != .binop or v.binop.op != .sub) return false;
+    const rhs = v.binop.rhs;
+    if (rhs.* != .binop or rhs.binop.op != .mul) return false;
+    // The quotient is the multiplicand with a recorded definition; the
+    // divisor is the other side.
+    var qname: ?[]const u8 = null;
+    var m: ?*const ast.Expr = null;
+    if (rhs.binop.lhs.* == .name and !rhs.binop.lhs.name.world and
+        divmods.contains(rhs.binop.lhs.name.ident))
+    {
+        qname = rhs.binop.lhs.name.ident;
+        m = rhs.binop.rhs;
+    } else if (rhs.binop.rhs.* == .name and !rhs.binop.rhs.name.world and
+        divmods.contains(rhs.binop.rhs.name.ident))
+    {
+        qname = rhs.binop.rhs.name.ident;
+        m = rhs.binop.lhs;
+    } else return false;
+    const def = divmods.get(qname.?) orelse return false;
+    if (def.after + 1 != processed) return false;
+    if (!divmodPure(v.binop.lhs) or !divmodPure(m.?)) return false;
+    if (!divmodExprEqual(def.x, v.binop.lhs)) return false;
+    if (!divmodExprEqual(def.d, m.?)) return false;
+    if (nonNegWidthR(widths, refine, results, v.binop.lhs) == null) return false;
+    const w = nonNegWidthR(widths, refine, results, m.?) orelse return false;
+    try nonNegObserve(alloc, widths, target, w, changed);
+    try refine.put(alloc, target, w);
+    return true;
 }
 
 /// The names whose every value lies in [0, 2^63). Caller owns the map; keys are
