@@ -7055,6 +7055,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                         try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
                         break :ordinary;
                     }
+                    if (try lowerBitRevSumCountedWhile(ctx, ws, plan)) {
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
+                        break :ordinary;
+                    }
                     if (try lowerSatAddCountedWhile(ctx, ws, plan)) {
                         try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
                         break :ordinary;
@@ -11022,6 +11026,258 @@ fn lowerSatAddCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error
     return true;
 }
 
+/// BIT-REVERSE-SUM CLOSED FORM: `t += sum of bit-reversed affine values`.
+///
+/// Recognizes
+///
+///     while iv < N                          (N >= 1 literal)
+///         x = iv * A + C                    (A, C >= 0 literals, A*(N-1)+C <= i64max)
+///         x = x & M                         (M = 2^m - 1 literal, 1 <= m <= 62)
+///         r = 0
+///         i = 0
+///         while i < m                       (literal trip count == m)
+///             r = r * 2 + (x & 1)           (either add-operand order)
+///             x = x / 2                     (or x >> 1)
+///             i = i + 1
+///         t = t + r                         (either add-operand order)
+///         iv = iv + 1
+///
+/// and replaces the whole nest with `t += total` plus the final values of the
+/// loop variables, emitting no loop at all.
+///
+/// WHY THIS IS SOUND. The inner loop is the bit-reverse idiom the prologue in
+/// `tryEmitBitReversePrologue` proves: after m iterations r = rev_m(x_0), the
+/// low m bits of the masked x_0 reversed, and x = 0. Write v_o = A*o+C
+/// (>= 0 and exact: the max_x check rules out i64 overflow) and
+/// x_o = v_o mod 2^m (the mask). Bit j of r_o is bit (m-1-j) of x_o, and for
+/// k < m, bit_k(x_o) = bit_k(v_o) since the mask only drops bits >= m, with
+/// bit_k(v) = floor(v/2^k) - 2*floor(v/2^{k+1}). Summing over the outer loop:
+///
+///     t_new = t_old + sum_{j<m} 2^j * (S(m-1-j) - 2*S(m-j))
+///
+/// where S(k) = sum_{o<N} floor((A*o+C)/2^k), each a logarithmic-time
+/// `floorSum` evaluation done here at compile time. The u128 bound check
+/// `total <= N*(2^m-1)` guards the closed form's internal consistency; the
+/// emitted i64 add wraps exactly like the source loop's accumulation, so the
+/// result is identical even past i64max. Final values: iv = N, x = 0 (x_0 < 2^m
+/// halves to zero in m steps), r = rev_m(x_{N-1}), i = m. Any shape doubt
+/// returns false and the nest lowers exactly as it does today.
+fn bitRevSumClosedForm(n: i64, a: i64, b: i64, m: i64) ?u128 {
+    var total: u128 = 0;
+    var jj: i64 = 0;
+    while (jj < m) : (jj += 1) {
+        const k1: u128 = @as(u128, 1) << @as(u7, @intCast(m - 1 - jj));
+        const k2: u128 = @as(u128, 1) << @as(u7, @intCast(m - jj));
+        const nu: u128 = @as(u128, @intCast(n));
+        const au: u128 = @as(u128, @intCast(a));
+        const bu: u128 = @as(u128, @intCast(b));
+        const s1: u128 = floorSum(nu, k1, au, bu);
+        const s2: u128 = floorSum(nu, k2, au, bu);
+        total += (@as(u128, 1) << @as(u7, @intCast(jj))) * (s1 - 2 * s2);
+    }
+    const bound: u128 = @as(u128, @intCast(n)) * (((@as(u128, 1) << @as(u7, @intCast(m))) - 1));
+    if (total > bound) return null;
+    return total;
+}
+
+fn lowerBitRevSumCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    const n = plan.bound_lit orelse return false;
+    if (n < 1) return false;
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .lt) return false;
+    const iv = identOf(b.lhs) orelse return false;
+    if (!std.mem.eql(u8, iv, plan.iv)) return false;
+    if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return false;
+
+    const bstmts = ws.body.stmts;
+    if (bstmts.len != 7 or ws.body.tail_expr != null) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &bstmts[6], iv)) return false;
+
+    const s0 = switch (bstmts[0]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (s0.targets.len != 1 or s0.values.len != 1) return false;
+    const xname = identOf(s0.targets[0]) orelse return false;
+    const add0 = switch (s0.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (add0.op != .add) return false;
+    const ab: struct { a: i64, c: ?i64 } = blk: {
+        if (mulByLit(ctx.graph, add0.lhs, iv)) |a| {
+            break :blk .{ .a = a, .c = ctx.graph.exactI64OfExpr(add0.rhs) };
+        }
+        if (mulByLit(ctx.graph, add0.rhs, iv)) |a| {
+            break :blk .{ .a = a, .c = ctx.graph.exactI64OfExpr(add0.lhs) };
+        }
+        return false;
+    };
+    const A: i64 = ab.a;
+    const C: i64 = ab.c orelse return false;
+    if (A < 0 or C < 0) return false;
+    const max_x: i128 = @as(i128, A) * @as(i128, n - 1) + @as(i128, C);
+    if (max_x > @as(i128, std.math.maxInt(i64))) return false;
+
+    const s1 = switch (bstmts[1]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (s1.targets.len != 1 or s1.values.len != 1) return false;
+    const x1name = identOf(s1.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, x1name, xname)) return false;
+    const band0 = switch (s1.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (band0.op != .band) return false;
+    const mval: i64 = blk: {
+        if (identOf(band0.lhs)) |l| {
+            if (std.mem.eql(u8, l, xname)) {
+                if (ctx.graph.exactI64OfExpr(band0.rhs)) |v| break :blk v;
+            }
+        }
+        if (identOf(band0.rhs)) |r| {
+            if (std.mem.eql(u8, r, xname)) {
+                if (ctx.graph.exactI64OfExpr(band0.lhs)) |v| break :blk v;
+            }
+        }
+        return false;
+    };
+    if (mval < 1) return false;
+    var m: i64 = 0;
+    var p: u64 = 1;
+    while (p <= @as(u64, @intCast(mval))) {
+        m += 1;
+        if (m > 62) return false;
+        p *= 2;
+    }
+    if (p - 1 != @as(u64, @intCast(mval))) return false;
+
+    const s2 = switch (bstmts[2]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (s2.targets.len != 1 or s2.values.len != 1) return false;
+    const rname = identOf(s2.targets[0]) orelse return false;
+    if (ctx.graph.exactI64OfExpr(s2.values[0]) != @as(?i64, 0)) return false;
+    const s3 = switch (bstmts[3]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (s3.targets.len != 1 or s3.values.len != 1) return false;
+    const iname = identOf(s3.targets[0]) orelse return false;
+    if (ctx.graph.exactI64OfExpr(s3.values[0]) != @as(?i64, 0)) return false;
+
+    const inner = switch (bstmts[4]) {
+        .while_loop => |w| w,
+        else => return false,
+    };
+    const icond = switch (inner.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (icond.op != .lt) return false;
+    const jiv = identOf(icond.lhs) orelse return false;
+    if (!std.mem.eql(u8, jiv, iname)) return false;
+    if (ctx.graph.exactI64OfExpr(icond.rhs) != @as(?i64, m)) return false;
+    const istmts = inner.body.stmts;
+    if (istmts.len != 3 or inner.body.tail_expr != null) return false;
+    const ap = bitRevAccum(ctx.graph, &istmts[0]) orelse return false;
+    if (!std.mem.eql(u8, ap.acc, rname)) return false;
+    if (!std.mem.eql(u8, ap.src, xname)) return false;
+    if (std.mem.eql(u8, ap.acc, ap.src)) return false;
+    if (!bitRevHalve(ctx.graph, &istmts[1], xname)) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &istmts[2], iname)) return false;
+
+    const tname: []const u8 = blk: {
+        const a = switch (bstmts[5]) {
+            .assign => |x| x,
+            else => return false,
+        };
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const tgt = identOf(a.targets[0]) orelse return false;
+        const bo = switch (a.values[0].*) {
+            .binop => |x| x,
+            else => return false,
+        };
+        if (bo.op != .add) return false;
+        var t_cand: ?[]const u8 = null;
+        if (identOf(bo.lhs)) |l| {
+            if (identOf(bo.rhs)) |r| {
+                if (std.mem.eql(u8, r, rname)) t_cand = l;
+            }
+        }
+        if (t_cand == null) {
+            if (identOf(bo.rhs)) |r| {
+                if (identOf(bo.lhs)) |l| {
+                    if (std.mem.eql(u8, l, rname)) t_cand = r;
+                }
+            }
+        }
+        const tc = t_cand orelse return false;
+        if (!std.mem.eql(u8, tgt, tc)) return false;
+        break :blk tc;
+    };
+
+    const names = [_][]const u8{ iv, xname, rname, iname, tname };
+    for (names, 0..) |aname, ii| {
+        for (names[0..ii]) |bname| {
+            if (std.mem.eql(u8, aname, bname)) return false;
+        }
+    }
+
+    const total_u128 = bitRevSumClosedForm(n, A, C, m) orelse return false;
+    const total: i64 = @truncate(@as(i128, @bitCast(total_u128)));
+
+    const mask_u128: u128 = (@as(u128, 1) << @as(u7, @intCast(m))) - 1;
+    const x_last: u128 = (@as(u128, @intCast(A)) * @as(u128, @intCast(n - 1)) + @as(u128, @intCast(C))) & mask_u128;
+    var rv: u128 = 0;
+    var xv: u128 = x_last;
+    var kk: i64 = 0;
+    while (kk < m) : (kk += 1) {
+        rv = rv * 2 + (xv & 1);
+        xv >>= 1;
+    }
+    const r_final: i64 = @intCast(rv);
+
+    const t_slot = ctx.locals.get(tname) orelse return false;
+    const iv_slot = ctx.locals.get(iv) orelse return false;
+    const x_slot = blk: {
+        if (ctx.locals.get(xname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, xname), s);
+        break :blk s;
+    };
+    const r_slot = blk: {
+        if (ctx.locals.get(rname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, rname), s);
+        break :blk s;
+    };
+    const i_slot = blk: {
+        if (ctx.locals.get(iname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, iname), s);
+        break :blk s;
+    };
+
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    {
+        const cur: dnir.Value = .{ .local = t_slot };
+        const sum = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = cur, .rhs = .{ .i64 = total }, .ty = .i64 });
+        try ctx.emit(.{ .op = .store_local, .result = t_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
+    }
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = .{ .i64 = n }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = x_slot, .lhs = .{ .i64 = 0 }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = r_slot, .lhs = .{ .i64 = r_final }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = i_slot, .lhs = .{ .i64 = m }, .ty = .i64 });
+    return true;
+}
 /// Emit the nested direct form for an armed plan: the nest
 ///
 ///     iv = 0
