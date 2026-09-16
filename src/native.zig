@@ -4121,6 +4121,15 @@ const Arm64Compiler = struct {
                 const fuse_named_ubfx = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and
                     ins.op == .binop and bi + 3 < b.instrs.len and
                     self.namedUbfxFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
+                // Divmod: fold `div(X, k) -> T ; store_local Lq <- T ;
+                // mul(Lq, k) -> M ; sub(X, M) -> D` into one magic-division
+                // sequence that materializes BOTH the corrected quotient
+                // (for Lq) and the already-computed floored residual (for D).
+                // The separate multiply/subtract never execute; see
+                // `divmodFusible` for every ground on which it is declined.
+                const fuse_divmod = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and
+                    ins.op == .binop and bi + 3 < b.instrs.len and
+                    self.divmodFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
                 // §12 TAIL: `call_direct -> T ; ret T` is a JUMP, not a frame.
                 // The pair is folded into `restore the frame; b <callee>` — see
                 // `tailCallFusible` for every ground on which it is declined.
@@ -4185,6 +4194,9 @@ const Arm64Compiler = struct {
                 } else if (fuse_named_ubfx) {
                     try self.emitFusedUbfx(&temps, &pinned, ins, b.instrs[bi + 2]);
                     extra_consumed = 2;
+                } else if (fuse_divmod) {
+                    try self.emitFusedDivmod(&temps, &pinned, ins, b.instrs[bi + 1], b.instrs[bi + 3], &branch_patches, flat_idx);
+                    extra_consumed = 3;
                 } else if (fuse_tail) {
                     try self.emitTailCallDirect(&temps, &pinned, ins, flat_idx);
                     extra_consumed = 1;
@@ -12279,6 +12291,112 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         return true;
     }
 
+    /// Precondition for folding the divmod idiom
+    ///   `div(X, k) -> T ; store_local Lq <- T ; mul(Lq, k) -> M ; sub(X, M) -> D`
+    /// into one magic-division sequence that materializes BOTH the corrected
+    /// quotient (for the quotient local) and the already-computed floored
+    /// residual (for `D`). The separate `mul`/`sub` never execute; their
+    /// results are the sequence's own byproducts.
+    ///
+    /// Admitted only when every ground below holds; anything unproved declines:
+    /// * the div is `.div`/`.idiv`, integer-typed, over a runtime dividend
+    ///   (a `.local` or `.temp` — a literal dividend would already have been
+    ///   constant-folded), and `magicFlooredDivisor` admits its `.i64`
+    ///   divisor `k`: positive and non-power-of-two, exactly the sequence
+    ///   whose byproduct residual the fusion reuses. A divisor the magic
+    ///   sequence refuses keeps its existing realization.
+    /// * the mul multiplies the quotient local by the SAME literal `k`
+    ///   (either operand order);
+    /// * the sub subtracts the mul's temp from the SAME dividend value the
+    ///   div read (union equality on the operand);
+    /// * the div temp's only reader is the naming store, and the mul temp's
+    ///   only reader is the sub — strict `value_free_at` index tests, the
+    ///   ground `mulAddFusible` uses. A reused id (the loop unroller reuses
+    ///   them) widens the map and declines;
+    /// * neither the div nor the naming store reads the quotient local: its
+    ///   value is replaced under the window (the mul's read is the shape,
+    ///   and the sub's minuend is tied to the div's dividend above, so a
+    ///   quotient-local dividend is refused here rather than misread later);
+    /// * nothing branches into the consumed window.
+    /// The quotient local keeps its store — the emitter runs it as written,
+    /// since the name is read later (e.g. `x = q`) — and the remainder temp
+    /// is materialized for whatever consumes it; only the mul and the sub
+    /// are erased. The dividend is never mutated by the window.
+    fn divmodFusible(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        div_ins: dnir.Instr,
+        st_q: dnir.Instr,
+        mul_ins: dnir.Instr,
+        sub_ins: dnir.Instr,
+        flat_idx: u32,
+    ) bool {
+        if (div_ins.op != .binop) return false;
+        if (div_ins.binop != .div and div_ins.binop != .idiv) return false;
+        if (div_ins.ty == .f64) return false;
+        if (div_ins.application != null or div_ins.relation != null or div_ins.value != null) return false;
+        if (div_ins.result == null) return false;
+        if (self.cur_func_float) return false;
+        if (div_ins.lhs != .local and div_ins.lhs != .temp) return false;
+        if (div_ins.rhs != .i64) return false;
+        const k = div_ins.rhs.i64;
+        if (magicFlooredDivisor(k) == null) return false;
+
+        // `store_local Lq <- T`.
+        if (st_q.op != .store_local) return false;
+        const t_q = div_ins.result.?;
+        if (st_q.lhs != .temp or st_q.lhs.temp != t_q) return false;
+        const lq = st_q.result orelse return false;
+
+        // `mul(Lq, k) -> M`, either operand order, the same literal `k`.
+        if (mul_ins.op != .binop or mul_ins.binop != .mul) return false;
+        if (mul_ins.ty == .f64) return false;
+        if (mul_ins.application != null or mul_ins.relation != null or mul_ins.value != null) return false;
+        if (mul_ins.result == null) return false;
+        const t_m = mul_ins.result.?;
+        const mul_ok = (mul_ins.lhs == .local and mul_ins.lhs.local == lq and
+            mul_ins.rhs == .i64 and mul_ins.rhs.i64 == k) or
+            (mul_ins.rhs == .local and mul_ins.rhs.local == lq and
+                mul_ins.lhs == .i64 and mul_ins.lhs.i64 == k);
+        if (!mul_ok) return false;
+
+        // `sub(X, M) -> D`: the minuend is the div's dividend, the subtrahend
+        // the mul's temp.
+        if (sub_ins.op != .binop or sub_ins.binop != .sub) return false;
+        if (sub_ins.ty == .f64) return false;
+        if (sub_ins.application != null or sub_ins.relation != null or sub_ins.value != null) return false;
+        if (sub_ins.result == null) return false;
+        // The sub's minuend is the div's dividend: same tag and same id.
+        // (`div_ins.lhs` is already proved `.local`/`.temp` above.)
+        const same_dividend = switch (div_ins.lhs) {
+            .local => |l| sub_ins.lhs == .local and sub_ins.lhs.local == l,
+            .temp => |t| sub_ins.lhs == .temp and sub_ins.lhs.temp == t,
+            else => false,
+        };
+        if (!same_dividend) return false;
+        if (sub_ins.rhs != .temp or sub_ins.rhs.temp != t_m) return false;
+
+        // The div and the naming store may not read the quotient local: its
+        // value is replaced under the window.
+        if (dnirInstrReadsValue(div_ins, true, lq)) return false;
+        if (dnirInstrReadsValue(st_q, true, lq)) return false;
+
+        // The div temp's only reader is the naming store; the mul temp's only
+        // reader is the sub.
+        const q_last = self.value_free_at.get(t_q) orelse return false;
+        if (q_last != flat_idx + 1) return false;
+        const m_last = self.value_free_at.get(t_m) orelse return false;
+        if (m_last != flat_idx + 3) return false;
+
+        // Nothing may branch into the consumed window: every consumed index
+        // collapses onto one code offset. A branch TO the div itself (the
+        // loop back edge) is fine — it lands at the start of the fused
+        // sequence — but a branch into the middle (the store, mul, or sub)
+        // would land mid-sequence.
+        if (dnirBranchLandsWithin(f, flat_idx + 1, flat_idx + 3)) return false;
+        return true;
+    }
+
     /// Emit the fused `ubfx` for a `ubfxFusible` pair. The shift temp is never
     /// materialized; the destination owns the `and`'s result temp.
     fn emitFusedUbfx(
@@ -12379,6 +12497,79 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
             self.gp_reg_owner[dst] = d;
         }
+    }
+
+    /// Emit the fused divmod for a `divmodFusible` window. One magic-division
+    /// sequence materializes BOTH results: the corrected quotient into the
+    /// div's destination (via `cinc`, exactly as `emitBinopFlooredConstDivisor`
+    /// realizes `.idiv`) and the already-computed floored residual into a
+    /// second destination (via `csel xzr`, exactly as it realizes `.mod`).
+    /// No separate multiply/subtract executes.
+    ///
+    /// The quotient's naming store runs as written through the standard
+    /// `store_local` path — the name stays live for later readers — and the
+    /// remainder temp is left in `temps` for its consumer. Register
+    /// discipline mirrors the constant-binop arm: the dividend is held for
+    /// the sequence and released exactly as that arm releases it, and every
+    /// sequence temporary excludes the claimed quotient destination, for
+    /// the reason `emitBinopFlooredConstDivisor` states.
+    fn emitFusedDivmod(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *std.AutoHashMapUnmanaged(u32, u5),
+        div_ins: dnir.Instr,
+        st_q: dnir.Instr,
+        sub_ins: dnir.Instr,
+        branch_patches: *std.ArrayList(DnirBranchPatch),
+        flat_idx: u32,
+    ) Error!void {
+        // Fail closed: the recognizer proved these, but the emitter must not
+        // miscompile if it is ever reached another way.
+        const k: i64 = switch (div_ins.rhs) {
+            .i64 => |kk| kk,
+            else => return self.refuseWith(@src(), "divmod-rhs"),
+        };
+        const mg = magicFlooredDivisor(k) orelse
+            return self.refuseWith(@src(), "divmod-magic");
+        const t_q = div_ins.result orelse return self.refuseWith(@src(), "divmod-no-tq");
+        const t_d = sub_ins.result orelse return self.refuseWith(@src(), "divmod-no-td");
+
+        const x = try self.evalDnirValue(temps, div_ins.lhs);
+        const x_held = self.holdReg(x, pinned);
+        const q_dst = try self.allocReg();
+        const rm = try self.allocRegExcluding(q_dst);
+        try self.emitMovImm(rm, mg.m);
+        const rt = try self.allocRegExcluding(q_dst);
+        try self.emitSmulhReg(rt, rm, x);
+        self.releaseReg(rm);
+        if (mg.add_dividend) try self.emitAddReg(rt, rt, x);
+        if (mg.shift > 0) try self.emitAsrImm(rt, rt, mg.shift);
+        const rd = try self.allocRegExcluding(q_dst);
+        try self.emitMovImm(rd, k);
+        const rv = try self.allocRegExcluding(q_dst);
+        try self.emitMsubReg(rv, rt, rd, x);
+        try self.emitCmpReg(rv, rd);
+        try self.emitCincEqReg(q_dst, rt);
+        self.releaseReg(rt);
+        _ = try self.emitNarrowFit(q_dst, q_dst, div_ins.ty);
+        const d_dst = try self.allocRegExcluding(q_dst);
+        try self.emitCselZeroEqReg(d_dst, rv);
+        self.releaseReg(rv);
+        self.releaseReg(rd);
+        _ = try self.emitNarrowFit(d_dst, d_dst, sub_ins.ty);
+
+        if (x_held) self.gp_reg_owner[x] = null;
+        if (x != q_dst and x != d_dst and !Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
+
+        try temps.put(self.alloc, t_q, q_dst);
+        try temps.put(self.alloc, t_d, d_dst);
+        if (d_dst >= 9 and d_dst < 29 and d_dst != platform_reserved_reg and !self.gp_home_regs[d_dst]) {
+            self.gp_reg_owner[d_dst] = t_d;
+        }
+        // The quotient's naming store executes as written; the mul and the
+        // sub never execute. `t_q`'s ownership is recorded by the main loop
+        // from the div's result, exactly as for every other binop.
+        try self.compileDnirInstr(temps, pinned, st_q, branch_patches, null, flat_idx + 1);
     }
 
     /// Emit the fused `cmp; b.cond` for a `compareBranchFusible` pair. `when_true`
