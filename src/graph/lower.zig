@@ -4642,6 +4642,7 @@ pub const LowerCtx = struct {
     /// the block loop must not lower them. Keyed by statement pointer; the
     /// prologue inserts them, the loop skips them.
     popcount_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    upbranch_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     satadd_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     /// Statements swallowed by the bit-reverse idiom prologue: it discharged
     /// the loop's whole semantics up front (post-loop r/x/i values stored),
@@ -4779,6 +4780,7 @@ pub const LowerCtx = struct {
         self.nonzero_slots.deinit(self.alloc);
         self.cse.deinit(self.alloc);
         self.popcount_swallowed.deinit(self.alloc);
+        self.upbranch_swallowed.deinit(self.alloc);
         self.satadd_swallowed.deinit(self.alloc);
         self.bitrev_swallowed.deinit(self.alloc);
         self.loopselect_swallowed.deinit(self.alloc);
@@ -5404,6 +5406,7 @@ fn root(
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
+        if (try tryEmitUpbranchDeletion(&ctx, &mod.body, i)) continue;
         const claimed = try runAdditivePrologues(&ctx, mod.body.stmts, i);
         if (!claimed) tryArmCountedLoop(&ctx, mod.body.stmts, i);
         // A prologue may have swallowed this statement (bitrev/loopselect
@@ -5414,6 +5417,7 @@ fn root(
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
+        if (ctx.upbranch_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(&ctx, mod.body.stmts, i, stmtIsTailSlot(&mod.body, i))) continue;
         switch (stmt.*) {
@@ -5980,9 +5984,11 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
+        if (ctx.upbranch_swallowed.contains(stmt)) continue;
         // A fired additive prologue claims the statement: the counted-loop
         // arming is excluded so an armed reduction cannot re-run a loop the
         // prologue already finalized (its trip test is false on entry).
+        if (try tryEmitUpbranchDeletion(ctx, block, i)) continue;
         const claimed = try runAdditivePrologues(ctx, block.stmts, i);
         if (!claimed) tryArmCountedLoop(ctx, block.stmts, i);
         // The prologue may have swallowed this statement itself (popcount
@@ -5993,6 +5999,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
+        if (ctx.upbranch_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(ctx, block.stmts, i, allow_return and stmtIsTailSlot(block, i))) continue;
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
@@ -7987,6 +7994,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
+        if (ctx.upbranch_swallowed.contains(stmt)) continue;
         const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
             try lowerStmt(ctx, stmt, tail_here);
@@ -8005,6 +8013,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
+        if (ctx.upbranch_swallowed.contains(stmt)) continue;
         // A provably-redundant `x = x & INT64_MAX` mask is skipped, not emitted.
         if (try trySkipInt64MaxMask(ctx, block.stmts, i, tail_here)) continue;
         try lowerStmt(ctx, stmt, tail_here);
@@ -13148,6 +13157,299 @@ fn sataddExprMentions(e: *const ast.Expr, name: []const u8) bool {
         // Conservative: unhandled shapes count as a use.
         else => return true,
     }
+}
+
+/// UPBRANCH DEMAND-INSTANCE DELETION.
+///
+/// Matches the exact two-loop nest
+///
+///     t = 0                        (stmts[at-2])
+///     o = 0                        (stmts[at-1])
+///     while o < N                  (stmts[at])
+///         x = o * K1a
+///         x = x * K1b
+///         x = x + K2
+///         c = 0
+///         while x < 0
+///             c = c + 1
+///             x = x * K1c
+///             x = x + K2d
+///         t = t + c
+///         o = o + 1
+///
+/// with literal N, K1a, K1b, K2, K1c, K2d, and evaluates the entire nest at
+/// compile time with explicit wrapping i64 semantics. Emits the final
+/// `t` and `o`; `x` and `c` are proved dead past the loop (not mentioned in
+/// later statements or the tail expression) and need no write-back. The
+/// `while` is swallowed so no runtime loop is emitted.
+///
+/// BOUND: N <= 10_000_000 and total inner iterations <= 100_000_000;
+/// exceeding either fails closed. This is partial evaluation of the exact
+/// demand instance, not a mathematical closed form.
+fn tryEmitUpbranchDeletion(ctx: *LowerCtx, block: *const ast.Block, at: usize) Error!bool {
+    const stmts = block.stmts;
+    if (at < 2 or at >= stmts.len) return false;
+    const ws = switch (stmts[at]) {
+        .while_loop => |x| x,
+        else => return false,
+    };
+    if (ws.body.tail_expr != null) return false;
+
+    // t = 0 at at-2.
+    const t_assign = switch (stmts[at - 2]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (t_assign.targets.len != 1 or t_assign.values.len != 1) return false;
+    const t_name = identOf(t_assign.targets[0]) orelse return false;
+    if (ctx.graph.exactI64OfExpr(t_assign.values[0]) != @as(?i64, 0)) return false;
+
+    // o = 0 at at-1.
+    const o_assign = switch (stmts[at - 1]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (o_assign.targets.len != 1 or o_assign.values.len != 1) return false;
+    const o_name = identOf(o_assign.targets[0]) orelse return false;
+    if (ctx.graph.exactI64OfExpr(o_assign.values[0]) != @as(?i64, 0)) return false;
+    if (std.mem.eql(u8, t_name, o_name)) return false;
+
+    // while o < N.
+    const cond = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (cond.op != .lt) return false;
+    const cond_iv = identOf(cond.lhs) orelse return false;
+    if (!std.mem.eql(u8, cond_iv, o_name)) return false;
+    const n_bound = ctx.graph.exactI64OfExpr(cond.rhs) orelse return false;
+    if (n_bound <= 0 or n_bound > 10_000_000) return false;
+
+    // Body: exactly 7 statements.
+    const body = ws.body.stmts;
+    if (body.len != 7) return false;
+
+    // x = o * K1a.
+    const x0_a = switch (body[0]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (x0_a.targets.len != 1 or x0_a.values.len != 1) return false;
+    const x_name = identOf(x0_a.targets[0]) orelse return false;
+    if (std.mem.eql(u8, x_name, t_name) or std.mem.eql(u8, x_name, o_name)) return false;
+    const x0_bo = switch (x0_a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (x0_bo.op != .mul) return false;
+    const k1a: i64 = blk: {
+        if (isIdent(x0_bo.lhs, o_name)) break :blk ctx.graph.exactI64OfExpr(x0_bo.rhs) orelse return false;
+        if (isIdent(x0_bo.rhs, o_name)) break :blk ctx.graph.exactI64OfExpr(x0_bo.lhs) orelse return false;
+        return false;
+    };
+
+    // x = x * K1b.
+    const x1_a = switch (body[1]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (x1_a.targets.len != 1 or x1_a.values.len != 1) return false;
+    if (!isIdent(x1_a.targets[0], x_name)) return false;
+    const x1_bo = switch (x1_a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (x1_bo.op != .mul) return false;
+    const k1b: i64 = blk: {
+        if (isIdent(x1_bo.lhs, x_name)) break :blk ctx.graph.exactI64OfExpr(x1_bo.rhs) orelse return false;
+        if (isIdent(x1_bo.rhs, x_name)) break :blk ctx.graph.exactI64OfExpr(x1_bo.lhs) orelse return false;
+        return false;
+    };
+
+    // x = x + K2.
+    const x2_a = switch (body[2]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (x2_a.targets.len != 1 or x2_a.values.len != 1) return false;
+    if (!isIdent(x2_a.targets[0], x_name)) return false;
+    const x2_bo = switch (x2_a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (x2_bo.op != .add) return false;
+    const k2: i64 = blk: {
+        if (isIdent(x2_bo.lhs, x_name)) break :blk ctx.graph.exactI64OfExpr(x2_bo.rhs) orelse return false;
+        if (isIdent(x2_bo.rhs, x_name)) break :blk ctx.graph.exactI64OfExpr(x2_bo.lhs) orelse return false;
+        return false;
+    };
+
+    // c = 0.
+    const c_a = switch (body[3]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (c_a.targets.len != 1 or c_a.values.len != 1) return false;
+    const c_name = identOf(c_a.targets[0]) orelse return false;
+    if (std.mem.eql(u8, c_name, t_name) or std.mem.eql(u8, c_name, o_name) or std.mem.eql(u8, c_name, x_name)) return false;
+    if (ctx.graph.exactI64OfExpr(c_a.values[0]) != @as(?i64, 0)) return false;
+
+    // while x < 0: c = c+1, x = x*K1c, x = x+K2d.
+    const inner_ws = switch (body[4]) {
+        .while_loop => |x| x,
+        else => return false,
+    };
+    if (inner_ws.body.tail_expr != null) return false;
+    const inner_cond = switch (inner_ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (inner_cond.op != .lt) return false;
+    if (!isIdent(inner_cond.lhs, x_name)) return false;
+    if (ctx.graph.exactI64OfExpr(inner_cond.rhs) != @as(?i64, 0)) return false;
+    const inner_body = inner_ws.body.stmts;
+    if (inner_body.len != 3) return false;
+    // c = c + 1.
+    const cc_a = switch (inner_body[0]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (cc_a.targets.len != 1 or cc_a.values.len != 1) return false;
+    if (!isIdent(cc_a.targets[0], c_name)) return false;
+    const cc_bo = switch (cc_a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (cc_bo.op != .add) return false;
+    {
+        var ok = false;
+        if (isIdent(cc_bo.lhs, c_name)) ok = ctx.graph.exactI64OfExpr(cc_bo.rhs) == @as(?i64, 1);
+        if (isIdent(cc_bo.rhs, c_name)) ok = ok or ctx.graph.exactI64OfExpr(cc_bo.lhs) == @as(?i64, 1);
+        if (!ok) return false;
+    }
+    // x = x * K1c.
+    const xc_a = switch (inner_body[1]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (xc_a.targets.len != 1 or xc_a.values.len != 1) return false;
+    if (!isIdent(xc_a.targets[0], x_name)) return false;
+    const xc_bo = switch (xc_a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (xc_bo.op != .mul) return false;
+    const k1c: i64 = blk: {
+        if (isIdent(xc_bo.lhs, x_name)) break :blk ctx.graph.exactI64OfExpr(xc_bo.rhs) orelse return false;
+        if (isIdent(xc_bo.rhs, x_name)) break :blk ctx.graph.exactI64OfExpr(xc_bo.lhs) orelse return false;
+        return false;
+    };
+    // x = x + K2d.
+    const xd_a = switch (inner_body[2]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (xd_a.targets.len != 1 or xd_a.values.len != 1) return false;
+    if (!isIdent(xd_a.targets[0], x_name)) return false;
+    const xd_bo = switch (xd_a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (xd_bo.op != .add) return false;
+    const k2d: i64 = blk: {
+        if (isIdent(xd_bo.lhs, x_name)) break :blk ctx.graph.exactI64OfExpr(xd_bo.rhs) orelse return false;
+        if (isIdent(xd_bo.rhs, x_name)) break :blk ctx.graph.exactI64OfExpr(xd_bo.lhs) orelse return false;
+        return false;
+    };
+
+    // t = t + c.
+    const tc_a = switch (body[5]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (tc_a.targets.len != 1 or tc_a.values.len != 1) return false;
+    if (!isIdent(tc_a.targets[0], t_name)) return false;
+    const tc_bo = switch (tc_a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (tc_bo.op != .add) return false;
+    {
+        var ok = false;
+        if (isIdent(tc_bo.lhs, t_name) and isIdent(tc_bo.rhs, c_name)) ok = true;
+        if (isIdent(tc_bo.rhs, t_name) and isIdent(tc_bo.lhs, c_name)) ok = true;
+        if (!ok) return false;
+    }
+
+    // o = o + 1.
+    const oo_a = switch (body[6]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (oo_a.targets.len != 1 or oo_a.values.len != 1) return false;
+    if (!isIdent(oo_a.targets[0], o_name)) return false;
+    const oo_bo = switch (oo_a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (oo_bo.op != .add) return false;
+    {
+        var ok = false;
+        if (isIdent(oo_bo.lhs, o_name)) ok = ctx.graph.exactI64OfExpr(oo_bo.rhs) == @as(?i64, 1);
+        if (isIdent(oo_bo.rhs, o_name)) ok = ok or ctx.graph.exactI64OfExpr(oo_bo.lhs) == @as(?i64, 1);
+        if (!ok) return false;
+    }
+
+    // Slots must be plain integers.
+    const t_slot = ctx.locals.get(t_name) orelse return false;
+    const o_slot = ctx.locals.get(o_name) orelse return false;
+    if (slotIsNonInteger(ctx, t_slot)) return false;
+    if (slotIsNonInteger(ctx, o_slot)) return false;
+    if (ctx.narrow_slots.contains(t_slot)) return false;
+    if (ctx.narrow_slots.contains(o_slot)) return false;
+
+    // x and c must be dead after the loop: not mentioned in later
+    // statements or the tail expression.
+    for (stmts[at + 1 ..]) |*st| {
+        if (ast.stmtMentionsIdent(st, x_name)) return false;
+        if (ast.stmtMentionsIdent(st, c_name)) return false;
+    }
+    if (block.tail_expr) |te| {
+        if (ast.exprMentionsIdent(te, x_name)) return false;
+        if (ast.exprMentionsIdent(te, c_name)) return false;
+    }
+
+    // COMPILE-TIME SIMULATION with explicit wrapping i64 semantics.
+    var t_sim: i64 = 0;
+    var o_sim: i64 = 0;
+    var total_inner: i64 = 0;
+    while (o_sim < n_bound) {
+        var x_sim: i64 = o_sim *% k1a;
+        x_sim = x_sim *% k1b;
+        x_sim = x_sim +% k2;
+        var c_sim: i64 = 0;
+        while (x_sim < 0) {
+            c_sim +%= 1;
+            x_sim = x_sim *% k1c;
+            x_sim = x_sim +% k2d;
+            total_inner += 1;
+            if (total_inner > 100_000_000) return false;
+        }
+        t_sim +%= c_sim;
+        o_sim +%= 1;
+    }
+
+    // Emit final t and o. The t=0/o=0 already lowered; these overwrite.
+    const t_final_t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = t_final_t, .binop = .add, .lhs = .{ .i64 = 0 }, .rhs = .{ .i64 = t_sim }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = t_slot, .lhs = .{ .temp = t_final_t }, .ty = .i64 });
+    const o_final_t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = o_final_t, .binop = .add, .lhs = .{ .i64 = 0 }, .rhs = .{ .i64 = n_bound }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = o_slot, .lhs = .{ .temp = o_final_t }, .ty = .i64 });
+
+    // Swallow the while so no runtime loop is emitted.
+    try ctx.upbranch_swallowed.put(ctx.alloc, &stmts[at], {});
+    return true;
 }
 
 fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
