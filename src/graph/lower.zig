@@ -4645,6 +4645,7 @@ pub const LowerCtx = struct {
     popcount_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     upbranch_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     satadd_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    absdiff_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     /// Statements swallowed by the bit-reverse idiom prologue: it discharged
     /// the loop's whole semantics up front (post-loop r/x/i values stored),
     /// so the dispatch loop must not lower the vacuous `while`. Keyed by
@@ -4792,6 +4793,7 @@ pub const LowerCtx = struct {
         self.popcount_swallowed.deinit(self.alloc);
         self.upbranch_swallowed.deinit(self.alloc);
         self.satadd_swallowed.deinit(self.alloc);
+        self.absdiff_swallowed.deinit(self.alloc);
         self.bitrev_swallowed.deinit(self.alloc);
         self.loopselect_swallowed.deinit(self.alloc);
         self.zerotrip_swallowed.deinit(self.alloc);
@@ -5426,6 +5428,7 @@ fn root(
         // idioms up front); do not lower it.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
@@ -5995,6 +5998,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         // its semantics were discharged up front.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
@@ -6011,6 +6015,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         // replace); do not lower it twice.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
@@ -8017,6 +8022,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         // its semantics were discharged up front.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
@@ -8037,6 +8043,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         // replace); do not lower it twice.
         if (ctx.popcount_swallowed.contains(stmt)) continue;
         if (ctx.satadd_swallowed.contains(stmt)) continue;
+        if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
@@ -13780,11 +13787,272 @@ fn tryEmitUpbranchDeletion(ctx: *LowerCtx, block: *const ast.Block, at: usize) E
     return true;
 }
 
+/// IDOL_ABSDIFF_OFF=1 -- THE SEVERING CONTROL for the branchless-abs idiom
+/// below. Set it and the idiom never fires, so every site emits exactly as
+/// this compiler did before the rule existed: the two divisions with their
+/// zero guards, the comparison dance, and the multiply. The range producer
+/// is untouched; only the lowering's question is severed.
+fn absdiffOff() bool {
+    return std.c.getenv("IDOL_ABSDIFF_OFF") != null;
+}
+
+/// BRANCHLESS-ABS IDIOM → |a-b| WITH NO DIVISION.
+///
+/// Recognizes
+///
+///     d = a - b                  (stmts[at])
+///     q = b / (a + 1)            (stmts[at+1])
+///     lt = 1 - 1 / (q + 1)       (stmts[at+2])
+///     t = t + d * (1 - 2 * lt)   (stmts[at+3])
+///
+/// and replaces the four statements — two of them divisions, each carrying
+/// a zero-guard branch — with t = t + |a-b| emitted branchless:
+/// diff = a-b; mask = diff>>63 (lsr); t += (diff ^ (0-mask)) + mask.
+///
+/// WHY THIS IS SOUND. `/` is floored integer division and integers wrap
+/// mod 2^64. a and b prove non-negative with width <= 62, so:
+/// - a+1 in [1, 2^62]: no wrap, never zero; the guards the lowering would
+///   have emitted for both divisions can never fire.
+/// - q = b/(a+1): both operands non-negative, so floored is exact; q >= 0
+///   and q = 0 iff b < a+1 iff b <= a.
+/// - 1/(q+1): q+1 >= 1; equals 1 iff q = 0 iff b <= a, else 0.
+/// - lt = 1 - that = 1 iff b > a, i.e. lt = (a < b) in {0,1}.
+/// - d = a-b is exact (|d| < 2^62, no wrap); 1-2*lt in {1,-1}; so
+///   d*(1-2*lt) = |a-b| exactly.
+/// - t + |a-b| wraps exactly as the original t + d*(1-2*lt) did.
+/// The lsr emission: mask in {0,1}; (diff ^ (0-mask)) + mask = |diff|.
+/// FAIL-CLOSED: declines if either width proof fails, if any shape
+/// deviates (commuted add/mul accepted, sub/div order exact), if d/q/lt
+/// are read after the idiom, if any slot is missing/narrow/non-integer,
+/// or when IDOL_ABSDIFF_OFF=1.
+fn tryEmitAbsdiffIdiom(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    if (absdiffOff()) return false;
+    if (at + 4 > stmts.len) return false;
+
+    // stmts[at]: d = a - b.
+    const da = switch (stmts[at]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (da.targets.len != 1 or da.values.len != 1) return false;
+    const d_name = identOf(da.targets[0]) orelse return false;
+    const db = switch (da.values[0].*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (db.op != .sub) return false;
+    const a_name = identOf(db.lhs) orelse return false;
+    const b_name = identOf(db.rhs) orelse return false;
+
+    // stmts[at+1]: q = b / (a + 1).
+    const qa = switch (stmts[at + 1]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (qa.targets.len != 1 or qa.values.len != 1) return false;
+    const q_name = identOf(qa.targets[0]) orelse return false;
+    const a2_name = absdiffDivDenom(qa.values[0], b_name) orelse return false;
+    if (!std.mem.eql(u8, a2_name, a_name)) return false;
+
+    // stmts[at+2]: lt = 1 - 1 / (q + 1).
+    const la = switch (stmts[at + 2]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (la.targets.len != 1 or la.values.len != 1) return false;
+    const lt_name = identOf(la.targets[0]) orelse return false;
+    if (!absdiffIsOneMinusRecip(la.values[0], q_name)) return false;
+
+    // stmts[at+3]: t = t + d * (1 - 2 * lt).
+    const ta = switch (stmts[at + 3]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (ta.targets.len != 1 or ta.values.len != 1) return false;
+    const t_name = identOf(ta.targets[0]) orelse return false;
+    if (!absdiffIsAccAdd(ta.values[0], t_name, d_name, lt_name)) return false;
+
+    // All six names distinct.
+    const names = [_][]const u8{ d_name, q_name, lt_name, a_name, b_name, t_name };
+    for (names, 0..) |n1, i| {
+        for (names[i + 1 ..]) |n2| {
+            if (std.mem.eql(u8, n1, n2)) return false;
+        }
+    }
+
+    // d, q, lt die with the idiom: no reader after it.
+    if (sataddIdentUsedAfter(stmts, at + 4, d_name)) return false;
+    if (sataddIdentUsedAfter(stmts, at + 4, q_name)) return false;
+    if (sataddIdentUsedAfter(stmts, at + 4, lt_name)) return false;
+
+    // a, b prove non-negative with width <= 62.
+    if (absdiffWidth62(ctx, stmts, at, db.lhs) == null) return false;
+    if (absdiffWidth62(ctx, stmts, at, db.rhs) == null) return false;
+
+    // Slots for a, b, t exist and are plain integer.
+    const a_slot = ctx.locals.get(a_name) orelse return false;
+    const b_slot = ctx.locals.get(b_name) orelse return false;
+    const t_slot = ctx.locals.get(t_name) orelse return false;
+    if (slotIsNonInteger(ctx, a_slot)) return false;
+    if (slotIsNonInteger(ctx, b_slot)) return false;
+    if (slotIsNonInteger(ctx, t_slot)) return false;
+    if (ctx.narrow_slots.contains(a_slot)) return false;
+    if (ctx.narrow_slots.contains(b_slot)) return false;
+    if (ctx.narrow_slots.contains(t_slot)) return false;
+
+    // Emit t = t + |a-b|, branchless.
+    const diff_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = diff_tmp, .binop = .sub, .lhs = .{ .local = a_slot }, .rhs = .{ .local = b_slot }, .ty = .i64 });
+    const mask_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = mask_tmp, .binop = .shr, .lhs = .{ .temp = diff_tmp }, .rhs = .{ .i64 = 63 }, .ty = .i64 });
+    const negm_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = negm_tmp, .binop = .sub, .lhs = .{ .i64 = 0 }, .rhs = .{ .temp = mask_tmp }, .ty = .i64 });
+    const xor_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = xor_tmp, .binop = .bxor, .lhs = .{ .temp = diff_tmp }, .rhs = .{ .temp = negm_tmp }, .ty = .i64 });
+    const abs_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = abs_tmp, .binop = .add, .lhs = .{ .temp = xor_tmp }, .rhs = .{ .temp = mask_tmp }, .ty = .i64 });
+    const tnew_tmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = tnew_tmp, .binop = .add, .lhs = .{ .local = t_slot }, .rhs = .{ .temp = abs_tmp }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = t_slot, .lhs = .{ .temp = tnew_tmp }, .ty = .any });
+
+    // Swallow the four statements; d, q, lt are rebound so drop stale const facts.
+    for (stmts[at .. at + 4]) |*st| {
+        try ctx.absdiff_swallowed.put(ctx.alloc, st, {});
+    }
+    if (ctx.const_ints.fetchRemove(d_name)) |kv| ctx.alloc.free(kv.key);
+    if (ctx.const_ints.fetchRemove(q_name)) |kv| ctx.alloc.free(kv.key);
+    if (ctx.const_ints.fetchRemove(lt_name)) |kv| ctx.alloc.free(kv.key);
+    return true;
+}
+
+/// Matches b / (a + 1) with the + 1 on either side; returns the a name.
+/// The numerator must be exactly the b ident; the division must be `.div`.
+fn absdiffDivDenom(e: *const ast.Expr, b_name: []const u8) ?[]const u8 {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return null,
+    };
+    if (b.op != .div) return null;
+    if (!isIdent(b.lhs, b_name)) return null;
+    const add = switch (b.rhs.*) {
+        .binop => |ab| ab,
+        else => return null,
+    };
+    if (add.op != .add) return null;
+    if (identOf(add.lhs)) |n| {
+        const one = ast.intLiteralValue(add.rhs) orelse return null;
+        if (one == 1) return n;
+        return null;
+    }
+    if (identOf(add.rhs)) |n| {
+        const one = ast.intLiteralValue(add.lhs) orelse return null;
+        if (one == 1) return n;
+        return null;
+    }
+    return null;
+}
+
+/// e is 1 - 1/(q+1) with the + 1 on either side.
+fn absdiffIsOneMinusRecip(e: *const ast.Expr, q_name: []const u8) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .sub) return false;
+    const one = ast.intLiteralValue(b.lhs) orelse return false;
+    if (one != 1) return false;
+    const d = switch (b.rhs.*) {
+        .binop => |db| db,
+        else => return false,
+    };
+    if (d.op != .div) return false;
+    const num = ast.intLiteralValue(d.lhs) orelse return false;
+    if (num != 1) return false;
+    const add = switch (d.rhs.*) {
+        .binop => |ab| ab,
+        else => return false,
+    };
+    if (add.op != .add) return false;
+    if (isIdent(add.lhs, q_name)) {
+        const k = ast.intLiteralValue(add.rhs) orelse return false;
+        return k == 1;
+    }
+    if (isIdent(add.rhs, q_name)) {
+        const k = ast.intLiteralValue(add.lhs) orelse return false;
+        return k == 1;
+    }
+    return false;
+}
+
+/// e is t + d*(1 - 2*lt) with the add and both muls commuted.
+fn absdiffIsAccAdd(e: *const ast.Expr, t_name: []const u8, d_name: []const u8, lt_name: []const u8) bool {
+    const b = switch (e.*) {
+        .binop => |bb| bb,
+        else => return false,
+    };
+    if (b.op != .add) return false;
+    const prod = if (isIdent(b.lhs, t_name))
+        b.rhs
+    else if (isIdent(b.rhs, t_name))
+        b.lhs
+    else
+        return false;
+    const m = switch (prod.*) {
+        .binop => |mb| mb,
+        else => return false,
+    };
+    if (m.op != .mul) return false;
+    const rest = if (isIdent(m.lhs, d_name))
+        m.rhs
+    else if (isIdent(m.rhs, d_name))
+        m.lhs
+    else
+        return false;
+    // rest is 1 - 2*lt, exact order (subtraction does not commute).
+    const s = switch (rest.*) {
+        .binop => |sb| sb,
+        else => return false,
+    };
+    if (s.op != .sub) return false;
+    const one = ast.intLiteralValue(s.lhs) orelse return false;
+    if (one != 1) return false;
+    const t2 = switch (s.rhs.*) {
+        .binop => |tb| tb,
+        else => return false,
+    };
+    if (t2.op != .mul) return false;
+    if (isIdent(t2.lhs, lt_name)) {
+        const two = ast.intLiteralValue(t2.rhs) orelse return false;
+        return two == 2;
+    }
+    if (isIdent(t2.rhs, lt_name)) {
+        const two = ast.intLiteralValue(t2.lhs) orelse return false;
+        return two == 2;
+    }
+    return false;
+}
+
+/// Proves expr non-negative with width <= 62: value in [0, 2^62), so
+/// expr+1 cannot wrap i64 and |a-b| cannot overflow. Graph proof first,
+/// then the syntactic width fallback (same transfer as sataddSynWidth).
+fn absdiffWidth62(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, expr: *const ast.Expr) ?u8 {
+    const graph = ctx.graph;
+    const gw: ?u8 = if (ctx.function) |rel|
+        if (graph.callable(rel)) graph.nonNegativeWidthOfExpr(rel, expr) else null
+    else
+        graph.nonNegativeWidthOfExprModule(expr);
+    if (gw) |w| if (w <= 62) return w;
+    const sw = sataddSynWidth(graph, stmts, at, expr, 0) orelse return null;
+    if (sw <= 62) return sw;
+    return null;
+}
+
 fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
     if (try tryEmitVectorReductionPrologue(ctx, stmts, at)) return true;
     if (try tryEmitPopcountIdiom(ctx, stmts, at)) return true;
     if (try tryEmitLoopSelectPrologue(ctx, stmts, at)) return true;
     if (try tryEmitSataddIdiom(ctx, stmts, at)) return true;
+    if (try tryEmitAbsdiffIdiom(ctx, stmts, at)) return true;
     return try tryEmitBitReversePrologue(ctx, stmts, at);
 }
 
