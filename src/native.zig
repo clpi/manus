@@ -12780,12 +12780,24 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         try self.emitSdivReg(q_t, x, d);
         const rem = try self.allocRegExcluding(q_t);
         try self.emitMsubReg(rem, q_t, d, x);
-        const rp = try self.allocRegExcluding(q_t);
-        try self.emitAddReg(rp, rem, d);
-        try self.emitCmpZero(rem);
-        const d_dst = try self.allocRegExcluding(q_t);
+        // A proved-non-negative dividend makes floored division coincide with
+        // the truncating sdiv/msub pair, so the sign corrections below are
+        // dead. IDOL_DIVMOD_BARE_OFF=1 restores the correcting sequence.
+        const bare = div_ins.dividend.proved() and std.c.getenv("IDOL_DIVMOD_BARE_OFF") == null;
+        const rp: u5 = if (bare) 0 else try self.allocRegExcluding(q_t);
+        if (!bare) {
+            try self.emitAddReg(rp, rem, d);
+            try self.emitCmpZero(rem);
+        }
+        const d_dst: u5 = if (bare) rem else try self.allocRegExcluding(q_t);
         var q_dst: u5 = 0;
-        if (q_dead) {
+        if (bare) {
+            if (!q_dead) {
+                q_dst = q_t;
+                _ = try self.emitNarrowFit(q_dst, q_dst, div_ins.ty);
+                try temps.put(self.alloc, t_q, q_dst);
+            }
+        } else if (q_dead) {
             try self.emitCselReg(d_dst, rp, rem, .lt);
         } else {
             const qm1 = try self.allocRegExcluding(q_t);
@@ -12798,9 +12810,13 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
             try temps.put(self.alloc, t_q, q_dst);
         }
         _ = try self.emitNarrowFit(d_dst, d_dst, sub_ins.ty);
-        self.releaseReg(rp);
-        self.releaseReg(rem);
-        self.releaseReg(q_t);
+        if (bare) {
+            if (q_dead) self.releaseReg(q_t);
+        } else {
+            self.releaseReg(rp);
+            self.releaseReg(rem);
+            self.releaseReg(q_t);
+        }
         if (x_held) self.gp_reg_owner[x] = null;
         if (d_held) self.gp_reg_owner[d] = null;
         if (x != d_dst and (q_dead or x != q_dst) and !Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
