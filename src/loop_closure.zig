@@ -590,10 +590,11 @@ const Scope = struct {
     /// file-scope loop refused with `DNB011 missing-function-id` at
     /// `dnir_lower.zig:1230`, which is that dangling `*FuncDecl` arriving.
     ///
-    /// So the module path does not rebuild. It OVERWRITES the `while` slot with
-    /// the one store demand leaves, one statement for one statement, and a plan
-    /// that would need any other number of stores is refused. Nothing moves, so
-    /// W5 is discharged by the shape of the write rather than by a check.
+    /// So the module path does not rebuild. It OVERWRITES the `while` slot
+    /// with a single store -- multi-target when demand leaves more than one
+    /// live-out -- one statement for one statement, and a plan that would
+    /// need zero stores is refused. Nothing moves, so W5 is discharged by
+    /// the shape of the write rather than by a check.
     in_place: bool,
     /// L4's completeness condition. Inside a RELATION a module-scope name is
     /// readable outside the body, so the body's continuation does not bound it
@@ -750,13 +751,19 @@ fn closeLoopsIn(
                     census.declined_to_fold += 1;
                     continue;
                 }
-                // W5. One statement for one statement, or nothing.
+                // W5. One STATEMENT for one statement, or nothing: the
+                // `while` slot is overwritten with a single (possibly
+                // multi-target) store, so no statement moves and the
+                // addresses the semantic graph holds stay valid. A plan with
+                // no demanded live-out is still refused: no statement deletes
+                // a loop, and that family belongs to `demand.prune`, which
+                // runs ahead of this pass.
                 if (scope.in_place) {
                     var stores: usize = 0;
                     for (0..closed.len) |i| {
                         if (plan.write[i]) stores += 1;
                     }
-                    if (stores != 1) {
+                    if (stores == 0 or (stores != 1 and recurrence.multiStoreOff())) {
                         census.refused_would_move += 1;
                         continue;
                     }
@@ -773,16 +780,19 @@ fn closeLoopsIn(
     if (nplans == 0) return;
 
     if (scope.in_place) {
-        // W5. Exactly one store per plan, written over the `while` it replaces.
+        // W5. Exactly one STATEMENT per plan, written over the `while` it
+        // replaces: a single multi-target store carrying every demanded
+        // live-out. Nothing moves, so W5 is discharged by the shape of the
+        // write rather than by a check.
         for (plans[0..nplans]) |p| {
             const loc = fb_body.stmts[p.at].while_loop.loc;
+            var w: usize = 0;
             for (0..p.closed.len) |j| {
-                if (!p.write[j]) continue;
-                fb_body.stmts[p.at] = try constantAssign(alloc, loc, p.closed.names[j], p.closed.values[j]);
-                census.writes_emitted += 1;
-                break;
+                if (p.write[j]) w += 1;
             }
-            census.writes_deleted_by_demand += @intCast(p.closed.len - 1);
+            fb_body.stmts[p.at] = try constantAssignMulti(alloc, loc, &p.closed, p.write);
+            census.writes_emitted += @intCast(w);
+            census.writes_deleted_by_demand += @intCast(p.closed.len - w);
         }
         return;
     }
@@ -858,6 +868,45 @@ fn closeLoopsIn(
 /// file-scope loop under a `print` is precisely the shape whose loop is the
 /// last statement. The store still happens; only the claim "this is the
 /// block's value" is withdrawn, and that claim was never the loop's to make.
+/// `<n1, n2, ...> = <v1, v2, ...>` -- ONE statement carrying every demanded
+/// live-out of a closed module-scope loop, so the in-place rewrite keeps W5's
+/// "one statement for one statement" shape. All values are int literals, so
+/// there is no evaluation-order question; all targets are distinct names, so
+/// no store interferes with another. Marked `closed_loop` exactly like the
+/// single-target form, so L6 (the block's value is not the loop's) holds for
+/// it too. Ordinary AST: the backend lowers multi-target assignment
+/// pair-wise through its general arm.
+fn constantAssignMulti(
+    alloc: std.mem.Allocator,
+    loc: ast.Loc,
+    closed: *const recurrence.Closed,
+    write: [recurrence.max_vars]bool,
+) std.mem.Allocator.Error!ast.Stmt {
+    var n: usize = 0;
+    for (0..closed.len) |j| {
+        if (write[j]) n += 1;
+    }
+    const targets = try alloc.alloc(*ast.Expr, n);
+    const values = try alloc.alloc(*ast.Expr, n);
+    var k: usize = 0;
+    for (0..closed.len) |j| {
+        if (!write[j]) continue;
+        const target = try alloc.create(ast.Expr);
+        target.* = .{ .name = .{ .loc = loc, .ident = closed.names[j] } };
+        const lit = try alloc.create(ast.Expr);
+        lit.* = .{ .int_lit = .{ .loc = loc, .val = @bitCast(closed.values[j]) } };
+        targets[k] = target;
+        values[k] = lit;
+        k += 1;
+    }
+    return .{ .assign = .{
+        .loc = loc,
+        .targets = targets,
+        .values = values,
+        .closed_loop = true,
+    } };
+}
+
 fn constantAssign(
     alloc: std.mem.Allocator,
     loc: ast.Loc,
@@ -1375,10 +1424,15 @@ test "loop_closure: W2 refuses a file-scope loop whose carried name a relation r
     try testing.expect(mod.body.stmts[4] == .while_loop);
 }
 
-// W5's REFUSAL TWIN. A relation declared AFTER the loop makes `demandAfter`
+// W5, MULTI-STORE. A relation declared AFTER the loop makes `demandAfter`
 // answer `whole` for every carried name -- `func_decl` is not enumerated, so it
-// fails closed -- which needs TWO stores where the slot holds one.
-test "loop_closure: W5 refuses a file-scope loop that would need two stores" {
+// fails closed -- which needs TWO stores where the slot holds one STATEMENT.
+// The slot is overwritten with one two-target store: nothing moves, so the
+// relation the graph already addressed stays where it is. The old W5 rule
+// refused this shape; the first form of the in-place patch broke it the other
+// way, rebuilding the statement list and dangling the FuncDecl
+// (DNB011 missing-function-id).
+test "loop_closure: W5 closes a file-scope loop with two demanded live-outs into one store" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1394,11 +1448,28 @@ test "loop_closure: W5 refuses a file-scope loop that would need two stores" {
         \\print(s)
         \\
     ;
+    var plain = try parseModule(alloc, src);
+    const before = exitProbeOf(alloc, &plain);
+
     var mod = try parseModule(alloc, src);
     const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
-    try testing.expectEqual(@as(u32, 0), census.loops_closed);
-    try testing.expectEqual(@as(u32, 1), census.refused_would_move);
-    try testing.expect(mod.body.stmts[2] == .while_loop);
+    try testing.expectEqual(@as(u32, 1), census.loops_closed);
+    try testing.expectEqual(@as(u32, 0), census.refused_would_move);
+    // One statement in the `while` slot, two targets, and the relation
+    // declaration did not move.
+    const st = mod.body.stmts[2];
+    try testing.expect(st == .assign);
+    try testing.expect(st.assign.closed_loop);
+    try testing.expectEqual(@as(usize, 2), st.assign.targets.len);
+    try testing.expectEqual(@as(usize, 2), st.assign.values.len);
+    try testing.expect(mod.body.stmts[3] == .func_decl);
+    // s = sum 1..1000, i = 1001 on exit.
+    try testing.expectEqualStrings("s", st.assign.targets[0].name.ident);
+    try testing.expectEqualStrings("i", st.assign.targets[1].name.ident);
+    try testing.expectEqual(@as(i64, 500500), st.assign.values[0].int_lit.val);
+    try testing.expectEqual(@as(i64, 1001), st.assign.values[1].int_lit.val);
+    // The module's answer is what it was.
+    try testing.expect(before.same(exitProbeOf(alloc, &mod)));
 }
 
 // A relation declared BEFORE the loop is NOT an obstacle, and this is the case
@@ -1739,6 +1810,111 @@ test "loop_closure: L6 -- a closed loop is not a relation body's value either" {
     try testing.expectEqual(tail_probe.TailResultRule.tail_call, tail_probe.blockTailResult(body).?.rule);
 }
 
+// W5, MULTI-STORE: a module-scope loop with several demanded live-outs is
+// replaced by ONE multi-target store in the `while` slot -- nothing moves,
+// so the addresses the semantic graph holds stay valid. Eight loop-carried
+// names also exercises the raised `max_vars` budget (the old 6 refused).
+// DIFFERENTIAL against a brute-force Zig loop in the same ring.
+test "loop_closure: W5 -- several demanded live-outs close into one multi-target store" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\a = 1
+        \\b = 2
+        \\c = 3
+        \\d = 4
+        \\e = 5
+        \\f = 6
+        \\g = 7
+        \\i = 0
+        \\while i < 1000000
+        \\    a = a + 1
+        \\    b = b + 2
+        \\    c = c + 3
+        \\    d = d + 4
+        \\    e = e + 5
+        \\    f = f + 6
+        \\    g = g + 7
+        \\    i = i + 1
+        \\t = a + b
+        \\t = t + c
+        \\t = t + d
+        \\t = t + e
+        \\t = t + f
+        \\t = t + g
+        \\t = t + i
+        \\t
+    ;
+    var mod = try parseModule(alloc, src);
+    const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 1), census.loops_closed);
+    try testing.expectEqual(@as(u32, 1), census.bodies_examined);
+
+    // The `while` was statement 8; it is now one multi-target assign.
+    const st = mod.body.stmts[8];
+    try testing.expect(st == .assign);
+    try testing.expect(st.assign.closed_loop);
+    try testing.expectEqual(@as(usize, 8), st.assign.targets.len);
+    try testing.expectEqual(@as(usize, 8), st.assign.values.len);
+
+    // DIFFERENTIAL: brute-force the loop in Zig with wrapping arithmetic.
+    var a: u64 = 1;
+    var b: u64 = 2;
+    var c: u64 = 3;
+    var d: u64 = 4;
+    var e: u64 = 5;
+    var f: u64 = 6;
+    var g: u64 = 7;
+    var i: u64 = 0;
+    while (i < 1000000) : (i += 1) {
+        a = a +% 1;
+        b = b +% 2;
+        c = c +% 3;
+        d = d +% 4;
+        e = e +% 5;
+        f = f +% 6;
+        g = g +% 7;
+    }
+    const want_names = [_][]const u8{ "a", "b", "c", "d", "e", "f", "g", "i" };
+    const want_vals = [_]u64{ a, b, c, d, e, f, g, i };
+    for (want_names, 0..) |nm, k| {
+        try testing.expectEqualStrings(nm, st.assign.targets[k].name.ident);
+        try testing.expectEqual(@as(i64, @bitCast(want_vals[k])), st.assign.values[k].int_lit.val);
+    }
+}
+
+// W5, DEMAND-DEAD: a live-out nobody reads after the loop is not stored --
+// the single statement carries only the demanded names.
+test "loop_closure: W5 -- a demand-dead live-out is not stored" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\a = 1
+        \\b = 2
+        \\i = 0
+        \\while i < 10
+        \\    a = a + 1
+        \\    b = b + 2
+        \\    i = i + 1
+        \\t = a
+        \\t
+    ;
+    var mod = try parseModule(alloc, src);
+    const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 1), census.loops_closed);
+
+    const st = mod.body.stmts[3];
+    try testing.expect(st == .assign);
+    try testing.expect(st.assign.closed_loop);
+    try testing.expectEqual(@as(usize, 1), st.assign.targets.len);
+    try testing.expectEqualStrings("a", st.assign.targets[0].name.ident);
+    try testing.expectEqual(@as(i64, 11), st.assign.values[0].int_lit.val);
+}
+
 // ── THE DECLINED SHAPES, BY REASON ───────────────────────────────────────────
 //
 // GAP-215's other half: the 538-file corpus differential that accompanied this
@@ -1797,24 +1973,6 @@ test "loop_closure: the module path declines, by reason, and never moves the ans
             \\while i <= 4
             \\    s = s + i
             \\    i = i + 1
-            \\print(s)
-            \\
-            ,
-        },
-        // W5. A relation declared AFTER the loop makes `demandAfter` answer
-        // `whole` for every carried name, so the slot would need two stores.
-        .{
-            .why = "W5 would move a statement",
-            .loop_at = 2,
-            .refused_would_move = 1,
-            .src =
-            \\s: i64 = 0
-            \\i: i64 = 1
-            \\while i <= 1000
-            \\    s = s + i
-            \\    i = i + 1
-            \\later: i64 = (x: i64)
-            \\    x + 1
             \\print(s)
             \\
             ,
@@ -1905,6 +2063,9 @@ test "loop_closure: the module path declines, by reason, and never moves the ans
         declined += 1;
     }
     // The count is the coverage claim, and it is asserted so that deleting a
-    // row is a failure rather than a quiet reduction.
-    try testing.expectEqual(@as(u32, 7), declined);
+    // row is a failure rather than a quiet reduction. The eighth row -- "W5
+    // would move a statement" -- was removed because its shape now CLOSES via
+    // the multi-target store; its coverage moved to the W5 multi-store test
+    // above, which asserts the same program's answer is untouched.
+    try testing.expectEqual(@as(u32, 6), declined);
 }
