@@ -20329,15 +20329,31 @@ fn divisorSign(
     rhs: *const ast.Expr,
 ) dnir.DivisorSign {
     if (f64_op) return .unknown;
-    if (tag != .idiv and tag != .mod) return .unknown;
+    // `.div` (floored `/`) joins `.idiv`/`.mod` here: the zero guard this
+    // lowering emits for every non-f64 division (`requiresNonzeroDivisor`)
+    // refuses zero on the path, so a proved-non-negative divisor is proved
+    // POSITIVE, which is what the cheap floored correction needs. The guard
+    // is emitted above, before this question is asked.
+    if (tag != .div and tag != .idiv and tag != .mod) return .unknown;
     if (floorFixupForced()) return .unknown;
-    const relation = ctx.function orelse return .unknown;
+    const relation = ctx.function orelse return divisorSignModule(ctx, rhs);
+    // At module scope the lowerer sets a non-callable relation id; the module
+    // column answers there.
+    if (!ctx.graph.callable(relation)) return divisorSignModule(ctx, rhs);
     if (rhs.* == .name) {
         const subject = ctx.graph.bindingNamedIn(relation, rhs.name.ident) orelse return .unknown;
         if (ctx.graph.nonNegativeWidth(subject) == null) return .unknown;
         return .{ .binding = subject };
     }
     const width = ctx.graph.nonNegativeWidthOfExpr(relation, rhs) orelse return .unknown;
+    return .{ .derived = width };
+}
+
+/// Module-scope divisor: no callable relation exists, so the module column
+/// answers through `nonNegativeWidthOfExprModule`. The relation path above is
+/// unchanged.
+fn divisorSignModule(ctx: *LowerCtx, rhs: *const ast.Expr) dnir.DivisorSign {
+    const width = ctx.graph.nonNegativeWidthOfExprModule(rhs) orelse return .unknown;
     return .{ .derived = width };
 }
 
