@@ -2986,6 +2986,15 @@ const Arm64Compiler = struct {
                                 else => {},
                             }
                         }
+                        // The floored-magic multiplier is a pure function of the
+                        // literal divisor and appears nowhere in dnir, so the
+                        // operand scan above never plans it. Same admission as
+                        // the emitter (magicFlooredDivisor), so plan and emission
+                        // cannot disagree on which divisors get a hoisted magic.
+                        if (ins.op == .binop and (ins.binop == .div or ins.binop == .idiv or ins.binop == .mod) and ins.rhs == .i64) {
+                            const k: i64 = ins.rhs.i64;
+                            if (magicFlooredDivisor(k)) |mg| self.considerHoist(&plan, mg.m);
+                        }
                     }
                     idx += 1;
                     if (idx > latch) break :scan;
@@ -7262,15 +7271,41 @@ const Arm64Compiler = struct {
         // this sequence, and the next `ensureRegLive(dst)` would reload that
         // over the quotient written below. Excluding it is free; it is the
         // last write of the sequence and never a source.
-        const rm = try self.allocRegExcluding(dst);
-        try self.emitMovImm(rm, mg.m);
+        // A loop-invariant magic multiplier already sits in a reserved
+        // preheader register (planImmHoist plans it); reuse it instead of
+        // re-materializing the mov/movk chain every iteration. The divisor k
+        // is planned as an ordinary .i64 operand. A missed plan falls back
+        // to the inline mov. Hoisted registers are marked homes, so the
+        // releaseReg calls below are no-ops on them, and dst can never name
+        // one (local homes predate the preheader allocation; later
+        // allocations skip homes).
+        const rm: u5 = blk: {
+            if (self.hoist_depth > 0) {
+                if (self.imm_hoist.get(mg.m)) |hr| {
+                    try self.ensureRegLive(hr);
+                    break :blk hr;
+                }
+            }
+            const r = try self.allocRegExcluding(dst);
+            try self.emitMovImm(r, mg.m);
+            break :blk r;
+        };
         const rt = try self.allocRegExcluding(dst);
         try self.emitSmulhReg(rt, rm, lhs);
         self.releaseReg(rm);
         if (mg.add_dividend) try self.emitAddReg(rt, rt, lhs);
         if (mg.shift > 0) try self.emitAsrImm(rt, rt, mg.shift);
-        const rd = try self.allocRegExcluding(dst);
-        try self.emitMovImm(rd, k);
+        const rd: u5 = blk: {
+            if (self.hoist_depth > 0) {
+                if (self.imm_hoist.get(k)) |hr| {
+                    try self.ensureRegLive(hr);
+                    break :blk hr;
+                }
+            }
+            const r = try self.allocRegExcluding(dst);
+            try self.emitMovImm(r, k);
+            break :blk r;
+        };
         const rv = try self.allocRegExcluding(dst);
         try self.emitMsubReg(rv, rt, rd, lhs);
         try self.emitCmpReg(rv, rd);
