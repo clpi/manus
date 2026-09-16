@@ -83,7 +83,10 @@ main: i64 = ()
     print(chomp(selferr))
   if selfrc != "0"
     gatecap("rm -rf " .. work)
-    return chomp(selfrc):to(i64)
+    code = chomp(selfrc):to(i64)
+    if code != 0
+      return code
+    return refuse("no exit code from {emit} --selftest")
   if !linehasprefix(selfout, "grammar projection control: PASS")
     gatecap("rm -rf " .. work)
     return refuse(emit .. " --selftest exited 0 without reporting a control verdict — a silent control refused nothing")
@@ -96,7 +99,10 @@ main: i64 = ()
     print(chomp(checkerr))
   if checkrc != "0"
     gatecap("rm -rf " .. work)
-    return chomp(checkrc):to(i64)
+    code = chomp(checkrc):to(i64)
+    if code != 0
+      return code
+    return refuse("no exit code from {emit} --check")
   want1 = "grammar projection: " .. zigout .. " regenerates byte-identically"
   want2 = "grammar projection: " .. idout .. " regenerates byte-identically"
   if findline("\n" .. checkout, want1, 1) == 0
