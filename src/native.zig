@@ -12780,6 +12780,40 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         try self.emitSdivReg(q_t, x, d);
         const rem = try self.allocRegExcluding(q_t);
         try self.emitMsubReg(rem, q_t, d, x);
+        // CORRECTION-FREE DIVMOD: the dividend is proved non-negative and
+        // the divisor is proved non-negative (the zero trap fires
+        // separately, so the divisor is positive on the fall-through).
+        // Truncation equals floor, so the truncated quotient IS the floored
+        // quotient and the msub residual IS the floored remainder: the
+        // add/cmp/csel fixups can never fire. Same proof
+        // `emitFlooredDivRem` uses for its bare-sdiv path. Severed by
+        // IDOL_DIVMOD_REMCORR_OFF=1.
+        const no_remcorr = div_ins.dividend.proved() and div_ins.divisor.proved() and
+            std.c.getenv("IDOL_DIVMOD_REMCORR_OFF") == null;
+        if (no_remcorr) {
+            var q_dst: u5 = 0;
+            if (!q_dead) {
+                q_dst = q_t;
+                _ = try self.emitNarrowFit(q_dst, q_dst, div_ins.ty);
+                try temps.put(self.alloc, t_q, q_dst);
+            } else {
+                self.releaseReg(q_t);
+            }
+            const d_dst = rem;
+            _ = try self.emitNarrowFit(d_dst, d_dst, sub_ins.ty);
+            if (x_held) self.gp_reg_owner[x] = null;
+            if (d_held) self.gp_reg_owner[d] = null;
+            if (x != d_dst and (q_dead or x != q_dst) and !Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
+            if (d != d_dst and !Arm64Compiler.regIsPinned(pinned, d)) self.releaseReg(d);
+            try temps.put(self.alloc, t_d, d_dst);
+            if (d_dst >= 9 and d_dst < 29 and d_dst != platform_reserved_reg and !self.gp_home_regs[d_dst]) {
+                self.gp_reg_owner[d_dst] = t_d;
+            }
+            if (!q_dead) {
+                try self.compileDnirInstr(temps, pinned, st_q, branch_patches, null, flat_idx + 1);
+            }
+            return;
+        }
         const rp = try self.allocRegExcluding(q_t);
         try self.emitAddReg(rp, rem, d);
         try self.emitCmpZero(rem);
