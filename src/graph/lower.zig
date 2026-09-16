@@ -7055,6 +7055,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                         try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
                         break :ordinary;
                     }
+                    if (try lowerSatAddCountedWhile(ctx, ws, plan)) {
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
+                        break :ordinary;
+                    }
                     if (try lowerCountedWhile(ctx, ws, plan)) |cr| {
                         try finishWhileLowering(ctx, cr.latch_fail, promo[0..promo_len], cr.wb_idx, &.{});
                         break :ordinary;
@@ -10662,6 +10666,359 @@ fn lowerDigitSumCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Err
     try ctx.emit(.{ .op = .store_local, .result = j_slot, .lhs = .{ .i64 = kval }, .ty = .i64 });
     try ctx.emit(.{ .op = .store_local, .result = q_slot, .lhs = .{ .i64 = x_final }, .ty = .i64 });
     try ctx.emit(.{ .op = .store_local, .result = d_slot, .lhs = .{ .i64 = @intCast(d_final) }, .ty = .i64 });
+    return true;
+}
+
+fn satAddMaskBits(mask: i64) ?u6 {
+    if (mask <= 0) return null;
+    const m: u128 = @intCast(mask);
+    const mp1: u128 = m + 1;
+    if ((mp1 & m) != 0) return null;
+    if (mp1 > (@as(u128, 1) << 62)) return null;
+    return @intCast(@ctz(mp1));
+}
+
+fn satAddCeilDiv(p: i128, q: i128) i128 {
+    return -@divFloor(-p, q);
+}
+
+fn satAddClosedForm(n: i64, A: i64, B: i64, C: i64, D: i64, K0: i64, k: u6) ?i64 {
+    if (K0 == 0) return 0;
+    const M: u128 = @as(u128, 1) << k;
+    const Mi: i128 = @intCast(M);
+    const n128: i128 = n;
+    const A128: i128 = A;
+    const K128: i128 = K0;
+    const kk: i128 = @min(K128, Mi);
+    const jmax: i128 = @divFloor(A128 * (n128 - 1) + @as(i128, C), Mi);
+    const per_j: i128 = @divTrunc(kk - 1, A128) + 2;
+    if ((jmax + 1) * per_j > 50_000_000) return null;
+    var E: u128 = 0;
+    var j: i128 = 0;
+    while (j <= jmax) : (j += 1) {
+        const jm: i128 = j * Mi;
+        const base: i128 = jm - @as(i128, C);
+        const lo: i128 = @max(satAddCeilDiv(base, A128), 0);
+        const hi: i128 = @min(@divFloor(base + kk - 1, A128), n128 - 1);
+        var o: i128 = lo;
+        while (o <= hi) : (o += 1) {
+            const f: i128 = A128 * o + @as(i128, C) - jm;
+            if (f < 0 or f >= kk) return null;
+            const g: u128 = ((@as(u128, @intCast(B)) * @as(u128, @intCast(o))) + @as(u128, @intCast(D))) % M;
+            const Ku: u128 = @intCast(K0);
+            const fu: u128 = @intCast(f);
+            if (fu + g < Ku) E += Ku - fu - g;
+        }
+    }
+    const total: u128 = @as(u128, @intCast(n)) * @as(u128, @intCast(K0)) - E;
+    if (total > @as(u128, std.math.maxInt(i64))) return null;
+    return @intCast(total);
+}
+
+fn satAddAffineParts(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt, iv: []const u8) ?struct { name: []const u8, coef: i64, cst: i64 } {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const name = identOf(a.targets[0]) orelse return null;
+    const bo = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .add) return null;
+    if (mulByLit(graph, bo.lhs, iv)) |coef| {
+        const cst = graph.exactI64OfExpr(bo.rhs) orelse return null;
+        return .{ .name = name, .coef = coef, .cst = cst };
+    }
+    if (mulByLit(graph, bo.rhs, iv)) |coef| {
+        const cst = graph.exactI64OfExpr(bo.lhs) orelse return null;
+        return .{ .name = name, .coef = coef, .cst = cst };
+    }
+    return null;
+}
+
+fn satAddMaskOf(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt, name: []const u8) ?i64 {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const tgt = identOf(a.targets[0]) orelse return null;
+    if (!std.mem.eql(u8, tgt, name)) return null;
+    const bo = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .band) return null;
+    const lhs = identOf(bo.lhs) orelse return null;
+    if (!std.mem.eql(u8, lhs, name)) return null;
+    return graph.exactI64OfExpr(bo.rhs);
+}
+
+fn satAddSumName(st: *const ast.Stmt, aname: []const u8, bname: []const u8) ?[]const u8 {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const tgt = identOf(a.targets[0]) orelse return null;
+    const bo = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .add) return null;
+    const l = identOf(bo.lhs) orelse return null;
+    const r = identOf(bo.rhs) orelse return null;
+    const ab = std.mem.eql(u8, l, aname) and std.mem.eql(u8, r, bname);
+    const ba = std.mem.eql(u8, l, bname) and std.mem.eql(u8, r, aname);
+    if (!ab and !ba) return null;
+    return tgt;
+}
+
+fn satAddDenIsOnePlus(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, name: []const u8) bool {
+    const bo = switch (e.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (bo.op != .add) return false;
+    const l = identOf(bo.lhs);
+    const r = identOf(bo.rhs);
+    const lo = graph.exactI64OfExpr(bo.lhs);
+    const ro = graph.exactI64OfExpr(bo.rhs);
+    const lr = l != null and std.mem.eql(u8, l.?, name) and ro == @as(?i64, 1);
+    const rl = r != null and std.mem.eql(u8, r.?, name) and lo == @as(?i64, 1);
+    return lr or rl;
+}
+
+fn satAddDivParts(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt, sname: []const u8) ?struct { qname: []const u8, k1: i64 } {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const qname = identOf(a.targets[0]) orelse return null;
+    const bo = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .div) return null;
+    const k1 = graph.exactI64OfExpr(bo.lhs) orelse return null;
+    if (!satAddDenIsOnePlus(graph, bo.rhs, sname)) return null;
+    return .{ .qname = qname, .k1 = k1 };
+}
+
+fn satAddIsBigName(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt, qname: []const u8) ?[]const u8 {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const bigname = identOf(a.targets[0]) orelse return null;
+    const bo = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .div) return null;
+    if (graph.exactI64OfExpr(bo.lhs) != @as(?i64, 1)) return null;
+    if (!satAddDenIsOnePlus(graph, bo.rhs, qname)) return null;
+    return bigname;
+}
+
+fn satAddOneMinus(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, bigname: []const u8) bool {
+    const bo = switch (e.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (bo.op != .sub) return false;
+    if (graph.exactI64OfExpr(bo.lhs) != @as(?i64, 1)) return false;
+    const r = identOf(bo.rhs) orelse return false;
+    return std.mem.eql(u8, r, bigname);
+}
+
+fn satAddKeepTerm(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, sname: []const u8, bigname: []const u8) bool {
+    const bo = switch (e.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (bo.op != .mul) return false;
+    const l_is_s = if (identOf(bo.lhs)) |l| std.mem.eql(u8, l, sname) else false;
+    const r_is_s = if (identOf(bo.rhs)) |r| std.mem.eql(u8, r, sname) else false;
+    return (l_is_s and satAddOneMinus(graph, bo.rhs, bigname)) or
+        (r_is_s and satAddOneMinus(graph, bo.lhs, bigname));
+}
+
+fn satAddCapTerm(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr, bigname: []const u8) ?i64 {
+    const bo = switch (e.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .mul) return null;
+    const l_is_b = if (identOf(bo.lhs)) |l| std.mem.eql(u8, l, bigname) else false;
+    const r_is_b = if (identOf(bo.rhs)) |r| std.mem.eql(u8, r, bigname) else false;
+    if (l_is_b) return graph.exactI64OfExpr(bo.rhs);
+    if (r_is_b) return graph.exactI64OfExpr(bo.lhs);
+    return null;
+}
+
+fn satAddSatParts(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt, sname: []const u8, bigname: []const u8) ?i64 {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const tgt = identOf(a.targets[0]) orelse return null;
+    if (!std.mem.eql(u8, tgt, sname)) return null;
+    const bo = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (bo.op != .add) return null;
+    if (satAddKeepTerm(graph, bo.lhs, sname, bigname)) return satAddCapTerm(graph, bo.rhs, bigname);
+    if (satAddKeepTerm(graph, bo.rhs, sname, bigname)) return satAddCapTerm(graph, bo.lhs, bigname);
+    return null;
+}
+
+fn lowerSatAddCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    const n = plan.bound_lit orelse return false;
+    if (n < 1) return false;
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .lt) return false;
+    const iv = identOf(b.lhs) orelse return false;
+    if (!std.mem.eql(u8, iv, plan.iv)) return false;
+    if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return false;
+
+    const bstmts = ws.body.stmts;
+    if (bstmts.len != 10 or ws.body.tail_expr != null) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &bstmts[9], iv)) return false;
+
+    const ap = satAddAffineParts(ctx.graph, &bstmts[0], iv) orelse return false;
+    if (ap.coef < 1 or ap.cst < 0) return false;
+    const aname = ap.name;
+    const A = ap.coef;
+    const C = ap.cst;
+
+    const mask_a = satAddMaskOf(ctx.graph, &bstmts[1], aname) orelse return false;
+    const k = satAddMaskBits(mask_a) orelse return false;
+
+    const bp = satAddAffineParts(ctx.graph, &bstmts[2], iv) orelse return false;
+    if (bp.coef < 0 or bp.cst < 0) return false;
+    const bname = bp.name;
+    const B = bp.coef;
+    const D = bp.cst;
+
+    const mask_b = satAddMaskOf(ctx.graph, &bstmts[3], bname) orelse return false;
+    if (mask_b != mask_a) return false;
+
+    const sname = satAddSumName(&bstmts[4], aname, bname) orelse return false;
+
+    const dp = satAddDivParts(ctx.graph, &bstmts[5], sname) orelse return false;
+    const qname = dp.qname;
+    const K1 = dp.k1;
+
+    const bigname = satAddIsBigName(ctx.graph, &bstmts[6], qname) orelse return false;
+
+    const K0 = satAddSatParts(ctx.graph, &bstmts[7], sname, bigname) orelse return false;
+    if (K0 < 0 or K0 == std.math.maxInt(i64)) return false;
+    if (K1 != K0 + 1) return false;
+
+    const tname: []const u8 = blk: {
+        const a = switch (bstmts[8]) {
+            .assign => |x| x,
+            else => return false,
+        };
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const tgt = identOf(a.targets[0]) orelse return false;
+        const bo = switch (a.values[0].*) {
+            .binop => |x| x,
+            else => return false,
+        };
+        if (bo.op != .add) return false;
+        const l = identOf(bo.lhs) orelse return false;
+        const r = identOf(bo.rhs) orelse return false;
+        const cand: []const u8 = if (std.mem.eql(u8, l, sname))
+            r
+        else if (std.mem.eql(u8, r, sname))
+            l
+        else
+            return false;
+        if (!std.mem.eql(u8, tgt, cand)) return false;
+        break :blk cand;
+    };
+
+    const names = [_][]const u8{ iv, aname, bname, sname, qname, bigname, tname };
+    for (names, 0..) |x, i| {
+        for (names[0..i]) |y| {
+            if (std.mem.eql(u8, x, y)) return false;
+        }
+    }
+
+    const M: u128 = @as(u128, 1) << k;
+    const max_a: i128 = @as(i128, A) * @as(i128, n - 1) + @as(i128, C);
+    if (max_a > @as(i128, std.math.maxInt(i64))) return false;
+    const max_b: i128 = @as(i128, B) * @as(i128, n - 1) + @as(i128, D);
+    if (max_b > @as(i128, std.math.maxInt(i64))) return false;
+
+    const total = satAddClosedForm(n, A, B, C, D, K0, k) orelse return false;
+
+    const nm1: u128 = @intCast(n - 1);
+    const a_final: i64 = @intCast((@as(u128, @intCast(A)) * nm1 + @as(u128, @intCast(C))) % M);
+    const b_final: i64 = @intCast((@as(u128, @intCast(B)) * nm1 + @as(u128, @intCast(D))) % M);
+    const s_raw: u128 = @as(u128, @intCast(a_final)) + @as(u128, @intCast(b_final));
+    const Ku: u128 = @intCast(K0);
+    const s_final: i64 = @intCast(@min(s_raw, Ku));
+    const q_final: i64 = @intCast((Ku + 1) / (s_raw + 1));
+    const isbig_final: i64 = if (q_final == 0) 1 else 0;
+
+    const t_slot = ctx.locals.get(tname) orelse return false;
+    const iv_slot = ctx.locals.get(iv) orelse return false;
+    const a_slot = blk: {
+        if (ctx.locals.get(aname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, aname), s);
+        break :blk s;
+    };
+    const b_slot = blk: {
+        if (ctx.locals.get(bname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, bname), s);
+        break :blk s;
+    };
+    const s_slot = blk: {
+        if (ctx.locals.get(sname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, sname), s);
+        break :blk s;
+    };
+    const q_slot = blk: {
+        if (ctx.locals.get(qname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, qname), s);
+        break :blk s;
+    };
+    const isbig_slot = blk: {
+        if (ctx.locals.get(bigname)) |s| break :blk s;
+        const s = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, bigname), s);
+        break :blk s;
+    };
+
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    {
+        const cur: dnir.Value = .{ .local = t_slot };
+        const sum = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = cur, .rhs = .{ .i64 = total }, .ty = .i64 });
+        try ctx.emit(.{ .op = .store_local, .result = t_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
+    }
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = .{ .i64 = n }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = a_slot, .lhs = .{ .i64 = a_final }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = b_slot, .lhs = .{ .i64 = b_final }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = s_slot, .lhs = .{ .i64 = s_final }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = q_slot, .lhs = .{ .i64 = q_final }, .ty = .i64 });
+    try ctx.emit(.{ .op = .store_local, .result = isbig_slot, .lhs = .{ .i64 = isbig_final }, .ty = .i64 });
     return true;
 }
 
