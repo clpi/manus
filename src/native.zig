@@ -4088,6 +4088,11 @@ const Arm64Compiler = struct {
         // latch exactly. Read once per function; the emission loop must
         // not pay a libc call per instruction.
         const latch_fuse_off = std.c.getenv("IDOL_COUNTDOWN_LATCH_OFF") != null;
+        // Severing control for the madd shift-add strength reduction below:
+        // IDOL_MADD_SHIFTADD_OFF=1 restores the stock madd emission exactly.
+        // Read once per function; the emission loop must not pay a libc call
+        // per instruction.
+        const madd_shiftadd_off = std.c.getenv("IDOL_MADD_SHIFTADD_OFF") != null;
         for (f.blocks) |b| {
             var bi: usize = 0;
             while (bi < b.instrs.len) : (bi += 1) {
@@ -4203,7 +4208,7 @@ const Arm64Compiler = struct {
                     extra_consumed = 2;
                 } else if (fuse_madd) {
                     const after_madd = if (bi + 2 < b.instrs.len) b.instrs[bi + 2] else null;
-                    try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1], after_madd);
+                    try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1], after_madd, madd_shiftadd_off);
                     extra_consumed = 1;
                 } else if (fuse_ubfx) {
                     try self.emitFusedUbfx(&temps, &pinned, ins, b.instrs[bi + 1]);
@@ -7096,6 +7101,20 @@ const Arm64Compiler = struct {
     /// `add d, x, x, lsl #sh` (k = 2^sh + 1), or the negated shift for
     /// `sub d, x, x, lsl #sh` (k = -(2^sh - 1)). Proofs in
     /// research/wsuperopt/proofs/mul_const_*. Each beats mov+mul by 1 insn.
+    /// `k = 2^sh - 1` (7, 15, 31, 63): `lsl tmp, x, #sh` then
+    /// `sub tmp, tmp, x` computes `x*k` exactly mod 2^64 by ring arithmetic.
+    /// Used for the madd strength reduction where the 3-cycle latency still
+    /// beats madd's 4 on loop-carried recurrences.
+    fn sevenLikeShift(k: i64) ?u6 {
+        return switch (k) {
+            7 => 3,
+            15 => 4,
+            31 => 5,
+            63 => 6,
+            else => null,
+        };
+    }
+
     fn mulShiftAddShift(k: i64) ?struct { sh: u6, neg: bool } {
         return switch (k) {
             3 => .{ .sh = 1, .neg = false },
@@ -12546,8 +12565,31 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         ins: dnir.Instr,
         nx: dnir.Instr,
         after: ?dnir.Instr,
+        shiftadd_off: bool,
     ) Error!void {
         const t = ins.result.?;
+        // Strength reduction: when the multiply is by a Z3-verified shift-add
+        // constant, the shift-add + add sequence (2-cycle latency) beats madd
+        // (4-cycle latency) on loop-carried recurrences. The madd fusion was
+        // stealing these from the shift-add path.
+        if (!shiftadd_off and !wForm32(nx.ty, .add)) {
+            const k: ?i64 = switch (ins.lhs) {
+                .i64 => |v| switch (ins.rhs) {
+                    .i64 => null,
+                    else => v,
+                },
+                else => switch (ins.rhs) {
+                    .i64 => |v| v,
+                    else => null,
+                },
+            };
+            if (k) |kk| {
+                if (mulShiftAddShift(kk) != null or sevenLikeShift(kk) != null) {
+                    try self.emitShiftAddMulAdd(temps, pinned, ins, nx, after, kk);
+                    return;
+                }
+            }
+        }
         const a = try self.evalDnirValue(temps, ins.lhs);
         const b = try self.evalDnirValue(temps, ins.rhs);
         const acc_val = if (nx.lhs == .temp and nx.lhs.temp == t) nx.rhs else nx.lhs;
@@ -12582,6 +12624,60 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         }
         if (a != dst and !Arm64Compiler.regIsPinned(pinned, a)) self.releaseReg(a);
         if (b != dst and !Arm64Compiler.regIsPinned(pinned, b)) self.releaseReg(b);
+        if (c != dst and !Arm64Compiler.regIsPinned(pinned, c)) self.releaseReg(c);
+        const d = nx.result.?;
+        try temps.put(self.alloc, d, dst);
+        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
+            self.gp_reg_owner[dst] = d;
+        }
+    }
+
+    /// Emit `D = x*k + c` for a Z3-verified shift-add constant k as
+    /// `add/sub tmp, x, x, lsl #sh` then `add dst, tmp, c`, instead of madd.
+    /// The 2-cycle latency (vs madd's 4) wins on loop-carried recurrences.
+    /// Exact: the shift-add is proved `== x*k` mod 2^64, and `+c` is exact;
+    /// both ops are low-32 closed so the inherited narrow refit is preserved.
+    fn emitShiftAddMulAdd(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+        nx: dnir.Instr,
+        after: ?dnir.Instr,
+        k: i64,
+    ) Error!void {
+        const t = ins.result.?;
+        const x_val = switch (ins.lhs) {
+            .i64 => ins.rhs,
+            else => ins.lhs,
+        };
+        const x = try self.evalDnirValue(temps, x_val);
+        const acc_val = if (nx.lhs == .temp and nx.lhs.temp == t) nx.rhs else nx.lhs;
+        const c = try self.evalDnirValue(temps, acc_val);
+        // Same home logic as the madd path: the result may feed a store_local.
+        const home = self.maddStoreHome(temps, pinned, nx, after);
+        const dst = home orelse try self.allocReg();
+        if (home != null) self.claimReg(dst);
+        // Fresh intermediate: x, c, dst are all live, so allocReg cannot
+        // return any of them; the two-instruction sequence is aliasing-safe
+        // by construction (tmp is written once, read once, then released).
+        const tmp = try self.allocReg();
+        // k = 2^sh + 1: single shift-add (Z3-verified). k = 2^sh - 1:
+        // lsl + sub, exact by ring arithmetic ((x<<sh) - x = x*(2^sh-1)).
+        if (mulShiftAddShift(k)) |sa| {
+            if (sa.neg) {
+                try self.emitSubLslReg(tmp, x, x, sa.sh);
+            } else {
+                try self.emitAddLslReg(tmp, x, x, sa.sh);
+            }
+        } else if (sevenLikeShift(k)) |sh| {
+            try self.emitLslImm(tmp, x, sh);
+            try self.emitSubReg(tmp, tmp, x);
+        } else unreachable;
+        try self.emitAddReg(dst, tmp, c);
+        _ = try self.emitNarrowFit(dst, dst, nx.ty);
+        self.releaseReg(tmp);
+        if (x != dst and !Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
         if (c != dst and !Arm64Compiler.regIsPinned(pinned, c)) self.releaseReg(c);
         const d = nx.result.?;
         try temps.put(self.alloc, d, dst);
