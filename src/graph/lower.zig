@@ -7055,6 +7055,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                         try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
                         break :ordinary;
                     }
+                    if (try lowerQuadMaskSumCountedWhile(ctx, ws, plan)) {
+                        try finishWhileLowering(ctx, null, promo[0..promo_len], null, &.{});
+                        break :ordinary;
+                    }
                     if (try lowerCountedWhile(ctx, ws, plan)) |cr| {
                         try finishWhileLowering(ctx, cr.latch_fail, promo[0..promo_len], cr.wb_idx, &.{});
                         break :ordinary;
@@ -9077,6 +9081,7 @@ const CountedPlan = struct {
     stmt: *const ast.Stmt,
     /// The induction variable name.
     iv: []const u8,
+    iv_init: i64 = 0,
     /// Bound when it is a literal (proven >= 0 by the graph's exact-i64 fact).
     bound_lit: ?i64,
     /// Bound when it is a name (proven non-negative by the width transfer).
@@ -9524,11 +9529,11 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
             }
         }
     }
-    // The induction variable starts at exactly 0 in the immediately preceding
-    // statement.
     if (at == 0) return;
-    if (literalBindingOf(ctx.graph, &stmts[at - 1], iv) != @as(?i64, 0)) return;
+    const iv_init = literalBindingOf(ctx.graph, &stmts[at - 1], iv) orelse return;
+    if (iv_init < 0) return;
     var plan = CountedPlan{ .stmt = st, .iv = iv, .bound_lit = null, .bound_name = null, .direct_acc = null };
+    plan.iv_init = iv_init;
     if (ctx.graph.exactI64OfExpr(b.rhs)) |n| {
         if (n < 0) return;
         plan.bound_lit = n;
@@ -9549,12 +9554,11 @@ fn tryArmCountedLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) void {
         plan.nested_triangular = nestedTriangularParts(ctx, ws, iv, plan.bound_lit);
     }
     if (plan.bound_lit) |bl| {
-        if (selfMapLoopProven(ctx, stmts, at, ws, iv, bl, &plan)) plan.self_map = true;
+        if (plan.iv_init == 0 and selfMapLoopProven(ctx, stmts, at, ws, iv, bl, &plan)) plan.self_map = true;
     }
     // Absorbing fixed-point early exit (fixExitProven): only for literal
     // bounds, so the trip count cannot change under the loop. Moot when the
-    // self-map proof already deleted the loop.
-    if (plan.bound_lit != null and !plan.self_map) {
+    if (plan.bound_lit != null and !plan.self_map and plan.iv_init == 0) {
         plan.fix_exit = fixExitProven(ctx, stmts, at, st, ws, iv);
     }
     ctx.counted_plan = plan;
@@ -10303,6 +10307,7 @@ fn lowerSelfMapCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Erro
 /// to the countdown (or the ordinary loop). The bound's non-negativity is
 /// established by the plan arming.
 fn lowerDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    if (plan.iv_init != 0) return false;
     const b = switch (ws.cond.*) {
         .binop => |x| x,
         else => return false,
@@ -10440,6 +10445,7 @@ fn accAddNames(st: *const ast.Stmt, lhs_name: []const u8, rhs_name: []const u8) 
 }
 
 fn lowerDigitSumCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    if (plan.iv_init != 0) return false;
     const n = plan.bound_lit orelse return false;
     if (n < 1) return false;
     const b = switch (ws.cond.*) {
@@ -10664,6 +10670,326 @@ fn lowerDigitSumCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Err
     try ctx.emit(.{ .op = .store_local, .result = d_slot, .lhs = .{ .i64 = @intCast(d_final) }, .ty = .i64 });
     return true;
 }
+const QmsAffine = struct { a: i64, b: i64 };
+
+fn qmsAbs128(x: i128) i128 {
+    return if (x < 0) -x else x;
+}
+
+fn qmsCkAdd(a: i128, b: i128) ?i128 {
+    const r = @addWithOverflow(a, b);
+    if (r[1] != 0) return null;
+    return r[0];
+}
+
+fn qmsCkSub(a: i128, b: i128) ?i128 {
+    const r = @subWithOverflow(a, b);
+    if (r[1] != 0) return null;
+    return r[0];
+}
+
+fn qmsCkMul(a: i128, b: i128) ?i128 {
+    const r = @mulWithOverflow(a, b);
+    if (r[1] != 0) return null;
+    return r[0];
+}
+
+fn qmsScaledIv(ctx: *LowerCtx, e: *const ast.Expr, iv: []const u8) ?i64 {
+    if (identOf(e)) |nm| {
+        if (std.mem.eql(u8, nm, iv)) return 1;
+        return null;
+    }
+    const b = switch (e.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op != .mul) return null;
+    if (identOf(b.lhs)) |l| {
+        if (std.mem.eql(u8, l, iv)) return ctx.graph.exactI64OfExpr(b.rhs);
+    }
+    if (identOf(b.rhs)) |r| {
+        if (std.mem.eql(u8, r, iv)) return ctx.graph.exactI64OfExpr(b.lhs);
+    }
+    return null;
+}
+
+fn qmsFactor(ctx: *LowerCtx, e: *const ast.Expr, iv: []const u8) ?QmsAffine {
+    if (qmsScaledIv(ctx, e, iv)) |a| return .{ .a = a, .b = 0 };
+    if (ctx.graph.exactI64OfExpr(e)) |lit| return .{ .a = 0, .b = lit };
+    switch (e.*) {
+        .unop => |u| {
+            if (u.op != .neg) return null;
+            const f = qmsFactor(ctx, u.operand, iv) orelse return null;
+            const na = @subWithOverflow(@as(i64, 0), f.a);
+            if (na[1] != 0) return null;
+            const nb = @subWithOverflow(@as(i64, 0), f.b);
+            if (nb[1] != 0) return null;
+            return .{ .a = na[0], .b = nb[0] };
+        },
+        .binop => |b| {
+            if (b.op != .add and b.op != .sub) return null;
+            const sgn: i64 = if (b.op == .add) 1 else -1;
+            if (qmsScaledIv(ctx, b.lhs, iv)) |a| {
+                const lit = ctx.graph.exactI64OfExpr(b.rhs) orelse return null;
+                const bb = @mulWithOverflow(lit, sgn);
+                if (bb[1] != 0) return null;
+                return .{ .a = a, .b = bb[0] };
+            }
+            if (b.op == .add) {
+                if (qmsScaledIv(ctx, b.rhs, iv)) |a| {
+                    const lit = ctx.graph.exactI64OfExpr(b.lhs) orelse return null;
+                    return .{ .a = a, .b = lit };
+                }
+                return null;
+            }
+            if (qmsScaledIv(ctx, b.rhs, iv)) |a| {
+                const lit = ctx.graph.exactI64OfExpr(b.lhs) orelse return null;
+                const na = @subWithOverflow(@as(i64, 0), a);
+                if (na[1] != 0) return null;
+                return .{ .a = na[0], .b = lit };
+            }
+            return null;
+        },
+        else => return null,
+    }
+}
+
+const QmsQuad = struct { a1: i64, b1: i64, a2: i64, b2: i64 };
+
+fn qmsQShape(ctx: *LowerCtx, e: *const ast.Expr, iv: []const u8) ?QmsQuad {
+    const b = switch (e.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op != .div) return null;
+    if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, 2)) return null;
+    const l = b.lhs;
+    switch (l.*) {
+        .binop => |lb| {
+            if (lb.op == .mul) {
+                const f1 = qmsFactor(ctx, lb.lhs, iv) orelse return null;
+                const f2 = qmsFactor(ctx, lb.rhs, iv) orelse return null;
+                return .{ .a1 = f1.a, .b1 = f1.b, .a2 = f2.a, .b2 = f2.b };
+            }
+        },
+        else => {},
+    }
+    const f = qmsFactor(ctx, l, iv) orelse return null;
+    return .{ .a1 = f.a, .b1 = f.b, .a2 = 0, .b2 = 1 };
+}
+
+fn qmsRShape(ctx: *LowerCtx, e: *const ast.Expr, iv: []const u8) ?i64 {
+    const b = switch (e.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op != .band) return null;
+    if (identOf(b.lhs)) |l| {
+        if (std.mem.eql(u8, l, iv)) {
+            const m = ctx.graph.exactI64OfExpr(b.rhs) orelse return null;
+            if (m < 0) return null;
+            return m;
+        }
+    }
+    if (identOf(b.rhs)) |r| {
+        if (std.mem.eql(u8, r, iv)) {
+            const m = ctx.graph.exactI64OfExpr(b.lhs) orelse return null;
+            if (m < 0) return null;
+            return m;
+        }
+    }
+    return null;
+}
+
+const QmsTerms = struct {
+    quad: ?QmsQuad = null,
+    qsign: i8 = 0,
+    mask: ?i64 = null,
+    rsign: i8 = 0,
+    tcount: u8 = 0,
+    tsign: i8 = 0,
+};
+
+fn qmsCollectTerm(ctx: *LowerCtx, e: *const ast.Expr, iv: []const u8, tname: []const u8, sign: i8, out: *QmsTerms) bool {
+    if (identOf(e)) |nm| {
+        if (!std.mem.eql(u8, nm, tname)) return false;
+        out.tcount += 1;
+        out.tsign += sign;
+        return true;
+    }
+    if (qmsQShape(ctx, e, iv)) |qq| {
+        if (out.quad != null) return false;
+        out.quad = qq;
+        out.qsign = sign;
+        return true;
+    }
+    if (qmsRShape(ctx, e, iv)) |m| {
+        if (out.mask != null) return false;
+        out.mask = m;
+        out.rsign = sign;
+        return true;
+    }
+    return false;
+}
+
+fn qmsCollect(ctx: *LowerCtx, e: *const ast.Expr, iv: []const u8, tname: []const u8, sign: i8, out: *QmsTerms) bool {
+    switch (e.*) {
+        .binop => |b| {
+            if (b.op == .add) {
+                return qmsCollect(ctx, b.lhs, iv, tname, sign, out) and
+                    qmsCollect(ctx, b.rhs, iv, tname, sign, out);
+            }
+            if (b.op == .sub) {
+                return qmsCollect(ctx, b.lhs, iv, tname, sign, out) and
+                    qmsCollect(ctx, b.rhs, iv, tname, -sign, out);
+            }
+            return qmsCollectTerm(ctx, e, iv, tname, sign, out);
+        },
+        .unop => |u| {
+            if (u.op == .neg) return qmsCollect(ctx, u.operand, iv, tname, -sign, out);
+            return qmsCollectTerm(ctx, e, iv, tname, sign, out);
+        },
+        else => return qmsCollectTerm(ctx, e, iv, tname, sign, out),
+    }
+}
+
+fn lowerQuadMaskSumCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    const n = plan.bound_lit orelse return false;
+    if (n < 1) return false;
+    const b = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .lt) return false;
+    const iv = identOf(b.lhs) orelse return false;
+    if (!std.mem.eql(u8, iv, plan.iv)) return false;
+    if (ctx.graph.exactI64OfExpr(b.rhs) != @as(?i64, n)) return false;
+
+    const bstmts = ws.body.stmts;
+    if (bstmts.len != 2 or ws.body.tail_expr != null) return false;
+    if (!stepIsIncrementOfOne(ctx.graph, &bstmts[1], iv)) return false;
+
+    const frames = ctx.enclosing.items;
+    if (frames.len == 0) return false;
+    const fr = frames[frames.len - 1];
+    if (&fr.block.stmts[fr.idx] != plan.stmt) return false;
+    const L = plan.iv_init;
+    if (L < 0 or L >= n) return false;
+
+    const acc = switch (bstmts[0]) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (acc.targets.len != 1 or acc.values.len != 1) return false;
+    const tname = identOf(acc.targets[0]) orelse return false;
+    if (std.mem.eql(u8, tname, iv)) return false;
+
+    var terms = QmsTerms{};
+    if (!qmsCollect(ctx, acc.values[0], iv, tname, 1, &terms)) return false;
+    if (terms.tcount != 1 or terms.tsign != 1) return false;
+    const q = terms.quad orelse return false;
+
+    const N: i128 = n;
+    const Li: i128 = L;
+    const nn: i128 = N - Li;
+    const cap42: i128 = @as(i128, 1) << 42;
+    if (nn <= 0 or nn > cap42) return false;
+    if (Li > cap42) return false;
+    const a1: i128 = q.a1;
+    const b1: i128 = q.b1;
+    const a2: i128 = q.a2;
+    const b2: i128 = q.b2;
+    if (qmsAbs128(a1) > (@as(i128, 1) << 32) or qmsAbs128(a2) > (@as(i128, 1) << 32)) return false;
+    const cap31: i128 = @as(i128, 1) << 31;
+    const f1cap = qmsCkAdd(qmsCkMul(qmsAbs128(a1), N - 1) orelse return false, qmsAbs128(b1)) orelse return false;
+    const f2cap = qmsCkAdd(qmsCkMul(qmsAbs128(a2), N - 1) orelse return false, qmsAbs128(b2)) orelse return false;
+    if (f1cap > cap31 or f2cap > cap31) return false;
+
+    const nn1 = nn - 1;
+    const tri_nn = qmsCkMul(nn, nn1) orelse return false;
+    const S1 = qmsCkAdd(qmsCkMul(nn, Li) orelse return false, @divExact(tri_nn, 2)) orelse return false;
+    const L2 = qmsCkMul(Li, Li) orelse return false;
+    const t_s2a = qmsCkMul(nn, L2) orelse return false;
+    const t_s2b = qmsCkMul(Li, tri_nn) orelse return false;
+    const sq_nn = qmsCkMul(tri_nn, 2 * nn - 1) orelse return false;
+    if (@rem(sq_nn, 6) != 0) return false;
+    const S2 = qmsCkAdd(qmsCkAdd(t_s2a, t_s2b) orelse return false, @divExact(sq_nn, 6)) orelse return false;
+
+    const A = qmsCkMul(a1, a2) orelse return false;
+    const B = qmsCkAdd(qmsCkMul(a1, b2) orelse return false, qmsCkMul(a2, b1) orelse return false) orelse return false;
+    const C = qmsCkMul(b1, b2) orelse return false;
+    const sumP = qmsCkAdd(
+        qmsCkAdd(qmsCkMul(A, S2) orelse return false, qmsCkMul(B, S1) orelse return false) orelse return false,
+        qmsCkMul(C, nn) orelse return false,
+    ) orelse return false;
+
+    const s: i128 = (qmsCkAdd(A, B) orelse return false) & 1;
+    const c: i128 = C & 1;
+    var par: i128 = 0;
+    if (s == 0) {
+        par = qmsCkMul(nn, c) orelse return false;
+    } else {
+        par = @divTrunc(nn, 2);
+        if ((nn & 1) == 1 and ((Li + c) & 1) == 1) {
+            par = qmsCkAdd(par, 1) orelse return false;
+        }
+    }
+    const sumP_par = qmsCkSub(sumP, par) orelse return false;
+    if ((sumP_par & 1) != 0) return false;
+    const sumQ = @divExact(sumP_par, 2);
+
+    var sumR: i128 = 0;
+    if (terms.mask) |M| {
+        if (M < 0 or M >= 65536) return false;
+        if (M != 0) {
+            const Mu: i128 = M;
+            var k: u7 = 0;
+            var mm = Mu;
+            while (mm > 0) : (mm >>= 1) {
+                k += 1;
+            }
+            const p2: i128 = @as(i128, 1) << k;
+            var per: i128 = 0;
+            var j: u7 = 0;
+            while (j < k) : (j += 1) {
+                if (((Mu >> j) & 1) == 1) {
+                    per = qmsCkAdd(per, qmsCkMul(@as(i128, 1) << j, @as(i128, 1) << (k - 1)) orelse return false) orelse return false;
+                }
+            }
+            const full = nn >> k;
+            const rem = nn & (p2 - 1);
+            var part: i128 = 0;
+            var tt: i128 = 0;
+            while (tt < rem) : (tt += 1) {
+                part += (Li + tt) & Mu;
+            }
+            sumR = qmsCkAdd(qmsCkMul(full, per) orelse return false, part) orelse return false;
+        }
+    }
+
+    var total = qmsCkMul(@as(i128, terms.qsign), sumQ) orelse return false;
+    if (terms.mask != null) {
+        const rterm = qmsCkMul(@as(i128, terms.rsign), sumR) orelse return false;
+        total = qmsCkAdd(total, rterm) orelse return false;
+    }
+    const total_i64: i64 = @truncate(total);
+
+    const t_slot = ctx.locals.get(tname) orelse return false;
+    const iv_slot = ctx.locals.get(iv) orelse return false;
+    if (!unrollPlainIntSlot(ctx, t_slot)) return false;
+    if (!unrollPlainIntSlot(ctx, iv_slot)) return false;
+
+    try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
+    {
+        const cur: dnir.Value = .{ .local = t_slot };
+        const sum = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = cur, .rhs = .{ .i64 = total_i64 }, .ty = .i64 });
+        try ctx.emit(.{ .op = .store_local, .result = t_slot, .lhs = .{ .temp = sum }, .ty = .i64 });
+    }
+    try ctx.emit(.{ .op = .store_local, .result = iv_slot, .lhs = .{ .i64 = n }, .ty = .i64 });
+    return true;
+}
+
 
 /// Emit the nested direct form for an armed plan: the nest
 ///
@@ -10757,6 +11083,7 @@ fn nameDeadAfterFold(ctx: *LowerCtx, name: []const u8, excl: *const ast.Stmt) bo
 }
 
 fn lowerNestedDirectCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!?NestedFoldLiveness {
+    if (plan.iv_init != 0) return null;
     const nd = plan.nested_direct orelse return null;
     const b = switch (ws.cond.*) {
         .binop => |x| x,
@@ -10877,6 +11204,7 @@ const NestedTriangularLiveness = struct {
 /// is emitted. Returns the fold liveness for the caller, or null to decline
 /// when the armed proof no longer holds.
 fn lowerNestedTriangularCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!?NestedTriangularLiveness {
+    if (plan.iv_init != 0) return null;
     const nt = plan.nested_triangular orelse return null;
     const body = ws.body.stmts;
     if (body.len != 5 or ws.body.tail_expr != null) return null;
