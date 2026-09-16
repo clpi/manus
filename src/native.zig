@@ -5023,7 +5023,7 @@ const Arm64Compiler = struct {
                         const irhs_held = self.holdReg(irhs, pinned);
                         const idst = preferred_result orelse try self.allocReg();
                         if (preferred_result != null) self.claimReg(idst);
-                        try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop, ins.ty, ins.divisor);
+                        try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop, ins.ty, ins.divisor, ins.dividend);
                         if (ilhs_held) self.gp_reg_owner[ilhs] = null;
                         if (irhs_held) self.gp_reg_owner[irhs] = null;
                         if (ilhs != idst and !Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
@@ -5102,7 +5102,7 @@ const Arm64Compiler = struct {
                     const rhs_held = self.holdReg(rhs, pinned);
                     const dst = preferred_result orelse try self.allocReg();
                     if (preferred_result != null) self.claimReg(dst);
-                    try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop, ins.ty, ins.divisor);
+                    try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop, ins.ty, ins.divisor, ins.dividend);
                     if (lhs_held) self.gp_reg_owner[lhs] = null;
                     if (rhs_held) self.gp_reg_owner[rhs] = null;
                     if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
@@ -6755,6 +6755,7 @@ const Arm64Compiler = struct {
         op: dnir.BinOpTag,
         ty: native_types.ResolvedType,
         divisor: dnir.DivisorSign,
+        dividend: dnir.DivisorSign,
     ) Error!void {
         if (comparisonCondition(op)) |condition| {
             try self.emitCompareResult(dst, lhs, rhs, condition);
@@ -6764,7 +6765,7 @@ const Arm64Compiler = struct {
             try self.emitBinopW32(dst, lhs, rhs, op);
             return;
         }
-        try self.emitCompareOrBinopWide(dst, lhs, rhs, op, divisor);
+        try self.emitCompareOrBinopWide(dst, lhs, rhs, op, divisor, dividend);
         _ = try self.emitNarrowFit(dst, dst, ty);
     }
 
@@ -7540,7 +7541,16 @@ const Arm64Compiler = struct {
         return std.c.getenv("IDOL_PROBE_NONNEG_DIVISOR") != null;
     }
 
-    fn emitFlooredDivRem(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag, divisor: dnir.DivisorSign) Error!void {
+    fn emitFlooredDivRem(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag, divisor: dnir.DivisorSign, dividend: dnir.DivisorSign) Error!void {
+        // BARE SDIV: the dividend is proved non-negative and the divisor is
+        // proved non-negative (the zero trap fires separately, so on the
+        // fall-through path the divisor is positive). For non-negative
+        // dividend and positive divisor, truncation equals floor -- the
+        // correction cannot fire, so no msub/sub/cmp/csel is emitted.
+        if (op == .div and dividend.proved() and divisor.proved()) {
+            try self.emitSdivReg(dst, lhs, rhs);
+            return;
+        }
         // EVERY TEMPORARY HERE EXCLUDES `dst`, and the exclusion is load-bearing
         // rather than tidy. `dst` is already claimed on entry, so plain
         // `allocReg` reaches the spill ladder in `allocRegExcluding` with `dst`
@@ -7598,14 +7608,14 @@ const Arm64Compiler = struct {
         self.releaseReg(q);
     }
 
-    fn emitCompareOrBinopWide(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag, divisor: dnir.DivisorSign) Error!void {
+    fn emitCompareOrBinopWide(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag, divisor: dnir.DivisorSign, dividend: dnir.DivisorSign) Error!void {
         switch (op) {
             .add => try self.emitAddReg(dst, lhs, rhs),
             .sub => try self.emitSubReg(dst, lhs, rhs),
             .mul => try self.emitMulReg(dst, lhs, rhs),
             // P0-1: int slash is floored, so it shares the floored divrem
             // step inside the floored sequence.
-            .div, .idiv, .mod => try self.emitFlooredDivRem(dst, lhs, rhs, op, divisor),
+            .div, .idiv, .mod => try self.emitFlooredDivRem(dst, lhs, rhs, op, divisor, dividend),
 
             // Bitwise and shift, register forms. AArch64 encodes all five with
             // the same field layout as add/sub, so they share one emitter.
@@ -11204,7 +11214,7 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         const b = if (rhs_is_dest) old else try self.evalDnirValue(temps, plan.op.rhs);
         if (a_held) self.gp_reg_owner[a] = null;
         const dst = try self.allocRegExcluding(old);
-        try self.emitCompareOrBinop(dst, a, b, plan.op.binop, plan.op.ty, plan.op.divisor);
+        try self.emitCompareOrBinop(dst, a, b, plan.op.binop, plan.op.ty, plan.op.divisor, plan.op.dividend);
         // THE OWNER IS RECORDED WHEN THE REGISTER TAKES THE VALUE, NOT AFTER THE
         // SELECT (GAP-148).
         //
@@ -19895,7 +19905,7 @@ test "native backend: every DNIR integer binop selects its exact machine operati
         compiler.used_regs[9] = true;
         compiler.used_regs[10] = true;
         compiler.used_regs[11] = true;
-        try compiler.emitCompareOrBinop(9, 10, 11, case.op, .i64, .unknown);
+        try compiler.emitCompareOrBinop(9, 10, 11, case.op, .i64, .unknown, .unknown);
         try std.testing.expectEqualStrings(case.assembly, compiler.asm_text.items);
     }
 }

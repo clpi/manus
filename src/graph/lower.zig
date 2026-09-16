@@ -4637,6 +4637,7 @@ pub const LowerCtx = struct {
     /// retracts entries on stores and calls. A hit reuses the earlier temp
     /// instead of emitting the operation a second time.
     cse: std.HashMapUnmanaged(CseKey, dnir.Value, std.hash_map.AutoContext(CseKey), std.hash_map.default_max_load_percentage) = .empty,
+    positive_names: std.StringHashMapUnmanaged(void) = .empty,
     /// Statements swallowed by a multi-statement idiom prologue (currently the
     /// popcount idiom): the prologue discharged their semantics up front, so
     /// the block loop must not lower them. Keyed by statement pointer; the
@@ -4787,6 +4788,7 @@ pub const LowerCtx = struct {
         self.instrs.deinit(self.alloc);
         self.nonzero_slots.deinit(self.alloc);
         self.cse.deinit(self.alloc);
+        self.positive_names.deinit(self.alloc);
         self.popcount_swallowed.deinit(self.alloc);
         self.upbranch_swallowed.deinit(self.alloc);
         self.satadd_swallowed.deinit(self.alloc);
@@ -5985,6 +5987,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     // No value-numbered fact crosses a control-flow edge: every reuse stays
     // inside straight-line code where domination is textual.
     ctx.cse.clearRetainingCapacity();
+    ctx.positive_names.clearRetainingCapacity();
     for (block.stmts, 0..) |*stmt, i| {
         try pushEnclosingFrame(ctx, block, i);
         defer popEnclosingFrame(ctx);
@@ -6771,6 +6774,9 @@ fn applyLinearIVSR(
 fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!void {
     switch (stmt.*) {
         .local_decl => |ld| {
+            if (ld.names.len == ld.inits.len) {
+                for (ld.names, ld.inits) |ln, init| notePositivity(ctx, ln.ident, init);
+            }
             if (try lowerOneToManyPackDeclaration(ctx, ld.names, ld.inits)) return;
             if (ld.names.len != ld.inits.len and ld.inits.len == 1) return bail(ctx.diagnostic, @src());
             for (ld.names, 0..) |*ln, i| {
@@ -6840,6 +6846,11 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             }
         },
         .assign => |as| {
+            if (as.targets.len == as.values.len) {
+                for (as.targets, as.values) |target, value| {
+                    if (target.* == .name) notePositivity(ctx, target.name.ident, value);
+                }
+            }
             if (try lowerOneToManyPackAssign(ctx, as.targets, as.values)) return;
             if (as.targets.len != as.values.len) return bail(ctx.diagnostic, @src());
             for (as.targets, as.values) |target, value| {
@@ -7994,6 +8005,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
     // No value-numbered fact crosses a control-flow edge: every reuse stays
     // inside straight-line code where domination is textual.
     ctx.cse.clearRetainingCapacity();
+    ctx.positive_names.clearRetainingCapacity();
     var declarations: std.ArrayListUnmanaged(BlockDeclaration) = .empty;
     defer declarations.deinit(ctx.alloc);
     try noteBlockDeclarations(ctx, block, &declarations);
@@ -20420,6 +20432,51 @@ fn dumpDividendWitness(ctx: *LowerCtx, subject: ?semantic_graph.id, relation: ?s
     }
     std.debug.print("\n", .{});
 }
+fn dividendPositiveOff() bool {
+    return std.c.getenv("IDOL_DIVIDEND_POSITIVE_OFF") != null;
+}
+
+fn loweringPositive(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    if (dividendPositiveOff()) return false;
+    switch (expr.*) {
+        .int_lit => |l| return l.val >= 1,
+        .name => |n| return ctx.positive_names.contains(n.ident),
+        .binop => |b| {
+            if (b.op != .add) return false;
+            const w = if (ctx.function) |rel| ctx.graph.nonNegativeWidthOfExpr(rel, expr) else ctx.graph.nonNegativeWidthOfExprModule(expr);
+            if (w == null) return false;
+            return loweringPositive(ctx, b.lhs) or loweringPositive(ctx, b.rhs);
+        },
+        else => return false,
+    }
+}
+
+fn notePositivity(ctx: *LowerCtx, name: []const u8, rhs: *const ast.Expr) void {
+    if (dividendPositiveOff()) return;
+    if (loweringPositive(ctx, rhs)) {
+        ctx.positive_names.put(ctx.alloc, name, {}) catch {};
+    } else {
+        _ = ctx.positive_names.remove(name);
+    }
+}
+
+fn dividendXMinusOneWidth(ctx: *LowerCtx, lhs: *const ast.Expr) ?u8 {
+    if (dividendPositiveOff()) return null;
+    if (lhs.* != .binop) return null;
+    if (lhs.binop.op != .sub) return null;
+    const one = ast.intLiteralValue(lhs.binop.rhs) orelse {
+        return null;
+    };
+    if (one != 1) return null;
+    const lp = loweringPositive(ctx, lhs.binop.lhs);
+    if (!lp) return null;
+    if (ctx.function) |rel| {
+        return ctx.graph.nonNegativeWidthOfExpr(rel, lhs.binop.lhs);
+    } else {
+        return ctx.graph.nonNegativeWidthOfExprModule(lhs.binop.lhs);
+    }
+}
+
 fn dividendSign(
     ctx: *LowerCtx,
     f64_op: bool,
@@ -20429,6 +20486,7 @@ fn dividendSign(
     if (dividendNonnegOff()) return .unknown;
     if (f64_op) return .unknown;
     if (tag != .div) return .unknown;
+    if (dividendXMinusOneWidth(ctx, lhs)) |xw| return .{ .derived = xw };
     const relation = ctx.function orelse return dividendSignModule(ctx, lhs);
     // At module scope the lowerer sets a non-callable relation id; the module
     // column answers there.
@@ -20447,6 +20505,7 @@ fn dividendSign(
 /// Module-scope dividend: no relation exists, so the module column answers
 /// through `nonNegativeWidthOfExprModule`. The relation path above is unchanged.
 fn dividendSignModule(ctx: *LowerCtx, lhs: *const ast.Expr) dnir.DivisorSign {
+    if (dividendXMinusOneWidth(ctx, lhs)) |xw| return .{ .derived = xw };
     const width = ctx.graph.nonNegativeWidthOfExprModule(lhs) orelse return .unknown;
     if (rangeWitnessDump()) {
         // Module scope has no relation; the witness is queried against the
