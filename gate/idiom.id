@@ -1309,7 +1309,8 @@ control: bool = ()
   if probe("text:sub(a,b)", "string.")
     print("control FAIL: string namespace firewall fired on canonical text:sub")
     ok = false
-  if not "x = std.proc.capture(\"echo\")":has("std.")
+  stdfire = ("x = std" .. ".proc.capture(\"echo\")"):has("std.")
+  if not stdfire
     print("control FAIL: std namespace firewall did not fire")
     ok = false
   if not strike("control", 1, "f = std" .. ".io.open(p)")
@@ -1420,7 +1421,7 @@ control: bool = ()
   if "router(semantic)(semantic[ingest])":has("ingestbody")
     print("control FAIL: ingestbody fired on canonical router(semantic)")
     ok = false
-  if not "std.script.fs_exists(":has("fs_exists")
+  if not ("std" .. ".script.fs_exists("):has("fs_exists")
     print("control FAIL: fs_exists snake firewall did not fire")
     ok = false
   if "fs:exists(":has("fs_exists")
@@ -1480,7 +1481,7 @@ control: bool = ()
   if "path:read()":has("io:read(")
     print("control FAIL: io:read rule fired on canonical path:read()")
     ok = false
-  if not "std.script.fswrite(":has("fswrite")
+  if not ("std" .. ".script.fswrite("):has("fswrite")
     print("control FAIL: fswrite mash firewall did not fire")
     ok = false
   if "io.open(":has("fswrite")
@@ -1501,7 +1502,7 @@ control: bool = ()
   if not probe("x = chomp(text)", "chomp(")
     print("control FAIL: chomp namespace firewall did not fire")
     ok = false
-  if not probe("p = std.script.main(x)", "std.script.")
+  if not probe("p = std" .. ".script.main(x)", "std" .. ".script.")
     print("control FAIL: std.script classifier did not fire — frozen std debt has a row")
     ok = false
   if dot__os("a = os.args(1)")
