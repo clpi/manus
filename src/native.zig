@@ -4209,6 +4209,9 @@ const Arm64Compiler = struct {
                 const fuse_divmod_rt = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and !fuse_divmod and
                     ins.op == .binop and bi + 3 < b.instrs.len and
                     self.divmodRuntimeFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], flat_idx);
+                const fuse_absd = !fuse_branch and !fuse_named and !fuse_madd and !fuse_ubfx and !fuse_named_ubfx and !fuse_divmod and !fuse_divmod_rt and
+                    ins.op == .binop and bi + 4 < b.instrs.len and
+                    self.absdFusible(ins, b.instrs[bi + 1], b.instrs[bi + 2], b.instrs[bi + 3], b.instrs[bi + 4], flat_idx);
                 // §12 TAIL: `call_direct -> T ; ret T` is a JUMP, not a frame.
                 // The pair is folded into `restore the frame; b <callee>` — see
                 // `tailCallFusible` for every ground on which it is declined.
@@ -4284,6 +4287,9 @@ const Arm64Compiler = struct {
                     const q_dead = divmodQuotientDead(f, b.instrs[bi + 1], flat_idx);
                     try self.emitFusedDivmodRuntime(&temps, &pinned, ins, b.instrs[bi + 1], b.instrs[bi + 3], &branch_patches, flat_idx, q_dead);
                     extra_consumed = 3;
+                } else if (fuse_absd) {
+                    try self.emitFusedAbsd(&temps, ins, b.instrs[bi + 4]);
+                    extra_consumed = 4;
                 } else if (fuse_tail) {
                     try self.emitTailCallDirect(&temps, &pinned, ins, flat_idx);
                     extra_consumed = 1;
@@ -11084,6 +11090,26 @@ test "native backend: adopted home narrows in place without a move" {
 
     /// `subs xd, xn, #imm` — decrement and set flags, so the loop latch needs no
     /// separate compare and no immediate staged in a register per iteration.
+    fn emitSubsReg(self: *Arm64Compiler, d: u5, n: u5, m: u5) Error!void {
+        try self.ensureRegLive(n);
+        try self.ensureRegLive(m);
+        try self.emitFmt(
+            0xeb000000 | (@as(u32, m) << 16) | (@as(u32, n) << 5) | @as(u32, d),
+            "subs x{d}, x{d}, x{d}",
+            .{ d, n, m },
+        );
+    }
+
+    fn emitCsneg(self: *Arm64Compiler, d: u5, n: u5, m: u5, cond: u4) Error!void {
+        try self.ensureRegLive(n);
+        try self.ensureRegLive(m);
+        try self.emitFmt(
+            0xda800400 | (@as(u32, m) << 16) | (@as(u32, cond) << 12) | (@as(u32, n) << 5) | @as(u32, d),
+            "csneg x{d}, x{d}, x{d}",
+            .{ d, n, m },
+        );
+    }
+
     fn emitSubsImm(self: *Arm64Compiler, d: u5, n: u5, imm: u12) Error!void {
         try self.ensureRegLive(n);
         try self.emitFmt(
@@ -12804,6 +12830,75 @@ test "native backend: adopted home narrows in place without a move" {
         // add, and the conservative answer is to materialize the product.
         const last = self.value_free_at.get(t) orelse return false;
         return last == flat_idx + 1;
+    }
+
+    fn absdFusible(
+        self: *const Arm64Compiler,
+        ins: dnir.Instr,
+        s1: dnir.Instr,
+        s2: dnir.Instr,
+        s3: dnir.Instr,
+        s4: dnir.Instr,
+        flat_idx: u32,
+    ) bool {
+        if (ins.op != .binop or ins.binop != .sub) return false;
+        if (ins.ty == .f64 or self.cur_func_float) return false;
+        if (narrowFit(ins.ty) != null) return false;
+        if (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) return false;
+        if (ins.application != null or ins.relation != null or ins.value != null) return false;
+        const t1 = ins.result orelse return false;
+        if (s1.op != .binop or s1.binop != .shr) return false;
+        if (s1.ty == .f64) return false;
+        if (narrowFit(s1.ty) != null) return false;
+        if (s1.application != null or s1.relation != null or s1.value != null) return false;
+        if (s1.lhs != .temp or s1.lhs.temp != t1) return false;
+        if (s1.rhs != .i64 or s1.rhs.i64 != 63) return false;
+        const t2 = s1.result orelse return false;
+        if (s2.op != .binop or s2.binop != .sub) return false;
+        if (s2.ty == .f64) return false;
+        if (narrowFit(s2.ty) != null) return false;
+        if (s2.application != null or s2.relation != null or s2.value != null) return false;
+        if (s2.lhs != .i64 or s2.lhs.i64 != 0) return false;
+        if (s2.rhs != .temp or s2.rhs.temp != t2) return false;
+        const t3 = s2.result orelse return false;
+        if (s3.op != .binop or s3.binop != .bxor) return false;
+        if (s3.ty == .f64) return false;
+        if (narrowFit(s3.ty) != null) return false;
+        if (s3.application != null or s3.relation != null or s3.value != null) return false;
+        if (s3.lhs != .temp or s3.lhs.temp != t1) return false;
+        if (s3.rhs != .temp or s3.rhs.temp != t3) return false;
+        const t4 = s3.result orelse return false;
+        if (s4.op != .binop or s4.binop != .add) return false;
+        if (s4.ty == .f64) return false;
+        if (narrowFit(s4.ty) != null) return false;
+        if (s4.application != null or s4.relation != null or s4.value != null) return false;
+        if (s4.lhs != .temp or s4.lhs.temp != t4) return false;
+        if (s4.rhs != .temp or s4.rhs.temp != t2) return false;
+        if (s4.result == null) return false;
+        const last1 = self.value_free_at.get(t1) orelse return false;
+        if (last1 != flat_idx + 3) return false;
+        const last2 = self.value_free_at.get(t2) orelse return false;
+        if (last2 != flat_idx + 4) return false;
+        const last3 = self.value_free_at.get(t3) orelse return false;
+        if (last3 != flat_idx + 3) return false;
+        const last4 = self.value_free_at.get(t4) orelse return false;
+        if (last4 != flat_idx + 4) return false;
+        return true;
+    }
+
+    fn emitFusedAbsd(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+        s4: dnir.Instr,
+    ) Error!void {
+        const ra = try self.evalDnirValue(temps, ins.lhs);
+        const rb = try self.evalDnirValue(temps, ins.rhs);
+        const t5 = s4.result.?;
+        const rd = try self.allocReg();
+        try self.emitSubsReg(rd, ra, rb);
+        try self.emitCsneg(rd, rd, rd, 0xa);
+        try temps.put(self.alloc, t5, rd);
     }
 
     /// Peephole: `t = div(X, 2^k)` (dividend proved non-negative, so the
