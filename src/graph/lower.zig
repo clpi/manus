@@ -4651,6 +4651,12 @@ pub const LowerCtx = struct {
     /// so the dispatch loop must not lower the vacuous `while`. Keyed by
     /// statement pointer; the prologue inserts, the loop skips.
     bitrev_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Statements swallowed by the byte-store loop idiom: it discharged
+    /// the loop's whole semantics up front (one 8-byte store plus the
+    /// post-loop b = 8), so the dispatch loop must not lower the vacuous
+    /// `b = 0` or the `while`. Keyed by statement pointer; the prologue
+    /// inserts, the loop skips.
+    bytestore_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     /// Statements swallowed by the loopselect prologue: it discharged the
     /// zero-or-one-trip loop's whole semantics up front (the predicated acc
     /// add plus iv = cond), so the dispatch loop must not lower the vacuous
@@ -4795,6 +4801,7 @@ pub const LowerCtx = struct {
         self.satadd_swallowed.deinit(self.alloc);
         self.absdiff_swallowed.deinit(self.alloc);
         self.bitrev_swallowed.deinit(self.alloc);
+        self.bytestore_swallowed.deinit(self.alloc);
         self.loopselect_swallowed.deinit(self.alloc);
         self.zerotrip_swallowed.deinit(self.alloc);
         self.deadloop_swallowed.deinit(self.alloc);
@@ -5430,6 +5437,7 @@ fn root(
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
+        if (ctx.bytestore_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
@@ -6000,6 +6008,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
+        if (ctx.bytestore_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
@@ -6017,6 +6026,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
+        if (ctx.bytestore_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
@@ -8024,6 +8034,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
+        if (ctx.bytestore_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
@@ -8045,6 +8056,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         if (ctx.satadd_swallowed.contains(stmt)) continue;
         if (ctx.absdiff_swallowed.contains(stmt)) continue;
         if (ctx.bitrev_swallowed.contains(stmt)) continue;
+        if (ctx.bytestore_swallowed.contains(stmt)) continue;
         if (ctx.loopselect_swallowed.contains(stmt)) continue;
         if (ctx.zerotrip_swallowed.contains(stmt)) continue;
         if (ctx.upbranch_swallowed.contains(stmt)) continue;
@@ -14047,13 +14059,184 @@ fn absdiffWidth62(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize, expr: *con
     return null;
 }
 
+/// BYTE-STORE LOOP -> SINGLE 8-BYTE STORE.
+///
+/// Recognizes
+///
+///     b = 0
+///     while b < 8
+///         mem.write_byte(buf, base + b, (v >> (b * 8)) & 255)
+///         b = b + 1
+///
+/// and lowers it to one `.i64` `store_index` (a single `str`) plus the
+/// loop's post-state `b = 8`. Each iteration writes exactly one byte lane:
+/// iteration b stores bits [8b, 8b+8) of v at buf+base+b, so the eight
+/// iterations are one little-endian 8-byte store of v at buf+base.
+///
+/// Fail-closed shape rules: the bound is the literal 8, the lane shift is
+/// b*8/8*b/b<<3, the mask is the literal 255 on either side of the `&`,
+/// the address is base+b with b on either side of the `+`, and buf, base
+/// and v are b-free pure name/literal/arithmetic (no calls, no indexing,
+/// so evaluating once instead of eight times cannot change the value).
+/// base must additionally be X*8, 8*X or X<<3 so the scaled element index
+/// is exact (the general divide path would truncate a non-multiple-of-8).
+fn tryEmitByteStoreLoop(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    if (at + 1 >= stmts.len) return false;
+    const ba = switch (stmts[at]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (ba.targets.len != 1 or ba.values.len != 1) return false;
+    const bname = identOf(ba.targets[0]) orelse return false;
+    if ((ast.intLiteralValue(ba.values[0]) orelse return false) != 0) return false;
+    const ws = switch (stmts[at + 1]) {
+        .while_loop => |w| w,
+        else => return false,
+    };
+    if (ws.body.tail_expr != null) return false;
+    if (ws.body.stmts.len != 2) return false;
+    const cb = switch (ws.cond.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (cb.op != .lt) return false;
+    if (!isIdent(cb.lhs, bname)) return false;
+    if ((ast.intLiteralValue(cb.rhs) orelse return false) != 8) return false;
+    const call_expr = switch (ws.body.stmts[0]) {
+        .call_stmt => |cs| cs.expr,
+        .expr_stmt => |es| es.expr,
+        else => return false,
+    };
+    const c = switch (call_expr.*) {
+        .call => |cc| cc,
+        else => return false,
+    };
+    const f = switch (c.func.*) {
+        .field => |ff| ff,
+        else => return false,
+    };
+    if (f.obj.* != .name) return false;
+    if (!std.mem.eql(u8, f.obj.name.ident, "mem")) return false;
+    if (!std.mem.eql(u8, f.field, "write_byte")) return false;
+    if (c.args.len != 3) return false;
+    if (!byteStorePureBFree(c.args[0], bname)) return false;
+    const ab = switch (c.args[1].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (ab.op != .add) return false;
+    const base_expr: *const ast.Expr = if (isIdent(ab.lhs, bname))
+        ab.rhs
+    else if (isIdent(ab.rhs, bname))
+        ab.lhs
+    else
+        return false;
+    if (!byteStorePureBFree(base_expr, bname)) return false;
+    const vb = switch (c.args[2].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (vb.op != .band) return false;
+    const shr_expr: *const ast.Expr = blk: {
+        if ((ast.intLiteralValue(vb.lhs) orelse -1) == 255) break :blk vb.rhs;
+        if ((ast.intLiteralValue(vb.rhs) orelse -1) == 255) break :blk vb.lhs;
+        return false;
+    };
+    const sb = switch (shr_expr.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (sb.op != .rshift) return false;
+    if (!byteStorePureBFree(sb.lhs, bname)) return false;
+    if (!byteStoreLaneShift(sb.rhs, bname)) return false;
+    const x_expr = byteStoreWordBase(base_expr) orelse return false;
+    const ia = switch (ws.body.stmts[1]) {
+        .assign => |a| a,
+        else => return false,
+    };
+    if (ia.targets.len != 1 or ia.values.len != 1) return false;
+    if (!isIdent(ia.targets[0], bname)) return false;
+    const ib = switch (ia.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (ib.op != .add) return false;
+    const incr_ok = (isIdent(ib.lhs, bname) and (ast.intLiteralValue(ib.rhs) orelse -1) == 1) or
+        (isIdent(ib.rhs, bname) and (ast.intLiteralValue(ib.lhs) orelse -1) == 1);
+    if (!incr_ok) return false;
+    const base = try lowerExpr(ctx, c.args[0]);
+    const xval = try lowerExpr(ctx, x_expr);
+    const idx = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = xval, .rhs = .{ .i64 = 1 } });
+    const vval = try lowerExpr(ctx, sb.lhs);
+    try ctx.emit(.{ .op = .store_index, .ty = .i64, .lhs = base, .rhs = .{ .temp = idx }, .third = vval });
+    const eight = try ctx.alloc.create(ast.Expr);
+    eight.* = .{ .int_lit = .{ .loc = ws.loc, .val = 8 } };
+    try lowerAssignTarget(ctx, bname, eight);
+    try ctx.bytestore_swallowed.put(ctx.alloc, &stmts[at], {});
+    try ctx.bytestore_swallowed.put(ctx.alloc, &stmts[at + 1], {});
+    return true;
+}
+
+/// b*8, 8*b or b<<3 with the b ident on the lane side, else false.
+fn byteStoreLaneShift(e: *const ast.Expr, bname: []const u8) bool {
+    const b = switch (e.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op == .mul) {
+        if (isIdent(b.lhs, bname)) return (ast.intLiteralValue(b.rhs) orelse -1) == 8;
+        if (isIdent(b.rhs, bname)) return (ast.intLiteralValue(b.lhs) orelse -1) == 8;
+        return false;
+    }
+    if (b.op == .lshift) {
+        if (!isIdent(b.lhs, bname)) return false;
+        return (ast.intLiteralValue(b.rhs) orelse -1) == 3;
+    }
+    return false;
+}
+
+/// X*8, 8*X or X<<3: the word base whose scaled element index is exact.
+/// Returns the X expression, already known b-free and pure by the caller.
+fn byteStoreWordBase(e: *const ast.Expr) ?*const ast.Expr {
+    const b = switch (e.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op == .mul) {
+        if ((ast.intLiteralValue(b.rhs) orelse -1) == 8) return b.lhs;
+        if ((ast.intLiteralValue(b.lhs) orelse -1) == 8) return b.rhs;
+        return null;
+    }
+    if (b.op == .lshift) {
+        if ((ast.intLiteralValue(b.rhs) orelse -1) == 3) return b.lhs;
+        return null;
+    }
+    return null;
+}
+
+/// True for name/literal/arithmetic trees that neither mention b nor can
+/// perform a side effect: the only shapes the folded single evaluation may
+/// replace eight evaluations of. Calls, indexing, field access and literals
+/// with effects all decline.
+fn byteStorePureBFree(e: *const ast.Expr, bname: []const u8) bool {
+    switch (e.*) {
+        .name => |n| return !std.mem.eql(u8, n.ident, bname),
+        .int_lit, .float_lit, .true_lit, .false_lit, .nil => return true,
+        .binop => |b| return byteStorePureBFree(b.lhs, bname) and byteStorePureBFree(b.rhs, bname),
+        .unop => |u| return byteStorePureBFree(u.operand, bname),
+        else => return false,
+    }
+}
+
 fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
     if (try tryEmitVectorReductionPrologue(ctx, stmts, at)) return true;
     if (try tryEmitPopcountIdiom(ctx, stmts, at)) return true;
     if (try tryEmitLoopSelectPrologue(ctx, stmts, at)) return true;
     if (try tryEmitSataddIdiom(ctx, stmts, at)) return true;
     if (try tryEmitAbsdiffIdiom(ctx, stmts, at)) return true;
-    return try tryEmitBitReversePrologue(ctx, stmts, at);
+    if (try tryEmitBitReversePrologue(ctx, stmts, at)) return true;
+    return try tryEmitByteStoreLoop(ctx, stmts, at);
 }
 
 /// BIT-REVERSE IDIOM → PARALLEL BIT-SWAP DATAFLOW.
