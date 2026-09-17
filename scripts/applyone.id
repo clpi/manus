@@ -15,6 +15,9 @@ oldway: bool = (s: str)
 
 newway: bool = (s: str, want: str)
     s == want
+normline: void = (path: str, dest: str)
+    os.execute("sed -E 's/at native[.]zig:[0-9]+/at native.zig:LINE/g' {path} > {dest}")
+
 
 main: void = ()
     duo = tool()
@@ -34,7 +37,9 @@ main: void = ()
     allok = allok and rowok
 
     rc = os.execute("DUO_BUILD_REPORT=plain {duo} run examples/projection/descriptor.id > /tmp/ao_desc.txt 2>&1")
-    rcmp = os.execute("cmp -s /tmp/ao_desc.txt {exp}/desc.txt")
+    normline("/tmp/ao_desc.txt", "/tmp/ao_desc_got.n")
+    normline("{exp}/desc.txt", "/tmp/ao_desc_want.n")
+    rcmp = os.execute("cmp -s /tmp/ao_desc_got.n /tmp/ao_desc_want.n")
     rowok = rc != 0 and rcmp == 0
     report(rowok, "descriptor application owed refusal, exact")
     allok = allok and rowok
@@ -80,7 +85,7 @@ main: void = ()
     report(rowok, "counterexample cross-run record: output of run one rejected against expectation of run two")
     allok = allok and rowok
 
-    os.execute("rm -rf /tmp/ao_pos.txt /tmp/ao_neg.txt /tmp/ao_desc.txt /tmp/ao_lab.txt /tmp/ao_shape")
+    os.execute("rm -rf /tmp/ao_pos.txt /tmp/ao_neg.txt /tmp/ao_desc.txt /tmp/ao_lab.txt /tmp/ao_shape /tmp/ao_desc_got.n /tmp/ao_desc_want.n")
     if allok
         print("apply-one: all outcome records exact")
     if not allok

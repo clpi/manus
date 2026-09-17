@@ -1,4 +1,4 @@
 error: direct backend: DNB011 application: 8 relation: point missing: unresolved-application-facts consumer: native realization producer: graph
 hint: DNB001: program is outside the current direct-native subset. Auto reports the same direct refusal and never falls back to C. Explicit graph-backed C99 source is an orthogonal physical realization and cannot qualify direct-native support; C foreign interop is a separate capability.
 hint: refused with: SemanticFactsInvalid
-hint: bail site: emitArm64ModuleWithGraph() at native.zig:14732 — unresolved-application-facts
+hint: bail site: emitArm64ModuleWithGraph() at native.zig:LINE — unresolved-application-facts
