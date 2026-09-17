@@ -1,20 +1,16 @@
 t = 0
-o = 1
-while o < 20000
+for o = 1, 19999
   a = o * 1234567 + 11
   b = o * 7654321 + 13
   a = a & 1073741823
   b = b & 1073741823
   a = a + 1
   b = b + 1
-  i = 0
-  while i < 48
+  for i = 0, 47
     is0 = 1 / (b + 1)
     bs = b + is0
     r = a - (a / bs) * bs
     a = b * (1 - is0) + a * is0
     b = r * (1 - is0)
-    i = i + 1
   t = t + a
-  o = o + 1
 t

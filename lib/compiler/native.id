@@ -1607,6 +1607,7 @@ main: i64 = ()
     if hasidx(src) == 1
         print("native: indexed array memory unsupported")
         return 1
+    src = compiler.opt.desugar.desugar(src)
     src = compiler.opt.zerotrip.zerotrip(src)
     src = compiler.opt.indred.indred(src)
     src = compiler.opt.licm.licm(src)

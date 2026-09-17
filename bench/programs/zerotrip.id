@@ -1,9 +1,5 @@
 t = 0
-o = 0
-while o < 10000000
-  i = 10
-  while i < 5
+for o = 0, 9999999
+  for i = 10, 4
     t = t + 1
-    i = i + 1
-  o = o + 1
 t
