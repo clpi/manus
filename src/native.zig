@@ -1588,6 +1588,7 @@ const Arm64Compiler = struct {
         values: [max_hoist_per_loop]i64 = @splat(0),
         gcount: u8 = 0,
         gsyms: [max_global_hoist_per_loop]u32 = @splat(0),
+        calls: bool = false,
     };
 
     const HoistActive = struct {
@@ -3040,7 +3041,10 @@ const Arm64Compiler = struct {
                 for (b.instrs) |ins| {
                     if (idx >= head and idx <= latch) {
                         switch (ins.op) {
-                            .call_direct, .call_extern, .print_value => gh_blocked = true,
+                            .call_direct, .call_extern, .print_value => {
+                                gh_blocked = true;
+                                plan.calls = true;
+                            },
                             .store_global => {
                                 if (ins.field.len != 0 and gh_nstored < max_global_hoist_per_loop) {
                                     const s = try self.internGlobal(ins.field);
@@ -3187,6 +3191,8 @@ const Arm64Compiler = struct {
                 self.releaseReg(r);
                 continue;
             }
+            if (plan.calls and r >= callee_save_first and r <= callee_save_last)
+                return self.refuseWith(@src(), "hoist home in callee-saved x19-x28 with call in loop body");
             self.markGpHome(r);
             try self.emitMovImm(r, v);
             try self.imm_hoist.put(self.alloc, v, r);
@@ -3203,6 +3209,8 @@ const Arm64Compiler = struct {
                 self.releaseReg(r);
                 continue;
             }
+            if (plan.calls and r >= callee_save_first and r <= callee_save_last)
+                return self.refuseWith(@src(), "hoist home in callee-saved x19-x28 with call in loop body");
             self.markGpHome(r);
             try self.emitAdrpAdd(r, sym);
             try self.emitLdrBaseImm(r, r, 0);
