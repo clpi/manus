@@ -1481,6 +1481,13 @@ const Arm64Compiler = struct {
     /// loop-invariant by definition, so this is the safest possible motion — no
     /// aliasing, effect, or order obligation is involved (law.observation.minimum).
     imm_hoist: std.AutoHashMapUnmanaged(i64, u5) = .empty,
+    /// Loop-invariant module-global hoisting: the same preheader machinery as
+    /// `imm_hoist`, keyed by interned global symbol. A `load_global` inside a
+    /// loop otherwise re-materializes `adrp`+`add`+`ldr` on every use (qsort's
+    /// shell-sort inner loop paid it 3x per iteration, bsearch the same); the
+    /// preheader pays it once and every in-loop use reads the home register.
+    /// A field is hoisted only when the loop never stores it and never calls.
+    global_hoist: std.AutoHashMapUnmanaged(u32, u5) = .empty,
     hoist_plan: std.AutoHashMapUnmanaged(u32, HoistPlan) = .empty,
     hoist_active: [max_hoist_depth]HoistActive = @splat(.{}),
     hoist_depth: u8 = 0,
@@ -1570,11 +1577,17 @@ const Arm64Compiler = struct {
     /// rest to inline materialization.
     const max_hoist_per_loop = 8;
     const max_hoist_depth = 8;
+    /// Max distinct module globals hoisted per loop. Shares the
+    /// home-register budget above: `considerHoist` and `considerGlobalHoist`
+    /// both cap `count + gcount` at `max_hoist_per_loop`.
+    const max_global_hoist_per_loop = 4;
 
     const HoistPlan = struct {
         latch: u32 = 0,
         count: u8 = 0,
         values: [max_hoist_per_loop]i64 = @splat(0),
+        gcount: u8 = 0,
+        gsyms: [max_global_hoist_per_loop]u32 = @splat(0),
     };
 
     const HoistActive = struct {
@@ -1582,6 +1595,9 @@ const Arm64Compiler = struct {
         count: u8 = 0,
         values: [max_hoist_per_loop]i64 = @splat(0),
         regs: [max_hoist_per_loop]u5 = @splat(0),
+        gcount: u8 = 0,
+        gsyms: [max_global_hoist_per_loop]u32 = @splat(0),
+        gregs: [max_global_hoist_per_loop]u5 = @splat(0),
     };
 
     const VarArg = struct {
@@ -1710,6 +1726,7 @@ const Arm64Compiler = struct {
         self.value_free_at.deinit(self.alloc);
         self.loose_read_values.deinit(self.alloc);
         self.imm_hoist.deinit(self.alloc);
+        self.global_hoist.deinit(self.alloc);
         self.hoist_plan.deinit(self.alloc);
         self.hoist_preheader.deinit(self.alloc);
         self.fp_abi_passthrough.deinit(self.alloc);
@@ -3008,6 +3025,76 @@ const Arm64Compiler = struct {
             const head = e.key_ptr.*;
             const latch = e.value_ptr.*;
             var plan: HoistPlan = .{ .latch = latch };
+            // Pass A: loop-invariant module globals. A `load_global` is
+            // hoistable iff the loop never stores that field and never calls
+            // (a callee could store any global). Globals are admitted before
+            // immediates: each costs 3 instructions per use, so they outrank
+            // any constant on the shared home-register budget.
+            var gh_blocked = false;
+            var gh_stored: [max_global_hoist_per_loop]u32 = @splat(0);
+            var gh_nstored: u8 = 0;
+            var gh_cands: [max_global_hoist_per_loop]u32 = @splat(0);
+            var gh_ncands: u8 = 0;
+            idx = 0;
+            scanA: for (f.blocks) |b| {
+                for (b.instrs) |ins| {
+                    if (idx >= head and idx <= latch) {
+                        switch (ins.op) {
+                            .call_direct, .call_extern, .print_value => gh_blocked = true,
+                            .store_global => {
+                                if (ins.field.len != 0 and gh_nstored < max_global_hoist_per_loop) {
+                                    const s = try self.internGlobal(ins.field);
+                                    var seen = false;
+                                    var q: u8 = 0;
+                                    while (q < gh_nstored) : (q += 1) if (gh_stored[q] == s) {
+                                        seen = true;
+                                        break;
+                                    };
+                                    if (!seen) {
+                                        gh_stored[gh_nstored] = s;
+                                        gh_nstored += 1;
+                                    }
+                                } else if (ins.field.len == 0 or gh_nstored >= max_global_hoist_per_loop) {
+                                    gh_blocked = true;
+                                }
+                            },
+                            .load_global => {
+                                if (ins.field.len != 0 and gh_ncands < max_global_hoist_per_loop) {
+                                    const s = try self.internGlobal(ins.field);
+                                    var seen = false;
+                                    var q: u8 = 0;
+                                    while (q < gh_ncands) : (q += 1) if (gh_cands[q] == s) {
+                                        seen = true;
+                                        break;
+                                    };
+                                    if (!seen) {
+                                        gh_cands[gh_ncands] = s;
+                                        gh_ncands += 1;
+                                    }
+                                } else if (gh_ncands >= max_global_hoist_per_loop) {
+                                    gh_blocked = true;
+                                }
+                            },
+                            else => {},
+                        }
+                    }
+                    idx += 1;
+                    if (idx > latch) break :scanA;
+                }
+            }
+            if (!gh_blocked) {
+                var qc: u8 = 0;
+                while (qc < gh_ncands) : (qc += 1) {
+                    const s = gh_cands[qc];
+                    var stored = false;
+                    var qs: u8 = 0;
+                    while (qs < gh_nstored) : (qs += 1) if (gh_stored[qs] == s) {
+                        stored = true;
+                        break;
+                    };
+                    if (!stored) self.considerGlobalHoist(&plan, s);
+                }
+            }
             idx = 0;
             scan: for (f.blocks) |b| {
                 for (b.instrs) |ins| {
@@ -3032,7 +3119,7 @@ const Arm64Compiler = struct {
                     if (idx > latch) break :scan;
                 }
             }
-            if (plan.count > 0) try self.hoist_plan.put(self.alloc, head, plan);
+            if (plan.count + plan.gcount > 0) try self.hoist_plan.put(self.alloc, head, plan);
         }
     }
 
@@ -3042,7 +3129,7 @@ const Arm64Compiler = struct {
         _ = self;
         var k: u8 = 0;
         while (k < plan.count) : (k += 1) if (plan.values[k] == n) return;
-        if (plan.count < max_hoist_per_loop) {
+        if (plan.count + plan.gcount < max_hoist_per_loop) {
             plan.values[plan.count] = n;
             plan.count += 1;
             return;
@@ -3058,6 +3145,21 @@ const Arm64Compiler = struct {
             }
         }
         if (immCost(n) > mincost) plan.values[mink] = n;
+    }
+
+    /// Add a loop-invariant module-global field (interned symbol) to a loop's
+    /// hoist plan. Globals share the per-loop home-register budget with
+    /// immediates — a hoist is a hoist, each costs one reserved register — and
+    /// are admitted first (see `planImmHoist` Pass A) because each saves 3
+    /// instructions per use (`adrp`+`add`+`ldr`).
+    fn considerGlobalHoist(self: *Arm64Compiler, plan: *HoistPlan, sym: u32) void {
+        _ = self;
+        var k: u8 = 0;
+        while (k < plan.gcount) : (k += 1) if (plan.gsyms[k] == sym) return;
+        if (plan.gcount < max_global_hoist_per_loop and plan.count + plan.gcount < max_hoist_per_loop) {
+            plan.gsyms[plan.gcount] = sym;
+            plan.gcount += 1;
+        }
     }
 
     /// At a loop head (in emission order, once per compile), pre-materialize the
@@ -3091,6 +3193,23 @@ const Arm64Compiler = struct {
             active.values[active.count] = v;
             active.regs[active.count] = r;
             active.count += 1;
+        }
+        var g: u8 = 0;
+        while (g < plan.gcount) : (g += 1) {
+            const sym = plan.gsyms[g];
+            if (self.global_hoist.contains(sym)) continue; // enclosing loop already holds it
+            const r = try self.allocReg();
+            if (r < 9 or r >= 29 or r == platform_reserved_reg) {
+                self.releaseReg(r);
+                continue;
+            }
+            self.markGpHome(r);
+            try self.emitAdrpAdd(r, sym);
+            try self.emitLdrBaseImm(r, r, 0);
+            try self.global_hoist.put(self.alloc, sym, r);
+            active.gsyms[active.gcount] = sym;
+            active.gregs[active.gcount] = r;
+            active.gcount += 1;
         }
         if (self.code.items.len != preheader_off) {
             try self.hoist_preheader.put(self.alloc, flat_idx, preheader_off);
@@ -3149,6 +3268,21 @@ const Arm64Compiler = struct {
                 const r = top.regs[k];
                 if (self.imm_hoist.get(v)) |cur| {
                     if (cur == r) _ = self.imm_hoist.remove(v);
+                }
+                self.gp_home_regs[r] = false;
+                self.gp_reg_owner[r] = null;
+                self.unprotectReg(r);
+                self.used_regs[r] = false;
+                if (self.spilled_regs.fetchRemove(r)) |entry| {
+                    self.free_spill_slots.append(self.alloc, entry.value) catch {};
+                }
+            }
+            var g: u8 = 0;
+            while (g < top.gcount) : (g += 1) {
+                const sym = top.gsyms[g];
+                const r = top.gregs[g];
+                if (self.global_hoist.get(sym)) |cur| {
+                    if (cur == r) _ = self.global_hoist.remove(sym);
                 }
                 self.gp_home_regs[r] = false;
                 self.gp_reg_owner[r] = null;
@@ -3598,6 +3732,7 @@ const Arm64Compiler = struct {
         try self.computeTightReads(f);
         self.synth_value_next = maxDnirValueId(f) +| 1;
         self.imm_hoist.clearRetainingCapacity();
+        self.global_hoist.clearRetainingCapacity();
         self.hoist_preheader.clearRetainingCapacity();
         self.hoist_depth = 0;
         try self.planImmHoist(f);
@@ -6209,13 +6344,23 @@ const Arm64Compiler = struct {
                 const t = ins.result orelse return self.refuse(@src());
                 if (ins.field.len == 0) return self.refuse(@src());
                 const sym = try self.internGlobal(ins.field);
-                const dst = try self.allocReg();
-                try self.emitAdrpAdd(dst, sym);
-                // The address register IS the destination: `adrp/add` computes
-                // the word's address into it and the load overwrites it with the
-                // word. One register, not two, and nothing else is live in it.
-                try self.emitLdrBaseImm(dst, dst, 0);
-                try temps.put(self.alloc, t, dst);
+                // A loop-invariant module global already sits in a reserved
+                // home register: reuse it instead of re-materializing
+                // adrp+add+ldr on every iteration. The home is never released
+                // per use (`releaseReg` is a no-op on homes) and
+                // `ensureRegLive` reloads it if the loop spilled it.
+                if (self.global_hoist.get(sym)) |hr| {
+                    try self.ensureRegLive(hr);
+                    try temps.put(self.alloc, t, hr);
+                } else {
+                    const dst = try self.allocReg();
+                    try self.emitAdrpAdd(dst, sym);
+                    // The address register IS the destination: `adrp/add` computes
+                    // the word's address into it and the load overwrites it with the
+                    // word. One register, not two, and nothing else is live in it.
+                    try self.emitLdrBaseImm(dst, dst, 0);
+                    try temps.put(self.alloc, t, dst);
+                }
             },
             .store_global => {
                 if (ins.field.len == 0) return self.refuse(@src());
