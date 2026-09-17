@@ -1521,6 +1521,7 @@ const Arm64Compiler = struct {
     /// `alloc_slots` result temp -> sp-relative byte offset of its slot region.
     slot_bases: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     spilled_regs: std.AutoHashMapUnmanaged(u5, u16) = .empty,
+    spill_exclude: [4]?u5 = .{ null, null, null, null },
     /// Frame slot per spilled TEMPORARY id. `spilled_regs` keys on the physical
     /// register, which the victim's register is immediately re-let for, so it
     /// cannot name the value once the register is reused. This map keys on the
@@ -6199,7 +6200,13 @@ const Arm64Compiler = struct {
                         try self.emitLdrScaled(dst, base, biased);
                         if (ins.result) |t| try temps.put(self.alloc, t, dst);
                     } else {
+                        self.spill_exclude[0] = base;
+                        self.spill_exclude[1] = idx;
+                        self.spill_exclude[2] = biased;
                         const val = try self.evalDnirValueBits(temps, ins.third);
+                        self.spill_exclude[0] = null;
+                        self.spill_exclude[1] = null;
+                        self.spill_exclude[2] = null;
                         try self.emitStrScaled(val, base, biased);
                         self.releaseDnirTemp(pinned, ins.third, val);
                     }
@@ -6287,7 +6294,11 @@ const Arm64Compiler = struct {
                     if (op == .store_index) {
                         const sbase = try self.evalDnirValue(temps, ins.lhs);
                         const sidx = try self.evalDnirValue(temps, ins.rhs);
+                        self.spill_exclude[0] = sbase;
+                        self.spill_exclude[1] = sidx;
                         const sval = try self.evalDnirValue(temps, ins.third);
+                        self.spill_exclude[0] = null;
+                        self.spill_exclude[1] = null;
                         const saddr = try self.allocReg();
                         try self.emitSubImm(saddr, sidx, 1);
                         try self.emitAddReg(saddr, sbase, saddr);
@@ -8225,6 +8236,7 @@ const Arm64Compiler = struct {
         exclude: ?u5,
     ) Error!?u5 {
         if (exclude) |x| if (reg == x) return null;
+        for (self.spill_exclude) |ex| if (ex) |x| if (reg == x) return null;
         if (!self.used_regs[reg]) return null;
         if (self.spilled_regs.contains(reg)) return null;
         if (self.gp_home_regs[reg]) return null;
