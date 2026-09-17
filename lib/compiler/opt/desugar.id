@@ -1,0 +1,325 @@
+isdig: i64 = (c: i64)
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+linecount: i64 = (s: str)
+    n = 0
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 10
+            n = n + 1
+        i = i + 1
+    if s:len() > 0 and s:byte(s:len()) != 10
+        n = n + 1
+    n
+
+lineat: str = (s: str, k: i64)
+    n = s:len()
+    i = 1
+    cur = 0
+    a = 1
+    while i <= n + 1
+        if i > n or s:byte(i) == 10
+            if cur == k
+                return s:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    ""
+
+unpad: str = (s: str)
+    n = s:len()
+    a = 1
+    while a <= n and s:byte(a) == 32
+        a = a + 1
+    b = n
+    while b >= a and s:byte(b) == 32
+        b = b - 1
+    if b < a
+        return ""
+    s:sub(a, b)
+
+indof: i64 = (r: str)
+    i = 1
+    while i <= r:len() and r:byte(i) == 32
+        i = i + 1
+    i - 1
+
+loopend: i64 = (src: str, k: i64, lc: i64, ind: i64)
+    e = k
+    j = k + 1
+    while j < lc
+        r = lineat(src, j)
+        if unpad(r):len() > 0 and indof(r) <= ind
+            return e
+        e = j
+        j = j + 1
+    e
+
+cut: str = (s: str, a: i64, b: i64)
+    out = ""
+    k = a
+    while k <= b
+        out = out .. lineat(s, k) .. "\n"
+        k = k + 1
+    out
+
+oknamechar: i64 = (c: i64)
+    if c >= 65 and c <= 90
+        return 1
+    if c >= 97 and c <= 122
+        return 1
+    if c >= 48 and c <= 57
+        return 1
+    0
+
+okname: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    c = s:byte(1)
+    if c < 65 or c > 122
+        return 0
+    if c > 90 and c < 97
+        return 0
+    i = 2
+    while i <= n
+        if oknamechar(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+isfor: i64 = (t: str)
+    if t:len() > 4 and t:sub(1, 3) == "for" and t:byte(4) == 32
+        return 1
+    0
+
+hasdot: i64 = (s: str)
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 46
+            return 1
+        i = i + 1
+    0
+
+hasbar: i64 = (s: str)
+    i = 1
+    while i <= s:len()
+        if s:byte(i) == 124
+            return 1
+        i = i + 1
+    0
+
+eqpos: i64 = (t: str)
+    i = 1
+    while i <= t:len()
+        if t:byte(i) == 61
+            return i
+        i = i + 1
+    0
+
+commapos: i64 = (t: str, st: i64)
+    i = st
+    while i <= t:len()
+        if t:byte(i) == 44
+            return i
+        i = i + 1
+    0
+
+isintlit: i64 = (s: str)
+    n = s:len()
+    if n == 0
+        return 0
+    i = 1
+    if s:byte(1) == 45
+        if n == 1
+            return 0
+        i = 2
+    while i <= n
+        if isdig(s:byte(i)) == 0
+            return 0
+        i = i + 1
+    1
+
+parsenum: i64 = (s: str)
+    v = 0
+    i = 1
+    neg = 0
+    if s:byte(1) == 45
+        neg = 1
+        i = 2
+    while i <= s:len()
+        v = v * 10 + s:byte(i) - 48
+        i = i + 1
+    if neg == 1
+        v = 0 - v
+    v
+
+dec: str = (v: i64)
+    if v == 0
+        return "0"
+    neg = 0
+    if v < 0
+        neg = 1
+        v = 0 - v
+    o = ""
+    while v > 0
+        o = "0123456789":sub((v % 10) + 1, (v % 10) + 1) .. o
+        v = v // 10
+    if neg == 1
+        o = "-" .. o
+    o
+
+parsefor: str = (t: str)
+    rest = unpad(t:sub(5, t:len()))
+    e = eqpos(rest)
+    if e == 0
+        return ""
+    var = unpad(rest:sub(1, e - 1))
+    if okname(var) == 0
+        return ""
+    after = unpad(rest:sub(e + 1, rest:len()))
+    c1 = commapos(after, 1)
+    if c1 == 0
+        return ""
+    start = unpad(after:sub(1, c1 - 1))
+    rest2 = unpad(after:sub(c1 + 1, after:len()))
+    c2 = commapos(rest2, 1)
+    last = rest2
+    step = "1"
+    if c2 != 0
+        last = unpad(rest2:sub(1, c2 - 1))
+        step = unpad(rest2:sub(c2 + 1, rest2:len()))
+        if commapos(step, 1) != 0
+            return ""
+    if start:len() == 0 or last:len() == 0 or step:len() == 0
+        return ""
+    if hasdot(start) == 1 or hasdot(last) == 1 or hasdot(step) == 1
+        return ""
+    if hasbar(var) == 1 or hasbar(start) == 1 or hasbar(last) == 1 or hasbar(step) == 1
+        return ""
+    var .. "|" .. start .. "|" .. last .. "|" .. step
+
+fld: str = (p: str, n: i64)
+    a = 1
+    cur = 1
+    i = 1
+    while i <= p:len()
+        if p:byte(i) == 124
+            if cur == n
+                return p:sub(a, i - 1)
+            cur = cur + 1
+            a = i + 1
+        i = i + 1
+    if cur == n
+        return p:sub(a, p:len())
+    ""
+
+ltbound: str = (last: str)
+    if isintlit(last) == 1
+        v = parsenum(last)
+        if v >= 0 and v < 9223372036854775807
+            return "< " .. dec(v + 1)
+        return ""
+    n = last:len()
+    if n > 4 and last:sub(n - 3, n) == " - 1"
+        x = unpad(last:sub(1, n - 4))
+        if okname(x) == 1
+            return "< " .. x
+    if n > 6 and last:sub(n - 3, n) == " - 1" and last:byte(1) == 40 and last:byte(n - 4) == 41
+        x = unpad(last:sub(2, n - 5))
+        if x:len() > 0
+            return "< " .. x
+    ""
+
+isbrk: i64 = (t: str)
+    if t:len() >= 5 and t:sub(1, 5) == "break"
+        if t:len() == 5 or oknamechar(t:byte(6)) == 0
+            return 1
+    if t:len() >= 8 and t:sub(1, 8) == "continue"
+        if t:len() == 8 or oknamechar(t:byte(9)) == 0
+            return 1
+    0
+
+assigns: i64 = (t: str, name: str, nl: i64)
+    if t:len() <= nl
+        return 0
+    if t:sub(1, nl) != name
+        return 0
+    i = nl + 1
+    while i <= t:len() and t:byte(i) == 32
+        i = i + 1
+    if i > t:len() or t:byte(i) != 61
+        return 0
+    if i + 1 <= t:len() and t:byte(i + 1) == 61
+        return 0
+    1
+
+bodysafe: i64 = (src: str, k: i64, e: i64, var: str, last: str, step: str)
+    vl = var:len()
+    j = k + 1
+    while j <= e
+        t = unpad(lineat(src, j))
+        if t:len() > 0
+            if isbrk(t) == 1
+                return 0
+            if assigns(t, var, vl) == 1
+                return 0
+            if okname(last) == 1 and assigns(t, last, last:len()) == 1
+                return 0
+            if step != "1" and okname(step) == 1 and assigns(t, step, step:len()) == 1
+                return 0
+            if isfor(t) == 1
+                p2 = parsefor(t)
+                if p2 != "" and fld(p2, 1) == var
+                    return 0
+        j = j + 1
+    1
+
+tryconvert: str = (src: str, k: i64, e: i64, ind: i64, t: str)
+    p = parsefor(t)
+    if p == ""
+        return ""
+    var = fld(p, 1)
+    start = fld(p, 2)
+    last = fld(p, 3)
+    step = fld(p, 4)
+    if step != "1" and isintlit(step) == 0 and okname(step) == 0
+        return ""
+    if bodysafe(src, k, e, var, last, step) == 0
+        return ""
+    lb = ltbound(last)
+    cond = "<= " .. last
+    if lb != ""
+        cond = lb
+    indstr = ""
+    i = 1
+    while i <= ind
+        indstr = indstr .. " "
+        i = i + 1
+    body = sweep(cut(src, k + 1, e), 0, linecount(cut(src, k + 1, e)))
+    incr = var .. " = " .. var .. " + " .. step
+    indstr .. var .. " = " .. start .. "\n" .. indstr .. "while " .. var .. " " .. cond .. "\n" .. body .. indstr .. "  " .. incr .. "\n"
+
+sweep: str = (src: str, k: i64, lc: i64)
+    out = ""
+    while k < lc
+        r = lineat(src, k)
+        t = unpad(r)
+        if isfor(t) == 1
+            ind = indof(r)
+            e = loopend(src, k, lc, ind)
+            c = tryconvert(src, k, e, ind, t)
+            if c != ""
+                out = out .. c
+            else
+                out = out .. r .. "\n" .. sweep(src, k + 1, e + 1)
+            k = e + 1
+        else
+            out = out .. r .. "\n"
+            k = k + 1
+    out
+
+desugar: str = (src: str)
+    sweep(src, 0, linecount(src))
