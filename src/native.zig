@@ -2071,10 +2071,14 @@ const Arm64Compiler = struct {
         try self.asm_text.appendSlice(self.alloc, "\"\n");
     }
 
-    fn needsProcessExitF64Coerce(self: *const Arm64Compiler) bool {
+    fn isProcessEntry(self: *const Arm64Compiler) bool {
         const entry = self.entry orelse return false;
         const cur = self.cur_func_name orelse return false;
-        if (!std.mem.eql(u8, entry, cur)) return false;
+        return std.mem.eql(u8, entry, cur);
+    }
+
+    fn needsProcessExitF64Coerce(self: *const Arm64Compiler) bool {
+        if (!self.isProcessEntry()) return false;
         return self.cur_func_float or self.cur_func_ret_float;
     }
 
@@ -5731,7 +5735,12 @@ const Arm64Compiler = struct {
                 if (ret_via_fp) {
                     const d = try self.evalDnirValueFp(temps, ins.lhs);
                     if (d != 0) try self.emitFmovReg(0, d);
-                    if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
+                    // The coercion is owed whenever the process entry answer
+                    // actually leaves in d0. The declared-type gate covers named
+                    // f64 entries; untyped roots (script programs) declare .any,
+                    // so the instruction own FP type is the second witness.
+                    if (self.needsProcessExitF64Coerce() or
+                        (self.isProcessEntry() and ret_via_fp)) try self.emitFcvtzsX0FromD0();
                     self.releaseFpReg(d);
                 } else if (constRetImm(self, ins.lhs)) |imm| {
                     // A DECLARED narrow return type truncates the answer, and a
@@ -18865,6 +18874,55 @@ test "native backend: f64 process entry coerces d0 to x0 exit code" {
     defer plain_artifact.deinit(alloc);
     const plain = plain_artifact.assembly;
     try std.testing.expect(std.mem.indexOf(u8, plain, "fcvtzs x0, d0") == null);
+}
+
+test "native backend: f64 script root coerces d0 to x0 exit code" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\x = 1.5
+        \\x * 2.0
+    , "f64_root.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    // A script module lowers to a DNIR function named "main"; selecting it as
+    // the process entry must coerce the f64 answer to an i64 exit code, the
+    // same contract the named-entry test above pins.
+    var executable = try emitCheckedTestAssembly(alloc, &mod, &graph, "main");
+    defer executable.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, executable.assembly, "fcvtzs x0, d0") != null);
+
+    // An integer-ending script must not grow the coercion.
+    var ilex = Lexer.init(
+        \\x = 6
+        \\x
+    , "i64_root.id");
+    var iparser = Parser.init(&ilex, alloc);
+    iparser.idol_mode = true;
+    var imod = try iparser.parse_module();
+    var isem = Sema.init(alloc);
+    defer isem.deinit();
+    isem.idol_mode = true;
+    try isem.check_module(&imod);
+    var igraph = semantic_graph.SemanticGraph.init(alloc);
+    defer igraph.deinit();
+    try liftCheckedTestGraph(&imod, &isem, &igraph);
+    var iartifact = try emitCheckedTestAssembly(alloc, &imod, &igraph, "main");
+    defer iartifact.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, iartifact.assembly, "fcvtzs x0, d0") == null);
 }
 
 test "native backend lowers sealed f64 record distance2 kernel" {

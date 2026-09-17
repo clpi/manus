@@ -1,0 +1,1 @@
+int main(void){double x=0.0;long long n=0;while(x<100.0){x=x+0.5;n=n+1;}double y=10.0;long long m=0;while(y>0.0){y=y-0.5;m=m+1;}long long r=0;if(n==200)r=r+1;if(m==20)r=r+10;if(x==100.0)r=r+100;return (int)((unsigned long long)r&255);}
