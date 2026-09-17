@@ -1452,6 +1452,11 @@ const Arm64Compiler = struct {
     /// Last instruction that reads each DNIR value/slot id. The map is shared
     /// by both register files; physical file selection is a separate fact.
     value_free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    /// Pre-mask temps elided by the ubfx pre-mask peephole (see
+    /// `ubfxPremaskElidable`): maps the elided `band` result temp to the
+    /// band's non-mask operand, which the fused `ubfx` reads directly.
+    /// Cleared per function with the rest of the register state.
+    premask_elided: std.AutoHashMapUnmanaged(u32, dnir.Value) = .empty,
     /// Value ids with a READ THIS COMPILER CANNOT ATTRIBUTE to the definition
     /// immediately before it. See `computeTightReads`, which fills it, and
     /// `singleReaderByTightDef`, which is the only thing that asks.
@@ -2754,6 +2759,7 @@ const Arm64Compiler = struct {
     /// ends inside a loop it did not start in. See the `value free at` field.
     fn computeValueLastUse(self: *Arm64Compiler, f: dnir.Function) Error!void {
         self.value_free_at.clearRetainingCapacity();
+        self.premask_elided.clearRetainingCapacity();
         self.fp_abi_passthrough.clearRetainingCapacity();
         var reads: std.ArrayList([2]u32) = .empty;
         defer reads.deinit(self.alloc);
@@ -4088,6 +4094,11 @@ const Arm64Compiler = struct {
         // Read once per function; the emission loop must not pay a libc call
         // per instruction.
         const madd_shiftadd_off = std.c.getenv("IDOL_MADD_SHIFTADD_OFF") != null;
+        // Severing control for the ubfx pre-mask elision below:
+        // IDOL_UBFX_PREMASK_OFF=1 restores the stock emission exactly.
+        // Read once per function; the emission loop must not pay a libc call
+        // per instruction.
+        const premask_off = std.c.getenv("IDOL_UBFX_PREMASK_OFF") != null;
         for (f.blocks) |b| {
             var bi: usize = 0;
             while (bi < b.instrs.len) : (bi += 1) {
@@ -4098,6 +4109,12 @@ const Arm64Compiler = struct {
                 try self.immHoistEnter(flat_idx);
                 const text_start: u32 = @intCast(self.code.items.len);
                 try code_offsets.append(self.alloc, text_start);
+                // Peephole: elide a dead pre-mask feeding a ubfx fusion.
+                // band(X, M) -> Tb ; div(Tb, 2^k) -> T ; ... where the div
+                // fuses to ubfx D, Tb, #k, #w and M covers every extracted
+                // bit: the band is not emitted and the fused ubfx reads X
+                // directly (see ubfxPremaskElidable).
+                const premask_elision = if (!premask_off) self.ubfxPremaskElidable(f, b, bi, flat_idx) else null;
                 // Peephole: fold `binop(cmp) -> T ; br when_x T` into `cmp; b.cond`
                 // when T's only reader is that branch. The branch instruction is
                 // then consumed below with no bytes of its own.
@@ -4212,6 +4229,18 @@ const Arm64Compiler = struct {
                 } else if (fuse_tail) {
                     try self.emitTailCallDirect(&temps, &pinned, ins, flat_idx);
                     extra_consumed = 1;
+                } else if (premask_elision) |info| {
+                    // Elided pre-mask band: no bytes emitted. Record Tb -> X
+                    // so the fused ubfx at the div reads X directly, and
+                    // extend X's liveness past the elided band to the div.
+                    // The post-div sweep then frees X exactly when dead.
+                    try self.premask_elided.put(self.alloc, info.t_band, info.x);
+                    if (info.x == .temp) {
+                        const xid = info.x.temp;
+                        const div_flat = flat_idx + 1;
+                        const cur = self.value_free_at.get(xid) orelse 0;
+                        if (div_flat > cur) try self.value_free_at.put(self.alloc, xid, div_flat);
+                    }
                 } else {
                     const preferred_result = if (bi + 1 < b.instrs.len)
                         self.returnPackBinopDestination(&temps, ins, b.instrs[bi + 1]) orelse
@@ -12325,6 +12354,108 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         return true;
     }
 
+    /// Do all bits `[k, k+w)` of the i64 mask `m` read 1? The ubfx pre-mask
+    /// peephole uses this to prove a leading `and` cannot change any bit the
+    /// fused `ubfx` extracts.
+    fn maskCoversExtractedBits(m: i64, k: u6, w: u6) bool {
+        const u: u64 = @bitCast(m);
+        const width_mask: u64 = (@as(u64, 1) << w) - 1;
+        return ((u >> k) & width_mask) == width_mask;
+    }
+
+    /// Pre-mask elision for the `ubfx` fusion. `band(X, M) -> Tb` immediately
+    /// followed by `div(Tb, 2^k) -> T`, where the div plus its trailing
+    /// instructions already fuse to `ubfx D, Tb, #k, #w` (either the unnamed
+    /// or the R15-named form): when every bit the `ubfx` extracts is already
+    /// 1 in M, the leading `and` is dead. `((X & M) >> k) & ((1<<w)-1)`
+    /// reads exactly the bits `[k, k+w)` of `X & M`, and each of those is
+    /// `(bit of X) & 1 = (bit of X)`, so the fused `ubfx` can read X
+    /// directly and the `and` is not emitted.
+    ///
+    /// Admitted only when every ground below holds; anything unproved
+    /// declines:
+    /// - `b.instrs[bi]` is a `.band` with an `.i64` mask M on one side and
+    ///   X on the other, integer-typed, no f64, carrying no application
+    ///   lineage of its own to lose (the fused instruction is emitted
+    ///   without it, exactly like the underlying fusion);
+    /// - the immediately following instruction is a `.div` whose dividend
+    ///   is exactly Tb (adjacency keeps the liveness extension exact);
+    /// - the div plus its trailing instructions satisfy `ubfxFusible` or
+    ///   `namedUbfxFusible` at the div's position — every ground of the
+    ///   underlying fusion (dividend proof, single readers, no branches
+    ///   into its window, lineage) is re-checked here, not assumed;
+    /// - M covers the extracted bits `[k, k+w)`;
+    /// - Tb's only reader is the div (`singleReaderByTightDef`, the R15
+    ///   ground the fusions themselves use);
+    /// - no branch lands on the elided `and` itself.
+    /// Where it stops: a non-immediate mask, a non-adjacent div, any
+    /// extracted bit the mask clears, a reused Tb, lineage on the `and`,
+    /// or any branch into the elided position.
+    fn ubfxPremaskElidable(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        b: dnir.Block,
+        bi: usize,
+        flat_idx: u32,
+    ) ?struct { t_band: u32, x: dnir.Value } {
+        const ins = b.instrs[bi];
+        if (ins.op == .binop and ins.binop == .band) {
+        }
+        if (ins.op != .binop or ins.binop != .band) return null;
+        if (ins.ty == .f64) return null;
+        if (ins.application != null or ins.relation != null or ins.value != null) return null;
+        if (narrowFit(ins.ty) != null) return null;
+        const t_band = ins.result orelse return null;
+        const lhs_is_mask = ins.lhs == .i64;
+        const rhs_is_mask = ins.rhs == .i64;
+        if (lhs_is_mask == rhs_is_mask) return null;
+        const m: i64 = if (lhs_is_mask) ins.lhs.i64 else ins.rhs.i64;
+        const x: dnir.Value = if (lhs_is_mask) ins.rhs else ins.lhs;
+        if (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) return null;
+        if (bi + 1 >= b.instrs.len) return null;
+        const div_ins = b.instrs[bi + 1];
+        if (div_ins.op != .binop or div_ins.binop != .div) return null;
+        if (div_ins.lhs != .temp or div_ins.lhs.temp != t_band) return null;
+        const ck = switch (div_ins.rhs) {
+            .i64 => |v| v,
+            else => return null,
+        };
+        const k = powerOfTwoShift(ck) orelse return null;
+        // The underlying fusion must fire at the div's position; re-derive
+        // the extracted width from the trailing band it consumes.
+        var w: u6 = undefined;
+        if (bi + 2 < b.instrs.len and self.ubfxFusible(div_ins, b.instrs[bi + 2], flat_idx + 1)) {
+            const trailing = b.instrs[bi + 2];
+            const t = div_ins.result orelse return null;
+            const t_is_lhs = trailing.lhs == .temp and trailing.lhs.temp == t;
+            const t_is_rhs = trailing.rhs == .temp and trailing.rhs.temp == t;
+            if (t_is_lhs == t_is_rhs) return null;
+            const mask_val = if (t_is_lhs) trailing.rhs else trailing.lhs;
+            const cm = switch (mask_val) {
+                .i64 => |v| v,
+                else => return null,
+            };
+            w = lowMaskWidth(cm) orelse return null;
+        } else if (bi + 4 < b.instrs.len and self.namedUbfxFusible(f, div_ins, b.instrs[bi + 2], b.instrs[bi + 3], b.instrs[bi + 4], flat_idx + 1)) {
+            const trailing = b.instrs[bi + 3];
+            const l_is_lhs = trailing.lhs == .local;
+            const l_is_rhs = trailing.rhs == .local;
+            if (l_is_lhs == l_is_rhs) return null;
+            const mask_val = if (l_is_lhs) trailing.rhs else trailing.lhs;
+            const cm = switch (mask_val) {
+                .i64 => |v| v,
+                else => return null,
+            };
+            w = lowMaskWidth(cm) orelse return null;
+        } else {
+            return null;
+        }
+        if (!maskCoversExtractedBits(m, k, w)) return null;
+        if (!self.singleReaderByTightDef(t_band, flat_idx)) return null;
+        if (dnirBranchLandsWithin(f, flat_idx, flat_idx)) return null;
+        return .{ .t_band = t_band, .x = x };
+    }
+
     /// Precondition for folding the divmod idiom
     ///   `div(X, k) -> T ; store_local Lq <- T ; mul(Lq, k) -> M ; sub(X, M) -> D`
     /// into one magic-division sequence that materializes BOTH the corrected
@@ -12529,7 +12660,15 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
             else => return self.refuse(@src()),
         };
         const w = lowMaskWidth(cm) orelse return self.refuse(@src());
-        const x = try self.evalDnirValue(temps, ins.lhs);
+        // Pre-mask elision: if the dividend temp was an elided pre-mask
+        // band, read its source operand directly. The elision extended the
+        // source's liveness to this div, so the register is valid here.
+        const elided_src = switch (ins.lhs) {
+            .temp => |tb| self.premask_elided.get(tb),
+            else => null,
+        };
+        const dividend_src = elided_src orelse ins.lhs;
+        const x = try self.evalDnirValue(temps, dividend_src);
         const dst = try self.allocReg();
         try self.ensureRegLive(x);
         // UBFX #lsb,#width is UBFM with immr=lsb, imms=lsb+width-1 (not
@@ -12544,7 +12683,9 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         // is already the refitted value — the same argument `.band` makes.
         const fitted = wForm32(nx.ty, .band) and w <= 32;
         if (!fitted) _ = try self.emitNarrowFit(dst, dst, nx.ty);
-        if (!Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
+        if (elided_src == null) {
+            if (!Arm64Compiler.regIsPinned(pinned, x)) self.releaseReg(x);
+        }
         const d = nx.result orelse return self.refuse(@src());
         try temps.put(self.alloc, d, dst);
         if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
