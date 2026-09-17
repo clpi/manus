@@ -364,6 +364,7 @@ pub const FuncBody = struct {
     is_typed: bool = false,
     // set by sema: emit O(n) iterative loop instead of naive recursion
     use_iterative_fib: bool = false,
+    use_iterative_fact: bool = false,
     // set by sema: emit Eratosthenes sieve instead of trial division
     use_prime_sieve: bool = false,
     // set by sema: lower numeric table t[i] to a native int64_t array

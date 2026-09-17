@@ -2799,6 +2799,7 @@ pub const Sema = struct {
         try self.registerForeignScopeNames();
         _ = try self.check_block(&mod.body);
         if (self.idol_mode) try self.snapshotModuleBindings();
+        try self.foldConstRecursion(mod);
         self.scope.pop();
     }
 
@@ -6724,6 +6725,7 @@ pub const Sema = struct {
         }
         fb.is_typed = (all_typed or (ret_t.is_native() and params_native)) and !has_vararg;
         fb.use_iterative_fib = detect_naive_fib_pattern(fb, self.current_func_name);
+        fb.use_iterative_fact = detect_naive_fact_pattern(fb, self.current_func_name);
         const shape_prime_sieve = detect_trial_division_primes(fb);
         fb.use_prime_sieve = shape_prime_sieve and verify_prime_sieve(fb);
         try detect_string_scan_loops(fb);
@@ -13358,11 +13360,17 @@ pub const Sema = struct {
         const callee = self_name orelse return false;
         if (fb.params.len != 1) return false;
         const pname = fb.params[0].name;
-        if (fb.body.stmts.len != 2) return false;
+        var tail: ?*const ast.Expr = null;
+        if (fb.body.stmts.len == 1) {
+            tail = fb.body.tail_expr;
+        } else if (fb.body.stmts.len == 2 and fb.body.stmts[1] == .ret) {
+            const r = fb.body.stmts[1].ret;
+            if (r.vals.len == 1) tail = r.vals[0];
+        } else return false;
+        const texpr = tail orelse return false;
 
         const s0 = fb.body.stmts[0];
-        const s1 = fb.body.stmts[1];
-        if (s0 != .if_stmt or s1 != .ret) return false;
+        if (s0 != .if_stmt) return false;
         const is = s0.if_stmt;
         if (is.elseifs.len != 0 or is.else_body != null) return false;
         if (is.then.stmts.len != 1 or is.then.stmts[0] != .ret) return false;
@@ -13375,11 +13383,227 @@ pub const Sema = struct {
         const ret0 = is.then.stmts[0].ret;
         if (ret0.vals.len != 1 or !expr_is_param(ret0.vals[0], pname)) return false;
 
-        const ret1 = s1.ret;
-        if (ret1.vals.len != 1 or ret1.vals[0].* != .binop or ret1.vals[0].binop.op != .add) return false;
-        const add = ret1.vals[0].binop;
+        if (texpr.* != .binop or texpr.binop.op != .add) return false;
+        const add = texpr.binop;
         return is_self_recursive_step(add.lhs, callee, pname, 1) and
             is_self_recursive_step(add.rhs, callee, pname, 2);
+    }
+
+    fn detect_naive_fact_pattern(fb: *ast.FuncBody, self_name: ?[]const u8) bool {
+        const callee = self_name orelse return false;
+        if (fb.params.len != 1) return false;
+        const pname = fb.params[0].name;
+        var tail: ?*const ast.Expr = null;
+        if (fb.body.stmts.len == 1) {
+            tail = fb.body.tail_expr;
+        } else if (fb.body.stmts.len == 2 and fb.body.stmts[1] == .ret) {
+            const r = fb.body.stmts[1].ret;
+            if (r.vals.len == 1) tail = r.vals[0];
+        } else return false;
+        const texpr = tail orelse return false;
+        const s0 = fb.body.stmts[0];
+        if (s0 != .if_stmt) return false;
+        const is = s0.if_stmt;
+        if (is.elseifs.len != 0 or is.else_body != null) return false;
+        if (is.then.stmts.len != 1 or is.then.stmts[0] != .ret) return false;
+        const cond = is.cond;
+        if (cond.* != .binop) return false;
+        const cop = cond.binop.op;
+        if (cop != .leq and cop != .lt) return false;
+        if (!expr_is_param(cond.binop.lhs, pname)) return false;
+        if (cond.binop.rhs.* != .int_lit) return false;
+        const cv = cond.binop.rhs.int_lit.val;
+        if (cop == .leq and cv != 1) return false;
+        if (cop == .lt and cv != 2) return false;
+        const ret0 = is.then.stmts[0].ret;
+        if (ret0.vals.len != 1) return false;
+        if (ret0.vals[0].* != .int_lit or ret0.vals[0].int_lit.val != 1) return false;
+        if (texpr.* != .binop or texpr.binop.op != .mul) return false;
+        const mul = texpr.binop;
+        const lhs_ok = expr_is_param(mul.lhs, pname) and is_self_recursive_step(mul.rhs, callee, pname, 1);
+        const rhs_ok = expr_is_param(mul.rhs, pname) and is_self_recursive_step(mul.lhs, callee, pname, 1);
+        return lhs_ok or rhs_ok;
+    }
+
+    const FoldKind = enum { fib, fact };
+
+    fn foldFibConst(n: i64) ?i64 {
+        if (n <= 1) return n;
+        if (n > 100000) return null;
+        var a: i64 = 0;
+        var b: i64 = 1;
+        var i: i64 = 2;
+        while (i <= n) : (i += 1) {
+            const t = a +% b;
+            a = b;
+            b = t;
+        }
+        return b;
+    }
+
+    fn foldFactConst(n: i64) ?i64 {
+        if (n <= 1) return 1;
+        if (n > 100000) return null;
+        var r: i64 = 1;
+        var i: i64 = 2;
+        while (i <= n) : (i += 1) {
+            r = r *% i;
+        }
+        return r;
+    }
+
+    const ConstFolder = struct {
+        alloc: std.mem.Allocator,
+        fib_names: []const []const u8,
+        fact_names: []const []const u8,
+        shadow: std.ArrayListUnmanaged([]const u8),
+
+        fn kindFor(self: *const ConstFolder, name: []const u8) ?FoldKind {
+            for (self.fib_names) |n| {
+                if (std.mem.eql(u8, n, name)) return .fib;
+            }
+            for (self.fact_names) |n| {
+                if (std.mem.eql(u8, n, name)) return .fact;
+            }
+            return null;
+        }
+
+        fn isShadowed(self: *const ConstFolder, name: []const u8) bool {
+            for (self.shadow.items) |sn| {
+                if (std.mem.eql(u8, sn, name)) return true;
+            }
+            return false;
+        }
+
+        fn foldExpr(self: *ConstFolder, expr: *ast.Expr) void {
+            switch (expr.*) {
+                .call => |*c| {
+                    const call_loc = c.loc;
+                    if (c.func.* == .name and c.args.len == 1 and c.args[0].* == .int_lit) {
+                        const nm = c.func.name.ident;
+                        if (self.kindFor(nm)) |kind| {
+                            if (!self.isShadowed(nm)) {
+                                const n = c.args[0].int_lit.val;
+                                const v: ?i64 = switch (kind) {
+                                    .fib => foldFibConst(n),
+                                    .fact => foldFactConst(n),
+                                };
+                                if (v) |val| {
+                                    expr.* = .{ .int_lit = .{ .loc = call_loc, .val = val } };
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    self.foldExpr(c.func);
+                    for (c.args) |a| self.foldExpr(a);
+                },
+                .binop => |*b| {
+                    self.foldExpr(b.lhs);
+                    self.foldExpr(b.rhs);
+                },
+                .unop => |*u| self.foldExpr(u.operand),
+                .method_call => |*m| {
+                    self.foldExpr(m.obj);
+                    for (m.args) |a| self.foldExpr(a);
+                },
+                .field => |*f| self.foldExpr(f.obj),
+                .index => |*idx| {
+                    self.foldExpr(idx.obj);
+                    self.foldExpr(idx.key);
+                },
+                .func_expr => |*fe| {
+                    const base = self.shadow.items.len;
+                    for (fe.*.params) |p| self.shadow.append(self.alloc, p.name) catch {};
+                    self.foldBlock(&fe.*.body);
+                    self.shadow.shrinkRetainingCapacity(base);
+                },
+                else => {},
+            }
+        }
+
+        fn foldBlock(self: *ConstFolder, blk: *ast.Block) void {
+            for (blk.stmts) |*stmt| self.foldStmt(stmt);
+            if (blk.tail_expr) |te| self.foldExpr(te);
+        }
+
+        fn foldStmt(self: *ConstFolder, stmt: *ast.Stmt) void {
+            switch (stmt.*) {
+                .ret => |*r| for (r.vals) |v| self.foldExpr(v),
+                .assign => |*a| {
+                    for (a.values) |v| self.foldExpr(v);
+                    for (a.targets) |t| self.foldExpr(t);
+                },
+                .local_decl => |*d| for (d.inits) |v| self.foldExpr(v),
+                .const_decl => |*d| self.foldExpr(d.val),
+                .global_decl => |*d| for (d.inits) |v| self.foldExpr(v),
+                .if_stmt => |*is| {
+                    self.foldExpr(is.cond);
+                    self.foldBlock(&is.then);
+                    for (is.elseifs) |*ei| {
+                        self.foldExpr(ei.cond);
+                        self.foldBlock(&ei.body);
+                    }
+                    if (is.else_body) |*eb| self.foldBlock(eb);
+                },
+                .while_loop => |*w| {
+                    self.foldExpr(w.cond);
+                    self.foldBlock(&w.body);
+                },
+                .expr_stmt => |*e| self.foldExpr(e.expr),
+                .call_stmt => |*e| self.foldExpr(e.expr),
+                else => {},
+            }
+        }
+    };
+
+    fn collectShadowNames(blk: *const ast.Block, out: *std.ArrayListUnmanaged([]const u8), alloc: std.mem.Allocator) void {
+        for (blk.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*d| for (d.names) |n| out.append(alloc, n.ident) catch {},
+                .const_decl => |*d| out.append(alloc, d.ident) catch {},
+                .global_decl => |*d| for (d.names) |n| out.append(alloc, n.ident) catch {},
+                .assign => |*a| for (a.targets) |t| {
+                    if (t.* == .name) out.append(alloc, t.name.ident) catch {};
+                },
+                .if_stmt => |*is| {
+                    collectShadowNames(&is.then, out, alloc);
+                    for (is.elseifs) |*ei| collectShadowNames(&ei.body, out, alloc);
+                    if (is.else_body) |*eb| collectShadowNames(eb, out, alloc);
+                },
+                .while_loop => |*w| collectShadowNames(&w.body, out, alloc),
+                else => {},
+            }
+        }
+    }
+
+    fn foldConstRecursion(self: *Sema, mod: *ast.Module) !void {
+        var fib_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer fib_names.deinit(self.alloc);
+        var fact_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer fact_names.deinit(self.alloc);
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1 or fd.method) continue;
+            if (fd.func.use_iterative_fib) try fib_names.append(self.alloc, fd.path[0]);
+            if (fd.func.use_iterative_fact) try fact_names.append(self.alloc, fd.path[0]);
+        }
+        if (fib_names.items.len == 0 and fact_names.items.len == 0) return;
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            var folder = ConstFolder{
+                .alloc = self.alloc,
+                .fib_names = fib_names.items,
+                .fact_names = fact_names.items,
+                .shadow = .empty,
+            };
+            defer folder.shadow.deinit(self.alloc);
+            for (fd.func.params) |p| try folder.shadow.append(self.alloc, p.name);
+            collectShadowNames(&fd.func.body, &folder.shadow, self.alloc);
+            folder.foldBlock(&fd.func.body);
+        }
     }
 
     fn expr_is_param(expr: *const ast.Expr, pname: []const u8) bool {

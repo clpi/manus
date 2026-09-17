@@ -488,6 +488,7 @@ pub const Expander = struct {
             .is_async = func.is_async,
             .is_typed = func.is_typed,
             .use_iterative_fib = func.use_iterative_fib,
+            .use_iterative_fact = func.use_iterative_fact,
             .use_prime_sieve = func.use_prime_sieve,
             .use_dense_table = func.use_dense_table,
             .dense_table = func.dense_table,
