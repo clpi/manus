@@ -5419,6 +5419,7 @@ fn root(
         .module_globals = module_globals,
         .module_root = true,
         .ret_record = null,
+        .tables_in_memory = blockNeedsMemoryTables(&mod.body),
     };
     defer ctx.deinit();
     for (mod.body.stmts, 0..) |*stmt, i| {
