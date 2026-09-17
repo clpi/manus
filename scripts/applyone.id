@@ -1,120 +1,91 @@
+tool: str = ()
+    d = os.env["DUO"] or ""
+    if d:len() == 0
+        d = "./zig-out/bin/idol"
+    d
 
-chomp: str = (text: str)
-    if text == nil or text:len() == 0
-        return ""
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
-
-cap: str = (shellline: str)
-    chomp(gatecap(shellline))
-
-global duo: str = os.env["DUO"] or ""
-if duo:len() == 0
-    duo = "./zig-out/bin/idol"
-
-global failures: i64 = 0
-
-report: void = (ok: bool, what: str, detail: str)
+report: void = (ok: bool, what: str)
     if ok
         print("OK:   {what}")
-    if !ok
+    if not ok
         print("FAIL: {what}")
-        if detail:len() > 0
-            print("      {detail}")
-        failures += 1
 
-capture: str = (cmd: str)
-    cap("{cmd} 2>&1")
+oldway: bool = (s: str)
+    s:find("3", 1, true) != nil and s:find("7\n7", 1, true) != nil and s:find("9", 1, true) != nil
 
-status: i64 = (cmd: str)
-    cap("( {cmd} ) > /dev/null 2>&1; echo $?"):to(i64)
-
-has: bool = (hay: str, needle: str)
-    n = hay:len()
-    m = needle:len()
-    if m == 0
-        return false
-    i = 1
-    while i + m - 1 <= n
-        if hay:sub(i, i + m - 1) == needle
-            return true
-        i += 1
-    false
-
-counted: i64 = (path: str, needle: str)
-    capture("grep -c {needle} {path} | tr -d '\\n'"):to(i64)
-
-allocs: i64 = (cpath: str)
-    counted(cpath, "lua_table_new_with_capacity")
-
-put: void = (path: str, body: str)
-    status("printf '%s' '{body}' > '{path}'")
+newway: bool = (s: str, want: str)
+    s == want
 
 main: void = ()
-    pos = "examples/pack/apply.id"
-    out = capture("{duo} run {pos}")
-    hasvalues = out:find("3", 1, true) != nil
-    if out:find("7", 1, true) == nil
-        hasvalues = false
-    if out:find("9", 1, true) == nil
-        hasvalues = false
-    report(hasvalues, "positive twin answers by value (3 4 7 7 9 1)", out)
+    duo = tool()
+    exp = "scripts/applyone_expected"
+    allok = true
 
-    faces = out:find("7\n7", 1, true) != nil
-    report(faces, "brace face and paren face project onto one relation", out)
+    rc = os.execute("DUO_BUILD_REPORT=plain {duo} run examples/pack/apply.id > /tmp/ao_pos.txt 2>&1")
+    rcmp = os.execute("cmp -s /tmp/ao_pos.txt {exp}/pos.txt")
+    rowok = rc != 0 and rcmp == 0
+    report(rowok, "brace faces refused exactly as law.brace demands, two sites in order")
+    allok = allok and rowok
 
-    neg = "examples/compile_fail/apply_one_neither.id"
-    negrc = status("{duo} check {neg}")
-    negout = capture("{duo} check {neg}")
-    refused = negrc != 0
-    if negout:find("nosuch", 1, true) == nil
-        refused = false
-    report(refused, "neither-case refuses, and names the subject", negout)
+    rc = os.execute("DUO_BUILD_REPORT=plain {duo} check examples/compile_fail/apply_one_neither.id > /tmp/ao_neg.txt 2>&1")
+    rcmp = os.execute("cmp -s /tmp/ao_neg.txt {exp}/neg.txt")
+    rowok = rc != 0 and rcmp == 0
+    report(rowok, "neither-case refuses, naming the subject and both homes consulted")
+    allok = allok and rowok
 
-    homes = has(negout, "descriptor") and has(negout, "callable")
-    report(homes, "neither-case names BOTH homes consulted, not just the call path", negout)
+    rc = os.execute("DUO_BUILD_REPORT=plain {duo} run examples/projection/descriptor.id > /tmp/ao_desc.txt 2>&1")
+    rcmp = os.execute("cmp -s /tmp/ao_desc.txt {exp}/desc.txt")
+    rowok = rc != 0 and rcmp == 0
+    report(rowok, "descriptor application owed refusal, exact")
+    allok = allok and rowok
 
-    dpos = "examples/projection/descriptor.id"
-    dout = capture("{duo} run {dpos}")
-    drc = status("{duo} run {dpos}")
-    dvalues = drc == 0 and has(dout, "3\n4\n21\n21\n0.75")
-    report(dvalues, "descriptor subject constructs, by value (3 4 21 21 0.75)", dout)
+    rc = os.execute("DUO_BUILD_REPORT=plain {duo} check examples/compile_fail/apply_one_label.id > /tmp/ao_lab.txt 2>&1")
+    rcmp = os.execute("cmp -s /tmp/ao_lab.txt {exp}/lab.txt")
+    rowok = rc != 0 and rcmp == 0
+    report(rowok, "resolved descriptor refuses the unknown label, naming it")
+    allok = allok and rowok
 
-    lab = "examples/compile_fail/apply_one_label.id"
-    labrc = status("{duo} check {lab}")
-    labout = capture("{duo} check {lab}")
-    labref = labrc != 0 and has(labout, "has no field") and has(labout, "'z'")
-    report(labref, "a resolved descriptor refuses a label it has no field for", labout)
+    rcs = os.execute("mkdir -p /tmp/ao_shape && printf '%b' 'point: descriptor = (x: f64, y: f64)\nq = point\{ x = 3.0, y = 4.0 }\nmain: void = ()\n    print(q.x == 3.0)\n    print(q.y == 4.0)\n' > /tmp/ao_shape/a.id && printf '%b' 'point: descriptor = (x: f64, y: f64)\nq: point = \{x = 3.0, y = 4.0}\nmain: void = ()\n    print(q.x == 3.0)\n    print(q.y == 4.0)\n' > /tmp/ao_shape/b.id && DUO_BUILD_REPORT=plain {duo} run /tmp/ao_shape/a.id > /tmp/ao_shape/a.txt 2>&1; DUO_BUILD_REPORT=plain {duo} run /tmp/ao_shape/b.id > /tmp/ao_shape/b.txt 2>&1")
+    rca = os.execute("cmp -s /tmp/ao_shape/a.txt {exp}/shape_a.txt")
+    rcb = os.execute("cmp -s /tmp/ao_shape/b.txt {exp}/shape_b.txt")
+    rowok = rcs != 0 and rca == 0
+    report(rowok, "law.pack.shape applied form refused exactly")
+    allok = allok and rowok
+    rowok = rcb == 0
+    report(rowok, "law.pack.shape typed binding refused exactly")
+    allok = allok and rowok
 
-    stem = "applyoneshape{os.time():to(str)}"
-    fa = "/tmp/{stem}a.id"
-    fb = "/tmp/{stem}b.id"
-    fc = "/tmp/{stem}c.id"
-    ca = "/tmp/duo_{stem}a.c"
-    cb = "/tmp/duo_{stem}b.c"
-    cc = "/tmp/duo_{stem}c.c"
-    put(fa, "point: { x: f64, y: f64 }\nmain(): void\n    q = point{ x = 3.0, y = 4.0 }\n    print(q.x)\n")
-    put(fb, "point: { x: f64, y: f64 }\nmain(): void\n    q: point = { x = 3.0, y = 4.0 }\n    print(q.x)\n")
-    put(fc, "main(): void\n    q = { x = 3.0, y = 4.0 }\n    print(q.x)\n")
-    status("{duo} run {fa}")
-    status("{duo} run {fb}")
-    status("{duo} run {fc}")
-    na = allocs(ca)
-    nb = allocs(cb)
-    nc = allocs(cc)
-    lit = counted(ca, "'(duo_rec_'") > 0
-    status("rm -f '{fa}' '{fb}' '{fc}'")
-    shape = lit and na == nb and nc > nb
-    report(shape, "law.pack.shape: the applied pack lands as FIELDS, not a table",
-        "applied={na} typed-binding={nb} anonymous-pack={nc} compound-literal={lit}")
+    trunc = "3\n7\n7\n9\n"
+    reord = "5\n4\n3\n1\n9\n7\n7\n4\n3\n"
+    dupl = "3\n4\n7\n7\n9\n1\n3\n4\n5\n3\n"
+    full = "3\n4\n7\n7\n9\n1\n3\n4\n5\n"
+    rowok = oldway(trunc) and not newway(trunc, full)
+    report(rowok, "counterexample truncated output: old substring check passes, exact check rejects")
+    allok = allok and rowok
+    rowok = oldway(reord) and not newway(reord, full)
+    report(rowok, "counterexample reordered output: old substring check passes, exact check rejects")
+    allok = allok and rowok
+    rowok = oldway(dupl) and not newway(dupl, full)
+    report(rowok, "counterexample duplicated output: old substring check passes, exact check rejects")
+    allok = allok and rowok
+    rowok = newway(full, full)
+    report(rowok, "counterexample true full output: exact check accepts")
+    allok = allok and rowok
+    rcx = os.execute("cmp -s /tmp/ao_neg.txt {exp}/pos.txt")
+    rowok = rcx != 0
+    report(rowok, "counterexample cross-run record: output of run two rejected against expectation of run one")
+    allok = allok and rowok
+    rcx = os.execute("cmp -s /tmp/ao_pos.txt {exp}/neg.txt")
+    rowok = rcx != 0
+    report(rowok, "counterexample cross-run record: output of run one rejected against expectation of run two")
+    allok = allok and rowok
 
-    if failures == 0
-        print("apply-one: 7/7")
-    if failures != 0
-        print("apply-one: {failures:to(str)} row(s) drifted")
-        return 1
+    os.execute("rm -rf /tmp/ao_pos.txt /tmp/ao_neg.txt /tmp/ao_desc.txt /tmp/ao_lab.txt /tmp/ao_shape")
+    if allok
+        print("apply-one: all outcome records exact")
+    if not allok
+        print("apply-one: mismatched outcome records")
+    code = 0
+    if not allok
+        code = 1
+    os.exit(code)

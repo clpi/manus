@@ -1,0 +1,21 @@
+examples/pack/apply.id:16:15: error: c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses
+  [2m→[0m [2mexamples/pack/apply.id:16:15[0m
+   |
+15 | 
+16 | braced = first{ x = 7.0, y = 8.0 }
+   |               ^
+17 | parened = first({ x = 7.0, y = 8.0 })
+   |
+  detail: the marked source construct is the one Idol rejected
+  help: fix this diagnostic first; later messages may be caused by this one
+examples/pack/apply.id:21:13: error: c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses
+  [2m→[0m [2mexamples/pack/apply.id:21:13[0m
+   |
+20 | 
+21 | print(second{ x = 1.0, y = 9.0 })
+   |             ^
+22 | 
+   |
+  detail: the marked source construct is the one Idol rejected
+  help: fix this diagnostic first; later messages may be caused by this one
+error: 2 error(s)

@@ -1,0 +1,11 @@
+examples/compile_fail/apply_one_neither.id:2:1: error: 'nosuch' is neither a descriptor nor a callable, so the braced application has no subject: descriptor space holds no 'nosuch' and callable space holds no 'nosuch' (no declaration, no builtin, no foreign import)
+  [2m→[0m [2mexamples/compile_fail/apply_one_neither.id:2:1[0m
+  |
+1 | 
+2 | nosuch{ x = 1, y = 2 }
+  | ^
+3 | 
+  |
+  detail: the marked source construct is the one Idol rejected
+  help: fix this diagnostic first; later messages may be caused by this one
+error: 1 error(s)

@@ -1,0 +1,11 @@
+/tmp/ao_shape/b.id:2:1: error: type mismatch: variable 'q' declared as 'point', but initializer has type '{...2 fields}'
+  [2m→[0m [2m/tmp/ao_shape/b.id:2:1[0m
+  |
+1 | point: descriptor = (x: f64, y: f64)
+2 | q: point = {x = 3.0, y = 4.0}
+  | ^
+3 | main: void = ()
+  |
+  detail: the marked source construct is the one Idol rejected
+  help: fix this diagnostic first; later messages may be caused by this one
+error: 1 error(s)
