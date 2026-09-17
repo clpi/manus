@@ -86,7 +86,7 @@ scan: i64 = (src: str, path: str)
 
 main: i64 = ()
     paths = os.env["CENSUS_PATHS"]
-    if !paths
+    if not paths
         print("set CENSUS_PATHS to a space-separated list of .id files")
         return 0
     total: i64 = 0
@@ -96,7 +96,7 @@ main: i64 = ()
     while i <= n + 1
         at_end = i > n
         sep = false
-        if !at_end
+        if not at_end
             sep = paths:byte(i) == 32
         if at_end or sep
             if i > start
@@ -108,7 +108,7 @@ main: i64 = ()
             start = i + 1
         i += 1
     label = os.env["CENSUS_LABEL"]
-    if !label
+    if not label
         label = "corpus"
     print(label .. ": files=" .. census_files:to(str) .. "  and=" .. census_ands:to(str) .. "  CHAINED=" .. total:to(str))
     0

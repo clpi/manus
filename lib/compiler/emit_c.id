@@ -60,7 +60,7 @@ eval: i64 = (expr: str)
     src = base .. ".c"
     exe = base .. ".out"
     fh = io.open(src, "w")
-    if !fh
+    if not fh
         return 0 - 1
     end
     fh:write(prog)
@@ -69,7 +69,7 @@ eval: i64 = (expr: str)
     if cc == nil
         cc = "xcrun cc"
     end
-    if !os.execute(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null")
+    if not os.execute(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null")
         os.remove(src)
         return 0 - 1
     end

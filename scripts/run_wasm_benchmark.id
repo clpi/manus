@@ -232,7 +232,7 @@ main: i64 = ()
                 .. _lpad(_fx(base, 3), 11) .. "  " .. _lpad(_fx(delta, 1) .. "%", 8)
                 .. "  " .. status)
 
-    if !gate_fail
+    if not gate_fail
         print("")
         _save_baseline(baseline, names, times, runs)
 

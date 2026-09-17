@@ -16,7 +16,7 @@ run = ()
   while pending:len() > 0
     task = pending:remove(1)
     ok, err = coroutine.resume(task.co)
-    if !ok
+    if not ok
       stdout:write("sync: task error: " .. err:to(str) .. "\n")
     else(coroutine.status(task.co) == "suspended")
       pending[pending:len() + 1] = task
@@ -25,7 +25,7 @@ step: bool = ()
     return false
   task = pending:remove(1)
   ok, err = coroutine.resume(task.co)
-  if !ok
+  if not ok
     stdout:write("sync: task error: " .. err:to(str) .. "\n")
   else(coroutine.status(task.co) == "suspended")
     pending[pending:len() + 1] = task

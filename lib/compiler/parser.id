@@ -162,7 +162,7 @@ is_ident_start_byte: bool = (c: i64)
     (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
 
 markerr = (lx: lexer)
-    if !lx.has_error
+    if not lx.has_error
         lx.error_loc = lexer.peek(lx).loc
     lx.has_error = true
 
@@ -249,10 +249,10 @@ header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offs
                 part = fact[(index + 1) * 2 + 1] & 255
             if index + 2 < count
                 following = fact[(index + 2) * 2 + 1] & 255
-            if !((part == token.kindname or token.grammarrole.roledescriptor(part)) and following == token.kindlparen)
+            if not ((part == token.kindname or token.grammarrole.roledescriptor(part)) and following == token.kindlparen)
                 typed = true
         if kind == token.kindfun or kind == token.kindfunction
-            if depth == 1 and bracket == 0 and brace == 0 and !typed
+            if depth == 1 and bracket == 0 and brace == 0 and not typed
                 return false
         if kind == token.kindlparen
             depth += 1
@@ -291,11 +291,11 @@ header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offs
         after = encoded & 255
         line = (encoded >> 8) & 268435455
         column = encoded >> 36
-    if literal and !typed
+    if literal and not typed
         return false
-    if infix and !typed
+    if infix and not typed
         return false
-    if record and !typed
+    if record and not typed
         return false
     result = false
     if after == token.kindcolon
@@ -322,8 +322,8 @@ header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offs
         return result
     if token.grammarrole.roleassoc(after) != 0 or after == token.kindcomma
         return false
-    if outer == 1 and names == 1 and !typed and !comma
-        if !allow
+    if outer == 1 and names == 1 and not typed and not comma
+        if not allow
             return false
         if line != closing
             if inside != 1
@@ -334,9 +334,9 @@ header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offs
                 return false
             if before == token.kindif or before == token.kindelseif or before == token.kindelse or before == token.kindwhile or before == token.kinduntil or before == token.kindfor or before == token.kindmatch
                 return false
-    if !allow and !typed
+    if not allow and not typed
         return false
-    if outer == 0 and !allow
+    if outer == 0 and not allow
         return false
     token.grammarrole.rolebodystart(after)
 
@@ -350,7 +350,7 @@ return_starts_value_lx: i64 = (fact: []i64, count: i64, start: i64, return_line:
         return 0
     if idol_mode and nxt_line != return_line
         return 0
-    if idol_mode and !token.grammarrole.rolebeginexpr(kind)
+    if idol_mode and not token.grammarrole.rolebeginexpr(kind)
         return 2
     1
 
@@ -365,7 +365,7 @@ _clause: i64 = (fact: []i64, count: i64, start: i64)
         return 2
     if kind == token.kindelse
         return 3
-    if !token.grammarrole.rolepattern(kind)
+    if not token.grammarrole.rolepattern(kind)
         return 0
 
     firstline = (encoded >> 8) & 268435455
@@ -402,7 +402,7 @@ _ordinal: i64 = (row: str, kind: i64)
     code - 65
 
 _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator: bool, line: i64, col: i64)
-    if !offside
+    if not offside
         return 0
     if col <= open_col
         return 1
@@ -617,7 +617,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                 declaration = 13
             elseif following == token.kindcomptime
                 declaration = 14
-        if !visible
+        if not visible
             declaration = 15
         delimiter = 0
         if kind == token.kindpipe
@@ -774,7 +774,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
 
 boundary: i64 = (opening: bool, count: i64, offside: bool, open_line: i64, open: i64, body: i64, edge: i64, line: i64, before: i64, col: i64, idol: bool)
     if opening
-        if !idol
+        if not idol
             return 0
         if open_line == 0 or open == 0
             return 0
@@ -804,7 +804,7 @@ boundary: i64 = (opening: bool, count: i64, offside: bool, open_line: i64, open:
         branchface = 0
     branch = branchface > 0
     face: i64 = 0
-    if branch and (!offside or col >= open)
+    if branch and (not offside or col >= open)
         face = branchface
     if count > 0 and line != before
         terminator = ((edge >> 15) & 1) == 1
@@ -817,7 +817,7 @@ boundary: i64 = (opening: bool, count: i64, offside: bool, open_line: i64, open:
     if ((edge >> 10) & 1) == 1
         return 1 | (face << 2) | sealed | (column << 8)
     if branch
-        if !offside or col <= open
+        if not offside or col <= open
             return 1 | (face << 2) | sealed | (column << 8)
         return (face << 2) | sealed | (column << 8)
     if ((edge >> 13) & 1) == 1
@@ -860,10 +860,10 @@ paren_header_signal_lx: bool = (lx: lexer, allow: bool, offside: i64, before: i6
                 return false
             has_comma = true
         if t.kind == token.kindcolon and depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev_kind == token.kindname
-            if !colon_is_method_call_lx(lx)
+            if not colon_is_method_call_lx(lx)
                 typed_or_vararg = true
         if t.kind == token.kindfun or t.kind == token.kindfunction
-            if depth == 1 and bracket_depth == 0 and brace_depth == 0 and !typed_or_vararg
+            if depth == 1 and bracket_depth == 0 and brace_depth == 0 and not typed_or_vararg
                 lexer.restore_state(lx, st)
                 return false
         if t.kind == token.kindlparen
@@ -894,13 +894,13 @@ paren_header_signal_lx: bool = (lx: lexer, allow: bool, offside: i64, before: i6
             inner_tokens += 1
         prev_kind = t.kind
     after = lexer.peek(lx)
-    if has_literal_arg and !typed_or_vararg
+    if has_literal_arg and not typed_or_vararg
         lexer.restore_state(lx, st)
         return false
-    if has_infix_operator and !typed_or_vararg
+    if has_infix_operator and not typed_or_vararg
         lexer.restore_state(lx, st)
         return false
-    if has_table_literal_arg and !typed_or_vararg
+    if has_table_literal_arg and not typed_or_vararg
         lexer.restore_state(lx, st)
         return false
     result = false
@@ -935,8 +935,8 @@ paren_header_signal_lx: bool = (lx: lexer, allow: bool, offside: i64, before: i6
     if is_infix_kind(after.kind) or after.kind == token.kindcomma
         lexer.restore_state(lx, st)
         return false
-    if depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma
-        if !allow
+    if depth1_tokens == 1 and depth1_names == 1 and not typed_or_vararg and not has_comma
+        if not allow
             lexer.restore_state(lx, st)
             return false
         if after.loc.line != rparen_line
@@ -952,10 +952,10 @@ paren_header_signal_lx: bool = (lx: lexer, allow: bool, offside: i64, before: i6
             if before == token.kindif or before == token.kindelseif or before == token.kindelse or before == token.kindwhile or before == token.kinduntil or before == token.kindfor or before == token.kindmatch
                 lexer.restore_state(lx, st)
                 return false
-    if !allow and !typed_or_vararg
+    if not allow and not typed_or_vararg
         lexer.restore_state(lx, st)
         return false
-    if depth1_tokens == 0 and !allow
+    if depth1_tokens == 0 and not allow
         lexer.restore_state(lx, st)
         return false
     if can_start_body_kind(after.kind)
@@ -1016,7 +1016,7 @@ is_bare_lambda_head: bool = (lx: lexer)
         else
             plain = false
     offside_single = false
-    if plain and names == 1 and commas == 0 and !empty and lx.stmt_col != 0
+    if plain and names == 1 and commas == 0 and not empty and lx.stmt_col != 0
         after = lexer.peek(lx)
         if after.kind != token.kindeof and after.loc.line != rparen_line and after.loc.col > lx.stmt_col
             offside_single = true
@@ -1057,7 +1057,7 @@ params_have_colon: bool = (lx: lexer)
                 at_slot_start = false
         else
             at_slot_start = false
-    if !found and depth == 0
+    if not found and depth == 0
         rk = token_view.kindat(lx)
         if rk == token.kindcolon or rk == token.kindarrow
             found = true
@@ -1417,7 +1417,7 @@ proj_target_or_expr: str = (lx: lexer)
         while token_view.kindat(lx) == token.kindcomma
             _c = lexer.next(lx)
             targets = targets .. " " .. proj_postfix(lx)
-        if !is_assign_kind(token_view.kindat(lx))
+        if not is_assign_kind(token_view.kindat(lx))
             lexer.restore_state(lx, st)
             return tail_pack(lx, proj_expr(lx))
         op = lexer.next(lx)
@@ -1694,7 +1694,7 @@ proj_postfix: str = (lx: lexer)
         elseif t.kind == token.kindcolon
             _c = lexer.next(lx)
             m = lexer.next(lx)
-            if !is_member_name(m)
+            if not is_member_name(m)
                 markerr(lx)
                 return "(error)"
             head = "(method " .. base .. " " .. m.text
@@ -1743,7 +1743,7 @@ proj_primary: str = (lx: lexer)
         return "(lens " .. n.text .. ")"
     if t.kind == token.kindfun or t.kind == token.kindfunction
         return proj_fun_expr(lx)
-    if t.kind == token.kindlparen and is_bare_lambda_head(lx) and !is_lambda_head(lx)
+    if t.kind == token.kindlparen and is_bare_lambda_head(lx) and not is_lambda_head(lx)
         head_line = t.loc.line
         params = proj_params_from_lparen(lx)
         if lexer.peek(lx).loc.line != head_line
@@ -1816,7 +1816,7 @@ tail_pack: str = (lx: lexer, first: str)
 proj_concept: str = (lx: lexer)
     _c = lexer.next(lx)
     n = lexer.next(lx)
-    if !is_member_name(n)
+    if not is_member_name(n)
         markerr(lx)
         return "(concept (error))"
     s = "(concept " .. n.text
@@ -1831,7 +1831,7 @@ proj_concept: str = (lx: lexer)
         if token_view.kindat(lx) == token.kindfun or token_view.kindat(lx) == token.kindfunction
             lexer.next(lx)
         nm = lexer.next(lx)
-        if !is_member_name(nm)
+        if not is_member_name(nm)
             markerr(lx)
             return s .. ")"
         if token_view.kindat(lx) != token.kindlparen

@@ -32,7 +32,7 @@ _exitcontrols: bool = ()
   err = work .. "/exit-control.stderr"
   script.fs_write(out, "")
   script.fs_write(err, "")
-  if !_exitmatch("7", 7, out, err)
+  if not _exitmatch("7", 7, out, err)
     return false
   script.fs_write(out, "noise")
   if _exitmatch("7", 7, out, err)
@@ -134,7 +134,7 @@ main: i64 = ()
       timeprep = cand .. " " .. run_timeout .. " "
 
   script.run("rm -rf " .. work .. " && mkdir -p " .. work)
-  if !_exitcontrols()
+  if not _exitcontrols()
     print("capability_table: FAIL — exit-oracle controls accepted matching status with stdout/stderr")
     return 1
 

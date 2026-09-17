@@ -367,7 +367,7 @@ count: i64 = (t: any, pred: any)
 all: bool = (t: any, pred: any)
     i = 1
     while i <= t:len()
-        if !pred(t[i], i) return false 
+        if not pred(t[i], i) return false 
         i += 1
     true
 
@@ -460,7 +460,7 @@ unique: any = (t: any)
     while i <= t:len()
         v = t[i]
         key = v:to(str)
-        if !seen[key]
+        if not seen[key]
             seen[key] = true
             n += 1
             out[n] = v
@@ -707,14 +707,14 @@ lte: any = (val: any)
     return (x: any): any x <= val
 
 notf: any = (pred: any)
-    return (x: any): any !pred(x)
+    return (x: any): any not pred(x)
 
 andf: any = (...)
     preds = {...}
     return function(x)
                     i = 1
                     while i <= preds:len()
-                        if !preds[i](x) return false 
+                        if not preds[i](x) return false 
                         i += 1
                     return true
 

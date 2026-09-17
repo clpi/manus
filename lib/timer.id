@@ -17,7 +17,7 @@ new: any = ()
 elapsed: any = (t: any)
   if t == nil
     return 0
-  if !t.running
+  if not t.running
     return t.stopped_at - t.start
   os.clock() - t.start
 

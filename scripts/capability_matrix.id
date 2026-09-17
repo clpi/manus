@@ -83,7 +83,7 @@ blocking: bool = (path: str)
     incorpus = path:find("/native_differential/", 1, true)
     frontier = path:find("/unsupported/", 1, true)
         or path:find("/known_divergent/", 1, true)
-    incorpus and !frontier
+    incorpus and not frontier
 
 note: void = (path: str, why: str)
     ninversions += 1
@@ -140,13 +140,13 @@ tally: void = (rec: str)
     else
         topnone += 1
 
-    if nat and !cpa
+    if nat and not cpa
         note(path, "native, no C path  ")
-    if cpa and !chk
+    if cpa and not chk
         note(path, "C path, check fails")
-    if nat and !chk
+    if nat and not chk
         note(path, "native, check fails")
-    if chk and !des
+    if chk and not des
         nundescribed += 1
 
 rung: void = (label: str, n: i64, total: i64)
@@ -164,7 +164,7 @@ main: i64 = ()
     jobs = envor("CAPMATRIX_JOBS", "8")
     limit = envor("CAPMATRIX_TIMEOUT", "10")
 
-    if !duo:exists()
+    if not duo:exists()
         print("capability_matrix: FAIL — no compiler at {duo}; run `zig build`")
         return 3
 

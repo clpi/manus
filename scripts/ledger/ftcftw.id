@@ -25,7 +25,7 @@ row: i64 = (path: str, proof: str, a: str, b: str, c: str, d: str)
   fail
 
 control: i64 = (path: str)
-  if !look(path, "ledger/ftcftw: pass all evidence contracts present")
+  if not look(path, "ledger/ftcftw: pass all evidence contracts present")
     print("ledger/ftcftw: fail control present pattern")
     1
   print("ledger/ftcftw: control ok")
@@ -54,7 +54,7 @@ ftcftw: i64 = ()
   metrics = "docs/METRICS.md"
   if look(metrics, "FTCFTW complete experimental proof") and look(metrics, "near 0%")
     print("  ok   complete FTCFTW proof not claimed")
-  if !(look(metrics, "FTCFTW complete experimental proof") and look(metrics, "near 0%"))
+  if not (look(metrics, "FTCFTW complete experimental proof") and look(metrics, "near 0%"))
     print("  FAIL complete FTCFTW proof claimed or METRICS unbound")
     1
 

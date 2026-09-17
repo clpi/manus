@@ -171,7 +171,7 @@ unique: any = (list: any)
     while i <= list:len()
         v = list[i]
         key = v:to(str)
-        if !seen[key]
+        if not seen[key]
             seen[key] = true
             out[out:len() + 1] = v
         i += 1
@@ -236,7 +236,7 @@ omit: any = (t: any, keys: any)
             omit_set[keys[i]] = true
             i += 1
     for k, v in t
-        if !omit_set[k]
+        if not omit_set[k]
             out[k] = v
     out
 
@@ -252,7 +252,7 @@ every: bool = (list: any, fn: any)
     if list == nil return true 
     i = 1
     while i <= list:len()
-        if !fn(list[i]) return false 
+        if not fn(list[i]) return false 
         i += 1
     true
 

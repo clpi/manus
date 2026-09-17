@@ -77,7 +77,7 @@ to_snake: str = (s: str)
                 prev = s:sub(i - 1, i - 1)
                 is_sep = false
                 if prev == "_" or prev == " " or prev == "-" is_sep = true 
-                if !is_sep
+                if not is_sep
                     next_char = ""
                     if i < len next_char = s:sub(i + 1, i + 1) 
                     is_lower_prev = false

@@ -121,7 +121,7 @@ compare_results: bool = (name: str, duo_res: table, c_res: table)
                         if diff > tol
                             print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                             fail = true
-    !fail
+    not fail
 
 _collect_min_times_impl: table = (cmd: str, min_times: table)
     runs = 10
@@ -174,9 +174,9 @@ foldreason: str = (dt: f64, ct: f64)
     out = ""
     if r1 and r2
         out = "both"
-    if r1 and !r2
+    if r1 and not r2
         out = "res"
-    if r2 and !r1
+    if r2 and not r1
         out = "form"
     out
 
@@ -230,9 +230,9 @@ duobenchduores = capture("Duo benchmark.id", "/tmp/duo_bench_duo.out")
 cbenchres = capture("reference C benchmark", "/tmp/c_bench.out")
 
 global RESULT_FAIL: bool = false
-if !compare_results("Duo .lua", duamark, cbenchres)
+if not compare_results("Duo .lua", duamark, cbenchres)
     RESULT_FAIL = true
-if !compare_results("Duo .id", duobenchduores, cbenchres)
+if not compare_results("Duo .id", duobenchduores, cbenchres)
     RESULT_FAIL = true
 
 if RESULT_FAIL

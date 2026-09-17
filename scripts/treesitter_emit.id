@@ -1740,7 +1740,7 @@ rulesonly: str = (body: str)
     i: i64 = 1
     while i <= rows:len()
         row: str = rows[i]
-        if !seen and row:find("    // ── No authored residue") > 0
+        if not seen and row:find("    // ── No authored residue") > 0
             seen = true
         if seen
             out = "{out}{row}\n"

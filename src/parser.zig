@@ -4572,10 +4572,12 @@ pub const Parser = struct {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
+                if (tok.kind == .bang and self.idol_mode) {
+                    term.locErr(tok.loc, "'!' is retired as logical not in .id; use 'not'", .{});
+                    return ParseError.UnexpectedToken;
+                }
                 const op: ?ast.UnOp = try self.unary_relation();
                 if (op) |uop| {
-                    if (try self.currentParserNot() and self.idol_mode)
-                        term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
                     const operand = try self.parse_match_scrutinee_prec(20);
                     lhs = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
@@ -5818,10 +5820,12 @@ pub const Parser = struct {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
+                if (tok.kind == .bang and self.idol_mode) {
+                    term.locErr(tok.loc, "'!' is retired as logical not in .id; use 'not'", .{});
+                    return ParseError.UnexpectedToken;
+                }
                 const op: ?ast.UnOp = try self.unary_relation();
                 if (op) |uop| {
-                    if (try self.currentParserNot() and self.idol_mode)
-                        term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
                     if (uop == .neg and (try self.pk()).int_class == .min_magnitude) {
                         _ = try self.advRaw();
@@ -9229,10 +9233,16 @@ test "parse: unary negation" {
     try testing.expectEqual(ast.UnOp.neg, expr.unop.op);
 }
 
-test "parse: bang prefix negation" {
+test "parse: bang prefix negation retired in .id" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const mod = try parseSource("local r = !true", &arena);
+    try testing.expectError(error.UnexpectedToken, parseDuoSource("local r = !true", &arena));
+}
+
+test "parse: not prefix negation in .id" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource("local r = not true", &arena);
     const expr = mod.body.stmts[0].local_decl.inits[0];
     try testing.expect(expr.* == .unop);
     try testing.expectEqual(ast.UnOp.not, expr.unop.op);

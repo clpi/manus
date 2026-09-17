@@ -143,7 +143,7 @@ test "grammar roles: long text is a literal body start by identity" {
 test "grammar roles: prefix operators begin expressions by identity" {
     try std.testing.expect(lookup(.hash).prefix);
     try std.testing.expect(lookup(.minus).prefix);
-    try std.testing.expect(lookup(.bang).prefix);
+    try std.testing.expect(!lookup(.bang).prefix);
     try std.testing.expect(!lookup(.plus).prefix);
 }
 

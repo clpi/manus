@@ -190,7 +190,7 @@ long_bracket_level: i64 = (self: lexer)
     lvl
 
 _fail(self: lexer, code: i64)
-    if !self.has_error
+    if not self.has_error
         self.has_error = true
         self.error_code = code
         self.error_loc = self:cur_loc()
@@ -271,7 +271,7 @@ read_str(self: lexer, quote: i64)
             esc = self:peek_char()
             if esc == 120
                 self:adv()
-                if self.pos > self.extent or !is_hex(self:peek_char())
+                if self.pos > self.extent or not is_hex(self:peek_char())
                     self:_fail(3)
                     return
                 self:adv()
@@ -285,12 +285,12 @@ read_str(self: lexer, quote: i64)
                 self:adv()
                 has_digit = false
                 while self.pos <= self.extent and self:peek_char() != 125
-                    if !is_hex(self:peek_char())
+                    if not is_hex(self:peek_char())
                         self:_fail(3)
                         return
                     has_digit = true
                     self:adv()
-                if !has_digit or self.pos > self.extent or self:peek_char() != 125
+                if not has_digit or self.pos > self.extent or self:peek_char() != 125
                     self:_fail(3)
                     return
                 self:adv()
@@ -427,7 +427,7 @@ read_num: token = (self: lexer)
         return _span(2, l, text, start - 1, self.pos - start, 0, to(f64)(text))
     class: i64 = 0
     is_hex_number = c1 == 48 and (c2 == 120 or c2 == 88)
-    if !is_hex_number
+    if not is_hex_number
         class = self:_decimal_class(start, self.pos - 1)
     integer: i64 = 0
     if class != 3
@@ -637,7 +637,7 @@ next: token = (self: lexer)
     tok
 
 peek: token = (self: lexer)
-    if !self.has_peeked
+    if not self.has_peeked
         self.peeked_token = self:next()
         self.has_peeked = true
     self.peeked_token

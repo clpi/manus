@@ -417,10 +417,6 @@ parseprimary: str = (p: prs)
         prsadv(p)
         o = parseprimary(p)
         return "(neg " .. o .. ")"
-    if k == "bang"
-        prsadv(p)
-        o = parseprimary(p)
-        return "(not " .. o .. ")"
     if k == "kw_not"
         prsadv(p)
         o = parseprimary(p)

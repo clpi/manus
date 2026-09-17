@@ -47,7 +47,7 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
       break
     if t.kind == token.kindname and kind != token.kinddot
       decl = t.loc.col == 1
-      if !decl
+      if not decl
         used = add(used, t.text)
     kind = t.kind
     col = t.loc.col
@@ -60,7 +60,7 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
     if declared:byte(i) == 124
       if i > start
         name = declared:sub(start, i - 1)
-        if name:len() > 1 and name:byte(1) == 95 and !has(used, name)
+        if name:len() > 1 and name:byte(1) == 95 and not has(used, name)
           count = count + 1
           if report
             print("  dead private " .. file .. ": " .. name)

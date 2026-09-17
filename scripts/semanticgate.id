@@ -164,10 +164,10 @@ debt =
     state = states.migratable
     law = "law.lexical.negation"
     owner = "lexer"
-    cap = 264
-    positive = "if !value"
-    negative = "if not value"
-    rewrite = "prefix ! — if !expr; never if not expr"
+    cap = 144
+    positive = "if not value"
+    negative = "if !value"
+    rewrite = "prefix not — if not expr; never if !expr"
   existence =
     id = "transition.existence"
     state = states.vocabularyblocked
@@ -332,7 +332,7 @@ main: i64 = ()
   if ascount(cmd) != 1
     print("(semanticgate, control, source, process classifier broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{debt.negation.positive}{q} | grep -q -v -E {q}{notpat}{q} && printf {q}%s\\n{q} {q}{debt.negation.negative}{q} | grep -q -E {q}{notpat}{q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}{debt.negation.positive}{q} | grep -q -E {q}{notpat}{q} && printf {q}%s\\n{q} {q}{debt.negation.negative}{q} | grep -q -v -E {q}{notpat}{q} && printf 1"
   if ascount(cmd) != 1
     print("(semanticgate, control, source, keyword-not classifier broken)")
     code = 3
@@ -383,7 +383,7 @@ main: i64 = ()
     envempty = ascount(cmd)
     cmd = "git grep --cached -h -E {q}{nilpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
     nilabsence = ascount(cmd)
-    cmd = "git grep --cached -h -E {q}{notpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
+    cmd = "git grep --cached -h -E {q}(^|[[:space:],=(])![A-Za-z_(]{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
     keywordnot = ascount(cmd)
     cmd = "git grep --cached -h -E {q}{existpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
     existence = ascount(cmd)

@@ -22,7 +22,7 @@ note: void = (tag: str, ok: bool, detail: str)
     mark = "FAIL"
     if ok
         mark = "ok  "
-    if !ok
+    if not ok
         failed += 1
     rows = "{rows}  {mark} {tag}  {detail}\n"
 
@@ -83,10 +83,10 @@ main: i64 = ()
 
     sdoc = "{work}/strong.json"
     wdoc = "{work}/weak.json"
-    if !explained(bin, strong, sdoc)
+    if not explained(bin, strong, sdoc)
         print("cfloor: FAIL — `duo explain` produced no document for the typed fixture")
         return 3
-    if !explained(bin, weakf, wdoc)
+    if not explained(bin, weakf, wdoc)
         print("cfloor: FAIL — `duo explain` produced no document for the `any` fixture")
         return 3
 
@@ -102,7 +102,7 @@ main: i64 = ()
         "callables carrying a C-equivalent baseline: {baselines} of {lowered}")
 
     smix = "{work}/strong-mix.json"
-    if !slice(sdoc, "mix", smix)
+    if not slice(sdoc, "mix", smix)
         print("cfloor: FAIL — no `realize.lowering:mix` variable in the typed plan")
         return 3
     stotal = field(smix, "total")
@@ -121,7 +121,7 @@ main: i64 = ()
         "floor retained; why(skip): relation=insufficient compared={compared} missing={missing} of 12 · unseats=false")
 
     wmix = "{work}/weak-mix.json"
-    if !slice(wdoc, "mix", wmix)
+    if not slice(wdoc, "mix", wmix)
         print("cfloor: FAIL — no `realize.lowering:mix` variable in the `any` plan")
         return 3
     wtotal = field(wmix, "total")
@@ -143,7 +143,7 @@ main: i64 = ()
     agreed = adirect == acequiv and adirect == aoracle and adirect:len() > 0
     note("M0 same answer", agreed,
         "direct={adirect} c-equivalent={acequiv} awk-oracle={aoracle}")
-    if !agreed
+    if not agreed
         print(rows)
         print("cfloor: FAIL — the two lowerings and the oracle disagree; no speed number is comparable")
         return 1

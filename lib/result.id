@@ -154,7 +154,7 @@ all_ok: bool = (results: any)
     return true
   i = 1
   while i <= results:len()
-    if !is_ok(results[i])
+    if not is_ok(results[i])
       return false
     i = i + 1
   true

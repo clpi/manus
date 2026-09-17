@@ -66,7 +66,7 @@ stdpat = "(^|[^a-z0-9.])std\\.[a-z]"
 suffixpat = "^[[:space:]]*[a-z][a-z0-9]*[[:space:]]*=[[:space:]]*\\([^)]*\\)[[:space:]]*:[[:space:]]*[a-z][a-z0-9]*(\\([^)]*\\))?[[:space:]]*$"
 envemptypat = "(getenv|envor|env_or|std\\.script\\.getenv).*\"\"|\"\".*(getenv|envor|env_or|std\\.script\\.getenv)"
 nilpat = "^[[:space:]]*if .*(!=|==) nil"
-notpat = "(^|[[:space:]])(if not |and not |or not |\\(not )"
+notpat = "(^|[[:space:],=(])![A-Za-z_(]"
 existpat = "^[[:space:]]*if .*exists\\("
 processpat = "(io\\.popen|io:popen|:popen[(]|popen[(]|std\\.proc\\.capture[(])"
 processadmitpat = "process[[:space:]]*=[[:space:]]*lib\\.process"
@@ -122,9 +122,9 @@ negation_id = "negation.keyword"
 negation_state = "migratable"
 negation_law = "law.lexical.negation"
 negation_owner = "lexer"
-negation_cap = 264
-negation_positive = "if !value"
-negation_negative = "if not value"
+negation_cap = 144
+negation_positive = "if not value"
+negation_negative = "if !value"
 existence_id = "transition.existence"
 existence_state = "vocabularyblocked"
 existence_law = "law.audit.conventional"
@@ -225,9 +225,9 @@ main: i64 = ()
   if tally(cmd) != 0
     print("(semanticgate, control, gate, suffix detector kingdom reintroduced)")
     code = 3
-  cmd = "git grep -n -E {q}(^|[[:space:]])(if not |and not |or not |\\\\(not ){q} -- scripts/proof gates 2>/dev/null | grep -v grammarconvergence | grep -v text:match | grep -v 'never if not' | wc -l | awk '\{print $1\}'"
+  cmd = "git grep -n -E {q}(^|[[:space:],=(])![A-Za-z_(]{q} -- scripts/proof gates 2>/dev/null | grep -v grammarconvergence | grep -v text:match | grep -v 'never if !' | wc -l | awk '\{print $1\}'"
   if tally(cmd) != 0
-    print("(semanticgate, control, gate, keyword not in teaching surfaces)")
+    print("(semanticgate, control, gate, keyword bang in teaching surfaces)")
     code = 3
   cmd = "git grep -n -E {q}^[[:space:]]*hostreadpat[[:space:]]*={q} gate/architecture.id 2>/dev/null | wc -l | awk '\{print $1\}'"
   if tally(cmd) != 0
@@ -381,7 +381,7 @@ main: i64 = ()
   if tally(cmd) != 1
     print("(semanticgate, control, source, long bracket lexical classifier broken)")
     code = 3
-  cmd = "printf {q}%s\\n{q} {q}{negation_positive}{q} | grep -qvF {q}if not {q} && printf {q}%s\\n{q} {q}{negation_negative}{q} | grep -qF {q}if not {q} && printf 1"
+  cmd = "printf {q}%s\\n{q} {q}{negation_positive}{q} | grep -qF {q}if not {q} && printf {q}%s\\n{q} {q}{negation_negative}{q} | grep -qvF {q}if not {q} && printf 1"
   if tally(cmd) != 1
     print("(semanticgate, control, source, keyword-not classifier broken)")
     code = 3

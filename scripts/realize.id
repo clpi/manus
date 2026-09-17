@@ -42,7 +42,7 @@ main: i64 = ()
         bad += 1
     end
 
-    if !present(bin)
+    if not present(bin)
         shout("FAIL — no compiler at {bin}; run `zig build` first")
         bad += 1
     end
@@ -51,15 +51,15 @@ main: i64 = ()
     two = "{root}/examples/realization_point_v2.id"
     gone = "{root}/examples/realization_norecord.id"
 
-    if !present(one)
+    if not present(one)
         shout("FAIL — missing fixture {one}")
         bad += 1
     end
-    if !present(two)
+    if not present(two)
         shout("FAIL — missing fixture {two}")
         bad += 1
     end
-    if !present(gone)
+    if not present(gone)
         shout("FAIL — missing fixture {gone}")
         bad += 1
     end
@@ -70,7 +70,7 @@ main: i64 = ()
     end
 
     plan = "{dir}/plan.json"
-    if !explained(bin, one, plan)
+    if not explained(bin, one, plan)
         shout("FAIL — `duo explain` did not run on the sealed-record fixture")
         bad += 1
     end
@@ -80,7 +80,7 @@ main: i64 = ()
         bad += 1
     end
 
-    if !held(plan, "\"variable_count\":1")
+    if not held(plan, "\"variable_count\":1")
         shout("FAIL — R1: the sealed record produced no realization variable")
         bad += 1
     end
@@ -111,7 +111,7 @@ main: i64 = ()
     end
 
     drift = "{dir}/drift.json"
-    if !explained(bin, two, drift)
+    if not explained(bin, two, drift)
         shout("FAIL — R2: `duo explain` did not run on the drifted fixture")
         bad += 1
     end
@@ -127,51 +127,51 @@ main: i64 = ()
     end
 
     fresh = "{dir}/fresh.json"
-    if !record(bin, dir, one, fresh)
+    if not record(bin, dir, one, fresh)
         shout("FAIL — R3: `duo realize` did not run on the sealed-record fixture")
         bad += 1
     end
-    if !held(fresh, "\"action\":\"fresh\"")
+    if not held(fresh, "\"action\":\"fresh\"")
         shout("FAIL — R3: the first realize did not admit the entry fresh")
         bad += 1
     end
-    if !held(fresh, "\"edge_count\":0")
+    if not held(fresh, "\"edge_count\":0")
         shout("FAIL — R3: the first realize invalidated something")
         bad += 1
     end
 
     stale = "{dir}/stale.json"
-    if !record(bin, dir, two, stale)
+    if not record(bin, dir, two, stale)
         shout("FAIL — R4: `duo realize` did not run on the drifted fixture")
         bad += 1
     end
-    if !held(stale, "\"action\":\"invalidated\"")
+    if not held(stale, "\"action\":\"invalidated\"")
         shout("FAIL — R4: the drifted shape was reused instead of invalidated")
         bad += 1
     end
-    if !held(stale, "\"reason\":\"semantic fingerprint mismatch\"")
+    if not held(stale, "\"reason\":\"semantic fingerprint mismatch\"")
         shout("FAIL — R4: the invalidation named no fingerprint")
         bad += 1
     end
-    if !held(stale, "\"edge_count\":1")
+    if not held(stale, "\"edge_count\":1")
         shout("FAIL — R4: the drift raised no invalidation edge")
         bad += 1
     end
-    if !held(stale, "\"kind\":\"fingerprint_change\"")
+    if not held(stale, "\"kind\":\"fingerprint_change\"")
         shout("FAIL — R4: the edge was not a fingerprint change")
         bad += 1
     end
 
     dropped = "{dir}/dropped.json"
-    if !record(bin, dir, gone, dropped)
+    if not record(bin, dir, gone, dropped)
         shout("FAIL — R5: `duo realize` did not run on the record-free fixture")
         bad += 1
     end
-    if !held(dropped, "\"stale\":true")
+    if not held(dropped, "\"stale\":true")
         shout("FAIL — R5: the removed entity's cache entry stayed fresh")
         bad += 1
     end
-    if !held(dropped, "\"kind\":\"entity_removed\"")
+    if not held(dropped, "\"kind\":\"entity_removed\"")
         shout("FAIL — R5: removal raised no entity_removed edge")
         bad += 1
     end

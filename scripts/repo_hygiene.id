@@ -14,7 +14,7 @@ _treeok: bool = ()
 main: i64 = ()
   fails = 0
 
-  if !_treeok()
+  if not _treeok()
     stdout:write("repo_hygiene: REFUSED — not a git work tree; every tracked-file probe would answer no\n")
     return 3
 

@@ -88,9 +88,9 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
       break
     if t.kind == token.kindname
       skip = kind == token.kinddot or kind == token.kindcolon or prev_kind == token.kindat
-      if !skip
+      if not skip
         nxt = lexer.peek(lx2)
-        if nxt.kind != token.kindassign and !has(bound, t.text) and !has(refs, t.text)
+        if nxt.kind != token.kindassign and not has(bound, t.text) and not has(refs, t.text)
           refs = add(refs, t.text)
           count = count + 1
           if report

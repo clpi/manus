@@ -42,7 +42,7 @@ main: i64 = ()
     shout("FAIL — control: status() called `false` a success")
     bad = bad + 1
 
-  if !present(bin)
+  if not present(bin)
     shout("FAIL — no compiler at {bin}; run `zig build` first")
     bad = bad + 1
 

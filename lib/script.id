@@ -18,7 +18,7 @@ ok: bool = (cmd: str)
   run(cmd) == 0
 
 must = (cmd: str)
-  if !ok(cmd)
+  if not ok(cmd)
     echo("FAIL: " .. cmd)
     os.exit(1)
 

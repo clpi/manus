@@ -83,8 +83,8 @@ same: bool = (a: str, b: str)
 answer: str = (raw: str)
     out: str = ""
     for i, line in cut(raw)
-        keep: bool = not starts(line, "engine=") and !starts(line, "result=")
-            and !starts(line, "seconds=")
+        keep: bool = not starts(line, "engine=") and not starts(line, "result=")
+            and not starts(line, "seconds=")
         piece: str = script.chomp(line)
         if keep and piece != ""
             if out == ""
@@ -271,13 +271,13 @@ main: i64 = ()
             print("  so this table describes the BINARY, not the source next to it.")
         print("")
 
-        if !exists(wardbin)
+        if not exists(wardbin)
             print("runtime bench: FAIL — no ward binary at {wardbin}")
             print("  Build it first, or set WARD_BIN. This gate does not build ward:")
             print("  a benchmark that builds its own subject reports the build, not the")
             print("  subject, and several sessions share this tree.")
             code = 3
-        if code == 0 and !exists(wartbin)
+        if code == 0 and not exists(wartbin)
             print("runtime bench: FAIL — no wart binary at {wartbin}")
             print("  wart is the reference implementation ward is measured against.")
             print("  Set WART_BIN or WART_ROOT.")
@@ -288,7 +288,7 @@ main: i64 = ()
             print("  another column. Without it nothing here can be verified, so nothing")
             print("  is printed.")
             code = 3
-        if code == 0 and !exists(floor)
+        if code == 0 and not exists(floor)
             print("runtime bench: FAIL — missing the floor module {floor}")
             code = 3
 
@@ -320,7 +320,7 @@ main: i64 = ()
         bad: bool = same("1", "3")
         wrap: bool = same("-1009008024", "3285959272")
         near: bool = same("1", "4294967295")
-        if good and !bad and wrap and !near
+        if good and not bad and wrap and not near
             print("  comparator          equal yes · differing no · wrap yes · near-wrap no   OK")
         else
             print("  comparator          FAIL — the answer comparator does not discriminate")
@@ -550,7 +550,7 @@ main: i64 = ()
             rel: str = wpath[i]
             path: str = "{root}/{rel}"
             entry: str = wentry[i]
-            if !exists(path)
+            if not exists(path)
                 print("  {nm}: MISSING {path}")
                 code = 3
             if code == 0

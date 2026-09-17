@@ -31,7 +31,7 @@ _exitcontrols: bool = ()
   err = work .. "/exit-control.stderr"
   script.fs_write(out, "")
   script.fs_write(err, "")
-  if !_exitmatch("7", 7, out, err)
+  if not _exitmatch("7", 7, out, err)
     return false
   script.fs_write(out, "noise")
   if _exitmatch("7", 7, out, err)
@@ -103,7 +103,7 @@ main: i64 = ()
       bounded = cand .. " " .. bound .. " "
 
   std.script.run("rm -rf " .. work .. " && mkdir -p " .. work)
-  if !_exitcontrols()
+  if not _exitcontrols()
     fail("exit-oracle controls failed: matching status with stdout/stderr must refuse")
 
   for i, src in listfiles(corpus)
@@ -140,7 +140,7 @@ main: i64 = ()
         out = bin .. ".stdout"
         err = bin .. ".stderr"
         actual = script.status(bounded .. bin .. " >" .. out .. " 2>" .. err)
-        if !_exitmatch(expected, actual, out, err)
+        if not _exitmatch(expected, actual, out, err)
           fail(name .. ": expected exit " .. expected .. " with empty stdout/stderr, got " .. actual:to(str) .. " (native_only)")
         else
           agree = agree + 1

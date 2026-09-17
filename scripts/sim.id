@@ -46,7 +46,7 @@ main: i64 = ()
     boxes = "grep -E -q '(lua_Value|lua_val_|lua_to_|lua_table_|duo_retain|duo_release|duo_CPoint|duo_CBigRect)' "
     bad = 0
 
-    bad += expect(!capture("false", "/dev/null"),
+    bad += expect(not capture("false", "/dev/null"),
         "control 1: capture called false a success")
     bad += expect(present(bin),
         "control 2: no compiler at {bin}; run zig build first")
