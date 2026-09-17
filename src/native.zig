@@ -4537,9 +4537,16 @@ const Arm64Compiler = struct {
         next: dnir.Instr,
         at: u32,
     ) ?u5 {
-        if (ins.op != .binop or next.op != .store_local) return null;
-        switch (ins.binop) {
-            .add, .sub, .shl, .shr, .band, .bor, .bxor, .mul => {},
+        if (next.op != .store_local) return null;
+        switch (ins.op) {
+            .binop => switch (ins.binop) {
+                .add, .sub, .shl, .shr, .band, .bor, .bxor, .mul => {},
+                else => return null,
+            },
+            // An integer constant materializes with a write-only move, so it
+            // lands in the home directly: no operand to alias, and the old
+            // home value dies with the store exactly like the binop case.
+            .@"const" => if (!ins.ty.is_integer()) return null,
             else => return null,
         }
         // Every admitted op emits a single read-before-write instruction on
@@ -4559,6 +4566,71 @@ const Arm64Compiler = struct {
             } else return null;
         } else return null;
         return home;
+    }
+
+    /// Forward the destination of a const binop that answers its lhs
+    /// unchanged (x + 0, x * 1, x & -1, x << 0, ...): when the lhs
+    /// temp dies here, the result takes over the lhs register instead of a
+    /// fresh allocation plus a move. The register is one allocReg would
+    /// have handed out — value band, no home, no pin — so the ownership
+    /// rebind and the sweep treat it exactly like a fresh destination, and
+    /// the emitter skips the move that became a self-copy.
+    fn identityBinopForwardDst(
+        self: *const Arm64Compiler,
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+        k: i64,
+        lhs: u5,
+        at: u32,
+    ) ?u5 {
+        const identity = switch (ins.binop) {
+            .add, .sub => k == 0,
+            .mul, .div, .idiv => k == 1,
+            .band => k == -1,
+            .bor, .bxor, .shl, .shr => k == 0,
+            else => false,
+        };
+        if (!identity) return null;
+        const t = switch (ins.lhs) {
+            .temp => |id| id,
+            else => return null,
+        };
+        const last = self.value_free_at.get(t) orelse return null;
+        if (last != at) return null;
+        if (lhs < 9 or lhs >= 29) return null;
+        if (lhs == platform_reserved_reg) return null;
+        if (!self.used_regs[lhs]) return null;
+        if (self.gp_home_regs[lhs]) return null;
+        if (Arm64Compiler.regIsPinned(pinned, lhs)) return null;
+        return lhs;
+    }
+
+    /// Whether a fresh integer store_local may take the stored temp's
+    /// register as the local's first home instead of allocating one. The
+    /// register already holds the value in the value band, so a fresh home
+    /// plus a move is a redundant alloc+mov; the sweep skips homes, so the
+    /// dying temp cannot free the adopted register. Restricted to call-free
+    /// functions: a caller must home locals in the callee-saved bank.
+    fn adoptTempAsLocalHome(
+        self: *const Arm64Compiler,
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+        val_reg: u5,
+        at: u32,
+    ) bool {
+        if (self.cur_func_has_call) return false;
+        const t = switch (ins.lhs) {
+            .temp => |id| id,
+            else => return false,
+        };
+        const last = self.value_free_at.get(t) orelse return false;
+        if (last != at) return false;
+        if (val_reg < 9 or val_reg >= 29) return false;
+        if (val_reg == platform_reserved_reg) return false;
+        if (!self.used_regs[val_reg]) return false;
+        if (self.gp_home_regs[val_reg]) return false;
+        if (Arm64Compiler.regIsPinned(pinned, val_reg)) return false;
+        return true;
     }
 
     fn maddStoreHome(
@@ -4974,8 +5046,20 @@ const Arm64Compiler = struct {
                             if (src != val_reg) self.releaseReg(src);
                             if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
                         } else {
-                            const local_reg = try self.allocHomeReg();
-                            try self.emitMovRegFit(local_reg, val_reg, ins.ty);
+                            // ADOPT THE PRODUCER REGISTER AS THE HOME. When the
+                            // stored value is a temp that dies here, its register
+                            // already holds the value in the value band; a fresh
+                            // home plus a move is a redundant alloc+mov. The sweep
+                            // skips homes, so the dying temp cannot free the
+                            // adopted register. Call-free functions only: a caller
+                            // must home locals in the callee-saved bank.
+                            const adopt = self.adoptTempAsLocalHome(pinned, ins, val_reg, at);
+                            const local_reg = if (adopt) val_reg else try self.allocHomeReg();
+                            if (adopt) {
+                                _ = try self.emitNarrowFit(local_reg, local_reg, ins.ty);
+                            } else {
+                                try self.emitMovRegFit(local_reg, val_reg, ins.ty);
+                            }
                             if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) {
                                 self.releaseReg(val_reg);
                             }
@@ -5164,8 +5248,12 @@ const Arm64Compiler = struct {
                     // arithmetic instruction, and why `x % 1` reached `sdiv`.
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const lhs_held = self.holdReg(lhs, pinned);
-                    const dst = preferred_result orelse try self.allocReg();
-                    if (preferred_result != null) self.claimReg(dst);
+                    const fwd = if (preferred_result == null)
+                        self.identityBinopForwardDst(pinned, ins, k, lhs, at)
+                    else
+                        null;
+                    const dst = fwd orelse preferred_result orelse try self.allocReg();
+                    if (fwd == null and preferred_result != null) self.claimReg(dst);
                     try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty);
                     if (lhs_held) self.gp_reg_owner[lhs] = null;
                     if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
@@ -7518,7 +7606,7 @@ const Arm64Compiler = struct {
         var fitted = false;
         switch (op) {
             .add => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else if (k > 0) {
+                if (k == 0) { if (dst != lhs) try self.emitMovReg(dst, lhs); } else if (k > 0) {
                     try self.emitAddImmSized(dst, lhs, @intCast(k), w32);
                     fitted = w32;
                 } else {
@@ -7527,7 +7615,7 @@ const Arm64Compiler = struct {
                 }
             },
             .sub => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else if (k > 0) {
+                if (k == 0) { if (dst != lhs) try self.emitMovReg(dst, lhs); } else if (k > 0) {
                     try self.emitSubImmSized(dst, lhs, @intCast(k), w32);
                     fitted = w32;
                 } else {
@@ -7542,7 +7630,7 @@ const Arm64Compiler = struct {
                     // second instruction writing the same bits.
                     fitted = w32;
                 } else if (k == 1) {
-                    try self.emitMovReg(dst, lhs);
+                    if (dst != lhs) try self.emitMovReg(dst, lhs);
                 } else if (powerOfTwoShift(k)) |sh| {
                     if (w32 and sh < 32) {
                         try self.emitLslImmW32(dst, lhs, sh);
@@ -7562,12 +7650,13 @@ const Arm64Compiler = struct {
             // with no range fact. Merged with idiv: one law, one realization.
             .div, .idiv => {
 
-                if (k == 1)
-                    try self.emitMovReg(dst, lhs)
-                else if (powerOfTwoShift(k)) |sh|
-                    try self.emitAsrImm(dst, lhs, sh)
-                else
+                if (k == 1) {
+                    if (dst != lhs) try self.emitMovReg(dst, lhs);
+                } else if (powerOfTwoShift(k)) |sh| {
+                    try self.emitAsrImm(dst, lhs, sh);
+                } else {
                     try self.emitBinopFlooredConstDivisor(dst, lhs, k, magicFlooredDivisor(k).?, .idiv);
+                }
             },
             // `x % ±1 = 0`; `x % 2^n = x & (2^n - 1)` under FLOORED law, for
             // every x, with no range fact. Under the truncating law this file
@@ -7588,7 +7677,7 @@ const Arm64Compiler = struct {
                     try self.emitMovImm(dst, 0);
                     fitted = w32;
                 } else if (k == -1) {
-                    try self.emitMovReg(dst, lhs);
+                    if (dst != lhs) try self.emitMovReg(dst, lhs);
                 } else {
                     const width = lowMaskWidth(k).?;
                     try self.emitLogicalLowMask(0x92400000, "and", dst, lhs, width);
@@ -7601,19 +7690,19 @@ const Arm64Compiler = struct {
                 }
             },
             .bor => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLogicalLowMask(0xb2400000, "orr", dst, lhs, lowMaskWidth(k).?);
+                if (k == 0) { if (dst != lhs) try self.emitMovReg(dst, lhs); } else try self.emitLogicalLowMask(0xb2400000, "orr", dst, lhs, lowMaskWidth(k).?);
             },
             .bxor => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else if (k == -1) {
+                if (k == 0) { if (dst != lhs) try self.emitMovReg(dst, lhs); } else if (k == -1) {
                     try self.emitMvn(dst, lhs, w32);
                     fitted = w32;
                 } else try self.emitLogicalLowMask(0xd2400000, "eor", dst, lhs, lowMaskWidth(k).?);
             },
             .shl => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLslImm(dst, lhs, @intCast(k));
+                if (k == 0) { if (dst != lhs) try self.emitMovReg(dst, lhs); } else try self.emitLslImm(dst, lhs, @intCast(k));
             },
             .shr => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLsrImm(dst, lhs, @intCast(k));
+                if (k == 0) { if (dst != lhs) try self.emitMovReg(dst, lhs); } else try self.emitLsrImm(dst, lhs, @intCast(k));
             },
             .eq, .neq, .lt, .gt, .leq, .geq => unreachable,
         }
@@ -9059,7 +9148,146 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
     // the staged call-marshaling policy treats it as live, defensively.
     try temps.put(std.testing.allocator, 99, 6);
     try std.testing.expect(!Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 6, 50, false));
+    try temps.put(std.testing.allocator, 99, 6);
+    try std.testing.expect(!Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 6, 50, false));
     try std.testing.expect(Arm64Compiler.tempNamesLiveReg(&temps, &free_at, 6, 50, true));
+}
+
+test "native backend: destfwd adopts dying temp register as first local home" {
+    var diag: Diagnostic = .{};
+    var f64m: F64RecordMap = .empty;
+    var scalm: ScalRecordMap = .empty;
+    var comp = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diag,
+        .f64_records = &f64m,
+        .scal_records = &scalm,
+    };
+    defer comp.value_free_at.deinit(comp.alloc);
+    comp.cur_func_has_call = false;
+    try comp.value_free_at.put(comp.alloc, 7, 10);
+    comp.used_regs[22] = true;
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(std.testing.allocator);
+    const ins = dnir.Instr{ .op = .binop, .binop = .add, .lhs = .{ .temp = 7 } };
+    // Temp 7 dies at instruction 10 in claimed x22: its register becomes
+    // the local home with no fresh allocation and no move.
+    try std.testing.expect(comp.adoptTempAsLocalHome(&pinned, ins, 22, 10));
+}
+
+test "native backend: destfwd refuses adoption outside its guard band" {
+    var diag: Diagnostic = .{};
+    var f64m: F64RecordMap = .empty;
+    var scalm: ScalRecordMap = .empty;
+    var comp = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diag,
+        .f64_records = &f64m,
+        .scal_records = &scalm,
+    };
+    defer comp.value_free_at.deinit(comp.alloc);
+    try comp.value_free_at.put(comp.alloc, 7, 10);
+    comp.used_regs[22] = true;
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(std.testing.allocator);
+    const ins = dnir.Instr{ .op = .binop, .binop = .add, .lhs = .{ .temp = 7 } };
+    try std.testing.expect(comp.adoptTempAsLocalHome(&pinned, ins, 22, 10));
+    // A calling function keeps the callee-saved home path.
+    comp.cur_func_has_call = true;
+    try std.testing.expect(!comp.adoptTempAsLocalHome(&pinned, ins, 22, 10));
+    comp.cur_func_has_call = false;
+    // The temp still has a later read: adopting would steal a live value.
+    try std.testing.expect(!comp.adoptTempAsLocalHome(&pinned, ins, 22, 9));
+    // The argument band is not an adoptable value register.
+    try std.testing.expect(!comp.adoptTempAsLocalHome(&pinned, ins, 8, 10));
+    // An unclaimed register carries no value to adopt.
+    comp.used_regs[22] = false;
+    try std.testing.expect(!comp.adoptTempAsLocalHome(&pinned, ins, 22, 10));
+    comp.used_regs[22] = true;
+    // A register already homed stays a home.
+    comp.gp_home_regs[22] = true;
+    try std.testing.expect(!comp.adoptTempAsLocalHome(&pinned, ins, 22, 10));
+    comp.gp_home_regs[22] = false;
+    // A pinned register belongs to the local it was pinned for.
+    try pinned.put(std.testing.allocator, 3, 22);
+    try std.testing.expect(!comp.adoptTempAsLocalHome(&pinned, ins, 22, 10));
+    // A non-temp operand has no dying register to adopt.
+    const imm = dnir.Instr{ .op = .binop, .binop = .add, .lhs = .{ .i64 = 4 } };
+    try std.testing.expect(!comp.adoptTempAsLocalHome(&pinned, imm, 22, 10));
+}
+
+test "native backend: identity forwarding keeps a dying operand register" {
+    var diag: Diagnostic = .{};
+    var f64m: F64RecordMap = .empty;
+    var scalm: ScalRecordMap = .empty;
+    var comp = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diag,
+        .f64_records = &f64m,
+        .scal_records = &scalm,
+    };
+    defer comp.value_free_at.deinit(comp.alloc);
+    try comp.value_free_at.put(comp.alloc, 5, 20);
+    comp.used_regs[21] = true;
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(std.testing.allocator);
+    const ins = dnir.Instr{ .op = .binop, .binop = .add, .lhs = .{ .temp = 5 } };
+    // x + 0 with the operand dying here reuses its register.
+    try std.testing.expectEqual(@as(?u5, 21), comp.identityBinopForwardDst(&pinned, ins, 0, 21, 20));
+    // A non-identity constant still allocates a fresh destination.
+    try std.testing.expect(comp.identityBinopForwardDst(&pinned, ins, 1, 21, 20) == null);
+    // The operand lives past this instruction: forwarding would steal it.
+    try std.testing.expect(comp.identityBinopForwardDst(&pinned, ins, 0, 21, 19) == null);
+    // The argument band is not a forwarding candidate.
+    try std.testing.expect(comp.identityBinopForwardDst(&pinned, ins, 0, 8, 20) == null);
+    // A homed register is never forwarded.
+    comp.gp_home_regs[21] = true;
+    try std.testing.expect(comp.identityBinopForwardDst(&pinned, ins, 0, 21, 20) == null);
+}
+
+test "native backend: identity emitter skips the self move" {
+    var diag: Diagnostic = .{};
+    var f64m: F64RecordMap = .empty;
+    var scalm: ScalRecordMap = .empty;
+    var comp = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diag,
+        .f64_records = &f64m,
+        .scal_records = &scalm,
+    };
+    defer comp.code.deinit(comp.alloc);
+    const before = comp.code.items.len;
+    try comp.emitBinopConst(22, 22, 0, .add, .i64);
+    try std.testing.expectEqual(before, comp.code.items.len);
+    // A distinct destination still gets its move.
+    try comp.emitBinopConst(23, 22, 0, .add, .i64);
+    try std.testing.expect(comp.code.items.len > before);
+}
+
+test "native backend: adopted home narrows in place without a move" {
+    var diag: Diagnostic = .{};
+    var f64m: F64RecordMap = .empty;
+    var scalm: ScalRecordMap = .empty;
+    var comp = Arm64Compiler{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diag,
+        .f64_records = &f64m,
+        .scal_records = &scalm,
+    };
+    defer comp.code.deinit(comp.alloc);
+    // This is the exact call the adoption arm makes for a u8 local.
+    _ = try comp.emitNarrowFit(22, 22, .u8);
+    try std.testing.expectEqual(@as(usize, 4), comp.code.items.len);
+    const word = std.mem.readInt(u32, comp.code.items[0..4], .little);
+    // A self move (orr x22, xzr, x22) is 0xAA1603D6; the narrow is the
+    // in-place ubfx, whose source and destination fields both name x22.
+    try std.testing.expect(word != 0xAA1603D6);
+    try std.testing.expectEqual(@as(u32, 22), word & 0x1f);
+    try std.testing.expectEqual(@as(u32, 22), (word >> 5) & 0x1f);
+    // Full-width types narrow to nothing.
+    const full_before = comp.code.items.len;
+    _ = try comp.emitNarrowFit(22, 22, .i64);
+    try std.testing.expectEqual(full_before, comp.code.items.len);
 }
 
     fn releaseReg(self: *Arm64Compiler, reg: u5) void {
