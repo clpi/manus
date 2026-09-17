@@ -9084,16 +9084,17 @@ fn loopUpperBound(graph: *const semantic_graph.SemanticGraph, cond: *const ast.E
 //
 // A `while` of the exact shape
 //
-//     iv = 0
+//     iv = L
 //     while iv < bound
 //         <body never reading iv>
 //         iv = iv + 1
 //
-// with `bound` provably non-negative runs its body exactly `bound` times and
-// leaves `iv == bound`. The production backend lowers it as a COUNTDOWN — one
-// register, no per-iteration comparison against the bound:
+// with `bound` provably non-negative and `L` a proven non-negative literal
+// runs its body exactly `bound - L` times and leaves `iv == bound`. The
+// production backend lowers it as a COUNTDOWN — one register, no
+// per-iteration comparison against the bound:
 //
-//     n = bound
+//     n = bound - L
 //     if n == 0 goto end     (cold pre-guard: the source loop runs zero times)
 // head:
 //     <body>
@@ -9106,9 +9107,10 @@ fn loopUpperBound(graph: *const semantic_graph.SemanticGraph, cond: *const ast.E
 // promotion write-back in the shared exit then carries to the module.
 //
 // LEGALITY is established before anything is emitted:
-//   - the induction variable starts at exactly 0 in the immediately preceding
-//     statement (`literalBindingOf` reads that statement, never `ctx.const_ints`,
-//     which is stale by design);
+//   - the induction variable's initial value is a proven non-negative literal
+//     in the immediately preceding statement (`literalBindingOf` reads that
+//     statement, never `ctx.const_ints`, which is stale by design); a dynamic
+//     bound with a nonzero init declines — its trip count is not provable;
 //   - the comparison is `<` against a provably non-negative bound;
 //   - the bound is a literal (the graph's exact-i64 fact) or a name whose
 //     non-negativity the graph's own width transfer proves
@@ -11574,6 +11576,7 @@ fn satAddSatParts(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stm
 }
 
 fn lowerSatAddCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    if (plan.iv_init != 0) return false;
     const n = plan.bound_lit orelse return false;
     if (n < 1) return false;
     const b = switch (ws.cond.*) {
@@ -11771,6 +11774,7 @@ fn bitRevSumClosedForm(n: i64, a: i64, b: i64, m: i64) ?u128 {
 }
 
 fn lowerBitRevSumCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!bool {
+    if (plan.iv_init != 0) return false;
     const n = plan.bound_lit orelse return false;
     if (n < 1) return false;
     const b = switch (ws.cond.*) {
@@ -12391,9 +12395,21 @@ fn lowerCountedWhile(ctx: *LowerCtx, ws: anytype, plan: CountedPlan) Error!?Coun
     try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
     const bound_v = try lowerExpr(ctx, b.rhs);
     const n = ctx.freshTemp();
-    try ctx.emit(.{ .op = .store_local, .result = n, .lhs = bound_v, .ty = .i64 });
-    // Cold pre-guard: the source loop runs zero times when the bound is zero;
-    // a bare do-while would run the body once.
+    // The countdown starts at `bound - iv_init`, not `bound`: the induction
+    // variable enters the loop `iv_init` trips in, so only the remaining
+    // `bound - iv_init` trips may run. A literal bound minus the proven init
+    // is a compile-time constant — the arm swallowed the zero-trip case and
+    // declined negative inits, so it is at least 1 and cannot overflow. A
+    // dynamic bound with a nonzero init has no provable trip count here; the
+    // loop lowers ordinarily instead of risking a wrong count.
+    if (plan.bound_lit) |bl| {
+        try ctx.emit(.{ .op = .store_local, .result = n, .lhs = .{ .i64 = bl - plan.iv_init }, .ty = .i64 });
+    } else if (plan.bound_name) |_| {
+        if (plan.iv_init != 0) return null;
+        try ctx.emit(.{ .op = .store_local, .result = n, .lhs = bound_v, .ty = .i64 });
+    } else return null;
+    // Cold pre-guard: the source loop runs zero times when the trip count is
+    // zero; a bare do-while would run the body once.
     const pre_t = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = pre_t, .binop = .neq, .lhs = .{ .local = n }, .rhs = .{ .i64 = 0 } });
     const pre_fail = ctx.instrs.items.len;
