@@ -4838,7 +4838,7 @@ pub const LowerCtx = struct {
         if (self.cse.count() != 0) {
             switch (instr.op) {
                 .store_local, .load_global => if (instr.result) |r| try self.cseKillLocal(r),
-                .store_global, .store_index, .call_direct, .call_extern => self.cse.clearRetainingCapacity(),
+                .store_global, .store_index, .call_direct, .call_extern, .br => self.cse.clearRetainingCapacity(),
                 else => {},
             }
         }
@@ -6983,6 +6983,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             for (end_branches.items) |*br_off| {
                 ctx.instrs.items[br_off.*].branch_target = end_idx;
             }
+            ctx.cse.clearRetainingCapacity();
         },
         .while_loop => |ws| {
             // TWO TRANSFORMS COMPOSED, AND THE ORDER IS THE WHOLE ARGUMENT.
@@ -7041,6 +7042,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // registered a break against the ENCLOSING loop anyway. So the
             // unrolled loop has exactly the two exits named above.
             ordinary: {
+                ctx.cse.clearRetainingCapacity();
                 // COUNTED-LOOP REDUCTION. The block prologue armed a plan for
                 // exactly this statement (identity-checked below); the promotion
                 // shadows are installed above, so the induction variable and the
@@ -7209,6 +7211,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 try ctx.emit(.{ .op = .br, .branch_target = head_idx });
                 try finishWhileLowering(ctx, fail_idx, promo[0..promo_len], null, &.{});
             }
+            ctx.cse.clearRetainingCapacity();
         },
         .num_for => |nf| try lowerNumFor(ctx, nf),
         .ret => |r| {
@@ -8404,6 +8407,7 @@ fn lowerNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
 fn lowerConstNumFor(ctx: *LowerCtx, loop: anytype, step_lit: i64) Error!void {
     try lowerAssignTarget(ctx, loop.var_name, loop.start);
     const i_slot = ctx.locals.get(loop.var_name) orelse return bail(ctx.diagnostic, @src());
+    ctx.cse.clearRetainingCapacity();
     const head_idx: u32 = @intCast(ctx.instrs.items.len);
     const cond_temp = ctx.freshTemp();
     const cmp_op: dnir.BinOpTag = if (step_lit > 0) .leq else .geq;
@@ -8430,6 +8434,7 @@ fn lowerConstNumFor(ctx: *LowerCtx, loop: anytype, step_lit: i64) Error!void {
     try ctx.emit(.{ .op = .br, .branch_target = head_idx });
     const end_idx: u32 = @intCast(ctx.instrs.items.len);
     ctx.instrs.items[fail_idx].branch_target = end_idx;
+    ctx.cse.clearRetainingCapacity();
 }
 
 fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
@@ -8448,6 +8453,7 @@ fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
     const step_v = if (loop.step) |step| try lowerExpr(ctx, step) else @as(dnir.Value, .{ .i64 = 1 });
     try ctx.emit(.{ .op = .store_local, .result = step_slot, .lhs = step_v });
 
+    ctx.cse.clearRetainingCapacity();
     const head_idx: u32 = @intCast(ctx.instrs.items.len);
 
     const sign_temp = ctx.freshTemp();
@@ -8508,6 +8514,7 @@ fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
     const exit_idx: u32 = @intCast(ctx.instrs.items.len);
     ctx.instrs.items[neg_fail].branch_target = exit_idx;
     ctx.instrs.items[pos_fail].branch_target = exit_idx;
+    ctx.cse.clearRetainingCapacity();
 }
 
 fn exprIsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
@@ -19570,6 +19577,7 @@ fn lowerAnyRelation(ctx: *LowerCtx, shape: collection_relation.Shape) Error!dnir
         const step = ctx.freshTemp();
         try ctx.emit(.{ .op = .store_local, .result = step, .lhs = .{ .i64 = 1 }, .ty = .i64 });
 
+        ctx.cse.clearRetainingCapacity();
         const head: u32 = @intCast(ctx.instrs.items.len);
         const in_range = ctx.freshTemp();
         try ctx.emit(.{
@@ -19872,6 +19880,7 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     if (op == .@"and") {
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, rhs), .ty = .any });
         ctx.instrs.items[test_idx].branch_target = @intCast(ctx.instrs.items.len);
+        ctx.cse.clearRetainingCapacity();
         return .{ .local = slot };
     }
 
@@ -19880,6 +19889,7 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     ctx.instrs.items[test_idx].branch_target = @intCast(ctx.instrs.items.len);
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, rhs), .ty = .any });
     ctx.instrs.items[skip_idx].branch_target = @intCast(ctx.instrs.items.len);
+    ctx.cse.clearRetainingCapacity();
     return .{ .local = slot };
 }
 
@@ -19925,6 +19935,7 @@ fn lowerIfExpr(ctx: *LowerCtx, ie: *const ast.IfExpr) Error!dnir.Value {
     ctx.instrs.items[test_idx].branch_target = @intCast(ctx.instrs.items.len);
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, ie.else_expr), .ty = .any });
     ctx.instrs.items[skip_idx].branch_target = @intCast(ctx.instrs.items.len);
+    ctx.cse.clearRetainingCapacity();
 
     // The slot inherits the arms' TYPE, not just their value. Without this a
     // `if c "a" else "b"` lands in an untyped slot and every consumer
