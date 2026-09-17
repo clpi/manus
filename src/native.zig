@@ -4195,7 +4195,11 @@ const Arm64Compiler = struct {
                 var extra_consumed: u32 = 0;
                 if (ifconv) |plan| {
                     if (fuse_branch or fuse_named) self.countTightDefAdmission(ins, flat_idx);
-                    try self.emitIfConverted(&temps, &pinned, plan, &branch_patches, flat_idx);
+                    if (plan.op != null) {
+                        try self.emitIfConverted(&temps, &pinned, plan, &branch_patches, flat_idx);
+                    } else {
+                        try self.emitIfConvertedCopy(&temps, &pinned, plan, &branch_patches, flat_idx);
+                    }
                     extra_consumed = plan.extra;
                 } else if (ifconv2) |plan| {
                     if (fuse_branch or fuse_named) self.countTightDefAdmission(ins, flat_idx);
@@ -11107,8 +11111,10 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         cmp: ?dnir.Instr,
         /// The conditional branch itself.
         br: dnir.Instr,
-        /// The arm's single ALU operation.
-        op: dnir.Instr,
+        /// The arm's single ALU operation, or null when the arm is a pure
+        /// value copy (`store_local L <- V` with no op between the branch and
+        /// the store); the arm's value is then `store.lhs` evaluated directly.
+        op: ?dnir.Instr,
         /// The arm's terminating `store_local`.
         store: dnir.Instr,
         /// DNIR instructions consumed AFTER the one the driver is holding.
@@ -11127,8 +11133,47 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         return !ins.binop.requiresNonzeroDivisor();
     }
 
+    /// Recognize the copy-arm shape `store_local L <- V ; br unconditional
+    /// -> J` at `body[1..2]` with `J = at + 3`, returning the store. The
+    /// conditional branch (`body[0]`) and its target were checked by the
+    /// caller: both branches must land on the instruction just past the
+    /// window, which is what makes the `if` one-sided. `V` is restricted to
+    /// locals, temps, and immediates, so evaluating it on the path the branch
+    /// would have skipped emits at most a home read, a frame `ldr`, or a
+    /// `mov` chain. A self-copy (`L = L`) is declined: selecting a value
+    /// against itself is correct but never profitable.
+    fn ifConvCopyArm(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        body: []const dnir.Instr,
+        at: u32,
+        br: dnir.Instr,
+    ) ?dnir.Instr {
+        const st = body[1];
+        if (st.op != .store_local) return null;
+        if (st.ty == .f64) return null;
+        if (st.application != null or st.relation != null or st.value != null) return null;
+        const l = st.result orelse return null;
+        if (self.valueIsFp(.{ .local = l }) or self.valueIsFp(st.lhs)) return null;
+        switch (st.lhs) {
+            .local => |slot| if (slot == l) return null,
+            .temp, .i64 => {},
+            else => return null,
+        }
+        const join = body[2];
+        if (join.op != .br or join.branch_condition != .unconditional) return null;
+        const join_idx = at + 3;
+        if (join.branch_target != join_idx) return null;
+        if (br.branch_target != join_idx) return null;
+        if (dnirBranchLandsWithin(f, at + 1, at + 2)) return null;
+        return st;
+    }
+
     /// Recognize `br when_x C -> J ; <one ALU op> ; store_local L ;
-    /// br unconditional -> J` with `J` the instruction just past the window.
+    /// br unconditional -> J` with `J` the instruction just past the window,
+    /// plus the degenerate copy-arm shape `br when_x C -> J ; store_local
+    /// L <- V ; br unconditional -> J` (no ALU op; the arm is the pure value
+    /// `V`, a local, temp, or immediate).
     ///
     /// `at` is the flat index of `body[0]`; `body` is the remainder of the
     /// current block starting there. Returns the plan, or null.
@@ -11140,13 +11185,19 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         cmp: ?dnir.Instr,
         consumed_before: u32,
     ) ?IfConvPlan {
-        if (body.len < 4) return null;
+        if (body.len < 3) return null;
         const br = body[0];
         if (br.op != .br) return null;
         switch (br.branch_condition) {
             .when_true, .when_false => {},
             .unconditional => return null,
         }
+        // Copy-arm shape: the arm is a pure value rather than an ALU op, so
+        // the select chooses between it and the binding's own current value.
+        if (self.ifConvCopyArm(f, body, at, br)) |st| {
+            return .{ .cmp = cmp, .br = br, .op = null, .store = st, .extra = consumed_before + 2 };
+        }
+        if (body.len < 4) return null;
         const op = body[1];
         if (!self.ifConvArmOpAdmissible(op)) return null;
         const st = body[2];
@@ -11194,7 +11245,8 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         at: u32,
     ) Error!void {
         const l = plan.store.result.?;
-        const t = plan.op.result.?;
+        const op = plan.op.?; // Null (copy arm) dispatches to emitIfConvertedCopy.
+        const t = op.result.?;
 
         // (1) The binding's current value — the arm's "else".
         const old = try self.evalDnirValue(temps, .{ .local = l });
@@ -11222,9 +11274,9 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         //     emitting a second `ldr` of the same frame slot — which is what the
         //     first version of this emitter did, and it is the redundant-reload
         //     class this document measures at 8.9% of the program elsewhere.
-        const lhs_is_dest = plan.op.lhs == .local and plan.op.lhs.local == l;
-        const rhs_is_dest = plan.op.rhs == .local and plan.op.rhs.local == l;
-        const a = if (lhs_is_dest) old else try self.evalDnirValue(temps, plan.op.lhs);
+        const lhs_is_dest = op.lhs == .local and op.lhs.local == l;
+        const rhs_is_dest = op.rhs == .local and op.rhs.local == l;
+        const a = if (lhs_is_dest) old else try self.evalDnirValue(temps, op.lhs);
         // AND THE LEFT OPERAND IS HELD ACROSS THE RIGHT ONE'S EVALUATION
         // (GAP-148).
         //
@@ -11259,10 +11311,10 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         // always been allowed to take, and holding it past this line would
         // refuse it.
         const a_held = self.holdReg(a, pinned);
-        const b = if (rhs_is_dest) old else try self.evalDnirValue(temps, plan.op.rhs);
+        const b = if (rhs_is_dest) old else try self.evalDnirValue(temps, op.rhs);
         if (a_held) self.gp_reg_owner[a] = null;
         const dst = try self.allocRegExcluding(old);
-        try self.emitCompareOrBinop(dst, a, b, plan.op.binop, plan.op.ty, plan.op.divisor, plan.op.dividend);
+        try self.emitCompareOrBinop(dst, a, b, op.binop, op.ty, op.divisor, op.dividend);
         // THE OWNER IS RECORDED WHEN THE REGISTER TAKES THE VALUE, NOT AFTER THE
         // SELECT (GAP-148).
         //
@@ -11389,6 +11441,98 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
         //     were — this fold changes WHAT is stored, never WHERE.
         try temps.put(self.alloc, t, dst);
         try self.compileDnirInstr(temps, pinned, plan.store, branch_patches, null, at);
+    }
+
+    /// Emit the `csel` form of a recognized one-sided `if` whose arm is a
+    /// pure value copy (`if c \n L = V` with `V` a local, temp, or
+    /// immediate): `csel dst, newv, old, cond` followed by the ordinary
+    /// `store_local`.
+    ///
+    /// Register discipline mirrors `emitIfConverted`. `old` (the binding's
+    /// current value) is the select's "else"; `newv` (the arm's value) is
+    /// evaluated unconditionally, which admission restricts to a home read, a
+    /// frame `ldr`, or a `mov` chain. Both are held across the condition's
+    /// evaluation — the condition allocates, and under gate transport an
+    /// allocation that fails walks the spill cascade, which retires exactly
+    /// the unowned. The select lands in a FRESH `dst` rather than `newv`'s
+    /// register: `newv` may name a local or temp that stays live past the
+    /// join, and selecting in place would clobber it on the taken path. The
+    /// store is compiled through the ordinary `store_local` path with its
+    /// source rebound to a fresh synthesized id, so later reads of a
+    /// `.local`/`.temp` source still answer with the source's own value and
+    /// not the selected one. Nothing between the condition's `cmp` and the
+    /// `csel` writes NZCV.
+    fn emitIfConvertedCopy(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *std.AutoHashMapUnmanaged(u32, u5),
+        plan: IfConvPlan,
+        branch_patches: *std.ArrayList(DnirBranchPatch),
+        at: u32,
+    ) Error!void {
+        const l = plan.store.result.?;
+        // (1) The binding's current value — the select's "else".
+        const old = try self.evalDnirValue(temps, .{ .local = l });
+        const old_held = self.holdReg(old, pinned);
+        // (2) The arm's value. Pure by admission: a local answers with its
+        // home or a frame `ldr`, a temp with its register, an immediate with
+        // a fresh `mov` chain.
+        const newv = try self.evalDnirValue(temps, plan.store.lhs);
+        const newv_held = self.holdReg(newv, pinned);
+        // The select's destination. Fresh by construction: `newv`'s register
+        // is claimed so the scan cannot answer it, and `old` is excluded by
+        // name, so both select inputs survive the allocation.
+        const dst = try self.allocRegExcluding(old);
+        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
+            self.gp_reg_owner[dst] = 0xFFFFFFFF;
+        }
+        // (3) The condition. `newv` joins `old` and `dst` in the keep set: the
+        // compare's operands are released only when they are scratch the
+        // condition itself materialized — `newv` may BE the compare's left
+        // operand (`if b < m \n m = b`), and releasing it would free the
+        // select's input while the `csel` still has to read it.
+        var arm_cond: Condition = undefined;
+        if (plan.cmp) |c| {
+            const clhs = try self.evalDnirValue(temps, c.lhs);
+            const clhs_held = self.holdReg(clhs, pinned);
+            const crhs = try self.evalDnirValue(temps, c.rhs);
+            if (clhs_held) self.gp_reg_owner[clhs] = null;
+            try self.emitCmpReg(clhs, crhs);
+            if (clhs != old and clhs != newv and clhs != dst and !Arm64Compiler.regIsPinned(pinned, clhs)) self.releaseReg(clhs);
+            if (crhs != old and crhs != newv and crhs != dst and !Arm64Compiler.regIsPinned(pinned, crhs)) self.releaseReg(crhs);
+            arm_cond = comparisonCondition(c.binop).?;
+        } else {
+            const cr = try self.evalDnirValue(temps, plan.br.lhs);
+            try self.emitCmpZero(cr);
+            if (cr != old and cr != newv and cr != dst and !Arm64Compiler.regIsPinned(pinned, cr)) self.releaseReg(cr);
+            arm_cond = .ne;
+        }
+        // `when_false -> join` skips the arm when the condition is FALSE, so
+        // the arm runs ON the condition; `when_true -> join` is its mirror.
+        if (plan.br.branch_condition == .when_true) arm_cond = invertCondition(arm_cond);
+        // (4) The select, in place of the branch. `emitCselReg` re-ensures
+        // both inputs itself; the explicit ensures match `emitIfConverted`.
+        try self.ensureRegLive(old);
+        try self.ensureRegLive(newv);
+        try self.emitCselReg(dst, newv, old, arm_cond);
+        if (old_held) self.gp_reg_owner[old] = null;
+        if (newv_held) self.gp_reg_owner[newv] = null;
+        if (old != dst and !Arm64Compiler.regIsPinned(pinned, old)) self.releaseReg(old);
+        // `newv` is scratch only for an immediate source; `releaseReg` is a
+        // no-op over homes, pins, and owned registers, so local/temp sources
+        // — which may stay live past the join — are untouched.
+        if (newv != old and newv != dst and !Arm64Compiler.regIsPinned(pinned, newv)) self.releaseReg(newv);
+        // (5) The write-back, through the ordinary `store_local` path so a
+        // register-homed local and a frame-homed one stay exactly as they
+        // were. The source is rebound to a fresh synthesized id: publishing
+        // `dst` under the source's own id would make later reads of a local
+        // or temp source answer with the SELECTED value — the binding's old
+        // value when the condition is false — instead of the source's own.
+        const s: u32 = 0xFFFFFFFF;
+        try temps.put(self.alloc, s, dst);
+        var store2 = plan.store;
+        store2.lhs = .{ .temp = s };
+        try self.compileDnirInstr(temps, pinned, store2, branch_patches, null, at);
     }
 
     // ------------------------------------------------------------------
