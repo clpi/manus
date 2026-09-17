@@ -76,6 +76,7 @@ const representation_manifest = @import("representation_manifest.zig");
 const target_model = @import("target/model.zig");
 const semantic_graph = @import("graph.zig");
 const table_apply = @import("table_apply.zig");
+const num_for_desugar = @import("num_for_desugar.zig");
 const native_bootstrap = @import("native/bootstrap.zig");
 const subject_home = @import("subject_home.zig");
 const launch_role = @import("launch_role.zig");
@@ -6497,6 +6498,7 @@ fn do_compile(
     // lift, and native emit each walk the module — one bounded bridge, deleted
     // when the graph owns the `()` table-access application directly.
     table_apply.normalizeModule(alloc, &ps.mod, &ps.sem.type_map);
+    try num_for_desugar.normalizeModule(alloc, &ps.mod, &ps.sem.type_map);
 
     const selected_backend = backend_identity.Backend.parse(backend_mode) orelse {
         term.err("unknown --backend '{s}' (expected auto, direct, native, c, or wasm)", .{backend_mode});
@@ -7857,6 +7859,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     // pass is the single owner of that agreement and this entry point was the
     // one consumer that skipped it.
     table_apply.normalizeModule(alloc, &ps.mod, &ps.sem.type_map);
+    try num_for_desugar.normalizeModule(alloc, &ps.mod, &ps.sem.type_map);
 
     var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
     defer mono.deinit();
