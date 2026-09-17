@@ -1521,7 +1521,16 @@ const Arm64Compiler = struct {
     /// `alloc_slots` result temp -> sp-relative byte offset of its slot region.
     slot_bases: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     spilled_regs: std.AutoHashMapUnmanaged(u5, u16) = .empty,
-    spill_exclude: [4]?u5 = .{ null, null, null, null },
+    /// Registers currently handed to emitter code, which may still name them
+    /// in a local and read them raw without re-deriving through
+    /// `evalDnirValue`. `spillTempVictim` never chooses one: spilling it
+    /// would leave the emitter's register number stale. Set at every
+    /// hand-out (`evalDnirValue` family, `allocRegExcluding`,
+    /// `allocRegOutsideSaveSet`), cleared at every free (`releaseReg`,
+    /// `sweepGpLive`, the direct free sites). A missed clear over-protects
+    /// toward honest refusal; the set points are complete by construction,
+    /// so no emitter can be missed the way a per-site list can be.
+    held_regs: u32 = 0,
     /// Frame slot per spilled TEMPORARY id. `spilled_regs` keys on the physical
     /// register, which the victim's register is immediately re-let for, so it
     /// cannot name the value once the register is reused. This map keys on the
@@ -3139,6 +3148,7 @@ const Arm64Compiler = struct {
                 }
                 self.gp_home_regs[r] = false;
                 self.gp_reg_owner[r] = null;
+                self.unprotectReg(r);
                 self.used_regs[r] = false;
                 if (self.spilled_regs.fetchRemove(r)) |entry| {
                     self.free_spill_slots.append(self.alloc, entry.value) catch {};
@@ -3462,6 +3472,11 @@ const Arm64Compiler = struct {
 
     /// Free every GP temp register whose owner has no read left after `idx`.
     fn sweepGpLive(self: *Arm64Compiler, idx: u32) void {
+        // Per-instruction scope: no emitter local survives past this point,
+        // so every hand-out is re-derived (and re-held) by the next emitter.
+        // A live temp's register is therefore spillable again here exactly
+        // when no emitter holds it raw, which is the benign case.
+        self.held_regs = 0;
         var reg: u5 = 0;
         while (reg < 29) : (reg += 1) {
             if (reg == platform_reserved_reg) continue;
@@ -3601,6 +3616,7 @@ const Arm64Compiler = struct {
         self.gate_param_slots = 0;
         self.eval_pinned = null;
         self.eval_temps = null;
+        self.held_regs = 0;
         self.cur_func_has_call = false;
         self.extern_preserve_x0 = false;
         self.extern_preserve_x0_temp = null;
@@ -3632,6 +3648,7 @@ const Arm64Compiler = struct {
         self.cur_func_has_call = scalar_body_has_call or dnirFunctionHasCall(f);
         self.eval_pinned = &pinned;
         self.eval_temps = &temps;
+        self.held_regs = 0;
         // §12 `error.depth`. The initializer runs ONCE, at the top of the
         // process entry and before anything has been pushed, so the `sp` it
         // reads is the deepest this process will ever stand on. The check goes
@@ -4435,6 +4452,7 @@ const Arm64Compiler = struct {
         if (!tail_terminates) return self.refuseWith(@src(), self.cur_func_name orelse "?");
         self.eval_pinned = null;
         self.eval_temps = null;
+        self.held_regs = 0;
         self.cur_func_has_call = false;
     }
 
@@ -5293,6 +5311,7 @@ const Arm64Compiler = struct {
                                         !(arg_reg >= 9 and self.gp_home_regs[arg_reg]))
                                     {
                                         self.gp_reg_owner[arg_reg] = null;
+                                        self.unprotectReg(arg_reg);
                                         self.used_regs[arg_reg] = false;
                                         if (self.spilled_regs.fetchRemove(arg_reg)) |entry| {
                                             try self.free_spill_slots.append(self.alloc, entry.value);
@@ -6200,13 +6219,7 @@ const Arm64Compiler = struct {
                         try self.emitLdrScaled(dst, base, biased);
                         if (ins.result) |t| try temps.put(self.alloc, t, dst);
                     } else {
-                        self.spill_exclude[0] = base;
-                        self.spill_exclude[1] = idx;
-                        self.spill_exclude[2] = biased;
                         const val = try self.evalDnirValueBits(temps, ins.third);
-                        self.spill_exclude[0] = null;
-                        self.spill_exclude[1] = null;
-                        self.spill_exclude[2] = null;
                         try self.emitStrScaled(val, base, biased);
                         self.releaseDnirTemp(pinned, ins.third, val);
                     }
@@ -6294,11 +6307,7 @@ const Arm64Compiler = struct {
                     if (op == .store_index) {
                         const sbase = try self.evalDnirValue(temps, ins.lhs);
                         const sidx = try self.evalDnirValue(temps, ins.rhs);
-                        self.spill_exclude[0] = sbase;
-                        self.spill_exclude[1] = sidx;
                         const sval = try self.evalDnirValue(temps, ins.third);
-                        self.spill_exclude[0] = null;
-                        self.spill_exclude[1] = null;
                         const saddr = try self.allocReg();
                         try self.emitSubImm(saddr, sidx, 1);
                         try self.emitAddReg(saddr, sbase, saddr);
@@ -6608,6 +6617,12 @@ const Arm64Compiler = struct {
     /// location is carried by the assignment rather than restated by a map each
     /// reader has to remember to check against a second one.
     fn evalDnirValue(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        const r = try self.evalDnirValueUnheld(temps, v);
+        self.protectReg(r);
+        return r;
+    }
+
+    fn evalDnirValueUnheld(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
         // FP temp on GP path: convert via fmov instead of refusing.
         // Under high register pressure, spill/reload can leave an FP-marked
         // temp reaching a GP consumer; the bits conversion is lossless.
@@ -6737,6 +6752,12 @@ const Arm64Compiler = struct {
     /// every site that was already correct — `valueIsFp` is false there and
     /// this is `evalDnirValue` verbatim.
     fn evalDnirValueBits(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        const r = try self.evalDnirValueBitsUnheld(temps, v);
+        self.protectReg(r);
+        return r;
+    }
+
+    fn evalDnirValueBitsUnheld(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
         if (!self.valueIsFp(v)) return self.evalDnirValue(temps, v);
         if (v == .f64) return self.evalDnirValue(temps, v);
         const d = try self.evalDnirValueFp(temps, v);
@@ -6746,6 +6767,12 @@ const Arm64Compiler = struct {
     }
 
     fn evalDnirValueFp(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        const r = try self.evalDnirValueFpUnheld(temps, v);
+        self.protectReg(r);
+        return r;
+    }
+
+    fn evalDnirValueFpUnheld(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
         // gap[101]: an INTEGER-classed temp in a float position is a LOSSLESS
         // WIDENING, not a refusal. The `.i64` arm below already does exactly
         // this for an immediate, and its comment reads: "scvtf already existed
@@ -8236,7 +8263,7 @@ const Arm64Compiler = struct {
         exclude: ?u5,
     ) Error!?u5 {
         if (exclude) |x| if (reg == x) return null;
-        for (self.spill_exclude) |ex| if (ex) |x| if (reg == x) return null;
+        if ((self.held_regs >> reg) & 1 != 0) return null;
         if (!self.used_regs[reg]) return null;
         if (self.spilled_regs.contains(reg)) return null;
         if (self.gp_home_regs[reg]) return null;
@@ -8320,6 +8347,7 @@ const Arm64Compiler = struct {
         try self.ensureRegLive(victim);
         try self.emitStrFrame(victim, try self.frameSlotOff(off));
         try self.spilled_regs.put(self.alloc, victim, off);
+        self.unprotectReg(victim);
         self.used_regs[victim] = false;
     }
 
@@ -8569,6 +8597,12 @@ const Arm64Compiler = struct {
     }
 
     fn allocRegExcluding(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
+        const reg = try self.allocRegExcludingUnheld(exclude);
+        self.protectReg(reg);
+        return reg;
+    }
+
+    fn allocRegExcludingUnheld(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var reg: u5 = 9;
         while (reg < 29) : (reg += 1) {
             if (reg == platform_reserved_reg) continue;
@@ -8666,7 +8700,7 @@ const Arm64Compiler = struct {
             if (!self.used_regs[victim]) continue;
             if (self.gp_home_regs[victim]) continue;
             try self.spillReg(victim);
-            return self.allocRegExcluding(exclude);
+            return self.allocRegExcludingUnheld(exclude);
         }
         victim = 28;
         while (victim >= 9) : (victim -= 1) {
@@ -8674,7 +8708,7 @@ const Arm64Compiler = struct {
             if (!self.used_regs[victim]) continue;
             if (self.gp_call_home_regs & (@as(u32, 1) << victim) != 0) continue;
             try self.spillReg(victim);
-            return self.allocRegExcluding(exclude);
+            return self.allocRegExcludingUnheld(exclude);
         }
         victim = 7;
         while (true) : (victim -= 1) {
@@ -8693,7 +8727,7 @@ const Arm64Compiler = struct {
                 continue;
             }
             try self.spillReg(victim);
-            return self.allocRegExcluding(exclude);
+            return self.allocRegExcludingUnheld(exclude);
         }
         if (self.gate_transport) return self.reclaimSpilledReg(exclude);
         return error.RegisterExhausted;
@@ -8801,6 +8835,14 @@ const Arm64Compiler = struct {
         if (reg >= callee_save_first and reg <= callee_save_last) {
             self.callee_touched |= @as(u32, 1) << reg;
         }
+    }
+
+    fn protectReg(self: *Arm64Compiler, reg: u5) void {
+        self.held_regs |= @as(u32, 1) << reg;
+    }
+
+    fn unprotectReg(self: *Arm64Compiler, reg: u5) void {
+        self.held_regs &= ~(@as(u32, 1) << reg);
     }
 
     /// Save exactly the callee-saved registers in `callee_save_plan`.
@@ -9021,6 +9063,7 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
 }
 
     fn releaseReg(self: *Arm64Compiler, reg: u5) void {
+        self.unprotectReg(reg);
         if (reg >= 29) return;
         if (reg == platform_reserved_reg) return;
         if (reg >= 9 and reg < 29 and self.gp_home_regs[reg]) return;
@@ -9112,6 +9155,7 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
             // from dead; value_free_at against this call's index does, the same
             // reading preserveArgReg's victim scan uses.
             if (self.stagedRegHoldsLiveValue(temps, r, at)) continue;
+            self.unprotectReg(r);
             self.used_regs[r] = false;
         }
         self.pending_arg_regs &= ~staged;
@@ -10185,6 +10229,7 @@ test "native backend: tempNamesLiveReg protects a low-register temp with a futur
     fn allocRegOutsideSaveSet(self: *Arm64Compiler, save: SaveSet) Error!u5 {
         const reg = self.resultReg(save) orelse return error.RegisterExhausted;
         self.claimReg(reg);
+        self.protectReg(reg);
         return reg;
     }
 
