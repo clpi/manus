@@ -10,7 +10,7 @@ chomp: str = (text: str)
   text:sub(1, n)
 
 digits: i64 = (text: str)
-  if !text or text:len() == 0
+  if not text or text:len() == 0
     return -1
   v = 0
   i = 1
@@ -45,7 +45,7 @@ main: i64 = ()
         fail = 1
       else
         found = gatecap("grep -F -- 'zzznotarelation' '{log}' >/dev/null 2>&1; echo $?") == "0\n"
-        if !found
+        if not found
           print("gap-111-subject-first gate: FAIL unknown relation refusal did not name zzznotarelation")
           fail = 1
   else

@@ -106,7 +106,7 @@ countrows: i64 = (blk: str, header: str)
           in_target = 1
         else if in_target == 1 and cell == "#"
           in_target = 0
-        else if in_target == 1 and cell != "" and !alldash(cell)
+        else if in_target == 1 and cell != "" and not alldash(cell)
           count = count + 1
     if nl == 0
       break

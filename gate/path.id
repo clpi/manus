@@ -29,7 +29,7 @@ atom: bool = (code: str, sought: str)
         before = code:sub(i - 1, i - 1)
       if i + m <= n
         after = code:sub(i + m, i + m)
-      if (before == "" or !glyph(before)) and (after == "" or !glyph(after))
+      if (before == "" or not glyph(before)) and (after == "" or not glyph(after))
         return true
     i = i + 1
   false
@@ -73,7 +73,7 @@ historical: bool = (path: str)
   path:len() >= 11 and path:sub(1, 11) == "benchmarks/" or path:len() >= 7 and path:sub(1, 7) == "vendor/"
 
 owned: bool = (path: str)
-  !foreign(path) and !historical(path)
+  not foreign(path) and not historical(path)
 
 leaf: str = (path: str)
   slash = 0
@@ -112,7 +112,7 @@ tail: bool = (name: str)
   n = name:len()
   if n < 2
     return false
-  if !digit(name:sub(n, n))
+  if not digit(name:sub(n, n))
     return false
   i = n - 1
   while i >= 1 and digit(name:sub(i, i))
@@ -169,7 +169,7 @@ ends: bool = (name: str, ending: str)
     return false
   if name:sub(n - m + 1, n) != ending
     return false
-  if n > m and !alpha(name:sub(n - m, n - m))
+  if n > m and not alpha(name:sub(n - m, n - m))
     return false
   true
 
@@ -236,7 +236,7 @@ lineref: bool = (where: str)
     return false
   i = colon + 1
   while i <= n
-    if !digit(where:sub(i, i))
+    if not digit(where:sub(i, i))
       return false
     i += 1
   true
@@ -254,7 +254,7 @@ verdict: i64 = (where: str, name: str)
   if mash(name)
     print("{where}  [PATH-SEMANTICS-BLOCKED]  mashed compound `{name}` — decompose the owner")
     hits = hits + 1
-  if file(where) and !lineref(where)
+  if file(where) and not lineref(where)
     if rolestem(name)
       print("{where}  [law.identity.role]  role-noun stem `{name}` — subject + relation; docs/spec/canonical.md §26")
       hits = hits + 1
@@ -270,7 +270,7 @@ verdict: i64 = (where: str, name: str)
     if histstem(name)
       print("{where}  [law.source.not.proof]  history/showcase stem `{name}` — isolate or delete; docs/spec/canonical.md §26")
       hits = hits + 1
-  if !file(where) and name:len() > 0
+  if not file(where) and name:len() > 0
     if orghome(name)
       print("{where}  [law.std.zero]  organizational namespace `{name}` — layout/home projection; docs/spec/canonical.md §27")
       hits = hits + 1
@@ -283,7 +283,7 @@ verdict: i64 = (where: str, name: str)
   hits
 
 walk: i64 = (path: str)
-  if !owned(path)
+  if not owned(path)
     return 0
   hits = verdict(path, leaf(path))
   if has(path, "lib/semantic/")
@@ -410,7 +410,7 @@ judge: i64 = (path: str, no: i64, line: str)
       while i <= n and glyph(code:sub(i, i))
         i = i + 1
       token = code:sub(start, i - 1)
-      if token:len() >= 2 and !digit(token:sub(1, 1)) and !member(widths, token)
+      if token:len() >= 2 and not digit(token:sub(1, 1)) and not member(widths, token)
         hits = hits + verdict("{path}:{no}", token)
     else
       i = i + 1
@@ -603,10 +603,10 @@ control: bool = ()
   if dash("value = \"\\\" -- text\"")
     print("control FAIL: quote comment boundary")
     ok = false
-  if !dash("value = \"\\\\\" -- old")
+  if not dash("value = \"\\\\\" -- old")
     print("control FAIL: closing comment boundary")
     ok = false
-  if !dash("value = \"\\\" # text\" -- old")
+  if not dash("value = \"\\\" # text\" -- old")
     print("control FAIL: hash comment boundary")
     ok = false
   if dash("value = \"\\\"text\" # -- old")
@@ -720,10 +720,10 @@ control: bool = ()
   ok
 
 _verify: i64 = ()
-  if !seed()
+  if not seed()
     print("gate/path: vocabulary load failed")
     return 3
-  if !control()
+  if not control()
     print("gate/path: POSITIVE CONTROL FAILED")
     return 3
   body = transport()

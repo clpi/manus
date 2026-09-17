@@ -9,7 +9,7 @@ cited: bool = (path: str)
   path:len() >= 5 and path:sub(1, 5) == "gate/"
 
 sigil: bool = (code: str)
-  if !code:has("@")
+  if not code:has("@")
     return false
   n = code:len()
   i = 1
@@ -41,7 +41,7 @@ peek = (prefix: str, code: str)
       before = ""
       if i > 1
         before = code:sub(i - 1, i - 1)
-      if before != "." and (before == "" or !word(before))
+      if before != "." and (before == "" or not word(before))
         j = i + m
         start = j
         while j <= n and word(code:sub(j, j))
@@ -109,7 +109,7 @@ hostr: i64 = (path: str, no: i64, code: str)
   hits = hits + rowh(path, no, code, "host.popen.colon", "io:popen(", "law.host.process", "command(line) then c:open(mode) across process boundary")
   hits = hits + rowh(path, no, code, "host.popen.word", "popen(", "law.host.process", "c:open(mode) on command subject — never popen")
   hits = hits + rowh(path, no, code, "host.execute", "os.execute(", "law.host.process", "structured command + run relation + process world")
-  if !cited(path) and !ingress(path) and code:has("echo $?")
+  if not cited(path) and not ingress(path) and code:has("echo $?")
     print("({path}, {no}, violation, host.echo, law.host.outcome, run outcome is a fact — never echo $? text status)")
     hits = hits + 1
   hits = hits + rowh(path, no, code, "host.write", "io.write(", "law.host.endpoint", "subject:write() — never io.write()")
@@ -125,7 +125,7 @@ hostr: i64 = (path: str, no: i64, code: str)
   hits = hits + rowh(path, no, code, "host.proc", "proc.", "law.host.namespace", "proc is not a thing — structured command + process world")
   hits = hits + rowh(path, no, code, "host.ir", "ir.", "law.host.namespace", "ir is not source vocabulary — graph/realization only")
   hits = hits + rowh(path, no, code, "host.core", "core.", "law.host.namespace", "core is vocabulary authority not a runtime table")
-  if !cited(path) and !ingress(path) and sigil(code)
+  if not cited(path) and not ingress(path) and sigil(code)
     print("({path}, {no}, violation, host.sigil, law.anchor.one, at-sigil is anchor only)")
     hits = hits + 1
   hits = hits + rowh(path, no, code, "host.lua", "lua_", "foreign-zero", "no lua intermediaries in Idol source")
@@ -291,17 +291,17 @@ control: bool = ()
   ok
 
 code = 0
-if !control()
+if not control()
   print("gate/host: POSITIVE CONTROL FAILED")
   code = 3
-if !code
+if not code
   body = transport()
   if body:len() == 0
     print("gate/host: empty input — pipe unified diff or pass diff path in os.args[1]")
     print("Usage: git diff -U0 ... | idol run gate/host.id")
     print("       idol run gate/host.id < /path/to.diff")
     code = 3
-  if !code
+  if not code
     total = scan(body)
     print("")
     print("gate/host: {total} finding(s) on ADDED lines  [control: pass]")

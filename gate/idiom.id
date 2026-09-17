@@ -1,9 +1,9 @@
 
 transport: str = ()
   text = stdin:read()
-  if !text
+  if not text
     return ""
-  if !text:len()
+  if not text:len()
     return ""
   text
 
@@ -31,7 +31,7 @@ directive: bool = (name: str)
 sigil: bool = (code: str)
   if commentline(code)
     return false
-  if !code:has("@")
+  if not code:has("@")
     return false
   n = code:len()
   i = 1
@@ -46,10 +46,10 @@ sigil: bool = (code: str)
       postfix = false
       if prev != ""
         postfix = word(prev) or prev == ")" or prev == "]"
-      if !postfix
+      if not postfix
         if nxt == "." or nxt == ":"
           return true
-        if word(nxt) and !digit(nxt)
+        if word(nxt) and not digit(nxt)
           j = i + 1
           name = ""
           while j <= n and word(code:sub(j, j))
@@ -60,7 +60,7 @@ sigil: bool = (code: str)
             return true
         else
           prefixok = nxt == "" or nxt == "\{" or nxt == "(" or nxt == "@" or nxt == " "
-          if !prefixok
+          if not prefixok
             return true
     i = i + 1
   false
@@ -70,7 +70,7 @@ docline: bool = (code: str)
 
 projcurrydesc: bool = (code: str, desc: str)
   needle = "to({desc})("
-  if !code:has(needle)
+  if not code:has(needle)
     return false
   if commentline(code) or docline(code)
     return false
@@ -93,20 +93,20 @@ boundface: bool = (code: str, face: str)
       prev = " "
       if i > 1
         prev = code:sub(i - 1, i - 1)
-      if prev != "." and prev != "_" and !alpha(prev) and !upper(prev) and !digit(prev)
+      if prev != "." and prev != "_" and not alpha(prev) and not upper(prev) and not digit(prev)
         return true
     i += 1
   false
 
 binidol: bool = (code: str)
-  code:has("bin/idol") and !code:has("zig-out/bin/idol")
+  code:has("bin/idol") and not code:has("zig-out/bin/idol")
 
 
 dot__io = (code: str)
   boundface(code, "io.")
 
 dot__os = (code: str)
-  boundface(code, "os.") and !code:has("os.args") and !code:has("os.env")
+  boundface(code, "os.") and not code:has("os.args") and not code:has("os.env")
 
 
 subject__has = (code: str)
@@ -192,10 +192,10 @@ deny: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, "pcall", "§1 deny", "t | error — failure routes (B-15)", quiet)
   hits = hits + flag(path, no, code, "setmetatable", "§1 deny", "descriptors and protocols", quiet)
   hits = hits + flag(path, no, code, "pairs", "§1 deny", "iterate the value: xs:each()", quiet)
-  hits = hits + flag(path, no, code, "if not ", "LEXICAL", "prefix ! — if !expr; never if not expr", quiet)
-  hits = hits + flag(path, no, code, " and not ", "LEXICAL", "prefix ! — and !expr; never and not expr", quiet)
-  hits = hits + flag(path, no, code, " or not ", "LEXICAL", "prefix ! — or !expr; never or not expr", quiet)
-  hits = hits + flag(path, no, code, "(not ", "LEXICAL", "prefix ! — (!expr); never (not expr)", quiet)
+  hits = hits + flag(path, no, code, "if !", "LEXICAL", "prefix not — if not expr; never if !expr", quiet)
+  hits = hits + flag(path, no, code, " and !", "LEXICAL", "prefix not — and not expr; never and !expr", quiet)
+  hits = hits + flag(path, no, code, " or !", "LEXICAL", "prefix not — or not expr; never or !expr", quiet)
+  hits = hits + flag(path, no, code, "(!", "LEXICAL", "prefix not — (not expr); never (!expr)", quiet)
   hits = hits + flag(path, no, code, ".new(", "LADDER", "desc\{…\} · x:to(desc) · p:from(mode)(…) · file.open", quiet)
   hits = hits + flag(path, no, code, ".create(", "LADDER", "desc\{…\}", quiet)
   hits = hits + flag(path, no, code, "make", "LADDER", "desc\{…\} — make* is banned", quiet)
@@ -236,8 +236,8 @@ edge: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, "std.script.", "host-TEMP", "std.script frozen — renaming to process does not decompose authority", quiet)
   hits = hits + flag(path, no, code, "ir.", "host-TEMP", "ir is not source vocabulary — graph/realization authority only", quiet)
   hits = hits + flag(path, no, code, "core.", "host-TEMP", "no core namespace — canonical vocabulary projection", quiet)
-  if !cited(path) and !ingress(path) and sigil(code)
-    if !quiet
+  if not cited(path) and not ingress(path) and sigil(code)
+    if not quiet
       print("{path}:{no}  at  [law.anchor.one]  at-sigil is current-world only — no prefix directive")
     hits = hits + 1
   hits = hits + flag(path, no, code, "bitcast", "view-TEMP", "subject-first to(bit) @view — no bitcast naming", quiet)
@@ -279,7 +279,7 @@ edge: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, "viewrouter", "LAW-ONE", "router(view)(view[home]) — never view+router mash", quiet)
   hits = hits + flag(path, no, code, "viewproof", "LAW-ONE", "router(proof)(proof[view]) — slot name matches home key", quiet)
   if binidol(code)
-    if !quiet
+    if not quiet
       print("({path}, {no}, violation, LAW-ONE, bin/idol outside zig-out/bin/idol — public command identity is idol")
     hits += 1
   hits = hits + flag(path, no, code, "fsrouter", "LAW-ONE", "router(proof)(proof[home]) — never fs+router mash", quiet)
@@ -356,7 +356,7 @@ adj: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, "audit: bool = (path", "bridge", "audit(path) = (pattern: str) with path:read() then :match on next line; call path:audit(pattern)", quiet)
   hits = hits + flag(path, no, code, "hit: bool = (path", "bridge", "hit(path) = (pattern: str) with path:read() then :match on next line; call path:hit(pattern)", quiet)
   hits = hits + flag(path, no, code, "from(path) = (pattern", "bridge", "audit(path) = (pattern: str) for required patterns; hit(path)(pattern) for forbidden — never from(path) mash", quiet)
-  if !(path:len() >= 5 and path:sub(1, 5) == "gate/")
+  if not (path:len() >= 5 and path:sub(1, 5) == "gate/")
     hits = hits + flag(path, no, code, "flag(path, ", "bridge", "path:flag(q)(no, code, pat, law, fix) — subject-first; never flag(path, ...)", quiet)
     hits = hits + flag(path, no, code, "flag(path)(", "bridge", "path:flag(q)(...) — subject-first; never flag(path)(...)", quiet)
   hits = hits + flag(path, no, code, "len(path, ", "bridge", "len(path)(min) — boundary-curried length audit; never flat len(path, min)", quiet)
@@ -488,7 +488,7 @@ capital: bool = (code: str)
     before = ""
     if i > 1
       before = code:sub(i - 1, i - 1)
-    if digit(c) and (i == 1 or !alpha(before) and !upper(before) and before != "_")
+    if digit(c) and (i == 1 or not alpha(before) and not upper(before) and before != "_")
       i = i + 1
       while i <= n and (alpha(code:sub(i, i)) or upper(code:sub(i, i)) or digit(code:sub(i, i)) or code:sub(i, i) == "_" or code:sub(i, i) == ".")
         i = i + 1
@@ -510,7 +510,7 @@ token: bool = (code: str, sought: str)
         before = code:sub(i - 1, i - 1)
       if i + m <= n
         after = code:sub(i + m, i + m)
-      if (before == "" or !word(before)) and (after == "" or !word(after))
+      if (before == "" or not word(before)) and (after == "" or not word(after))
         return true
     i = i + 1
   false
@@ -554,14 +554,14 @@ callfirst: bool = (needle: str, code: str)
       before = ""
       if i > 1
         before = code:sub(i - 1, i - 1)
-      if before != ":" and (before == "" or !word(before))
+      if before != ":" and (before == "" or not word(before))
         return true
     i = i + 1
   false
 
 callfirstrel: bool = (rel: str, code: str)
   needle = "{rel}("
-  if !callfirst(needle, code)
+  if not callfirst(needle, code)
     return false
   s = strip(code)
   head = "{rel}("
@@ -583,7 +583,7 @@ subject__eq = (code: str)
   if s:len() >= 3 and s:sub(1, 3) == "eq("
     if s:has(")(") and s:has(" =")
       return false
-    if s:has(") =") and !s:has(", ")
+    if s:has(") =") and not s:has(", ")
       return false
   n = code:len()
   i = 1
@@ -595,7 +595,7 @@ subject__eq = (code: str)
       before = ""
       if i > 1
         before = code:sub(i - 1, i - 1)
-      if before != ":" and (before == "" or !word(before))
+      if before != ":" and (before == "" or not word(before))
         return true
     i = i + 1
   false
@@ -677,11 +677,11 @@ sep: bool = (name: str)
 
 digitonly: bool = (name: str)
   n = name:len()
-  if !n
+  if not n
     return false
   i = 1
   while i <= n
-    if !digit(name:sub(i, i))
+    if not digit(name:sub(i, i))
       return false
     i = i + 1
   true
@@ -692,7 +692,7 @@ tail: bool = (name: str)
   n = name:len()
   if n < 2
     return false
-  if !digit(name:sub(n, n))
+  if not digit(name:sub(n, n))
     return false
   i = n - 1
   while i >= 1 and digit(name:sub(i, i))
@@ -722,7 +722,7 @@ foreign: bool = (path: str)
   path:len() >= 4 and path:sub(1, 4) == "ext/"
 
 owned: bool = (path: str)
-  !foreign(path)
+  not foreign(path)
 
 stem: str = (path: str)
   slash = 0
@@ -763,7 +763,7 @@ eq__q = (where: str, name: str)
 
 eq: i64 = (where: str, name: str)
   hits = 0
-  if !name:len()
+  if not name:len()
     return 0
   if admitted(name) or digitonly(name)
     return 0
@@ -779,7 +779,7 @@ eq: i64 = (where: str, name: str)
   hits
 
 route__q = (path: str)
-  if !owned(path)
+  if not owned(path)
     return 0
   hits = eq__q(path, stem(path))
   if path:has("lib/semantic/")
@@ -802,7 +802,7 @@ route__q = (path: str)
   hits
 
 route: i64 = (path: str)
-  if !owned(path)
+  if not owned(path)
     return 0
   hits = eq(path, stem(path))
   if path:has("lib/semantic/")
@@ -826,13 +826,13 @@ route: i64 = (path: str)
 
 seed: bool = ()
   body = "gate/idiom.id":read()
-  if !body
+  if not body
     false
   if body:len() < 32
     false
-  if !body:has("law.boolean.mirror.zero")
+  if not body:has("law.boolean.mirror.zero")
     false
-  if !body:has("law.catalog.zero")
+  if not body:has("law.catalog.zero")
     false
   true
 
@@ -857,31 +857,31 @@ audit: i64 = (path: str, no: i64, line: str)
 lex: i64 = (path: str, no: i64, code: str, line: str, quiet: bool)
   hits = 0
   if bare(code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  end  [Smoke §7]  `end` is DELETED — outdent")
     hits = hits + 1
   if under(code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  underscore  [LAW-ONE]  one lowercase word: a LEVEL, a HOME, or delete the axis")
     hits = hits + 1
   if capital(code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  uppercase  [LAW-ONE]  no uppercase in an identifier, ever: point, error, max")
     hits = hits + 1
   if code:has(";")
-    if !quiet
+    if not quiet
       print("{path}:{no}  semicolon  [Smoke §1]  the semicolon does not exist — press enter")
     hits = hits + 1
   if dash(line)
-    if !quiet
+    if not quiet
       print("{path}:{no}  dash comment  [LEXICAL]  `#` starts a comment — `--` is Lua debt")
     hits = hits + 1
   if bridge(line)
-    if !quiet
+    if not quiet
       print("{path}:{no}  concat  [FMT-ONE]  `\{\}` interpolation — never `..` concatenation")
     hits = hits + 1
   if expand(code)
-    if !quiet
+    if not quiet
       print("({path}, {no}, migratable, law.update.face, place += value — use += -= *= /=; never place = place op value)")
     hits = hits + 1
   hits
@@ -889,100 +889,100 @@ lex: i64 = (path: str, no: i64, code: str, line: str, quiet: bool)
 face: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = 0
   if code:has("function")
-    if !quiet
+    if not quiet
       print("{path}:{no}  function  [§1]  callable binding: name: i64 = (a: i64)")
     hits = hits + 1
   if token(code, "fun") or token(code, "fn")
-    if !quiet
+    if not quiet
       print("{path}:{no}  fun/fn  [§2]  callable binding with result demand — never fun/fn keyword")
     hits = hits + 1
   if token(code, "let") or token(code, "local") or token(code, "const")
-    if !quiet
+    if not quiet
       print("{path}:{no}  let/local/const  [§2]  binding with result demand — never let/local/const keyword")
     hits = hits + 1
   if code:has("require_old")
-    if !quiet
+    if not quiet
       print("{path}:{no}  require_old  [§0h]  std is the prelude graph — no import")
     hits = hits + 1
   if projcurry(code)
-    if !quiet
+    if not quiet
       print("({path}, {no}, migratable, law.paren.one, shortest unique form under law.infer.one — declare to(str)=; prefer value over value:to(str) when demand proves redundancy; never to(str)(value) at call site)")
     hits = hits + 1
   if code:has("pcall")
-    if !quiet
+    if not quiet
       print("{path}:{no}  pcall  [B-15]  t | error — failure routes")
     hits = hits + 1
   if code:has("setmetatable")
-    if !quiet
+    if not quiet
       print("{path}:{no}  setmetatable  [§1]  descriptors and relation facts")
     hits = hits + 1
   if token(code, "nil")
-    if !quiet
+    if not quiet
       print("({path}, {no}, invalid, law.lua.hosted, nil is a Lua value; use the admitted semantic case)")
     hits = hits + 1
   if code:has(".new(")
-    if !quiet
+    if not quiet
       print("{path}:{no}  .new(  [LADDER]  desc\{\{…\}\} · x:to(desc) · p:from(mode)(…)")
     hits = hits + 1
   if subject__has(code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  has(  [law.world.dot]  hay:has(needle) — subject-first; never has(hay, needle)")
     hits = hits + 1
   if subject__tail(code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  tail(  [law.world.dot]  name:tail() — subject-first; never tail(name)")
     hits = hits + 1
   if subject__read(code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  io:read(  [law.relation.read]  stdin:read() or path:read() — read relation on subject")
     hits = hits + 1
-  if !(path:len() >= 5 and path:sub(1, 5) == "gate/") and subject__eq(code)
-    if !quiet
+  if not (path:len() >= 5 and path:sub(1, 5) == "gate/") and subject__eq(code)
+    if not quiet
       print("{path}:{no}  eq(  [law.world.dot]  x:eq(y) or route/eq(q) admission — never eq(x, y) at call site")
     hits = hits + 1
   if callfirstrel("match", code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  match(  [law.world.dot]  text:match(pattern) — subject-first; never match(text, pattern)")
     hits = hits + 1
   if callfirstrel("open", code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  open(  [law.world.dot]  path:open(mode) — subject-first; never open(path, mode)")
     hits = hits + 1
   if callfirstrel("write", code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  write(  [law.world.dot]  subject:write() — subject-first; never write(subject, ...)")
     hits = hits + 1
   if callfirstrel("len", code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  len(  [law.world.dot]  value:len() — subject-first; never len(value)")
     hits = hits + 1
   if callfirstrel("read", code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  read(  [law.relation.read]  path:read() or stdin:read() — subject-first; never read(path)")
     hits = hits + 1
   if callfirstrel("find", code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  find(  [law.world.dot]  text:find(p) — subject-first; never find(text, p)")
     hits = hits + 1
   if callfirstrel("sub", code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  sub(  [law.world.dot]  text:sub(a, b) — subject-first; never sub(text, a, b)")
     hits = hits + 1
   if callfirstrel("member", code)
-    if !quiet
+    if not quiet
       print("{path}:{no}  member(  [law.world.dot]  word:member(hay) — subject-first; never member(hay, word)")
     hits = hits + 1
   hits
 
 realm: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = 0
-  if !ingress(path)
+  if not ingress(path)
     if dot__io(code)
-      if !quiet
+      if not quiet
         print("({path}, {no}, violation, law.world.dot, io is a world — stdin:read() / path:read() / subject:relation(); never io.method())")
       hits = hits + 1
     if dot__os(code)
-      if !quiet
+      if not quiet
         print("({path}, {no}, violation, law.world.dot, os is a world — use os.args[n] / os.env[k]; never os.method())")
       hits = hits + 1
   hits
@@ -1029,7 +1029,7 @@ newfile: bool = (oldline: str)
   devnull(oldline)
 
 renamed: bool = (oldline: str, newpath: str)
-  if !oldhead(oldline)
+  if not oldhead(oldline)
     return false
   if newfile(oldline)
     return false
@@ -1126,10 +1126,10 @@ control: bool = ()
   if dash("value = \"\\\" -- text\"")
     print("control FAIL: quote comment boundary")
     ok = false
-  if !dash("value = \"\\\\\" -- old")
+  if not dash("value = \"\\\\\" -- old")
     print("control FAIL: closing comment boundary")
     ok = false
-  if !dash("value = \"\\\" # text\" -- old")
+  if not dash("value = \"\\\" # text\" -- old")
     print("control FAIL: hash comment boundary")
     ok = false
   if dash("value = \"\\\"text\" # -- old")
@@ -1138,22 +1138,22 @@ control: bool = ()
   if bridge("value = \"\\\" .. text\"")
     print("control FAIL: quote composition boundary")
     ok = false
-  if !bridge("value = \"\\\\\" .. other")
+  if not bridge("value = \"\\\\\" .. other")
     print("control FAIL: closing composition boundary")
     ok = false
-  if !bare("    end")
+  if not bare("    end")
     print("control FAIL: bare did not fire")
     ok = false
   if bare("    scan(n)")
     print("control FAIL: bare fired on canonical")
     ok = false
-  if !under("is_digit(c)") or !under("_subject")
+  if not under("is_digit(c)") or not under("_subject")
     print("control FAIL: under did not fire")
     ok = false
   if under("digit(c)")
     print("control FAIL: under fired on canonical")
     ok = false
-  if !capital("p: Point") or !capital("p: P") or !capital("foo2Bar")
+  if not capital("p: Point") or not capital("p: P") or not capital("foo2Bar")
     print("control FAIL: capital did not fire")
     ok = false
   if capital("p: point") or capital("mask = 0xFF") or capital("value = 1E9")
@@ -1162,112 +1162,112 @@ control: bool = ()
   if strip("code # string.sub here"):len() > 6
     print("control FAIL: strip did not remove a comment")
     ok = false
-  if !dash("x = 1  -- old")
+  if not dash("x = 1  -- old")
     print("control FAIL: dash did not reject Lua comment")
     ok = false
   if dash("x = 1  # canonical") or dash("--- @inline")
     print("control FAIL: dash rejected canonical # comment or --- decorator")
     ok = false
-  if !token("value = nil", "nil") or token("value = vanilla", "nil")
+  if not token("value = nil", "nil") or token("value = vanilla", "nil")
     print("control FAIL: nil token boundary is broken")
     ok = false
-  if !head("+++ b/example.id") or head("+value = \"+++ b/\"")
+  if not head("+++ b/example.id") or head("+value = \"+++ b/\"")
     print("control FAIL: diff header boundary is broken")
     ok = false
-  if !bridge("x = left .. right")
+  if not bridge("x = left .. right")
     print("control FAIL: bridge did not reject .. concatenation")
     ok = false
   if bridge("# x .. y")
     print("control FAIL: bridge rejected comment context")
     ok = false
-  if !expand("hits = hits + 1")
+  if not expand("hits = hits + 1")
     print("control FAIL: expand did not reject place = place op value")
     ok = false
   if expand("hits += 1") or expand("left = right + 1")
     print("control FAIL: expand rejected compound or distinct places")
     ok = false
-  if !subject__tail("if tail(name)")
+  if not subject__tail("if tail(name)")
     print("control FAIL: subject(tail) did not reject non-subject-first tail(")
     ok = false
   if subject__tail("if name:tail()") or subject__tail("exprtail()")
     print("control FAIL: subject(tail) rejected subject-first or identifier suffix")
     ok = false
-  if !subject__has("if has(code, pat)")
+  if not subject__has("if has(code, pat)")
     print("control FAIL: subject(has) did not reject non-subject-first has(")
     ok = false
   if subject__has("if code:has(pat)")
     print("control FAIL: subject(has) rejected subject-first has(")
     ok = false
-  if !subject__read("line = io:read()")
+  if not subject__read("line = io:read()")
     print("control FAIL: subject(read) did not reject io:read")
     ok = false
   if subject__read("line = stdin:read()") or subject__read("path:read()")
     print("control FAIL: subject(read) rejected canonical stdin:read / path:read")
     ok = false
-  if !subject__eq("if eq(x, y)")
+  if not subject__eq("if eq(x, y)")
     print("control FAIL: subject(eq) did not reject operation-first eq(x, y)")
     ok = false
   if subject__eq("hits += eq(q)(path, stem)") or subject__eq("eq(i64)(f64) = store")
     print("control FAIL: subject(eq) rejected eq(q) admission or relation-store declaration")
     ok = false
-  if !callfirstrel("match", "if match(text, pat)")
+  if not callfirstrel("match", "if match(text, pat)")
     print("control FAIL: callfirstrel(match) did not reject operation-first match(")
     ok = false
   if callfirstrel("match", "if text:match(pat)") or callfirstrel("match", "match(pattern) = (text)")
     print("control FAIL: callfirstrel(match) rejected subject-first or declaration head")
     ok = false
-  if !callfirstrel("len", "n = len(text)")
+  if not callfirstrel("len", "n = len(text)")
     print("control FAIL: callfirstrel(len) did not reject operation-first len(")
     ok = false
   if callfirstrel("len", "if text:len()") or callfirstrel("len", "len(path)(32)")
     print("control FAIL: callfirstrel(len) rejected subject-first or gate boundary len(path)(min)")
     ok = false
-  if !strike("examples/test.id", 1, "hits += flag(path, no, code, pat, law, fix, quiet)")
+  if not strike("examples/test.id", 1, "hits += flag(path, no, code, pat, law, fix, quiet)")
     print("control FAIL: flag(path, operation-first bridge rule did not fire")
     ok = false
-  if !probe("x = findFunc(\"main\")", "findFunc(")
+  if not probe("x = findFunc(\"main\")", "findFunc(")
     print("control FAIL: findFunc name lookup firewall did not fire")
     ok = false
-  if !probe("k = EdgeKind.run", "EdgeKind.")
+  if not probe("k = EdgeKind.run", "EdgeKind.")
     print("control FAIL: EdgeKind operational edge firewall did not fire")
     ok = false
-  if !probe("x:set(k, v)", ":set(")
+  if not probe("x:set(k, v)", ":set(")
     print("control FAIL: :set( ordinary access firewall did not fire")
     ok = false
-  if !probe("f:call(x)", ":call(")
+  if not probe("f:call(x)", ":call(")
     print("control FAIL: :call( application firewall did not fire")
     ok = false
-  if !probe("let x = 1", "let")
+  if not probe("let x = 1", "let")
     print("control FAIL: let keyword firewall did not fire")
     ok = false
-  if !probe("call_handler = ()", "call_handler")
+  if not probe("call_handler = ()", "call_handler")
     print("control FAIL: call_handler collision firewall did not fire")
     ok = false
-  if !pathfail("lib/std/index/suffixarray.id")
+  if not pathfail("lib/std/index/suffixarray.id")
     print("control FAIL: route did not reject suffixarray compound path")
     ok = false
   if pathfail("lib/std/index/suffix/array.id")
     print("control FAIL: route rejected decomposed suffix/array path")
     ok = false
-  if !pathfail("lib/semantic_graph.id")
+  if not pathfail("lib/semantic_graph.id")
     print("control FAIL: route did not reject mashed path stem")
     ok = false
   if pathfail("lib/compiler/graph.id")
     print("control FAIL: route rejected decomposed compiler/graph path")
     ok = false
-  if !pathfail("lib/semantic/io.id")
+  if not pathfail("lib/semantic/io.id")
     print("control FAIL: route did not reject deleted catalog home")
     ok = false
-  if !compound("readline")
+  if not compound("readline")
     print("control FAIL: compound did not reject readline")
     ok = false
-  if !compound("strproof")
+  if not compound("strproof")
     print("control FAIL: compound did not reject strproof")
     ok = false
-  if !compound("writetemp")
+  if not compound("writetemp")
     print("control FAIL: compound did not reject writetemp")
     ok = false
-  if !"writetemp(path, body)":has("writetemp")
+  if not "writetemp(path, body)":has("writetemp")
     print("control FAIL: writetemp mash rule did not fire")
     ok = false
   if compound("write")
@@ -1276,55 +1276,55 @@ control: bool = ()
   if compound("audit")
     print("control FAIL: compound rejected canonical audit")
     ok = false
-  if !namefail("x", "semantic_graph")
+  if not namefail("x", "semantic_graph")
     print("control FAIL: eq did not reject semantic_graph")
     ok = false
   if namefail("x", "semantic")
     print("control FAIL: eq rejected canonical semantic")
     ok = false
-  if !"args = os.args()":has("os.args(")
+  if not "args = os.args()":has("os.args(")
     print("control FAIL: os.args host firewall did not fire")
     ok = false
-  if !"mode = os.getenv(\"X\")":has("os.getenv(")
+  if not "mode = os.getenv(\"X\")":has("os.getenv(")
     print("control FAIL: os.getenv host firewall did not fire")
     ok = false
-  if !"use(m)":has("use(") or !"using(m)":has("using(")
+  if not "use(m)":has("use(") or not "using(m)":has("using(")
     print("control FAIL: admission syntax firewall did not fire")
     ok = false
   if "command = os.args[1]":has("os.args(")
     print("control FAIL: os.args() fired on os.args table index")
     ok = false
-  if !"mode = environment[":has("environment[")
+  if not "mode = environment[":has("environment[")
     print("control FAIL: environment entity firewall did not fire")
     ok = false
-  if !probe("table.insert(xs,v)", "table.")
+  if not probe("table.insert(xs,v)", "table.")
     print("control FAIL: table namespace firewall did not fire on positive")
     ok = false
   if probe("xs:push(v)", "table.")
     print("control FAIL: table namespace firewall fired on canonical xs:push")
     ok = false
-  if !probe("string.sub(text,a,b)", "string.")
+  if not probe("string.sub(text,a,b)", "string.")
     print("control FAIL: string namespace firewall did not fire on positive")
     ok = false
   if probe("text:sub(a,b)", "string.")
     print("control FAIL: string namespace firewall fired on canonical text:sub")
     ok = false
-  if !"x = std.proc.capture(\"echo\")":has("std.")
+  if not "x = std.proc.capture(\"echo\")":has("std.")
     print("control FAIL: std namespace firewall did not fire")
     ok = false
-  if !strike("control", 1, "f = std" .. ".io.open(p)")
+  if not strike("control", 1, "f = std" .. ".io.open(p)")
     print("control FAIL: general retired namespace rule did not reject io")
     ok = false
-  if !strike("control", 1, "x = std" .. ".os.exit(1)")
+  if not strike("control", 1, "x = std" .. ".os.exit(1)")
     print("control FAIL: general retired namespace rule did not reject os")
     ok = false
-  if !"node = ir.node()":has("ir.")
+  if not "node = ir.node()":has("ir.")
     print("control FAIL: ir namespace firewall did not fire")
     ok = false
-  if !dot__io("text = io.read(\"*a\")")
+  if not dot__io("text = io.read(\"*a\")")
     print("control FAIL: dot(io) did not reject io.read")
     ok = false
-  if !dot__os("code = os.exit(1)")
+  if not dot__os("code = os.exit(1)")
     print("control FAIL: dot(os) did not reject os.exit")
     ok = false
   if dot__io("line = io:read()")
@@ -1333,7 +1333,7 @@ control: bool = ()
   if dot__io("x = std.io.open(p)")
     print("control FAIL: dot(io) fired on std.io qualification")
     ok = false
-  if !sigil("x = @c.emit(\"fn()\")")
+  if not sigil("x = @c.emit(\"fn()\")")
     print("control FAIL: except-anchor firewall did not fire")
     ok = false
   if sigil("x = @\{ name = 1 \}")
@@ -1348,10 +1348,10 @@ control: bool = ()
   if sigil("host = @target")
     print("control FAIL: sigil fired on @member current-world access")
     ok = false
-  if !sigil("host = @.target")
+  if not sigil("host = @.target")
     print("control FAIL: sigil did not fire on invalid @.member accessor")
     ok = false
-  if !sigil("x = @:read()")
+  if not sigil("x = @:read()")
     print("control FAIL: sigil did not fire on invalid @: subject dispatch")
     ok = false
   if sigil("reply = @stdin:read()")
@@ -1366,142 +1366,142 @@ control: bool = ()
   if sigil("@fee = 0")
     print("control FAIL: sigil fired on ambient mutation @member place")
     ok = false
-  if !sigil("@.fee = 0")
+  if not sigil("@.fee = 0")
     print("control FAIL: sigil did not fire on invalid @.member mutation")
     ok = false
-  if !sigil("x = @runtime.spawn()")
+  if not sigil("x = @runtime.spawn()")
     print("control FAIL: sigil did not fire on @runtime directive namespace")
     ok = false
-  if !sigil("x = @host.env")
+  if not sigil("x = @host.env")
     print("control FAIL: sigil did not fire on @host directive namespace")
     ok = false
-  if !"y = lua_io_read()":has("lua_")
+  if not "y = lua_io_read()":has("lua_")
     print("control FAIL: lua foreign-zero firewall did not fire")
     ok = false
-  if !"x = bit.f64_to_bits(v)":has("bit.")
+  if not "x = bit.f64_to_bits(v)":has("bit.")
     print("control FAIL: bit module firewall did not fire")
     ok = false
-  if !"to(f64)(bit) = unpack@view":has("unpack@view")
+  if not "to(f64)(bit) = unpack@view":has("unpack@view")
     print("control FAIL: unpack@view firewall did not fire")
     ok = false
-  if !"y = bitcast(x)":has("bitcast")
+  if not "y = bitcast(x)":has("bitcast")
     print("control FAIL: bitcast naming firewall did not fire")
     ok = false
   if "pattern: bit = one:to(bit)":has("bit.")
     print("control FAIL: bit. fired on canonical to(bit)")
     ok = false
-  if !"viewedges = \"|bit|\"":has("viewedges")
+  if not "viewedges = \"|bit|\"":has("viewedges")
     print("control FAIL: viewedges mash firewall did not fire")
     ok = false
   if "view(edges) = ()":has("viewedges")
     print("control FAIL: viewedges fired on canonical view(edges)")
     ok = false
-  if !"viewrouter = stdin:read":has("viewrouter")
+  if not "viewrouter = stdin:read":has("viewrouter")
     print("control FAIL: viewrouter mash firewall did not fire")
     ok = false
   if "router(view)(view[census])":has("viewrouter")
     print("control FAIL: viewrouter fired on canonical router(view)")
     ok = false
-  if !"viewproof = router":has("viewproof")
+  if not "viewproof = router":has("viewproof")
     print("control FAIL: viewproof mash firewall did not fire")
     ok = false
   if "view = router(proof)(proof[view])":has("viewproof")
     print("control FAIL: viewproof fired on canonical slot-named view")
     ok = false
-  if !binidol("sh bin/idol run x.id")
+  if not binidol("sh bin/idol run x.id")
     print("control FAIL: bin/idol path firewall did not fire")
     ok = false
   if binidol("zig-out/bin/idol")
     print("control FAIL: bin/idol fired on canonical idol binary path")
     ok = false
-  if !"ingestbody = path:read":has("ingestbody")
+  if not "ingestbody = path:read":has("ingestbody")
     print("control FAIL: ingestbody mash firewall did not fire")
     ok = false
   if "router(semantic)(semantic[ingest])":has("ingestbody")
     print("control FAIL: ingestbody fired on canonical router(semantic)")
     ok = false
-  if !"std.script.fs_exists(":has("fs_exists")
+  if not "std.script.fs_exists(":has("fs_exists")
     print("control FAIL: fs_exists snake firewall did not fire")
     ok = false
   if "fs:exists(":has("fs_exists")
     print("control FAIL: fs_exists fired on canonical path:exists")
     ok = false
-  if !strike("control", 1, "text = router(x)")
+  if not strike("control", 1, "text = router(x)")
     print("control FAIL: router bridge binding firewall did not fire")
     ok = false
-  if !strike("control", 1, "len: bool = (path: str, min: i64)")
+  if not strike("control", 1, "len: bool = (path: str, min: i64)")
     print("control FAIL: flat len binding bridge rule did not fire")
     ok = false
   if strike("control", 1, "len(path) = (min: i64)")
     print("control FAIL: flat len rule fired on canonical len(path) boundary curry")
     ok = false
-  if !strike("control", 1, "audit: bool = (path: str, pattern: str)")
+  if not strike("control", 1, "audit: bool = (path: str, pattern: str)")
     print("control FAIL: flat audit binding bridge rule did not fire")
     ok = false
   if strike("control", 1, "audit(path) = (pattern: str)")
     print("control FAIL: flat audit rule fired on canonical audit(path) boundary curry")
     ok = false
-  if !strike("control", 1, "hit: bool = (path: str, pattern: str)")
+  if not strike("control", 1, "hit: bool = (path: str, pattern: str)")
     print("control FAIL: flat hit binding bridge rule did not fire")
     ok = false
-  if !strike("control", 1, "from(path) = (pattern: str)")
+  if not strike("control", 1, "from(path) = (pattern: str)")
     print("control FAIL: from(path) mash bridge rule did not fire")
     ok = false
   if strike("control", 1, "hit(path) = (pattern: str)")
     print("control FAIL: flat hit rule fired on canonical hit(path) boundary curry")
     ok = false
-  if !strike("control", 1, "if len(path, min)")
+  if not strike("control", 1, "if len(path, min)")
     print("control FAIL: len(path, min) call bridge rule did not fire")
     ok = false
-  if strike("control", 1, "if !len(path)(min)")
+  if strike("control", 1, "if not len(path)(min)")
     print("control FAIL: len(path)(min) rule fired on canonical len(path)(min)")
     ok = false
-  if !strike("control", 1, "if not bare")
-    print("control FAIL: if not keyword bridge rule did not fire")
+  if strike("control", 1, "if not bare")
+    print("control FAIL: rule fired on canonical not")
     ok = false
-  if strike("control", 1, "if !bare")
-    print("control FAIL: if not rule fired on canonical prefix !")
+  if not strike("control", 1, "if !bare")
+    print("control FAIL: prefix-not rule did not fire on retired prefix !")
     ok = false
-  if !strike("control", 1, "text = path:read()")
+  if not strike("control", 1, "text = path:read()")
     print("control FAIL: transitive read binding firewall did not fire")
     ok = false
   if strike("control", 1, "path:read():match(pattern)")
     print("control FAIL: read binding rule fired on canonical path:read():match chain")
     ok = false
-  if !"relationid":has("relationid")
+  if not "relationid":has("relationid")
     print("control FAIL: relationid mash firewall did not fire")
     ok = false
   if "path:read()":has("relationid")
     print("control FAIL: relationid fired on canonical path:read")
     ok = false
-  if !"io:read(\"lib/compiler":has("io:read(")
+  if not "io:read(\"lib/compiler":has("io:read(")
     print("control FAIL: io:read firewall did not fire")
     ok = false
   if "path:read()":has("io:read(")
     print("control FAIL: io:read rule fired on canonical path:read()")
     ok = false
-  if !"std.script.fswrite(":has("fswrite")
+  if not "std.script.fswrite(":has("fswrite")
     print("control FAIL: fswrite mash firewall did not fire")
     ok = false
   if "io.open(":has("fswrite")
     print("control FAIL: fswrite fired on canonical io.open write")
     ok = false
-  if !probe("process = process", "process = process")
+  if not probe("process = process", "process = process")
     print("control FAIL: process library admission firewall did not fire")
     ok = false
-  if !probe("rc = run(cmd)", "run(")
+  if not probe("rc = run(cmd)", "run(")
     print("control FAIL: run namespace firewall did not fire")
     ok = false
-  if !probe("text = capture(cmd)", "capture(")
+  if not probe("text = capture(cmd)", "capture(")
     print("control FAIL: capture namespace firewall did not fire")
     ok = false
-  if !probe("exit(1)", "exit(")
+  if not probe("exit(1)", "exit(")
     print("control FAIL: exit namespace firewall did not fire")
     ok = false
-  if !probe("x = chomp(text)", "chomp(")
+  if not probe("x = chomp(text)", "chomp(")
     print("control FAIL: chomp namespace firewall did not fire")
     ok = false
-  if !probe("p = std.script.main(x)", "std.script.")
+  if not probe("p = std.script.main(x)", "std.script.")
     print("control FAIL: std.script classifier did not fire — frozen std debt has a row")
     ok = false
   if dot__os("a = os.args(1)")
@@ -1510,25 +1510,25 @@ control: bool = ()
   if probe("command(line):open(\"r\")", "capture(")
     print("control FAIL: capture fired on canonical command:open")
     ok = false
-  if !probe("procrun: i64 = (shellline: str)", "procrun:")
+  if not probe("procrun: i64 = (shellline: str)", "procrun:")
     print("control FAIL: procrun parallel execution API firewall did not fire")
     ok = false
-  if !probe("proccap: str = (shellline: str)", "proccap:")
+  if not probe("proccap: str = (shellline: str)", "proccap:")
     print("control FAIL: proccap parallel capture API firewall did not fire")
     ok = false
-  if !probe("shared = req(\"tools.mcp.shared\")", "req(")
+  if not probe("shared = req(\"tools.mcp.shared\")", "req(")
     print("control FAIL: req admission syntax firewall did not fire")
     ok = false
-  if !probe("x = [[long string]]", "[[")
+  if not probe("x = [[long string]]", "[[")
     print("control FAIL: Lua long bracket lexical firewall did not fire")
     ok = false
   if probe("\"multiline text\"", "[[")
     print("control FAIL: long bracket rule fired on quoted text")
     ok = false
-  if !projcurry("print(to(str)(42))")
+  if not projcurry("print(to(str)(42))")
     print("control FAIL: projection-curry firewall did not fire on to(str)(value)")
     ok = false
-  if !projcurry("n = to(i64)(s)")
+  if not projcurry("n = to(i64)(s)")
     print("control FAIL: projection-curry firewall did not fire on to(i64)(value)")
     ok = false
   if projcurry("to(str) = (value)")
@@ -1542,7 +1542,7 @@ control: bool = ()
     ok = false
   nl = string.char(10)
   sampleat = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+@comp.c.export(\"x\"){nl}"
-  if !scanfired(sampleat)
+  if not scanfired(sampleat)
     print("control FAIL: except-anchor firewall did not fire on added directive")
     ok = false
   sampleanchor = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+x = @\{ name = 1 \}{nl}"
@@ -1550,23 +1550,23 @@ control: bool = ()
     print("control FAIL: except-anchor firewall fired on lawful pack anchor")
     ok = false
   sampleto = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+x = value:to(){nl}"
-  if !scanfired(sampleto)
+  if not scanfired(sampleto)
     print("control FAIL: :to() infer firewall did not fire on added line")
     ok = false
   samplemirror = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+read = \{ world = \"io\", possessed = true, callable = true, operation = false \}{nl}"
-  if !scanfired(samplemirror)
+  if not scanfired(samplemirror)
     print("control FAIL: boolean-mirror catalog firewall did not fire")
     ok = false
   samplecatalog = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+resident = \{ read = io.read \}{nl}"
-  if !scanfired(samplecatalog)
+  if not scanfired(samplecatalog)
     print("control FAIL: relation catalog firewall did not fire")
     ok = false
   samplehome = "--- /dev/null{nl}+++ b/lib/semantic/io.id{nl}@@ -0,0 +1 @@{nl}+x = 1{nl}"
-  if !scanfired(samplehome)
+  if not scanfired(samplehome)
     print("control FAIL: catalog home lib/semantic/ not rejected")
     ok = false
   samplestd = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+f = std" .. ".io.open(p){nl}"
-  if !scanfired(samplestd)
+  if not scanfired(samplestd)
     print("control FAIL: staged std namespace firewall did not fire")
     ok = false
   sampleworld = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+f = path:open(mode){nl}"
@@ -1574,20 +1574,20 @@ control: bool = ()
     print("control FAIL: std namespace firewall fired on canonical subject relation")
     ok = false
   sample = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+process = process{nl}"
-  if !scanfired(sample)
+  if not scanfired(sample)
     print("control FAIL: scan did not convict added-line diff body — check newline boundary")
     ok = false
   ok
 
 _verify: i64 = ()
-  if !seed()
+  if not seed()
     print("gate/idiom: relation catalog must not exist")
     return 3
-  if !control()
+  if not control()
     print("gate/idiom: POSITIVE CONTROL FAILED")
     return 3
   files = transport()
-  if !files:len()
+  if not files:len()
     print("gate/idiom: empty input — pipe unified diff on stdin")
     print("Usage: git diff -U0 ... | idol run gate/idiom.id")
     return 3

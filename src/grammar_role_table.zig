@@ -284,7 +284,7 @@ pub const rows = [slot_count]RoleRow{
     .{ .kind = .dot, .spell = ".", .begin_expr = true, .postfix = true, .projection = true, .precedence = 10, .demands_operand = true },
     .{ .kind = .at, .spell = "@", .begin_expr = true, .body_start = true, .precedence = 19, .assoc = .left, .relation = .matmul, .infix = true, .demands_operand = true, .opens_line = true },
     .{ .kind = .question, .spell = "?" },
-    .{ .kind = .bang, .spell = "!", .begin_expr = true, .prefix = true, .precedence = 9, .unary = .not, .demands_operand = true },
+    .{ .kind = .bang, .spell = "!" },
     .{ .kind = .backtick, .spell = "`", .compat_only = true },
     .{ .kind = .concat, .spell = "..", .precedence = 16, .assoc = .right, .compat_only = true, .relation = .concat, .infix = true, .demands_operand = true },
     .{ .kind = .dots, .spell = "...", .begin_expr = true, .pattern = true },

@@ -52,7 +52,7 @@ main: i64 = ()
   else
     print("  ok   AGENTS.md @comp.* paragraph removed")
   prog = "docs/authority-repair-program.md"
-  if !present(prog)
+  if not present(prog)
     print("  FAIL authority-repair program document is missing")
     fail = fail + 1
   else

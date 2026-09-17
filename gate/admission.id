@@ -195,7 +195,7 @@ main: i64 = ()
     print("Usage: git diff -U0 --cached -- '*.id' | idol run gate/admission.id")
     return 3
   ok = control()
-  if !ok
+  if not ok
     print("gate/admission: FAIL positive controls")
     return 2
   total = scan(body)

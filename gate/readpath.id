@@ -27,7 +27,7 @@ digits: i64 = (text: str)
         i = i + 1
       else
         return -1
-  if !seen
+  if not seen
     return -1
   v
 
@@ -53,7 +53,7 @@ main: i64 = ()
   idol = os.env["IDOL_BIN"]
   if idol == nil or idol == ""
     idol = "./zig-out/bin/idol"
-  if !exitedzero("test -x '{idol}'")
+  if not exitedzero("test -x '{idol}'")
     print("readpath: no compiler at {idol}")
     return 2
   work = chomp(gatecap("mktemp -d /tmp/idol-readpath.XXXXXX"))
@@ -83,7 +83,7 @@ main: i64 = ()
       print("readpath: FAIL — §1 absent path refused but wrote stdout bytes first — the refusal leaked a partial value")
       fail = 1
     else
-      if !contains(aerr, "read-refused:absent:{absent}")
+      if not contains(aerr, "read-refused:absent:{absent}")
         print(chomp(gatecap("cat '{aerr}'")))
         print("readpath: FAIL — §1 absent path refused without naming the cause and path (read-refused:absent:<path>)")
         fail = 1
@@ -99,7 +99,7 @@ main: i64 = ()
     print("readpath: FAIL — §2 present file refused (exit {code}) — the fail-closed leg fires on a file that is there")
     fail = 1
   else
-    if !samebytes(presentpath, pout)
+    if not samebytes(presentpath, pout)
       print("readpath: FAIL — §2 present file did not answer its exact bytes")
       fail = 1
     else

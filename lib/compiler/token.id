@@ -801,46 +801,58 @@ _encode: str = (which: i64)
     kind += 1
   out
 
-rolebit: i64 = (which: i64, kind: i64)
-  if which == 0 and rolebeginexpr(kind)
-    return 1
-  if which == 1 and roleprefix(kind)
-    return 1
-  if which == 2 and rolepostfix(kind)
-    return 1
-  if which == 3 and roleparameter(kind)
-    return 1
-  if which == 4 and roleliteral(kind)
-    return 1
-  if which == 5 and rolequoted(kind)
-    return 1
-  if which == 6 and roleprojection(kind)
-    return 1
-  if which == 7 and rolebodystart(kind)
-    return 1
-  if which == 8 and roledescriptor(kind)
-    return 1
-  if which == 9 and rolepattern(kind)
-    return 1
-  if which == 10 and rolecompatonly(kind)
-    return 1
-  if which == 11
-    return roleprecedence(kind)
-  if which == 12
-    return roleassoc(kind)
-  if which == 13 and _roleinfix(kind)
-    return 1
-  if which == 14 and _roleupdate(kind)
-    return 1
-  if which == 15 and _roleglue(kind)
-    return 1
-  0
-
 tabletext: str = (name: str, which: i64)
   s = "{name} = \{\n"
   k = 0
   while k < roleslotcount
-    s = "{s}  {rolebit(which, k)},\n"
+    b = 0
+    if which == 0
+      if rolebeginexpr(k)
+        b = 1
+    else if which == 1
+      if roleprefix(k)
+        b = 1
+    else if which == 2
+      if rolepostfix(k)
+        b = 1
+    else if which == 3
+      if roleparameter(k)
+        b = 1
+    else if which == 4
+      if roleliteral(k)
+        b = 1
+    else if which == 5
+      if rolequoted(k)
+        b = 1
+    else if which == 6
+      if roleprojection(k)
+        b = 1
+    else if which == 7
+      if rolebodystart(k)
+        b = 1
+    else if which == 8
+      if roledescriptor(k)
+        b = 1
+    else if which == 9
+      if rolepattern(k)
+        b = 1
+    else if which == 10
+      if rolecompatonly(k)
+        b = 1
+    else if which == 11
+      b = roleprecedence(k)
+    else if which == 12
+      b = roleassoc(k)
+    else if which == 13
+      if _roleinfix(k)
+        b = 1
+    else if which == 14
+      if _roleupdate(k)
+        b = 1
+    else if which == 15
+      if _roleglue(k)
+        b = 1
+    s = "{s}  {b},\n"
     k += 1
   "{s}\}\n"
 

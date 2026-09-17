@@ -87,7 +87,7 @@ main: i64 = ()
     if code != 0
       return code
     return refuse("no exit code from {emit} --selftest")
-  if !linehasprefix(selfout, "grammar projection control: PASS")
+  if not linehasprefix(selfout, "grammar projection control: PASS")
     gatecap("rm -rf " .. work)
     return refuse(emit .. " --selftest exited 0 without reporting a control verdict — a silent control refused nothing")
   checkrc = chomp(gatecap("IDOL=" .. idolbin .. " " .. emit .. " --check >" .. work .. "/check.out 2>" .. work .. "/check.err; echo $?"))
@@ -111,7 +111,7 @@ main: i64 = ()
   if findline("\n" .. checkout, want2, 1) == 0
     gatecap("rm -rf " .. work)
     return refuse(emit .. " --check exited 0 without asserting that " .. idout .. " regenerates byte-identically")
-  if !linehasprefix(checkout, "grammar projection entry: PASS")
+  if not linehasprefix(checkout, "grammar projection entry: PASS")
     gatecap("rm -rf " .. work)
     return refuse(emit .. " --check exited 0 without the entry-selection verdict — the owner root was never exercised")
   gatecap("rm -rf " .. work)

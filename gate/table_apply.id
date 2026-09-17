@@ -21,17 +21,17 @@ contains: bool = (path: str, needle: str)
 
 checkpath: i64 = (root: str, path: str, needle: str, fail: i64)
   file = "{root}/{path}"
-  if !present(file)
+  if not present(file)
     print("table_apply gate: FAIL missing {path}")
     return fail + 1
-  if !contains(file, needle)
+  if not contains(file, needle)
     print("table_apply gate: FAIL {path} does not call table_apply.normalizeModule")
     return fail + 1
   fail
 
 checkmodule: i64 = (root: str, mod: str, fail: i64)
   rel = "lib/compiler/{mod}.id"
-  if !present("{root}/{rel}")
+  if not present("{root}/{rel}")
     print("table_apply gate: FAIL missing {rel}")
     return fail + 1
   fail
@@ -41,11 +41,11 @@ main: i64 = ()
   if root == nil or root == ""
     root = "."
   tapply = "{root}/src/table_apply.zig"
-  if !present(tapply)
+  if not present(tapply)
     print("table_apply gate: FAIL missing {tapply}")
     return 1
   fail = 0
-  if !contains(tapply, "pub fn normalizeModule")
+  if not contains(tapply, "pub fn normalizeModule")
     print("table_apply gate: FAIL table_apply.zig lost pub fn normalizeModule")
     fail = fail + 1
   fail = checkpath(root, "src/graph/lower.zig", "table_apply.normalizeModule", fail)

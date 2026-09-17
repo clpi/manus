@@ -12,7 +12,7 @@ consumer: bool = (path: str)
   path == "src/sim_pipeline.zig" or path == "src/knowledge_snapshot.zig" or path == "src/graph/lower.zig"
 
 row: i64 = (path: str, no: i64, code: str, id: str, needle: str, law: str, fix: str)
-  if !code:has(needle)
+  if not code:has(needle)
     return 0
   print("({path}, {no}, violation, {id}, {law}, {fix})")
   1
@@ -129,7 +129,7 @@ producerules: i64 = (path: str, no: i64, code: str)
   hits
 
 consumerules: i64 = (path: str, no: i64, code: str)
-  if !consumer(path)
+  if not consumer(path)
     return 0
   if code:has("Migration wrapper")
     return 0
@@ -154,7 +154,7 @@ strip: str = (line: str)
         quote = ""
         closed = true
       out = "{out} "
-    if quote == "" and !closed
+    if quote == "" and not closed
       if c == "#"
         return out
       if c == "\"" or c == "'"
@@ -201,8 +201,8 @@ scan: i64 = (body: str)
     if i <= n
       c = body:sub(i, i)
     hunk = c == nl and head(line)
-    mark = c == nl and !hunk and line:len() > 2 and line:sub(1, 2) == "@@"
-    add = c == nl and !hunk and !mark and line:len() > 0 and line:sub(1, 1) == "+" and path != ""
+    mark = c == nl and not hunk and line:len() > 2 and line:sub(1, 2) == "@@"
+    add = c == nl and not hunk and not mark and line:len() > 0 and line:sub(1, 1) == "+" and path != ""
     if hunk
       path = line:sub(7, line:len())
       no = 0
@@ -344,7 +344,7 @@ control: bool = ()
   ok
 
 graph: i64 = ()
-  if !control()
+  if not control()
     print("gate/graph: POSITIVE CONTROL FAILED")
     return 3
   body = transport()

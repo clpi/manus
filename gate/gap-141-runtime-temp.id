@@ -10,7 +10,7 @@ chomp: str = (text: str)
   text:sub(1, n)
 
 digits: i64 = (text: str)
-  if !text or text:len() == 0
+  if not text or text:len() == 0
     return -1
   v = 0
   i = 1

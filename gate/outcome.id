@@ -50,7 +50,7 @@ digits: i64 = (text: str)
         i = i + 1
       else
         return -1
-  if !seen
+  if not seen
     return -1
   v
 
@@ -171,7 +171,7 @@ main: i64 = ()
     print("usage: outcome.id <gate>")
     return 1
   gp: str = gatepath
-  if !readable(gp)
+  if not readable(gp)
     print("outcome: gate source unavailable; no controls executed")
     return 1
   src = gatecap("cat '{gp}'")
@@ -208,7 +208,7 @@ main: i64 = ()
   if slash != 0
     gendir = gp:sub(1, slash - 1)
   genpath = gendir .. "/outcome.id"
-  if !readable(genpath)
+  if not readable(genpath)
     print("outcome: generator source unavailable; no controls executed")
     return 1
   limit = chomp(gatecap("command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null"))
