@@ -1442,7 +1442,7 @@ const Arm64Compiler = struct {
     /// the ABI left in x0..x7 is recorded HERE AND NOWHERE ELSE: every write to
     /// `gp_reg_owner` skips `r < 9`, so `temps` is that value's only location
     /// record and the only fact that answers whether a frame slot is still read.
-    eval_temps: ?*const std.AutoHashMapUnmanaged(u32, u5) = null,
+    eval_temps: ?*std.AutoHashMapUnmanaged(u32, u5) = null,
     /// Flat index of the DNIR instruction currently being emitted. Rebound at
     /// every compileDnirInstr entry (nested collapsed-window calls pass at
     /// through) so releaseReg reads the right index in all emission paths.
@@ -1521,6 +1521,17 @@ const Arm64Compiler = struct {
     /// `alloc_slots` result temp -> sp-relative byte offset of its slot region.
     slot_bases: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     spilled_regs: std.AutoHashMapUnmanaged(u5, u16) = .empty,
+    /// Frame slot per spilled TEMPORARY id. `spilled_regs` keys on the physical
+    /// register, which the victim's register is immediately re-let for, so it
+    /// cannot name the value once the register is reused. This map keys on the
+    /// temporary id instead: spilling a temp stores the register into a frame
+    /// slot, removes the temp's register name, and records the slot here. A
+    /// later read reloads from the slot into whichever register is then free
+    /// and re-names the temp. Only unpinned, unhomed, unstaged, non-FP temps
+    /// whose register names no other live value are admitted; pins, homes,
+    /// staged argument registers, and the staged variadic tail keep their
+    /// existing records.
+    temp_frame_slots: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     /// Spill slots returned to the pool when a spilled register reloads.
     free_spill_slots: std.ArrayList(u16) = .empty,
     /// Locals spilled to the stack frame when the GP home budget is exhausted.
@@ -1695,6 +1706,7 @@ const Arm64Compiler = struct {
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
         self.spilled_regs.deinit(self.alloc);
+        self.temp_frame_slots.deinit(self.alloc);
         self.free_spill_slots.deinit(self.alloc);
         self.gp_stack_locals.deinit(self.alloc);
         self.cost.deinit(self.alloc);
@@ -3462,6 +3474,25 @@ const Arm64Compiler = struct {
                 self.free_spill_slots.append(self.alloc, entry.value) catch {};
             }
         }
+        // A spilled temporary whose last read is behind emission holds no
+        // register, so the sweep above cannot see it: retire its frame slot
+        // here so the slot rejoins the pool. `value_free_at` records every
+        // operand occurrence, so an id with no entry was never read and is
+        // dead by the same reading the register sweep uses.
+        while (true) {
+            var victim: ?u32 = null;
+            var vit = self.temp_frame_slots.iterator();
+            while (vit.next()) |entry| {
+                const last = self.value_free_at.get(entry.key_ptr.*) orelse 0;
+                if (last <= idx) {
+                    victim = entry.key_ptr.*;
+                    break;
+                }
+            }
+            const t = victim orelse break;
+            const slot = self.temp_frame_slots.fetchRemove(t).?.value;
+            self.free_spill_slots.append(self.alloc, slot) catch {};
+        }
     }
 
     fn regIsPinned(pinned: *const std.AutoHashMapUnmanaged(u32, u5), reg: u5) bool {
@@ -3560,6 +3591,7 @@ const Arm64Compiler = struct {
         // survive this reset; what it measures must not.
         self.callee_touched = 0;
         self.spilled_regs.clearRetainingCapacity();
+        self.temp_frame_slots.clearRetainingCapacity();
         self.free_spill_slots.clearRetainingCapacity();
         self.gp_stack_locals.clearRetainingCapacity();
         self.gate_spill_base = 0;
@@ -4249,7 +4281,7 @@ const Arm64Compiler = struct {
                     const preferred_result = if (bi + 1 < b.instrs.len)
                         self.returnPackBinopDestination(&temps, ins, b.instrs[bi + 1]) orelse
                             self.returnConstDestination(ins, b.instrs[bi + 1], flat_idx) orelse
-                            self.returnStoreLocalDestination(&temps, &pinned, ins, b.instrs[bi + 1])
+                            self.returnStoreLocalDestination(&temps, &pinned, ins, b.instrs[bi + 1], flat_idx)
                     else
                         null;
                     try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches, preferred_result, flat_idx);
@@ -4484,6 +4516,7 @@ const Arm64Compiler = struct {
         pinned: *const std.AutoHashMapUnmanaged(u32, u5),
         ins: dnir.Instr,
         next: dnir.Instr,
+        at: u32,
     ) ?u5 {
         if (ins.op != .binop or next.op != .store_local) return null;
         switch (ins.binop) {
@@ -4498,6 +4531,14 @@ const Arm64Compiler = struct {
         if (next.lhs != .temp or next.lhs.temp != result) return null;
         const slot = next.result orelse return null;
         const home = self.gpLocalHomeReg(temps, pinned, slot) orelse return null;
+        // The old home value does NOT die with the store when it is
+        // loop-carried: the next iteration reads it. Aliasing the home
+        // register then clobbers the value the back edge expects.
+        if (self.gp_reg_owner[home]) |owner| {
+            if (self.value_free_at.get(owner)) |last| {
+                if (last > at) return null;
+            } else return null;
+        } else return null;
         return home;
     }
 
@@ -4513,7 +4554,16 @@ const Arm64Compiler = struct {
         const result = add.result orelse return null;
         if (nx.lhs != .temp or nx.lhs.temp != result) return null;
         const slot = nx.result orelse return null;
-        return self.gpLocalHomeReg(temps, pinned, slot);
+        const home = self.gpLocalHomeReg(temps, pinned, slot) orelse return null;
+        // The old home value does NOT die with the store when it is
+        // loop-carried: the next iteration reads it. Aliasing the home
+        // register then clobbers the value the back edge expects.
+        if (self.gp_reg_owner[home]) |owner| {
+            if (self.value_free_at.get(owner)) |last| {
+                if (last > self.cur_emit_idx) return null;
+            } else return null;
+        } else return null;
+        return home;
     }
 
     /// `at` is the flat instruction index of `ins` in the function being
@@ -6626,6 +6676,22 @@ const Arm64Compiler = struct {
                 return self.undefinedAt(@src(), "local", slot);
             },
             .temp => |t| {
+                // A temporary spilled for capacity lives in the frame, not in
+                // the register map: reload it into whichever register is free
+                // now and re-name it. The slot is released back to the pool —
+                // exactly once, because the map entry is removed here and the
+                // sweep in `sweepGpLive` only releases entries still present.
+                if (self.temp_frame_slots.get(t)) |slot| {
+                    const f = try self.allocReg();
+                    try self.emitLdrFrame(f, try self.frameSlotOff(slot));
+                    _ = self.temp_frame_slots.remove(t);
+                    try self.free_spill_slots.append(self.alloc, slot);
+                    try temps.put(self.alloc, t, f);
+                    if (f >= 9 and f < 29 and f != platform_reserved_reg and !self.gp_home_regs[f]) {
+                        self.gp_reg_owner[f] = t;
+                    }
+                    return f;
+                }
                 const r = temps.get(t) orelse return self.undefinedAt(@src(), "temp", t);
                 // `staleGpName` reads an ABSENT owner as stale because the arm
                 // above answers that with the frame home. `planGpStackLocals`
@@ -8102,6 +8168,102 @@ const Arm64Compiler = struct {
         return .{ .base = base, .end = base + spill_reserve };
     }
 
+    /// Spill one temporary to the frame to make its register reusable,
+    /// outside gate transport. `spillReg` stores a register into a frame slot
+    /// but keys the record on the physical register, and `allocRegExcluding`
+    /// skips every register `spilled_regs` names — so spilling never frees
+    /// capacity. This pass keys the record on the TEMPORARY id instead
+    /// (`temp_frame_slots`): the victim's value is stored into a frame slot,
+    /// the temp's register name is removed, and the physical register is
+    /// immediately re-let. A later read of the temp reloads from the slot into
+    /// whichever register is then free (see the `.temp` arm of
+    /// `evalDnirValue`) and re-names the temp, so the value survives the
+    /// register being reused.
+    ///
+    /// Only an unpinned, unhomed, unstaged, non-FP temporary whose register
+    /// names no other live value may be a victim. Pins name values the frame
+    /// layout and the ABI depend on; `gp_home_regs`/`gp_call_home_regs` name
+    /// locals whose homes other maps restate; `pending_arg_regs` names staged
+    /// call arguments; `stagedTailReg` names the variadic tail the call
+    /// marshaling is still writing; `imm_hoist` values are claimed by the hoist
+    /// map, not by `temps`. Spilling any of those would move a value a reader
+    /// still addresses by register. `spillReg` may still throw
+    /// `RegisterExhausted` when no frame slot exists — the refusal then stands,
+    /// exactly as before; this pass only converts pressure into frame slots
+    /// where the frame has room for them.
+    fn spillTempForCapacity(self: *Arm64Compiler, exclude: ?u5) Error!?u5 {
+        const temps = self.eval_temps orelse return null;
+        // Top-down like the existing spill passes: the callee-saved bank
+        // first, then the ABI bank. `platform_reserved_reg` (x8) never carries
+        // a `temps` value.
+        var v: u5 = 28;
+        while (true) {
+            if (try self.spillTempVictim(temps, v, exclude)) |reg| return reg;
+            if (v == 9) break;
+            v -= 1;
+        }
+        v = 7;
+        while (true) {
+            if (try self.spillTempVictim(temps, v, exclude)) |reg| return reg;
+            if (v == 0) break;
+            v -= 1;
+        }
+        return null;
+    }
+
+    /// Spill the temporary in `reg` to the frame and hand `reg` back, or null
+    /// when `reg` is not a spillable temporary. Every early return names a
+    /// reader that still addresses the register's value by register: pinned
+    /// ids, home regs, call-surviving homes, staged ABI arguments, the staged
+    /// variadic tail, and hoisted immediates. The one `temps` entry naming the
+    /// register must also agree with `gp_reg_owner` — a name that outlived its
+    /// claim (GAP-148) is not a value and is left for the stale-name refusal.
+    fn spillTempVictim(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        reg: u5,
+        exclude: ?u5,
+    ) Error!?u5 {
+        if (exclude) |x| if (reg == x) return null;
+        if (!self.used_regs[reg]) return null;
+        if (self.spilled_regs.contains(reg)) return null;
+        if (self.gp_home_regs[reg]) return null;
+        if ((self.gp_call_home_regs >> reg) & 1 != 0) return null;
+        if (reg < 8 and ((self.pending_arg_regs >> @as(u3, @intCast(reg))) & 1) != 0) return null;
+        if (self.stagedTailReg(reg)) return null;
+        if (self.evalPinNames(reg)) return null;
+        var hoist = self.imm_hoist.iterator();
+        while (hoist.next()) |entry| if (entry.value_ptr.* == reg) return null;
+        var found: ?u32 = null;
+        var count: u8 = 0;
+        var it = temps.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.* != reg) continue;
+            count += 1;
+            if (count > 1) return null;
+            found = entry.key_ptr.*;
+        }
+        const id = found orelse return null;
+        // An FP-marked id names a double register that shares this index; the
+        // general register's bits are not its value.
+        if (self.fp_temps.contains(id)) return null;
+        // The owner record is authoritative for the x9..x28 bank: the emission
+        // loop rebinds it after every value instruction. A register another id
+        // owns is a stale name, not a value.
+        const owner = self.gp_reg_owner[reg];
+        if (owner != null and owner.? != id) return null;
+        // Store the value, then move the slot record from the register key to
+        // the temp id key before the register is re-let: from here on the
+        // frame slot is the value's only address.
+        try self.spillReg(reg);
+        const slot = self.spilled_regs.fetchRemove(reg).?.value;
+        try self.temp_frame_slots.put(self.alloc, id, slot);
+        _ = temps.remove(id);
+        self.gp_reg_owner[reg] = null;
+        self.claimReg(reg);
+        return reg;
+    }
+
     fn spillReg(self: *Arm64Compiler, victim: u5) Error!void {
         try self.cost.record(
             self.alloc,
@@ -8467,7 +8629,14 @@ const Arm64Compiler = struct {
         // the frame and drops the `spilled_regs` entry that would reload it —
         // the GAP-148 two-owner hazard, bounded to bootstrap transport. Not
         // widened, not repaired, and not closed by this fact.
-        if (!self.gate_transport) return error.RegisterExhausted;
+        // Outside gate transport a spilled temporary's frame slot frees its
+        // register: `spillTempForCapacity` moves one unpinned, unhomed,
+        // unstaged temporary to the frame and hands its register back. Gate
+        // transport keeps the passes below verbatim.
+        if (!self.gate_transport) {
+            if (try self.spillTempForCapacity(exclude)) |freed| return freed;
+            return error.RegisterExhausted;
+        }
 
         // SPILL A TEMP BEFORE A HOME, AND NEVER SPILL A CALL-SURVIVING HOME AT
         // ALL — see `gp_call_home_regs` for why the second is a wrong answer and
