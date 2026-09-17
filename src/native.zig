@@ -9164,6 +9164,7 @@ test "native backend: destfwd adopts dying temp register as first local home" {
         .scal_records = &scalm,
     };
     defer comp.value_free_at.deinit(comp.alloc);
+    defer comp.asm_text.deinit(comp.alloc);
     comp.cur_func_has_call = false;
     try comp.value_free_at.put(comp.alloc, 7, 10);
     comp.used_regs[22] = true;
@@ -9227,6 +9228,7 @@ test "native backend: identity forwarding keeps a dying operand register" {
         .scal_records = &scalm,
     };
     defer comp.value_free_at.deinit(comp.alloc);
+    defer comp.asm_text.deinit(comp.alloc);
     try comp.value_free_at.put(comp.alloc, 5, 20);
     comp.used_regs[21] = true;
     var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
@@ -9256,6 +9258,7 @@ test "native backend: identity emitter skips the self move" {
         .scal_records = &scalm,
     };
     defer comp.code.deinit(comp.alloc);
+    defer comp.asm_text.deinit(comp.alloc);
     const before = comp.code.items.len;
     try comp.emitBinopConst(22, 22, 0, .add, .i64);
     try std.testing.expectEqual(before, comp.code.items.len);
@@ -9275,6 +9278,7 @@ test "native backend: adopted home narrows in place without a move" {
         .scal_records = &scalm,
     };
     defer comp.code.deinit(comp.alloc);
+    defer comp.asm_text.deinit(comp.alloc);
     // This is the exact call the adoption arm makes for a u8 local.
     _ = try comp.emitNarrowFit(22, 22, .u8);
     try std.testing.expectEqual(@as(usize, 4), comp.code.items.len);
