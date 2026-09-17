@@ -130,7 +130,7 @@ rolebeginexpr: bool = (kind: i64)
     return true
   if kind == kindminus or kind == kindhash or kind == kindtilde
     return true
-  if kind == kindat or kind == kindbang or kind == kinddots
+  if kind == kindat or kind == kinddots
     return true
   if kind == kindhashhash or kind == kindpipe or kind == kinddot
     return true
@@ -147,7 +147,7 @@ roleprefix: bool = (kind: i64)
     return true
   if kind == kindlparen or kind == kindminus or kind == kindhash
     return true
-  if kind == kindtilde or kind == kindbang or kind == kindhashhash
+  if kind == kindtilde or kind == kindhashhash
     return true
   false
 
@@ -279,7 +279,7 @@ _relationname: str = (kind: i64)
   "."
 
 _unaryname: str = (kind: i64)
-  if kind == kindnot or kind == kindbang
+  if kind == kindnot
     return "not"
   if kind == kindhash
     return "len"
@@ -331,7 +331,7 @@ demand(): str
       bit = "1"
     if kind >= kindarrow and kind <= kindcaretassign
       bit = "1"
-    if kind == kindlparen or kind == kindlbracket or kind == kindbang
+    if kind == kindlparen or kind == kindlbracket
       bit = "1"
     if kind == kindconcat or kind == kindand or kind == kindelseif
       bit = "1"
@@ -365,7 +365,7 @@ prefix(): str
       bit = "1"
     if kind == kindlparen or kind == kindminus or kind == kindhash
       bit = "1"
-    if kind == kindtilde or kind == kindbang or kind == kindhashhash
+    if kind == kindtilde or kind == kindhashhash
       bit = "1"
     out = "{out}{bit}"
     kind += 1
@@ -549,7 +549,7 @@ roleprecedence: i64 = (kind: i64)
     return 11
   if kind == kinddot
     return 10
-  if kind == kindnot or kind == kindtilde or kind == kindbang
+  if kind == kindnot or kind == kindtilde
     return 9
   if kind == kindpipe
     return 7
