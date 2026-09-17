@@ -1,12 +1,6 @@
 t = 0
-a = 0
-while a < 200
-  b = 0
-  while b < 200
-    c = 0
-    while c < 200
+for a = 0, 199
+  for b = 0, 199
+    for c = 0, 199
       t = t + 1
-      c = c + 1
-    b = b + 1
-  a = a + 1
 t

@@ -1,15 +1,11 @@
 t = 0
-o = 0
-while o < 2000000
+for o = 0, 1999999
   x = o * 7919 + 123456789
   s = 0
-  j = 0
-  while j < 10
+  for j = 0, 9
     q = x / 10
     d = x - q * 10
     s = s + d
     x = q
-    j = j + 1
   t = t + s
-  o = o + 1
 t

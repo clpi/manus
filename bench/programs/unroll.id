@@ -1,11 +1,7 @@
 t = 0
-o = 0
-while o < 5000000
+for o = 0, 4999999
   s = 0
-  i = 0
-  while i < 8
+  for i = 0, 7
     s = s + i * o
-    i = i + 1
   t = t + s
-  o = o + 1
 t

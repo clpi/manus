@@ -1,9 +1,5 @@
 t = 0
-a = 0
-while a < 4000
-  b = 0
-  while b < a
+for a = 0, 3999
+  for b = 0, a - 1
     t = t + 1
-    b = b + 1
-  a = a + 1
 t
