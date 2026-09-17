@@ -83,7 +83,7 @@ _min_wall: f64 = (cmd: str, runs: i64)
     best
 
 _baseline_for: f64 = (path: str, rt: str)
-    if !std.script.fs_exists(path) return 0.0
+    if not std.script.fs_exists(path) return 0.0
     for _i, l in std.script.capture("cat " .. path):split("\n")
         c = std.script.chomp(l)
         if c != "" and c:sub(1, 1) != "#"
@@ -164,7 +164,7 @@ main: i64 = ()
     print("=== Compiling benchmark to WASM ===")
     duo = "./zig-out/bin/idol"
     std.script.run(duo .. " compile " .. _SRC .. " --target wasm32-wasi -o " .. wasm)
-    if !std.script.fs_exists(wasm)
+    if not std.script.fs_exists(wasm)
         print("ERROR: WASM compilation failed — " .. wasm .. " not produced.")
         os.exit(1)
     print("  INFO Produced: " .. wasm .. " ("
@@ -196,7 +196,7 @@ main: i64 = ()
         print("  " .. _pad(nm, 12) .. "  " .. _fx(times[i2], 3) .. "s")
 
     print("")
-    if reset or !std.script.fs_exists(baseline)
+    if reset or not std.script.fs_exists(baseline)
         if reset
             print("=== Resetting baseline ===")
         else
