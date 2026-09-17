@@ -90,6 +90,7 @@ SEMA     derive_bundles.zig
 SEMA     floor_derive.zig
 SEMA     table_facts.zig
 SEMA     table_apply.zig
+SEMA     num_for_desugar.zig
 SEMA     const_table.zig
 SEMA     proof_carrying.zig
 SEMA     assumption_guard.zig
