@@ -3392,40 +3392,79 @@ const Arm64Compiler = struct {
         }
         self.cur_loop_ranges.clearRetainingCapacity();
         try self.cur_loop_ranges.appendSlice(self.alloc, loop_ranges.items);
-        const carried = struct {
-            fn at(ranges: []const [2]u32, idx: u32) bool {
-                for (ranges) |r| if (idx >= r[0] and idx <= r[1]) return true;
-                return false;
-            }
-        }.at;
-
         var pass: u8 = 0;
         while (pass < 2) : (pass += 1) {
             // Pass 1 is loop-stored slots only. Pass 2 admits the rest, and runs
             // ONLY for a leaf — where a home costs nothing to save and the old
             // budget rule already handed them out.
             if (pass == 1 and body_has_call) break;
-            var idx: u32 = 0;
-            for (f.blocks) |b| {
-                for (b.instrs) |ins| {
-                    defer idx += 1;
-                    if (ins.op != .store_local) continue;
-                    const slot = ins.result orelse continue;
-                    if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) continue;
-                    if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
-                        .i64 => continue,
-                        else => {},
-                    };
-                    if (body_has_call and pass == 0 and !carried(loop_ranges.items, idx)) continue;
-                    try planSlot(
-                        self,
-                        slot,
-                        &home_count,
-                        &homed_slots,
-                        gate_spill_all_locals,
-                        "gate transport local spilled to stack frame",
-                        home_budget,
-                    );
+            if (pass == 0) {
+                // Deepest loop first. A home is earned by being carried, and the
+                // deeper the carrying the hotter the traffic: the flat order
+                // spent the budget on outer-loop counters while inner-loop
+                // locals stayed in frame slots.
+                const Cand = struct { slot: u32, depth: u32 };
+                var cands: std.ArrayListUnmanaged(Cand) = .empty;
+                defer cands.deinit(self.alloc);
+                var idx: u32 = 0;
+                for (f.blocks) |b| {
+                    for (b.instrs) |ins| {
+                        defer idx += 1;
+                        if (ins.op != .store_local) continue;
+                        const slot = ins.result orelse continue;
+                        if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) continue;
+                        if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
+                            .i64 => continue,
+                            else => {},
+                        };
+                        var depth: u32 = 0;
+                        for (loop_ranges.items) |r| {
+                            if (idx >= r[0] and idx <= r[1]) depth += 1;
+                        }
+                        if (body_has_call and depth == 0) continue;
+                        try cands.append(self.alloc, .{ .slot = slot, .depth = depth });
+                    }
+                }
+                var max_depth: u32 = 0;
+                for (cands.items) |c| max_depth = @max(max_depth, c.depth);
+                var d: u32 = max_depth + 1;
+                while (d > 1) {
+                    d -= 1;
+                    for (cands.items) |c| {
+                        if (c.depth != d) continue;
+                        try planSlot(
+                            self,
+                            c.slot,
+                            &home_count,
+                            &homed_slots,
+                            gate_spill_all_locals,
+                            "gate transport local spilled to stack frame",
+                            home_budget,
+                        );
+                    }
+                }
+            } else {
+                var idx: u32 = 0;
+                for (f.blocks) |b| {
+                    for (b.instrs) |ins| {
+                        defer idx += 1;
+                        if (ins.op != .store_local) continue;
+                        const slot = ins.result orelse continue;
+                        if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) continue;
+                        if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
+                            .i64 => continue,
+                            else => {},
+                        };
+                        try planSlot(
+                            self,
+                            slot,
+                            &home_count,
+                            &homed_slots,
+                            gate_spill_all_locals,
+                            "gate transport local spilled to stack frame",
+                            home_budget,
+                        );
+                    }
                 }
             }
         }
