@@ -2381,7 +2381,6 @@ pub const SemanticGraph = struct {
         return found;
     }
 
-
     pub fn bindingInitialization(self: *const SemanticGraph, binding: id) BindingInitializationState {
         if (binding >= self.binding_initialization_candidates.bit_length or
             !self.binding_initialization_candidates.isSet(binding))
@@ -4224,7 +4223,6 @@ pub const SemanticGraph = struct {
         try self.publishSourceQuote(value, quote);
     }
 
-
     /// EVERY NAME A SCOPE BINDS, IN TWO SWEEPS, AND THE ORDER IS THE POINT.
     ///
     /// The single-sweep version walked into a `.func_decl` the moment it
@@ -4377,10 +4375,6 @@ pub const SemanticGraph = struct {
         const relation = self.enclosingCallable(scope) orelse return;
         try self.publishBindingRead(relation, binding);
     }
-
-
-
-
 
     /// EVERY BARE NAME AN EXPRESSION READS, against the roster as it stands.
     ///
@@ -5638,6 +5632,24 @@ pub const SemanticGraph = struct {
                     for (is.elseifs) |*elif| try self.liftCallsFromBlock(&elif.body, file, parent);
                     if (is.else_body) |*eb| try self.liftCallsFromBlock(eb, file, parent);
                 },
+                .while_loop => |wl| {
+                    try self.liftExprsFromExpr(wl.cond, file, parent, .single);
+                    try self.liftCallsFromBlock(&wl.body, file, parent);
+                },
+                .repeat_loop => |rl| {
+                    try self.liftCallsFromBlock(&rl.body, file, parent);
+                    try self.liftExprsFromExpr(rl.cond, file, parent, .single);
+                },
+                .num_for => |nf| {
+                    try self.liftExprsFromExpr(nf.start, file, parent, .single);
+                    try self.liftExprsFromExpr(nf.stop, file, parent, .single);
+                    if (nf.step) |step| try self.liftExprsFromExpr(step, file, parent, .single);
+                    try self.liftCallsFromBlock(&nf.body, file, parent);
+                },
+                .gen_for => |gf| {
+                    for (gf.iters) |iter| try self.liftExprsFromExpr(iter, file, parent, .single);
+                    try self.liftCallsFromBlock(&gf.body, file, parent);
+                },
                 else => {},
             }
         }
@@ -6334,11 +6346,6 @@ pub const SemanticGraph = struct {
         if (bound_place.shape != .scalar or bound_place.region != .module) return;
         try self.publishBindingInitialization(binding, value, bound_place.id);
     }
-
-
-
-
-
 
     fn liftLiteralFacts(
         self: *SemanticGraph,
@@ -14927,7 +14934,6 @@ test "semantic_graph: injection cannot manufacture authority and refuses by name
     try std.testing.expectEqual(@as(usize, 0), g.derived_worlds.items.len);
 }
 
-
 test "semantic_graph: constructor operands retain ordered heterogeneous fields" {
     try Fixture.compare(
         \\take = (value: any) value
@@ -14994,8 +15000,6 @@ test "semantic_graph: nested constructor fields have exact descriptor homes" {
         \\take(item)
     , &.{true});
 }
-
-
 
 test "semantic_graph: constructor parameter initializers preserve exact origin" {
     const prefix = "record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n";
@@ -15064,7 +15068,6 @@ test "semantic_graph: fresh record aliases retain initializer and place identity
 }
 
 const Fixture = struct {
-
     fn compare(source: []const u8, expected: []const bool) !void {
         const Lexer = @import("lexer.zig").Lexer;
         const Parser = @import("parser.zig").Parser;
