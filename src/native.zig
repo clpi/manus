@@ -3399,13 +3399,62 @@ const Arm64Compiler = struct {
             // budget rule already handed them out.
             if (pass == 1 and body_has_call) break;
             if (pass == 0) {
-                // Deepest loop first. A home is earned by being carried, and the
-                // deeper the carrying the hotter the traffic: the flat order
-                // spent the budget on outer-loop counters while inner-loop
-                // locals stayed in frame slots.
-                const Cand = struct { slot: u32, depth: u32 };
+                // Homes follow estimated traffic, not nesting depth alone.
+                // Deepest-first spent the budget inside the innermost loop even
+                // when the outer loop's carried values dominate the traffic:
+                // hashtable's 4M-iteration lookup loop spilled its counter, LCG
+                // state, key, index and probe count ~12x per iteration while the
+                // ~1-trip probe loop's locals held the homes (-8% measured).
+                // A slot whose live range crosses exactly one further nesting
+                // level is admitted first: the value is live across that whole
+                // nested region, so spilling it costs traffic at the outer rate
+                // with no inner-loop amortization. The single-level bound is
+                // load-bearing: a slot live across several levels pins its
+                // register through every nested region, and qsort's rep/gap
+                // showed that pinning ten such slots exhausts the allocator
+                // (RegisterExhausted in the probe, ladder forced down to 6).
+                // Inside each tier the deeper store still wins, so qsort's
+                // inner-while locals keep the homes deepest-first earned them
+                // (+26% measured).
+                const Cand = struct { slot: u32, depth: u32, cross: bool };
                 var cands: std.ArrayListUnmanaged(Cand) = .empty;
                 defer cands.deinit(self.alloc);
+                var first_store: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+                defer first_store.deinit(self.alloc);
+                var last_use: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+                defer last_use.deinit(self.alloc);
+                {
+                    var idx: u32 = 0;
+                    for (f.blocks) |b| {
+                        for (b.instrs) |ins| {
+                            defer idx += 1;
+                            const fixed = [_]dnir.Value{ ins.lhs, ins.rhs, ins.third };
+                            for (fixed) |v| switch (v) {
+                                .local => |slot| {
+                                    const lu = last_use.get(slot);
+                                    if (lu == null or idx > lu.?) try last_use.put(self.alloc, slot, idx);
+                                },
+                                else => {},
+                            };
+                            for (ins.vals) |v| switch (v) {
+                                .local => |slot| {
+                                    const lu = last_use.get(slot);
+                                    if (lu == null or idx > lu.?) try last_use.put(self.alloc, slot, idx);
+                                },
+                                else => {},
+                            };
+                            if (ins.op != .store_local) continue;
+                            const slot = ins.result orelse continue;
+                            if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) continue;
+                            if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
+                                .i64 => continue,
+                                else => {},
+                            };
+                            const fs = first_store.get(slot);
+                            if (fs == null or idx < fs.?) try first_store.put(self.alloc, slot, idx);
+                        }
+                    }
+                }
                 var idx: u32 = 0;
                 for (f.blocks) |b| {
                     for (b.instrs) |ins| {
@@ -3422,25 +3471,46 @@ const Arm64Compiler = struct {
                             if (idx >= r[0] and idx <= r[1]) depth += 1;
                         }
                         if (body_has_call and depth == 0) continue;
-                        try cands.append(self.alloc, .{ .slot = slot, .depth = depth });
+                        var max_rd: u32 = 0;
+                        if (first_store.get(slot)) |fs| {
+                            if (last_use.get(slot)) |lu| {
+                                for (loop_ranges.items) |r| {
+                                    if (fs < r[0] and lu > r[0]) {
+                                        var rd: u32 = 0;
+                                        for (loop_ranges.items) |r2| {
+                                            if (r[0] >= r2[0] and r[0] <= r2[1]) rd += 1;
+                                        }
+                                        max_rd = @max(max_rd, rd);
+                                    }
+                                }
+                            }
+                        }
+                        const cross = max_rd == depth + 1;
+                        try cands.append(self.alloc, .{ .slot = slot, .depth = depth, .cross = cross });
                     }
                 }
-                var max_depth: u32 = 0;
-                for (cands.items) |c| max_depth = @max(max_depth, c.depth);
-                var d: u32 = max_depth + 1;
-                while (d > 1) {
-                    d -= 1;
+                var tier: u8 = 0;
+                while (tier < 2) : (tier += 1) {
+                    const want_cross = tier == 0;
+                    var max_depth: u32 = 0;
                     for (cands.items) |c| {
-                        if (c.depth != d) continue;
-                        try planSlot(
-                            self,
-                            c.slot,
-                            &home_count,
-                            &homed_slots,
-                            gate_spill_all_locals,
-                            "gate transport local spilled to stack frame",
-                            home_budget,
-                        );
+                        if (c.cross == want_cross) max_depth = @max(max_depth, c.depth);
+                    }
+                    var d: u32 = max_depth + 1;
+                    while (d > 1) {
+                        d -= 1;
+                        for (cands.items) |c| {
+                            if (c.cross != want_cross or c.depth != d) continue;
+                            try planSlot(
+                                self,
+                                c.slot,
+                                &home_count,
+                                &homed_slots,
+                                gate_spill_all_locals,
+                                "gate transport local spilled to stack frame",
+                                home_budget,
+                            );
+                        }
                     }
                 }
             } else {
