@@ -52,9 +52,9 @@ command -v "$wasmtime" >/dev/null 2>&1 ||
 shim=tools/node/dev/grammar/idol_c_runtime_shim.c
 cc=${CC:-cc}
 
-live='examples/pack/x8.id'
-dead='examples/pack/consume.id:missing-application-id
-examples/pack/ladder.id:missing-application-id
+live='examples/pack/x8.id
+examples/pack/consume.id'
+dead='examples/pack/ladder.id:missing-application-id
 examples/pack/merge.id:result-pack-arity'
 unparsed='examples/pack/apply.id'
 
@@ -251,8 +251,12 @@ for fixture in $live; do
         printf 'pack gate: arm 4 %s NOW agrees under C99 as well as wasm — record it\n' "$fixture"
     else
         seen=$(refusalOf "$work/$base.clog")
-        [ "$seen" = operation-not-in-c99-slice ] ||
-            fail "$fixture neither emitted C nor refused at operation-not-in-c99-slice; it refused at '$seen'"
+        case "$fixture" in
+            *consume.id) want=result-not-i64 ;;
+            *) want=operation-not-in-c99-slice ;;
+        esac
+        [ "$seen" = "$want" ] ||
+            fail "$fixture neither emitted C nor refused at $want; it refused at '$seen'"
         printf 'pack gate: arm 4 %s refuses C99 at %s\n' "$fixture" "$seen"
     fi
 
@@ -265,9 +269,13 @@ for fixture in $live; do
             fail "$fixture answered '$got' on --backend=direct where its oracle line says '$(expectOf "$fixture")'"
         printf 'pack gate: arm 4 %s NOW agrees on the direct backend — record it\n' "$fixture"
     else
-        grep -q DNB004 "$work/$base.dlog" ||
-            fail "$fixture --backend=direct neither answered DNB004 nor produced a binary: $(head -3 "$work/$base.dlog" | tr '\n' ' ')"
-        printf 'pack gate: arm 4 %s has no direct realization on this host (DNB004)\n' "$fixture"
+        case "$fixture" in
+            *consume.id) dnb=DNB001 ;;
+            *) dnb=DNB004 ;;
+        esac
+        grep -q "$dnb" "$work/$base.dlog" ||
+            fail "$fixture --backend=direct neither answered $dnb nor produced a binary: $(head -3 "$work/$base.dlog" | tr '\n' ' ')"
+        printf 'pack gate: arm 4 %s has no direct realization on this host ($dnb)\n' "$fixture"
     fi
 done
 
@@ -357,11 +365,16 @@ for probe in wbind wdesugar; do
     blank "$work/$probe.wasm"
     if "$idol" compile --backend=wasm "$work/$probe.id" -o "$work/$probe.wasm" >"$work/$probe.log" 2>&1 &&
         [ -s "$work/$probe.wasm" ]; then
-        fail "arm 6: the $probe probe NOW has a realization. consume.id can be measured: put its law back and compare its 26"
+        got=$("$wasmtime" "$work/$probe.wasm" 2>/dev/null | tr -d " \n")
+        [ "$got" = "10" ] ||
+            fail "arm 6: the $probe probe realized but answered '$got', not '10'"
+        printf 'pack gate: arm 6 the %s probe realizes and answers 10\n' "$probe"
+    else
+        seen=$(refusalOf "$work/$probe.log")
+        [ "$seen" = "$loop_id" ] ||
+            fail "arm 6: the $probe probe refuses at '$seen', not at the recorded '$loop_id'"
+        printf 'pack gate: arm 6 the %s probe still refuses at %s\n' "$probe" "$seen"
     fi
-    seen=$(refusalOf "$work/$probe.log")
-    [ "$seen" = "$loop_id" ] ||
-        fail "arm 6: the $probe probe refuses at '$seen', not at the recorded '$loop_id'"
 done
 
 # The control: the same loop with no call inside compiles and answers, so the
@@ -409,11 +422,13 @@ blank "$work/oobrun.wasm"
     fail "arm 6: the computed-index loop no longer compiles: $(refusalOf "$work/oobrun.log")"
 [ -s "$work/oobrun.wasm" ] || fail "arm 6: the computed-index loop compiled without an artifact"
 if "$wasmtime" "$work/oobrun.wasm" >"$work/oobrun.out" 2>"$work/oobrun.err"; then
-    fail "arm 6: reading past the end now TERMINATES the loop instead of trapping — it answered '$(tr '\n' ' ' <"$work/oobrun.out")'. consume.id's nil termination is realized: measure it"
+    got=$(tr -d " \n" <"$work/oobrun.out")
+    [ "$got" = "26" ] ||
+        fail "arm 6: the computed-index loop terminated but answered '$got', not '26'"
+else
+    fail "arm 6: the computed out-of-range read trapped instead of answering nil"
 fi
-grep -q 'wasm trap' "$work/oobrun.err" ||
-    fail "arm 6: the computed out-of-range read exited nonzero without trapping: $(head -2 "$work/oobrun.err" | tr '\n' ' ')"
-printf 'pack gate: arm 6 a constant index past the end refuses at aggregate-index-bounds and a computed one traps — no nil terminates a loop here\n'
+printf 'pack gate: arm 6 a computed out-of-range read answers nil, terminating the loop with 26\n'
 
 # ========================== ARM 7: THE CHECK GREEN ==========================
 

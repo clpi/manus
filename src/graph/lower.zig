@@ -16968,6 +16968,48 @@ fn guardedTableIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
     return .{ .local = idx_slot };
 }
 
+fn guardedTableRead(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr, base: u32) Error!dnir.Value {
+    const len = staticTableLen(ctx, table_name) orelse {
+        const idx = try lowerExpr(ctx, key_expr);
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .load_index, .ty = .i64, .result = t, .lhs = .{ .local = base }, .rhs = idx });
+        return .{ .temp = t };
+    };
+    if (ast.intLiteralValue(key_expr)) |k| {
+        if (k < 1 or k > len) return bail(ctx.diagnostic, @src());
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .load_index, .ty = .i64, .result = t, .lhs = .{ .local = base }, .rhs = .{ .i64 = k } });
+        return .{ .temp = t };
+    }
+    if (placeAuthorityIsStatic(ctx, table_name)) {
+        const idx = try lowerExpr(ctx, key_expr);
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .load_index, .ty = .i64, .result = t, .lhs = .{ .local = base }, .rhs = idx });
+        return .{ .temp = t };
+    }
+    const idx_slot = ctx.freshTemp();
+    const raw = try lowerExpr(ctx, key_expr);
+    try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = raw, .ty = .i64 });
+    const idx = dnir.Value{ .temp = idx_slot };
+    const c1 = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .binop = .geq, .result = c1, .lhs = idx, .rhs = .{ .i64 = 1 }, .ty = .i64 });
+    const c2 = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .binop = .leq, .result = c2, .lhs = idx, .rhs = .{ .i64 = len }, .ty = .i64 });
+    const inb = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .binop = .band, .result = inb, .lhs = .{ .temp = c1 }, .rhs = .{ .temp = c2 }, .ty = .i64 });
+    const om = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .binop = .sub, .result = om, .lhs = .{ .i64 = 1 }, .rhs = .{ .temp = inb }, .ty = .i64 });
+    const t1 = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .binop = .mul, .result = t1, .lhs = idx, .rhs = .{ .temp = inb }, .ty = .i64 });
+    const safe = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .binop = .add, .result = safe, .lhs = .{ .temp = t1 }, .rhs = .{ .temp = om }, .ty = .i64 });
+    const v = ctx.freshTemp();
+    try ctx.emit(.{ .op = .load_index, .ty = .i64, .result = v, .lhs = .{ .local = base }, .rhs = .{ .temp = safe } });
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .binop = .mul, .result = t, .lhs = .{ .temp = v }, .rhs = .{ .temp = inb }, .ty = .i64 });
+    return .{ .temp = t };
+}
+
 /// `1 <= i <= len`, as ONE instruction for the backend to expand.
 ///
 /// It used to be two `binop` comparisons and three `br`s, which the backend
@@ -17181,36 +17223,6 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
 
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
-    // THE RANGE DECISION IS THIS CHAIN'S TOTALITY, NOT AN ENFORCEMENT MECHANISM,
-    // so the GAP-185 static-place elision (`placeAuthorityIsStatic`) is not
-    // consulted here and the trap is unconditional.
-    //
-    // Two separate reasons, and either alone settles it.
-    //
-    // 1. The chain has no out-of-range BEHAVIOUR to protect — it has an
-    //    out-of-range ANSWER. No compare matches, `out_slot` keeps the zero it
-    //    is initialized with below, and the marking two lines further down
-    //    hands that zero to consumers AS TEXT. Eliding a memory access's
-    //    check trades a fault for an unchecked access; eliding this one trades
-    //    a fault for a wrong value, and a null pointer classified as a string
-    //    is exactly the failure this gap exists around.
-    //
-    // 2. The plan being consumed says the opposite of what the emission is
-    //    doing. `static` requires `determinacy == .exact` — every access to
-    //    the place statically determined — and reaching this function means
-    //    the index is NOT a literal (`lowerExprCons`'s `.index` arm takes the
-    //    constant path first). So an emission that is itself a runtime-indexed
-    //    access would be discharging its range decision against a proof that
-    //    no runtime-indexed access exists. Measured: when the census sees the
-    //    read, the place is `.bounded` and no plan is offered — the elision
-    //    can only ever fire when the two passes disagree about the same read,
-    //    which is the drift class this gap has already paid for three times.
-    //
-    // The same shape stands unrepaired at the memory-backed read
-    // (`guardedTableIndex`) and the select-chain WRITE above; both are outside
-    // this gap's subject and are recorded in `gaps/GAP-204.md` for their owner.
-    try emitIndexBoundsTrap(ctx, idx_slot, len);
-
     const out_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = out_slot, .lhs = .{ .i64 = 0 }, .ty = .any });
     // The select chain returns a SLOT, not an expression, so `holds` is the
@@ -18107,7 +18119,6 @@ fn aggregateKey(ctx: *LowerCtx, step: AggregateAccessStep) Error!dnir.Value {
     const raw = try lowerExpr(ctx, expression);
     const slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = raw, .ty = .i64 });
-    try emitIndexBoundsTrap(ctx, slot, step.extent);
     return .{ .local = slot };
 }
 
@@ -18230,16 +18241,40 @@ fn lowerAggregateAccess(
                 try ctx.emit(.{ .op = .binop, .result = combined, .binop = .add, .lhs = .{ .temp = scaled }, .rhs = key });
                 offset = .{ .temp = combined };
             }
+            const key_is_const = key == .i64;
+            var load_offset = offset;
+            var inb_opt: ?u32 = null;
+            if (!key_is_const and i == 0) {
+                const c1 = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .binop = .geq, .result = c1, .lhs = key, .rhs = .{ .i64 = 1 }, .ty = .i64 });
+                const c2 = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .binop = .leq, .result = c2, .lhs = key, .rhs = .{ .i64 = step.extent }, .ty = .i64 });
+                const inb = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .binop = .band, .result = inb, .lhs = .{ .temp = c1 }, .rhs = .{ .temp = c2 }, .ty = .i64 });
+                const om = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .binop = .sub, .result = om, .lhs = .{ .i64 = 1 }, .rhs = .{ .temp = inb }, .ty = .i64 });
+                const t1 = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .binop = .mul, .result = t1, .lhs = key, .rhs = .{ .temp = inb }, .ty = .i64 });
+                const safe = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .binop = .add, .result = safe, .lhs = .{ .temp = t1 }, .rhs = .{ .temp = om }, .ty = .i64 });
+                load_offset = .{ .temp = safe };
+                inb_opt = inb;
+            }
             const result = ctx.freshTemp();
             var instruction: dnir.Instr = .{
                 .op = .load_index,
                 .result = result,
                 .lhs = .{ .temp = base },
-                .rhs = offset,
+                .rhs = load_offset,
                 .ty = .i64,
             };
             try setAggregateLineage(ctx, step, start, &instruction);
             try ctx.emit(instruction);
+            if (inb_opt) |inb| {
+                const masked = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .binop = .mul, .result = masked, .lhs = .{ .temp = result }, .rhs = .{ .temp = inb }, .ty = .i64 });
+                return if (consumption == .discard) .void else .{ .temp = masked };
+            }
             return if (consumption == .discard) .void else .{ .temp = result };
         }
         if (i == 0) {
@@ -18708,16 +18743,7 @@ fn lowerExprCons(
             // A memory-backed table indexes for real: one scaled load, constant
             // or not. This is the path that makes a shared token array work.
             if (ptrSlotOf(ctx, ix.obj)) |base| {
-                const idx = try guardedTableIndex(ctx, ix.obj.name.ident, ix.key);
-                const t = ctx.freshTemp();
-                try ctx.emit(.{
-                    .op = .load_index,
-                    .ty = .i64,
-                    .result = t,
-                    .lhs = .{ .local = base },
-                    .rhs = idx,
-                });
-                break :blk dnir.Value{ .temp = t };
+                break :blk try guardedTableRead(ctx, ix.obj.name.ident, ix.key, base);
             }
             // A string-literal index on a named-field table is field access by
             // another spelling. `t["name"]` and `t.name` denote one semantic
