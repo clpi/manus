@@ -4676,14 +4676,17 @@ const Arm64Compiler = struct {
         if (next.lhs != .temp or next.lhs.temp != result) return null;
         const slot = next.result orelse return null;
         const home = self.gpLocalHomeReg(temps, pinned, slot) orelse return null;
-        // The old home value does NOT die with the store when it is
-        // loop-carried: the next iteration reads it. Aliasing the home
-        // register then clobbers the value the back edge expects.
-        if (self.gp_reg_owner[home]) |owner| {
-            if (self.value_free_at.get(owner)) |last| {
-                if (last > at) return null;
+        const reads_home = for ([_]dnir.Value{ ins.lhs, ins.rhs, ins.third }) |op| {
+            if (op == .local and op.local == slot) break true;
+        } else false;
+        if (!reads_home) {
+            if (self.gp_reg_owner[home]) |owner| {
+                if (self.value_free_at.get(owner)) |last| {
+                    if (last > at) return null;
+                } else return null;
             } else return null;
-        } else return null;
+        }
+        if (pinned.get(slot) != home) return null;
         return home;
     }
 
