@@ -1,0 +1,9 @@
+main: i64 = ()
+  s: str = os.env["IDOLDIVZERO"]
+  d = s:len()
+  z = d - d
+  half = 0 - 4611686018427387904 - 4611686018427387904 + z
+  neg1 = 0 - 1 + z
+  q = half // neg1
+  print(q)
+  0

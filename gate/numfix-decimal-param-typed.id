@@ -1,0 +1,5 @@
+total: f64 = (a: f64, b: f64)
+  a + b
+main: i64 = ()
+  print(total(0.1, 0.2))
+  0
