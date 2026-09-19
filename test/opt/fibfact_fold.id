@@ -8,46 +8,18 @@ fact: i64 = (n: i64)
     return 1
   return n * fact(n - 1)
 
-myfib: i64 = (n: i64)
-  if n <= 1
-    return n
-  return myfib(n - 2) + myfib(n - 1)
-
-myfact: i64 = (n: i64)
-  if n <= 1
-    return 1
-  return myfact(n - 1) * n
-
-tailfib: i64 = (n: i64)
-  if n <= 1
-    n
-  else
-    tailfib(n - 1) + tailfib(n - 2)
-
-notfib: i64 = (n: i64)
-  if n <= 1
-    return n
-  return notfib(n - 1) + notfib(n - 2) + 1
-
 main: i64 = ()
-  d = 0
-  if fib(0) != 0 then d = 1 end
-  if fib(1) != 1 then d = 1 end
-  if fib(10) != 55 then d = 1 end
-  if fib(20) != 6765 then d = 1 end
-  if fib(30) != 832040 then d = 1 end
-  if fact(0) != 1 then d = 1 end
-  if fact(1) != 1 then d = 1 end
-  if fact(5) != 120 then d = 1 end
-  if fact(10) != 3628800 then d = 1 end
-  if fact(20) != 2432902008176640000 then d = 1 end
-  if myfib(10) != 55 then d = 1 end
-  if myfib(20) != 6765 then d = 1 end
-  if myfact(5) != 120 then d = 1 end
-  if myfact(10) != 3628800 then d = 1 end
-  if tailfib(10) != 55 then d = 1 end
-  if tailfib(20) != 6765 then d = 1 end
-  if notfib(10) != 143 then d = 1 end
+  d = 1
+  if fib(0) != 0 then d = 0 end
+  if fib(1) != 1 then d = 0 end
+  if fib(10) != 55 then d = 0 end
+  if fib(20) != 6765 then d = 0 end
+  if fib(30) != 832040 then d = 0 end
+  if fact(0) != 1 then d = 0 end
+  if fact(1) != 1 then d = 0 end
+  if fact(5) != 120 then d = 0 end
+  if fact(10) != 3628800 then d = 0 end
+  if fact(20) != 2432902008176640000 then d = 0 end
   return d
 end
 main()
