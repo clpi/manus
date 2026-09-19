@@ -6427,8 +6427,11 @@ const Arm64Compiler = struct {
                         return;
                     }
                     const idx = try self.evalDnirValue(temps, ins.rhs);
-                    const biased = try self.allocReg();
-                    try self.emitSubImm(biased, idx, 1);
+                    const biased = if (ins.zero_based_index) idx else b: {
+                        const r = try self.allocReg();
+                        try self.emitSubImm(r, idx, 1);
+                        break :b r;
+                    };
                     if (op == .load_index) {
                         const dst = try self.allocReg();
                         try self.emitLdrScaled(dst, base, biased);
@@ -6438,7 +6441,7 @@ const Arm64Compiler = struct {
                         try self.emitStrScaled(val, base, biased);
                         self.releaseDnirTemp(pinned, ins.third, val);
                     }
-                    self.releaseReg(biased);
+                    if (!ins.zero_based_index) self.releaseReg(biased);
                     self.releaseDnirTemp(pinned, ins.lhs, base);
                     self.releaseDnirTemp(pinned, ins.rhs, idx);
                 },
