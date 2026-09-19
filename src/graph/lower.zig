@@ -35,6 +35,7 @@ pub const Error = error{
     UnsupportedConstruct,
     GraphFactsInvalid,
     OutOfMemory,
+    DivOverflow,
 };
 
 /// Caller-owned physical evidence for one lowering attempt.
@@ -20542,6 +20543,32 @@ fn divisorGuardForced() bool {
     return std.c.getenv("IDOL_DIVZERO_GUARD_ALWAYS") != null;
 }
 
+/// INT64_MIN div -1 overflows i64. Folder refuses to fold; runtime must trap.
+fn emitDivOverflowTrap(ctx: *LowerCtx, tag: dnir.BinOpTag, a: dnir.Value, b: dnir.Value) Error!void {
+    if (tag != .div and tag != .idiv) return;
+    const min_int = std.math.minInt(i64);
+    const a_is_min = a == .i64 and a.i64 == min_int;
+    const b_is_neg1 = b == .i64 and b.i64 == -1;
+    if (a == .i64 and b == .i64) {
+        if (a_is_min and b_is_neg1) return error.DivOverflow;
+        return;
+    }
+    if (a == .i64 and !a_is_min) return;
+    if (b == .i64 and !b_is_neg1) return;
+    const is_min = ctx.freshTemp();
+    const is_neg1 = ctx.freshTemp();
+    const bad = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = is_min, .binop = .eq, .lhs = a, .rhs = .{ .i64 = min_int } });
+    try ctx.emit(.{ .op = .binop, .result = is_neg1, .binop = .eq, .lhs = b, .rhs = .{ .i64 = -1 } });
+    try ctx.emit(.{ .op = .binop, .result = bad, .binop = .band, .lhs = .{ .temp = is_min }, .rhs = .{ .temp = is_neg1 } });
+    const bad_br = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = bad }, .branch_target = 0, .branch_condition = .when_true });
+    const skip = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+    ctx.instrs.items[bad_br].branch_target = @intCast(ctx.instrs.items.len);
+    try emitTrap(ctx);
+    ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
+}
 fn emitDivisorZeroTrap(ctx: *LowerCtx, divisor: dnir.Value) Error!void {
     if (divisor == .i64 and divisor.i64 != 0) return;
 
@@ -20747,6 +20774,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     // not the obligation — which is why this reads the operands separately and
     // does not fold the float case into the law.
     if (!f64_op and tag.requiresNonzeroDivisor()) try emitDivisorZeroTrap(ctx, b);
+    if (!f64_op) try emitDivOverflowTrap(ctx, tag, a, b);
     var result_ty: RT = if (f64_op) .f64 else .any;
     if (!f64_op) {
         if (unsignedComparison(ctx, op, lhs, rhs)) |conv| {

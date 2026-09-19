@@ -14975,6 +14975,13 @@ fn emitArm64ModuleWithGraph(
                     diagnostic.lowering.note() orelse "graph-dnir-facts",
                 );
             },
+            error.DivOverflow => blk: {
+                break :blk recordRefusalWith(
+                    diagnostic,
+                    @src(),
+                    "div-overflow",
+                );
+            },
             error.UnsupportedConstruct => blk: {
                 diagnostic.adoptLoweringCause();
                 break :blk recordRefusalWith(
