@@ -22077,20 +22077,28 @@ fn lowerMemType(ctx: *LowerCtx, type_expr: *const ast.Expr) ?RT {
 /// scale down by 8 and the 1-based bias — and they have to happen in ONE place,
 /// because the read and the write of the same buffer disagreeing about its
 /// origin is exactly the defect this helper was extracted to end.
-fn lowerScaledElementIndex(ctx: *LowerCtx, off_expr: *const ast.Expr) Error!dnir.Value {
+fn lowerScaledElementIndex(ctx: *LowerCtx, off_expr: *const ast.Expr, zero_based: bool) Error!dnir.Value {
     if (off_expr.* == .binop) {
         const b = off_expr.binop;
         if (b.op == .mul) {
             if (b.rhs.* == .int_lit and b.rhs.int_lit.val == 8) {
                 const base = try lowerExpr(ctx, b.lhs);
                 const idx = ctx.freshTemp();
-                try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                if (zero_based) {
+                    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 0 } });
+                } else {
+                    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                }
                 return .{ .temp = idx };
             }
             if (b.lhs.* == .int_lit and b.lhs.int_lit.val == 8) {
                 const base = try lowerExpr(ctx, b.rhs);
                 const idx = ctx.freshTemp();
-                try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                if (zero_based) {
+                    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 0 } });
+                } else {
+                    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                }
                 return .{ .temp = idx };
             }
         }
@@ -22098,7 +22106,11 @@ fn lowerScaledElementIndex(ctx: *LowerCtx, off_expr: *const ast.Expr) Error!dnir
             if (b.rhs.* == .int_lit and b.rhs.int_lit.val == 3) {
                 const base = try lowerExpr(ctx, b.lhs);
                 const idx = ctx.freshTemp();
-                try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                if (zero_based) {
+                    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 0 } });
+                } else {
+                    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = base, .rhs = .{ .i64 = 1 } });
+                }
                 return .{ .temp = idx };
             }
         }
@@ -22106,6 +22118,7 @@ fn lowerScaledElementIndex(ctx: *LowerCtx, off_expr: *const ast.Expr) Error!dnir
     const off = try lowerExpr(ctx, off_expr);
     const scaled = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = scaled, .binop = .div, .lhs = off, .rhs = .{ .i64 = 8 } });
+    if (zero_based) return .{ .temp = scaled };
     const idx = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = .{ .temp = scaled }, .rhs = .{ .i64 = 1 } });
     return .{ .temp = idx };
@@ -22588,9 +22601,9 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 // was reachable from any module that could name a pointer.
                 if (std.mem.eql(u8, f.field, "read_i64") and c.args.len == 2) {
                     const base = try lowerExpr(ctx, c.args[0]);
-                    const idx = try lowerScaledElementIndex(ctx, c.args[1]);
+                    const idx = try lowerScaledElementIndex(ctx, c.args[1], true);
                     const t = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .load_index, .result = t, .ty = .i64, .lhs = base, .rhs = idx });
+                    try ctx.emit(.{ .op = .load_index, .result = t, .ty = .i64, .lhs = base, .rhs = idx, .zero_based_index = true });
                     return .{ .temp = t };
                 }
                 // THE WRITE HALF. `store_index` is the exact mirror of
@@ -22609,7 +22622,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 }
                 if (std.mem.eql(u8, f.field, "write_f64") and c.args.len == 3) {
                     const base = try lowerExpr(ctx, c.args[0]);
-                    const idx = try lowerScaledElementIndex(ctx, c.args[1]);
+                    const idx = try lowerScaledElementIndex(ctx, c.args[1], false);
                     const val = try lowerExpr(ctx, c.args[2]);
                     try ctx.emit(.{ .op = .store_index, .ty = .f64, .lhs = base, .rhs = idx, .third = val });
                     return .void;
@@ -22784,7 +22797,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             // take this path — they are published applications.
             if (c.args.len == 1 and recordLocalDesc(ctx, f.obj.name.ident) != null) {
                 const base = try lowerField(ctx, c.func);
-                const idx = try lowerScaledElementIndex(ctx, c.args[0]);
+                const idx = try lowerScaledElementIndex(ctx, c.args[0], false);
                 const t = ctx.freshTemp();
                 try ctx.emit(.{ .op = .load_index, .result = t, .ty = .i64, .lhs = base, .rhs = idx });
                 return .{ .temp = t };
