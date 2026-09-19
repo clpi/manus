@@ -358,6 +358,8 @@ const op_f64_abs: u8 = 0x99;
 const op_f64_neg: u8 = 0x9a;
 const op_f64_ceil: u8 = 0x9b;
 const op_f64_floor: u8 = 0x9c;
+const op_f64_trunc: u8 = 0x9d;
+const op_i64_trunc_f64_s: u8 = 0xb0;
 const op_f64_sqrt: u8 = 0x9f;
 const op_f64_add: u8 = 0xa0;
 const op_f64_sub: u8 = 0xa1;
@@ -456,6 +458,7 @@ const Helper = enum {
     strcmp, //     (i64 a, i64 b) -> i64
     sn_put, //     (i64 ch) -> ()            one byte into the format cursor
     sn_puti, //    (i64 v) -> ()             one decimal integer likewise
+    sn_putf, //    (i64 bits) -> ()          one f64 as %f (6 digits) likewise
     sn_format, //  (i64 fmt, i64 va) -> ()   the format walk, cursor already set
     snprintf, //   (i64 dst, i64 cap, i64 fmt, i64 va) -> i64
     printf, //     (i64 fmt, i64 va) -> ()
@@ -2629,6 +2632,7 @@ fn emitHelpers(e: *Emitter) Error!void {
     try putHelper(e, .strcmp, &.{ vt_i64, vt_i64 }, &.{vt_i64}, helperStrcmp);
     try putHelper(e, .sn_put, &.{vt_i64}, &.{}, helperSnPut);
     try putHelper(e, .sn_puti, &.{vt_i64}, &.{}, helperSnPutI);
+    try putHelper(e, .sn_putf, &.{vt_i64}, &.{}, helperSnPutF);
     try putHelper(e, .sn_format, &.{ vt_i64, vt_i64 }, &.{}, helperSnFormat);
     try putHelper(e, .snprintf, &.{ vt_i64, vt_i64, vt_i64, vt_i64 }, &.{vt_i64}, helperSnprintf);
     try putHelper(e, .printf, &.{ vt_i64, vt_i64 }, &.{}, helperPrintf);
@@ -2823,6 +2827,91 @@ fn helperSnPutI(e: *Emitter, b: *Buf) Error!void {
 /// `snprintf(dst, cap, fmt, va)` over the three directives `dnir_lower` emits.
 /// Returns the length the answer NEEDS, excluding the terminator — the C
 /// contract `lowerConcatChain` measures with before it allocates.
+/// sn_putf: f64 as percent-f, 6 digits. See helperSnPutF.
+fn helperSnPutF(e: *Emitter, b: *Buf) Error!void {
+    _ = e;
+    // params: 0 = bits (i64). locals: 1 neg(i32), 2 cnt(i32), 3 av(f64),
+    // 4 intpart(i64), 5 fdigits(i64), 6 div(i64).
+    try b.u32v(3);
+    try b.u32v(2);
+    try b.byte(vt_i32);
+    try b.u32v(1);
+    try b.byte(vt_f64);
+    try b.u32v(3);
+    try b.byte(vt_i64);
+    try b.get(0);
+    try b.op(op_f64_reinterpret_i64);
+    try b.op(op_f64_abs);
+    try b.set(3);
+    try b.get(0);
+    try b.op(op_f64_reinterpret_i64);
+    try b.f64c(0.0);
+    try b.op(op_f64_lt);
+    try b.set(1);
+    try b.get(3);
+    try b.op(op_i64_trunc_f64_s);
+    try b.set(4);
+    try b.get(3);
+    try b.get(4);
+    try b.op(op_f64_convert_i64_s);
+    try b.op(op_f64_sub);
+    try b.f64c(1000000.0);
+    try b.op(op_f64_mul);
+    try b.f64c(0.5);
+    try b.op(op_f64_add);
+    try b.op(op_i64_trunc_f64_s);
+    try b.set(5);
+    try b.get(5);
+    try b.i64c(1000000);
+    try b.op(op_i64_eq);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    try b.get(4);
+    try b.i64c(1);
+    try b.op(op_i64_add);
+    try b.set(4);
+    try b.i64c(0);
+    try b.set(5);
+    try b.byte(op_end);
+    try b.get(1);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    try b.i64c(45);
+    try b.call(helperIndex(.sn_put));
+    try b.byte(op_end);
+    try b.get(4);
+    try b.call(helperIndex(.sn_puti));
+    try b.i64c(46);
+    try b.call(helperIndex(.sn_put));
+    try b.i64c(100000);
+    try b.set(6);
+    try b.i32c(6);
+    try b.set(2);
+    try b.byte(op_loop);
+    try b.byte(bt_void);
+    try b.get(5);
+    try b.get(6);
+    try b.op(op_i64_div_u);
+    try b.i64c(48);
+    try b.op(op_i64_add);
+    try b.call(helperIndex(.sn_put));
+    try b.get(5);
+    try b.get(6);
+    try b.op(op_i64_rem_u);
+    try b.set(5);
+    try b.get(6);
+    try b.i64c(10);
+    try b.op(op_i64_div_u);
+    try b.set(6);
+    try b.get(2);
+    try b.i32c(1);
+    try b.op(op_i32_sub);
+    try b.tee(2);
+    try b.byte(op_br_if);
+    try b.u32v(0);
+    try b.byte(op_end);
+}
+
 fn helperSnFormat(e: *Emitter, b: *Buf) Error!void {
     const null_str: i64 = @intCast(try e.strings.intern("(null)"));
     // params: 0 fmt, 1 va
@@ -2957,6 +3046,28 @@ fn helperSnFormat(e: *Emitter, b: *Buf) Error!void {
     try b.byte(op_br);
     try b.u32v(2);
     try b.byte(op_end);
+    // %f
+    try b.get(4);
+    try b.mem(op_i64_load8_u, 0, 1);
+    try b.i64c(102);
+    try b.op(op_i64_eq);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    try b.get(5);
+    try b.mem(op_i64_load, 3, 0);
+    try b.call(helperIndex(.sn_putf));
+    try b.get(5);
+    try b.i32c(8);
+    try b.op(op_i32_add);
+    try b.set(5);
+    try b.get(4);
+    try b.i32c(2);
+    try b.op(op_i32_add);
+    try b.set(4);
+    try b.byte(op_br);
+    try b.u32v(2);
+    try b.byte(op_end);
+
 
     try b.byte(op_end); // end of the `%` if
 
@@ -3892,12 +4003,16 @@ fn helperPrintF64(e: *Emitter, b: *Buf) Error!void {
     const scratch: i64 = @intCast(addr_numbuf);
     const cap: i64 = @intCast(numbuf_len);
 
-    // Call snprintf(scratch, cap, "%g", v)
+    // Stage the f64 bits at addr_varargs; va is a pointer like emitSnprintf.
+    try b.i32c(@intCast(addr_varargs));
+    try b.get(0);
+    try b.op(op_i64_reinterpret_f64);
+    try b.mem(op_i64_store, 3, 0);
+    // Call snprintf(scratch, cap, "%f", va)
     try b.i64c(scratch);
     try b.i64c(cap);
-    try b.i64c(@intCast(try e.strings.intern("%g")));
-    try b.get(0); // f64 v
-    try b.op(op_i64_reinterpret_f64); // snprintf's va slot is i64; pass the bits
+    try b.i64c(@intCast(try e.strings.intern("%f")));
+    try b.i64c(@intCast(addr_varargs));
     try b.call(helperIndex(.snprintf));
     try b.op(op_drop); // snprintf returns i64 (chars written); the helper does not
 
@@ -3905,13 +4020,13 @@ fn helperPrintF64(e: *Emitter, b: *Buf) Error!void {
     try b.i64c(scratch);
     try b.call(helperIndex(.write_cstr));
 
-    // newline if nl == 0
+    // newline if nl != 0
     try b.get(1);
-    try b.op(op_i64_eqz);
+    try b.op(op_i32_wrap_i64);
     try b.byte(op_if);
     try b.byte(bt_void);
     try b.i64c(@intCast(try e.strings.intern("\n")));
-    try b.call(helperIndex(.puts_cstr));
+    try b.call(helperIndex(.write_cstr));
     try b.byte(op_end);
 }
 
@@ -3929,12 +4044,16 @@ fn helperPrintF32(e: *Emitter, b: *Buf) Error!void {
     const scratch: i64 = @intCast(addr_numbuf);
     const cap: i64 = @intCast(numbuf_len);
 
-    // Call snprintf(scratch, cap, "%g", v_f64)
+    // Stage the f64 bits at addr_varargs; va is a pointer like emitSnprintf.
+    try b.i32c(@intCast(addr_varargs));
+    try b.get(2);
+    try b.op(op_i64_reinterpret_f64);
+    try b.mem(op_i64_store, 3, 0);
+    // Call snprintf(scratch, cap, "%f", va)
     try b.i64c(scratch);
     try b.i64c(cap);
-    try b.i64c(@intCast(try e.strings.intern("%g")));
-    try b.get(2); // f64 v
-    try b.op(op_i64_reinterpret_f64); // snprintf's va slot is i64; pass the bits
+    try b.i64c(@intCast(try e.strings.intern("%f")));
+    try b.i64c(@intCast(addr_varargs));
     try b.call(helperIndex(.snprintf));
     try b.op(op_drop); // snprintf returns i64; helper does not observe it
 
@@ -3942,13 +4061,13 @@ fn helperPrintF32(e: *Emitter, b: *Buf) Error!void {
     try b.i64c(scratch);
     try b.call(helperIndex(.write_cstr));
 
-    // newline if nl == 0
+    // newline if nl != 0
     try b.get(1);
-    try b.op(op_i64_eqz);
+    try b.op(op_i32_wrap_i64);
     try b.byte(op_if);
     try b.byte(bt_void);
     try b.i64c(@intCast(try e.strings.intern("\n")));
-    try b.call(helperIndex(.puts_cstr));
+    try b.call(helperIndex(.write_cstr));
     try b.byte(op_end);
 }
 
