@@ -4647,6 +4647,14 @@ pub const LowerCtx = struct {
     upbranch_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     satadd_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
     absdiff_swallowed: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Index-key expressions whose range a partition-loop proof established.
+    /// `tryProvePartitionLoopRange` inserts them (keyed by the `.index` key
+    /// AST node); `guardedTableIndex` skips the runtime bounds trap when the
+    /// proven `[min, max]` lies inside the check's `[1, len]`. A proof is a
+    /// fact about the program, not a lowering decision, so unlike the
+    /// swallowed sets above this map never changes what gets lowered -- only
+    /// whether the trap is emitted for a proven-safe access.
+    proven_index_ranges: std.AutoHashMapUnmanaged(*const ast.Expr, ProvenIndexRange) = .empty,
     /// Statements swallowed by the bit-reverse idiom prologue: it discharged
     /// the loop's whole semantics up front (post-loop r/x/i values stored),
     /// so the dispatch loop must not lower the vacuous `while`. Keyed by
@@ -4801,6 +4809,7 @@ pub const LowerCtx = struct {
         self.upbranch_swallowed.deinit(self.alloc);
         self.satadd_swallowed.deinit(self.alloc);
         self.absdiff_swallowed.deinit(self.alloc);
+        self.proven_index_ranges.deinit(self.alloc);
         self.bitrev_swallowed.deinit(self.alloc);
         self.bytestore_swallowed.deinit(self.alloc);
         self.loopselect_swallowed.deinit(self.alloc);
@@ -12593,6 +12602,614 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
     return true;
 }
 
+/// A proven index range for one index-key AST node: the table it indexes and
+/// the closed interval the index is proved to stay inside. Recorded by
+/// `tryProvePartitionLoopRange`; `guardedTableIndex` skips the runtime bounds
+/// trap when the proven `[min, max]` lies inside the check's `[1, len]`.
+const ProvenIndexRange = struct {
+    table: []const u8,
+    min: i64,
+    max: i64,
+};
+
+/// PARTITION-LOOP RANGE PROOF -- INDEX BOUNDS-TRAP ELISION.
+///
+/// Recognizes the binary-search partition shape
+///
+///     lo = L0            (int literal, L0 >= 0)
+///     len = E            (int literal, E >= 0)
+///     while len > 1
+///         half = len // c        (c = 1 or 2; the single binding of half)
+///         ... t[lo + half] ...   (reads, every one of shape t[lo + half])
+///         if ...: lo = lo + half (zero or more)
+///         len = len - half       (exactly once, direct child of the body)
+///
+/// and proves `1 <= lo + half <= extent(t)` for every `t[lo + half]` read,
+/// discharging the `emitIndexBoundsTrap` check `guardedTableIndex` would
+/// otherwise emit. The argument is the coupling invariant `lo + len <= L0 + E`:
+/// it holds at loop entry by the literal bindings, and each approved update
+/// preserves it -- `lo += half` is always followed by the unconditional
+/// `len -= half` (`continue` is declined, so the update dominates the back
+/// edge), keeping the sum; the conditional lo update alone can only shrink
+/// it. With `len >= 2` from the loop condition, `half = len // c` gives
+/// `1 <= half <= len - 1` for c = 2 (and `half = len` for c = 1), so
+/// `lo + half <= lo + len - 1 <= L0 + E - 1` (c = 2) and the prover requires
+/// `L0 + E <= extent + 1`; for c = 1 it requires `L0 + E <= extent`. The lower
+/// bound is `lo + half >= L0 + 1 >= 1`.
+///
+/// Every condition the argument needs is verified; any deviation declines the
+/// proof and the trap is emitted exactly as before. The select-chain path
+/// (`lowerDynamicIndex`) is deliberately untouched: its trap is unconditional
+/// by design, and this prover only feeds `guardedTableIndex`.
+fn tryProvePartitionLoopRange(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!void {
+    const w = switch (stmts[at]) {
+        .while_loop => |x| x,
+        else => return,
+    };
+    const len_name = partitionLoopVar(w.cond) orelse return;
+
+    var scan = PartitionScan{ .len_name = len_name };
+    defer scan.reads.deinit(ctx.alloc);
+    defer scan.pending.deinit(ctx.alloc);
+    try scanBlockPartition(ctx, &scan, w.body.stmts, 0);
+    if (!scan.ok) return;
+    const half_name = scan.half_name orelse return;
+    const lo_name = scan.lo_name orelse return;
+    const table_name = scan.table_name orelse return;
+    if (scan.reads.items.len == 0) return;
+    if (!scan.len_updated) return;
+    if (std.mem.eql(u8, len_name, half_name)) return;
+    if (std.mem.eql(u8, len_name, lo_name)) return;
+    if (std.mem.eql(u8, half_name, lo_name)) return;
+    if (std.mem.eql(u8, table_name, len_name)) return;
+    if (std.mem.eql(u8, table_name, half_name)) return;
+    if (std.mem.eql(u8, table_name, lo_name)) return;
+
+    const e_lit = lastLiteralBindingSafe(stmts, at, len_name) orelse return;
+    const l0_lit = lastLiteralBindingSafe(stmts, at, lo_name) orelse return;
+    if (e_lit < 0 or l0_lit < 0) return;
+    // Function locals only: the pre-loop scan declines on any call between
+    // the binding and the loop, and the body holds no calls, so nothing can
+    // mutate a caller's locals out from under the literal bounds.
+    if (ctx.locals.get(len_name) == null) return;
+    if (ctx.locals.get(lo_name) == null) return;
+
+    const extent = staticTableLen(ctx, table_name) orelse return;
+    const sum = std.math.add(i64, l0_lit, e_lit) catch return;
+    const allowed: i64 = if (scan.half_div == 2)
+        std.math.add(i64, extent, 1) catch return
+    else
+        extent;
+    if (sum > allowed) return;
+
+    // Every role name is known now: validate the deferred assigns.
+    // At most one lo update: the coupling invariant `lo + len <= L0 + E`
+    // needs the body's total lo growth (<= half) to not exceed the len
+    // shrink (exactly half). Two `lo += half` updates would break it.
+    var lo_updates: usize = 0;
+    for (scan.pending.items) |p| {
+        if (std.mem.eql(u8, p.name, half_name)) return;
+        if (std.mem.eql(u8, p.name, table_name)) return;
+        if (std.mem.eql(u8, p.name, len_name)) return;
+        if (std.mem.eql(u8, p.name, lo_name)) {
+            if (!p.after_half) return;
+            if (!isLoUpdate(p.val, lo_name, half_name)) return;
+            lo_updates += 1;
+            if (lo_updates > 1) return;
+        }
+    }
+
+    for (scan.reads.items) |key| {
+        try ctx.proven_index_ranges.put(ctx.alloc, key, .{
+            .table = table_name,
+            .min = 1,
+            .max = extent,
+        });
+    }
+}
+
+/// An assign deferred until every role name is known.
+const PendingAssign = struct {
+    name: []const u8,
+    val: *const ast.Expr,
+    after_half: bool,
+};
+
+const PartitionScan = struct {
+    len_name: []const u8,
+    half_name: ?[]const u8 = null,
+    half_div: i64 = 0,
+    half_seen: bool = false,
+    len_updated: bool = false,
+    lo_name: ?[]const u8 = null,
+    table_name: ?[]const u8 = null,
+    reads: std.ArrayListUnmanaged(*const ast.Expr) = .empty,
+    pending: std.ArrayListUnmanaged(PendingAssign) = .empty,
+    ok: bool = true,
+};
+
+fn partitionNameOf(e: *const ast.Expr) ?[]const u8 {
+    return switch (e.*) {
+        .name => |n| n.ident,
+        else => null,
+    };
+}
+
+/// `while len > 1` / `len >= 2` / `1 < len` / `2 <= len`: the partitioned
+/// length variable. Anything else is not this proof's loop.
+fn partitionLoopVar(cond: *const ast.Expr) ?[]const u8 {
+    const b = switch (cond.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    switch (b.op) {
+        .gt, .geq => {
+            const l = partitionNameOf(b.lhs) orelse return null;
+            const want: i64 = if (b.op == .gt) 1 else 2;
+            if ((ast.intLiteralValue(b.rhs) orelse -1) != want) return null;
+            return l;
+        },
+        .lt, .leq => {
+            const l = partitionNameOf(b.rhs) orelse return null;
+            const want: i64 = if (b.op == .lt) 1 else 2;
+            if ((ast.intLiteralValue(b.lhs) orelse -1) != want) return null;
+            return l;
+        },
+        else => return null,
+    }
+}
+
+/// `half = len // c` with c = 1 or 2: the divisor, or null.
+fn matchHalfBinding(val: *const ast.Expr, len_name: []const u8) ?i64 {
+    const b = switch (val.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op != .idiv) return null;
+    const ln = partitionNameOf(b.lhs) orelse return null;
+    if (!std.mem.eql(u8, ln, len_name)) return null;
+    const c = ast.intLiteralValue(b.rhs) orelse return null;
+    if (c != 1 and c != 2) return null;
+    return c;
+}
+
+fn isLenUpdate(val: *const ast.Expr, len_name: []const u8, half_name: []const u8) bool {
+    const b = switch (val.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .sub) return false;
+    const ln = partitionNameOf(b.lhs) orelse return false;
+    const hn = partitionNameOf(b.rhs) orelse return false;
+    return std.mem.eql(u8, ln, len_name) and std.mem.eql(u8, hn, half_name);
+}
+
+fn isLoUpdate(val: *const ast.Expr, lo_name: []const u8, half_name: []const u8) bool {
+    const b = switch (val.*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .add) return false;
+    const ln = partitionNameOf(b.lhs) orelse return false;
+    const hn = partitionNameOf(b.rhs) orelse return false;
+    return std.mem.eql(u8, ln, lo_name) and std.mem.eql(u8, hn, half_name);
+}
+
+fn scanBlockPartition(
+    ctx: *LowerCtx,
+    scan: *PartitionScan,
+    stmts: []const ast.Stmt,
+    depth: usize,
+) Error!void {
+    for (stmts) |*stmt| {
+        if (!scan.ok) return;
+        try scanStmtPartition(ctx, scan, stmt, depth);
+    }
+}
+
+fn scanStmtPartition(
+    ctx: *LowerCtx,
+    scan: *PartitionScan,
+    stmt: *const ast.Stmt,
+    depth: usize,
+) Error!void {
+    switch (stmt.*) {
+        .assign => |a| {
+            // Values evaluate first: collect their reads in program order.
+            for (a.values) |v| try collectPartitionReads(ctx, scan, v);
+            if (!scan.ok) return;
+            for (a.targets) |t| {
+                if (partitionNameOf(t) == null) {
+                    scan.ok = false;
+                    return;
+                }
+            }
+            if (a.targets.len != 1 or a.values.len != 1) {
+                for (a.targets) |t| {
+                    const tn = partitionNameOf(t).?;
+                    if (std.mem.eql(u8, tn, scan.len_name)) {
+                        scan.ok = false;
+                        return;
+                    }
+                    if (scan.half_name) |hn| {
+                        if (std.mem.eql(u8, tn, hn)) {
+                            scan.ok = false;
+                            return;
+                        }
+                    }
+                }
+                return;
+            }
+            const tn = partitionNameOf(a.targets[0]).?;
+            const v = a.values[0];
+            if (std.mem.eql(u8, tn, scan.len_name)) {
+                // The one len update: `len = len - half`, direct child,
+                // after half is bound (so half came from len >= 2).
+                const hn = scan.half_name orelse {
+                    scan.ok = false;
+                    return;
+                };
+                if (!scan.half_seen) {
+                    scan.ok = false;
+                    return;
+                }
+                if (depth != 0) {
+                    scan.ok = false;
+                    return;
+                }
+                if (scan.len_updated) {
+                    scan.ok = false;
+                    return;
+                }
+                if (!isLenUpdate(v, scan.len_name, hn)) {
+                    scan.ok = false;
+                    return;
+                }
+                scan.len_updated = true;
+                return;
+            }
+            if (scan.half_name) |hn| {
+                if (std.mem.eql(u8, tn, hn)) {
+                    scan.ok = false;
+                    return;
+                }
+            }
+            if (!scan.half_seen) {
+                if (matchHalfBinding(v, scan.len_name)) |div| {
+                    scan.half_name = tn;
+                    scan.half_div = div;
+                    scan.half_seen = true;
+                    return;
+                }
+            }
+            try scan.pending.append(ctx.alloc, .{
+                .name = tn,
+                .val = v,
+                .after_half = scan.half_seen,
+            });
+        },
+        .if_stmt => |f| {
+            // Half must already be bound: the proof needs every read and
+            // every lo update to see the current iteration's half.
+            if (!scan.half_seen) {
+                scan.ok = false;
+                return;
+            }
+            if (f.binding) |bnd| {
+                if (std.mem.eql(u8, bnd.name, scan.len_name)) {
+                    scan.ok = false;
+                    return;
+                }
+                if (scan.half_name) |hn| {
+                    if (std.mem.eql(u8, bnd.name, hn)) {
+                        scan.ok = false;
+                        return;
+                    }
+                }
+                try collectPartitionReads(ctx, scan, bnd.expr);
+            }
+            try collectPartitionReads(ctx, scan, f.cond);
+            if (!scan.ok) return;
+            try scanBlockPartition(ctx, scan, f.then.stmts, depth + 1);
+            for (f.elseifs) |*ei| {
+                try collectPartitionReads(ctx, scan, ei.cond);
+                if (!scan.ok) return;
+                try scanBlockPartition(ctx, scan, ei.body.stmts, depth + 1);
+            }
+            if (f.else_body) |*eb| try scanBlockPartition(ctx, scan, eb.stmts, depth + 1);
+        },
+        .local_decl => |d| {
+            for (d.names) |n| {
+                if (std.mem.eql(u8, n.ident, scan.len_name)) {
+                    scan.ok = false;
+                    return;
+                }
+                if (scan.half_name) |hn| {
+                    if (std.mem.eql(u8, n.ident, hn)) {
+                        scan.ok = false;
+                        return;
+                    }
+                }
+            }
+            for (d.inits) |v| try collectPartitionReads(ctx, scan, v);
+        },
+        .const_decl => |d| {
+            if (std.mem.eql(u8, d.ident, scan.len_name)) {
+                scan.ok = false;
+                return;
+            }
+            if (scan.half_name) |hn| {
+                if (std.mem.eql(u8, d.ident, hn)) {
+                    scan.ok = false;
+                    return;
+                }
+            }
+            try collectPartitionReads(ctx, scan, d.val);
+        },
+        .while_loop, .repeat_loop, .num_for, .gen_for => {
+            scan.ok = false;
+            return;
+        },
+        .call_stmt => {
+            scan.ok = false;
+            return;
+        },
+        .ret => |r| {
+            for (r.vals) |v| try collectPartitionReads(ctx, scan, v);
+        },
+        .expr_stmt => |e| try collectPartitionReads(ctx, scan, e.expr),
+        .do_block => |d| try scanBlockPartition(ctx, scan, d.body.stmts, depth + 1),
+        .brk => {},
+        .cont => {
+            // `continue` can skip the len update, breaking the coupling
+            // invariant for the next iteration's reads. `break` only exits.
+            scan.ok = false;
+            return;
+        },
+        else => {
+            scan.ok = false;
+            return;
+        },
+    }
+}
+
+/// Walk an expression, validating every `.index` read and declining on any
+/// call or any shape the walker cannot see through (a missed read would be
+/// an unsound proof, so unknown shapes decline rather than skip).
+fn collectPartitionReads(ctx: *LowerCtx, scan: *PartitionScan, expr: *const ast.Expr) Error!void {
+    if (!scan.ok) return;
+    switch (expr.*) {
+        .index => |ix| {
+            if (!scan.half_seen) {
+                scan.ok = false;
+                return;
+            }
+            const hn = scan.half_name orelse {
+                scan.ok = false;
+                return;
+            };
+            const obj_name = partitionNameOf(ix.obj) orelse {
+                scan.ok = false;
+                return;
+            };
+            const b = switch (ix.key.*) {
+                .binop => |x| x,
+                else => {
+                    scan.ok = false;
+                    return;
+                },
+            };
+            if (b.op != .add) {
+                scan.ok = false;
+                return;
+            }
+            const lo = partitionNameOf(b.lhs) orelse {
+                scan.ok = false;
+                return;
+            };
+            const hr = partitionNameOf(b.rhs) orelse {
+                scan.ok = false;
+                return;
+            };
+            if (!std.mem.eql(u8, hr, hn)) {
+                scan.ok = false;
+                return;
+            }
+            if (scan.lo_name) |known| {
+                if (!std.mem.eql(u8, lo, known)) {
+                    scan.ok = false;
+                    return;
+                }
+            } else {
+                scan.lo_name = lo;
+            }
+            if (scan.table_name) |known| {
+                if (!std.mem.eql(u8, obj_name, known)) {
+                    scan.ok = false;
+                    return;
+                }
+            } else {
+                scan.table_name = obj_name;
+            }
+            try scan.reads.append(ctx.alloc, ix.key);
+            return;
+        },
+        .call, .method_call => {
+            scan.ok = false;
+            return;
+        },
+        .binop => |b| {
+            try collectPartitionReads(ctx, scan, b.lhs);
+            try collectPartitionReads(ctx, scan, b.rhs);
+        },
+        .unop => |u| try collectPartitionReads(ctx, scan, u.operand),
+        .if_expr => |ie| {
+            try collectPartitionReads(ctx, scan, ie.cond);
+            try collectPartitionReads(ctx, scan, ie.then_expr);
+            try collectPartitionReads(ctx, scan, ie.else_expr);
+        },
+        .field => |f| try collectPartitionReads(ctx, scan, f.obj),
+        .name, .int_lit, .float_lit, .true_lit, .false_lit, .nil, .quoted => {},
+        else => {
+            scan.ok = false;
+            return;
+        },
+    }
+}
+
+/// Conservative: may this statement (or anything nested in it) assign `name`?
+fn partitionMayAssign(stmt: *const ast.Stmt, name: []const u8) bool {
+    switch (stmt.*) {
+        .assign => |a| {
+            for (a.targets) |t| {
+                const tn = partitionNameOf(t) orelse return true;
+                if (std.mem.eql(u8, tn, name)) return true;
+            }
+            return false;
+        },
+        .local_decl => |d| {
+            for (d.names) |n| if (std.mem.eql(u8, n.ident, name)) return true;
+            return false;
+        },
+        .const_decl => |d| return std.mem.eql(u8, d.ident, name),
+        .global_decl => |d| {
+            for (d.names) |n| if (std.mem.eql(u8, n.ident, name)) return true;
+            return false;
+        },
+        .if_stmt => |f| {
+            if (f.binding) |b| if (std.mem.eql(u8, b.name, name)) return true;
+            if (partitionMayAssignBlock(&f.then, name)) return true;
+            for (f.elseifs) |*ei| if (partitionMayAssignBlock(&ei.body, name)) return true;
+            if (f.else_body) |*eb| if (partitionMayAssignBlock(eb, name)) return true;
+            return false;
+        },
+        .while_loop => |w| return partitionMayAssignBlock(&w.body, name),
+        .repeat_loop => |r| return partitionMayAssignBlock(&r.body, name),
+        .num_for => |n| {
+            if (std.mem.eql(u8, n.var_name, name)) return true;
+            return partitionMayAssignBlock(&n.body, name);
+        },
+        .gen_for => |g| {
+            for (g.vars) |v| if (std.mem.eql(u8, v, name)) return true;
+            return partitionMayAssignBlock(&g.body, name);
+        },
+        .do_block => |d| return partitionMayAssignBlock(&d.body, name),
+        else => return false,
+    }
+}
+
+fn partitionMayAssignBlock(block: *const ast.Block, name: []const u8) bool {
+    for (block.stmts) |*s| if (partitionMayAssign(s, name)) return true;
+    return false;
+}
+
+fn partitionExprHasCall(e: *const ast.Expr) bool {
+    switch (e.*) {
+        .call, .method_call => return true,
+        .binop => |b| return partitionExprHasCall(b.lhs) or partitionExprHasCall(b.rhs),
+        .unop => |u| return partitionExprHasCall(u.operand),
+        .index => |ix| return partitionExprHasCall(ix.obj) or partitionExprHasCall(ix.key),
+        .field => |f| return partitionExprHasCall(f.obj),
+        .if_expr => |ie| return partitionExprHasCall(ie.cond) or
+            partitionExprHasCall(ie.then_expr) or partitionExprHasCall(ie.else_expr),
+        else => return false,
+    }
+}
+
+fn partitionStmtHasCall(s: *const ast.Stmt) bool {
+    switch (s.*) {
+        .assign => |a| {
+            for (a.targets) |t| if (partitionExprHasCall(t)) return true;
+            for (a.values) |v| if (partitionExprHasCall(v)) return true;
+            return false;
+        },
+        .call_stmt => return true,
+        .expr_stmt => |e| return partitionExprHasCall(e.expr),
+        .if_stmt => |f| {
+            if (f.binding) |b| if (partitionExprHasCall(b.expr)) return true;
+            if (partitionExprHasCall(f.cond)) return true;
+            for (f.then.stmts) |*ss| if (partitionStmtHasCall(ss)) return true;
+            for (f.elseifs) |*ei| {
+                if (partitionExprHasCall(ei.cond)) return true;
+                for (ei.body.stmts) |*ss| if (partitionStmtHasCall(ss)) return true;
+            }
+            if (f.else_body) |*eb| for (eb.stmts) |*ss| if (partitionStmtHasCall(ss)) return true;
+            return false;
+        },
+        .while_loop => |w| {
+            if (partitionExprHasCall(w.cond)) return true;
+            for (w.body.stmts) |*ss| if (partitionStmtHasCall(ss)) return true;
+            return false;
+        },
+        .repeat_loop => |r| {
+            if (partitionExprHasCall(r.cond)) return true;
+            for (r.body.stmts) |*ss| if (partitionStmtHasCall(ss)) return true;
+            return false;
+        },
+        .num_for => |n| {
+            if (partitionExprHasCall(n.start) or partitionExprHasCall(n.stop)) return true;
+            if (n.step) |st| if (partitionExprHasCall(st)) return true;
+            for (n.body.stmts) |*ss| if (partitionStmtHasCall(ss)) return true;
+            return false;
+        },
+        .gen_for => |g| {
+            for (g.iters) |e| if (partitionExprHasCall(e)) return true;
+            for (g.body.stmts) |*ss| if (partitionStmtHasCall(ss)) return true;
+            return false;
+        },
+        .ret => |r| {
+            for (r.vals) |v| if (partitionExprHasCall(v)) return true;
+            return false;
+        },
+        .local_decl => |d| {
+            for (d.inits) |v| if (partitionExprHasCall(v)) return true;
+            return false;
+        },
+        .const_decl => |d| return partitionExprHasCall(d.val),
+        .do_block => |d| {
+            for (d.body.stmts) |*ss| if (partitionStmtHasCall(ss)) return true;
+            return false;
+        },
+        else => return false,
+    }
+}
+
+/// The last `name = <int literal>` among `stmts[0..at]`, or null when absent,
+/// non-literal, or unsafe: any call between the binding and the loop, or any
+/// statement that might rebind `name`, declines -- a conditional rebind would
+/// make the literal an unsound upper bound for the coupling invariant.
+fn lastLiteralBindingSafe(stmts: []const ast.Stmt, at: usize, name: []const u8) ?i64 {
+    var i = at;
+    while (i > 0) {
+        i -= 1;
+        const s = &stmts[i];
+        if (partitionStmtHasCall(s)) return null;
+        switch (s.*) {
+            .assign => |a| {
+                var hits = false;
+                for (a.targets) |t| {
+                    const tn = partitionNameOf(t) orelse return null;
+                    if (std.mem.eql(u8, tn, name)) hits = true;
+                }
+                if (!hits) continue;
+                if (a.targets.len != 1 or a.values.len != 1) return null;
+                return ast.intLiteralValue(a.values[0]);
+            },
+            .local_decl => |d| {
+                var hits = false;
+                for (d.names) |n| {
+                    if (std.mem.eql(u8, n.ident, name)) hits = true;
+                }
+                if (!hits) continue;
+                if (d.names.len != 1 or d.inits.len != 1) return null;
+                return ast.intLiteralValue(d.inits[0]);
+            },
+            else => if (partitionMayAssign(s, name)) return null,
+        }
+    }
+    return null;
+}
+
 /// Additive lowering prologues, tried in order; at most one fires per
 /// statement. Returns whether a prologue claimed `stmts[at]`: a claimed
 /// statement's semantics are discharged up front, so structural loop
@@ -14255,6 +14872,10 @@ fn byteStorePureBFree(e: *const ast.Expr, bname: []const u8) bool {
 }
 
 fn runAdditivePrologues(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!bool {
+    // Fact establishment, not a prologue: records proven index ranges for
+    // partition loops. Never claims the statement; `guardedTableIndex`
+    // consumes the facts during normal lowering.
+    try tryProvePartitionLoopRange(ctx, stmts, at);
     if (try tryEmitVectorReductionPrologue(ctx, stmts, at)) return true;
     if (try tryEmitPopcountIdiom(ctx, stmts, at)) return true;
     if (try tryEmitLoopSelectPrologue(ctx, stmts, at)) return true;
@@ -16331,6 +16952,13 @@ fn guardedTableIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
     const idx_slot = ctx.freshTemp();
     const raw = try lowerExpr(ctx, key_expr);
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = raw, .ty = .any });
+    // A partition-loop range proof (`tryProvePartitionLoopRange`) establishes
+    // `1 <= key <= len` for this exact index expression; the trap is
+    // discharged by proof, not merely by static authority.
+    if (ctx.proven_index_ranges.get(key_expr)) |p| {
+        if (std.mem.eql(u8, p.table, table_name) and p.min >= 1 and p.max <= len)
+            return .{ .local = idx_slot };
+    }
     // GAP-185: elide the bounds check when the place's authority is
     // statically fixed — the zero-cost rung. The compiler's own proof
     // (unique, nonescape, readonly, exact determinacy) covers spatial
