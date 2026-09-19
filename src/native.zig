@@ -6521,8 +6521,12 @@ const Arm64Compiler = struct {
                         const sidx = try self.evalDnirValue(temps, ins.rhs);
                         const sval = try self.evalDnirValue(temps, ins.third);
                         const saddr = try self.allocReg();
-                        try self.emitSubImm(saddr, sidx, 1);
-                        try self.emitAddReg(saddr, sbase, saddr);
+                        if (ins.zero_based_index) {
+                            try self.emitAddReg(saddr, sbase, sidx);
+                        } else {
+                            try self.emitSubImm(saddr, sidx, 1);
+                            try self.emitAddReg(saddr, sbase, saddr);
+                        }
                         try self.emitStrb(sval, saddr);
                         self.releaseReg(saddr);
                         self.releaseDnirTemp(pinned, ins.lhs, sbase);
@@ -6532,8 +6536,12 @@ const Arm64Compiler = struct {
                         const base = try self.evalDnirValue(temps, ins.lhs);
                         const idx = try self.evalDnirValue(temps, ins.rhs);
                         const addr = try self.allocReg();
-                        try self.emitSubImm(addr, idx, 1);
-                        try self.emitAddReg(addr, base, addr);
+                        if (ins.zero_based_index) {
+                            try self.emitAddReg(addr, base, idx);
+                        } else {
+                            try self.emitSubImm(addr, idx, 1);
+                            try self.emitAddReg(addr, base, addr);
+                        }
                         const dst = try self.allocReg();
                         try self.emitLdrb(dst, addr);
                         self.releaseReg(addr);

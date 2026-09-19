@@ -329,6 +329,12 @@ pub const Instr = struct {
     /// the producer is `types.isQuotedByteSequence` in lowering and consumers
     /// must refuse until a pointer-plus-extent carrier exists.
     byte_sequence: bool = false,
+    /// `load_index` / `store_index` ONLY. The index in `rhs` is already a
+    /// 0-based byte offset, so the backend must NOT apply the 1-based bias
+    /// (`idx - 1`). Set by lowering for `mem.read_byte` / `mem.write_byte`,
+    /// whose offsets are byte offsets from the caller view: the old shape
+    /// paid `off + 1` here and `idx - 1` in every backend per access.
+    zero_based_index: bool = false,
     /// Record type name for init/load/store.
     record: []const u8 = "",
     /// Third ABI slot for 3-field record returns.

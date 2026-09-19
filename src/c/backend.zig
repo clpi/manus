@@ -841,7 +841,11 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             try emitValue(e, instruction.lhs);
             try w.writeAll(")[");
             try emitValue(e, instruction.rhs);
-            try w.writeAll(" - 1];\n");
+            if (instruction.zero_based_index) {
+                try w.writeAll("];\n");
+            } else {
+                try w.writeAll(" - 1];\n");
+            }
         },
         // The `hw_unary` tag conventions the lowering emits. `.popcount`
         // has a portable software realization above; every other genuine

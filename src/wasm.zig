@@ -1804,8 +1804,10 @@ fn emitIndexAddress(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
     try pushAddr(e, b, ins.lhs);
     try pushValue(e, b, ins.rhs, .i64);
     try b.op(op_i32_wrap_i64);
-    try b.i32c(1);
-    try b.op(op_i32_sub);
+    if (!ins.zero_based_index) {
+        try b.i32c(1);
+        try b.op(op_i32_sub);
+    }
     if (scale != 1) {
         try b.i32c(scale);
         try b.op(op_i32_mul);

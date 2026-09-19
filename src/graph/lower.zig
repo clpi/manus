@@ -21892,17 +21892,15 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 // the i64 one through the scaled 8-byte arm (`.ty = .i64`);
                 // that distinction is the whole difference between them.
                 //
-                // Both offsets are BYTE offsets from the caller's view, and the
-                // backend's byte path computes `base + (i - 1)`, so the byte
-                // read normalizes with +1 here exactly as `s[i]` does. The i64
-                // arm scales by 8, so its offset is divided first.
+                // Both offsets are BYTE offsets from the caller's view. The byte
+                // arm carries them 0-based (`zero_based_index`): the old shape
+                // paid `off + 1` here and `idx - 1` in every backend per access.
+                // The i64 arm scales by 8, so its offset is divided first.
                 if (std.mem.eql(u8, f.field, "read_byte") and c.args.len == 2) {
                     const base = try lowerExpr(ctx, c.args[0]);
                     const off = try lowerExpr(ctx, c.args[1]);
-                    const one = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .binop, .result = one, .binop = .add, .lhs = off, .rhs = .{ .i64 = 1 } });
                     const t = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .load_index, .result = t, .lhs = base, .rhs = .{ .temp = one } });
+                    try ctx.emit(.{ .op = .load_index, .result = t, .lhs = base, .rhs = off, .zero_based_index = true });
                     return .{ .temp = t };
                 }
                 // `mem.read_i64(p, byteoff)` is the SCALED load: the backend's
@@ -21949,10 +21947,8 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 if (std.mem.eql(u8, f.field, "write_byte") and c.args.len == 3) {
                     const base = try lowerExpr(ctx, c.args[0]);
                     const off = try lowerExpr(ctx, c.args[1]);
-                    const one = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .binop, .result = one, .binop = .add, .lhs = off, .rhs = .{ .i64 = 1 } });
                     const val = try lowerExpr(ctx, c.args[2]);
-                    try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = base, .rhs = .{ .temp = one }, .third = val });
+                    try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = base, .rhs = off, .third = val, .zero_based_index = true });
                     return .void;
                 }
                 if (std.mem.eql(u8, f.field, "write_f64") and c.args.len == 3) {
