@@ -6410,8 +6410,13 @@ const Arm64Compiler = struct {
                             .i64 => |n| n,
                             else => break :blk null,
                         };
-                        if (k < 1 or k > 4096) break :blk null;
-                        break :blk @intCast((k - 1) * 8);
+                        // Zero-based indices name the element directly; 1-based
+                        // Idol indices name one past it. Either way `e` is the
+                        // 0-based element number, which must fit the 12-bit
+                        // unsigned offset field (8-byte units).
+                        const e = if (ins.zero_based_index) k else k - 1;
+                        if (e < 0 or e > 4095) break :blk null;
+                        break :blk @intCast(e * 8);
                     };
                     if (const_off) |off| {
                         if (op == .load_index) {
@@ -6427,8 +6432,14 @@ const Arm64Compiler = struct {
                         return;
                     }
                     const idx = try self.evalDnirValue(temps, ins.rhs);
-                    const biased = try self.allocReg();
-                    try self.emitSubImm(biased, idx, 1);
+                    // A zero-based index already names the element, so it feeds
+                    // the scaled addressing mode directly; otherwise strip the
+                    // 1-based bias the lowering added.
+                    const biased = if (ins.zero_based_index) idx else b: {
+                        const r = try self.allocReg();
+                        try self.emitSubImm(r, idx, 1);
+                        break :b r;
+                    };
                     if (op == .load_index) {
                         const dst = try self.allocReg();
                         try self.emitLdrScaled(dst, base, biased);
@@ -6438,7 +6449,7 @@ const Arm64Compiler = struct {
                         try self.emitStrScaled(val, base, biased);
                         self.releaseDnirTemp(pinned, ins.third, val);
                     }
-                    self.releaseReg(biased);
+                    if (!ins.zero_based_index) self.releaseReg(biased);
                     self.releaseDnirTemp(pinned, ins.lhs, base);
                     self.releaseDnirTemp(pinned, ins.rhs, idx);
                 },
