@@ -12660,6 +12660,9 @@ fn tryProvePartitionLoopRange(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize
     if (std.mem.eql(u8, len_name, half_name)) return;
     if (std.mem.eql(u8, len_name, lo_name)) return;
     if (std.mem.eql(u8, half_name, lo_name)) return;
+    if (std.mem.eql(u8, table_name, len_name)) return;
+    if (std.mem.eql(u8, table_name, half_name)) return;
+    if (std.mem.eql(u8, table_name, lo_name)) return;
 
     const e_lit = lastLiteralBindingSafe(stmts, at, len_name) orelse return;
     const l0_lit = lastLiteralBindingSafe(stmts, at, lo_name) orelse return;
@@ -12679,6 +12682,10 @@ fn tryProvePartitionLoopRange(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize
     if (sum > allowed) return;
 
     // Every role name is known now: validate the deferred assigns.
+    // At most one lo update: the coupling invariant `lo + len <= L0 + E`
+    // needs the body's total lo growth (<= half) to not exceed the len
+    // shrink (exactly half). Two `lo += half` updates would break it.
+    var lo_updates: usize = 0;
     for (scan.pending.items) |p| {
         if (std.mem.eql(u8, p.name, half_name)) return;
         if (std.mem.eql(u8, p.name, table_name)) return;
@@ -12686,6 +12693,8 @@ fn tryProvePartitionLoopRange(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize
         if (std.mem.eql(u8, p.name, lo_name)) {
             if (!p.after_half) return;
             if (!isLoUpdate(p.val, lo_name, half_name)) return;
+            lo_updates += 1;
+            if (lo_updates > 1) return;
         }
     }
 
