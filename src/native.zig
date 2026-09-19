@@ -3681,9 +3681,16 @@ const Arm64Compiler = struct {
         pinned: *const std.AutoHashMapUnmanaged(u32, u5),
         slot: u32,
     ) ?u5 {
-        if (pinned.get(slot)) |reg| return reg;
+        // A frame-homed slot's one authoritative home is the frame. A
+        // register name for it here means a producer violated the plan -
+        // fail closed at compile time rather than emit a split home.
+        if (pinned.get(slot)) |reg| {
+            std.debug.assert(!self.gp_stack_locals.contains(slot));
+            return reg;
+        }
         const named = temps.get(slot) orelse return null;
         if (self.staleGpName(named, slot)) return null;
+        std.debug.assert(!self.gp_stack_locals.contains(slot));
         return named;
     }
 
@@ -6327,7 +6334,20 @@ const Arm64Compiler = struct {
                 // the word's address into it and the load overwrites it with the
                 // word. One register, not two, and nothing else is live in it.
                 try self.emitLdrBaseImm(dst, dst, 0);
-                try temps.put(self.alloc, t, dst);
+                if (self.gp_stack_locals.get(t)) |off| {
+                    // The plan frame-homed this slot (the live case is a
+                    // promotion preload). Installing a temps name here would be
+                    // read by already-emitted loop heads while the body stores
+                    // through the frame - one slot with two unsynchronized
+                    // physical authorities, which hangs. Establish the frame
+                    // home and install no name.
+                    try self.storeGpStackLocal(off, dst);
+                    _ = pinned.remove(t);
+                    _ = temps.remove(t);
+                    self.releaseReg(dst);
+                } else {
+                    try temps.put(self.alloc, t, dst);
+                }
             },
             .store_global => {
                 if (ins.field.len == 0) return self.refuse(@src());
@@ -6901,6 +6921,7 @@ const Arm64Compiler = struct {
             .local => |slot| {
                 if (self.eval_pinned) |p| {
                     if (p.get(slot)) |r| {
+                        std.debug.assert(!self.gp_stack_locals.contains(slot));
                         return try self.ensureRegLiveRemap(temps, r);
                     }
                 }
@@ -6920,7 +6941,10 @@ const Arm64Compiler = struct {
                     // `staleGpName` reads. A stale name falls through to the
                     // frame home — the one place a local's value is still
                     // authoritative — instead of answering with a stranger.
-                    if (!self.staleGpName(r, slot)) return try self.ensureRegLiveRemap(temps, r);
+                    if (!self.staleGpName(r, slot)) {
+                        std.debug.assert(!self.gp_stack_locals.contains(slot));
+                        return try self.ensureRegLiveRemap(temps, r);
+                    }
                 }
                 if (self.gp_stack_locals.get(slot)) |off| {
                     return try self.loadGpStackLocal(off);
